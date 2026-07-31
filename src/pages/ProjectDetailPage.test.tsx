@@ -47,3 +47,36 @@ describe('ProjectDetailPage hero', () => {
     expect(screen.getByText('已准备分享：题练工坊 · VibeCheck')).toBeInTheDocument()
   })
 })
+
+describe('ProjectDetailPage structured profile', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
+
+  it('renders product fields in design order with a unified four-node flow', async () => {
+    renderProject('project-quizforge')
+    expect(await screen.findByRole('heading', { name: '产品结构' })).toBeInTheDocument()
+    const labels = screen.getAllByRole('term').map((element) => element.textContent)
+    expect(labels.slice(0, 8)).toEqual(['目标用户', '核心问题', '使用场景', '主要输入', '主要输出', '核心功能', '登录要求', '分享能力'])
+    expect(screen.getByText('材料输入')).toBeInTheDocument()
+    expect(screen.getByText('内容处理')).toBeInTheDocument()
+    expect(screen.getByText('完成练习')).toBeInTheDocument()
+    expect(screen.getByText('反馈与记录')).toBeInTheDocument()
+    const similar = screen.getByRole('link', { name: '从这些字段查看同类' })
+    expect(similar).toHaveAttribute('href', expect.stringContaining('scenario=question_generation'))
+    expect(similar).toHaveAttribute('href', expect.stringContaining('input=pdf'))
+  })
+
+  it('marks unknown development fields with their recorded reasons', async () => {
+    renderProject('project-learntrack')
+    expect(await screen.findByRole('heading', { name: '开发信息' })).toBeInTheDocument()
+    expect(screen.getByText('未知：公开页面未说明使用的模型')).toBeInTheDocument()
+    expect(screen.getByText('未知：未发现可验证的技术栈信息')).toBeInTheDocument()
+    expect(screen.getByText('未知：作者未公开开发周期')).toBeInTheDocument()
+  })
+
+  it('opens evidence from an individual key field', async () => {
+    const user = userEvent.setup(); renderProject('project-quizforge')
+    await user.click(await screen.findByRole('button', { name: '核心问题来源（1）' }))
+    expect(screen.getByRole('dialog', { name: '事实来源与核验记录' })).toBeInTheDocument()
+    expect(screen.getByText('公开页面可访问并展示 PDF 生成题目流程。')).toBeInTheDocument()
+  })
+})
