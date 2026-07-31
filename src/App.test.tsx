@@ -1,11 +1,11 @@
 import { render, screen } from '@testing-library/react'
-import { App } from './App'
+import { App } from './app'
 
 describe('App', () => {
   it('renders the initialized prototype shell', () => {
     render(<App />)
     expect(
-      screen.getByRole('heading', { name: 'VibeCheck 低保真原型' }),
+      screen.getByRole('heading', { name: 'VibeCheck 原型工程' }),
     ).toBeInTheDocument()
   })
 })

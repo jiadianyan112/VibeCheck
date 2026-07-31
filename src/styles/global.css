@@ -1,0 +1,41 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-family: var(--font-sans);
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.page-container {
+  width: min(calc(100% - 2 * var(--space-6)), var(--page-max));
+  margin-inline: auto;
+  padding-block: var(--space-8);
+}
+
+.page-description {
+  color: var(--color-muted);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.stack--small {
+  gap: var(--space-2);
+}
