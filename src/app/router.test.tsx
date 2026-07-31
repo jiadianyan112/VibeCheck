@@ -1,30 +1,27 @@
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
-import { ToastProvider } from '../components'
-import { AppStateProvider } from '../state'
+import { AppProviders } from './providers'
 import { appRoutes } from './router'
 
 function renderRoute(path: string) {
   const memoryRouter = createMemoryRouter(appRoutes, { initialEntries: [path] })
   return render(
-    <AppStateProvider>
-      <ToastProvider>
-        <RouterProvider router={memoryRouter} />
-      </ToastProvider>
-    </AppStateProvider>,
+    <AppProviders>
+      <RouterProvider router={memoryRouter} />
+    </AppProviders>,
   )
 }
 
 describe('application route skeleton', () => {
   it.each([
-    ['/projects', 'P01 作品广场'],
+    ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
     ['/discover', 'P06 查同类意图确认'],
     ['/project/project-001', 'P08 作品详情'],
     ['/compare/session-001', 'P09 作品比较'],
     ['/admin/project/project-001', 'A03 作品编辑'],
-  ])('renders %s', (path, heading) => {
+  ])('renders %s', async (path, heading) => {
     renderRoute(path)
-    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
   })
 
   it('shows dynamic route parameters', () => {
