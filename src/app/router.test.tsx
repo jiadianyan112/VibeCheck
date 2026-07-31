@@ -17,7 +17,7 @@ describe('application route skeleton', () => {
     ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
     ['/discover', '先确认你要解决的问题'],
     ['/discover/result', '同类作品分析'],
-    ['/project/project-001', 'P08 作品详情'],
+    ['/project/project-quizforge', '题练工坊'],
     ['/compare/session-001', 'P09 作品比较'],
     ['/admin/project/project-001', 'A03 作品编辑'],
   ])('renders %s', async (path, heading) => {
@@ -25,9 +25,9 @@ describe('application route skeleton', () => {
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
   })
 
-  it('shows dynamic route parameters', () => {
+  it('shows a useful error for an unknown project id', async () => {
     renderRoute('/project/project-001')
-    expect(screen.getByText('project-001')).toBeInTheDocument()
+    expect(await screen.findByText('未找到对应作品档案。')).toBeInTheDocument()
   })
 
   it('renders a useful not found page', () => {
