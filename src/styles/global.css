@@ -650,6 +650,36 @@ textarea {
   border-top: 1px solid var(--color-line);
 }
 
+.toast-region {
+  position: fixed;
+  z-index: 40;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  display: grid;
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  gap: var(--space-2);
+}
+
+.toast {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-canvas);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 12%);
+}
+
+.toast--error { border-width: 2px; }
+.toast--success { border-left-width: 4px; }
+.toast button { border: 0; background: transparent; cursor: pointer; }
+
+.auth-choice-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -753,6 +783,10 @@ textarea {
   }
 
   .project-card--compact {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-choice-list {
     grid-template-columns: 1fr;
   }
 

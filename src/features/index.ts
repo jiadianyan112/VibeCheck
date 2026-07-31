@@ -4,3 +4,4 @@ export interface FeatureRegistration {
 }
 
 export const featureRegistry: FeatureRegistration[] = []
+export * from './auth'
