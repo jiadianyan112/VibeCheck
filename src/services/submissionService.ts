@@ -27,9 +27,13 @@ export interface ExtractionResult {
   failedFields: Array<keyof SubmissionProjectFields>
 }
 
-function normalizeUrl(value: string) {
+export function normalizeSubmissionUrl(value: string) {
   const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`
-  return new URL(withProtocol).toString()
+  const parsed = new URL(withProtocol)
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname.includes('.')) {
+    throw new TypeError('Unsupported public URL')
+  }
+  return parsed.toString()
 }
 
 export const submissionService = {
@@ -39,12 +43,18 @@ export const submissionService = {
   ): Promise<ServiceResult<UrlCheckResult>> {
     let normalizedUrl: string
     try {
-      normalizedUrl = normalizeUrl(value.trim())
+      normalizedUrl = normalizeSubmissionUrl(value.trim())
     } catch {
       return validationFailure('VC_URL_INVALID', '请输入可识别的公开 URL。')
     }
-    return runService(options, () => {
+    // For the URL-check step, "timeout" means the public page probe timed out;
+    // format and safety checks still finish, so a recoverable draft can be saved.
+    const runtimeOptions = options?.scenario === 'timeout'
+      ? { ...options, scenario: 'default' as const }
+      : options
+    return runService(runtimeOptions, () => {
       const risky = options?.scenario === 'external_link_risk' || normalizedUrl.includes('unsafe')
+      const outOfCategory = normalizedUrl.includes('out-of-category')
       const duplicate =
         options?.scenario === 'duplicate_project'
           ? projects[1]?.id ?? projectId('project-pdfquizlab')
@@ -70,13 +80,19 @@ export const submissionService = {
           status: duplicate ? 'warning' : 'passed',
           message: duplicate ? '发现已有作品档案。' : '未发现重复档案。',
         },
-        { key: 'category', status: 'passed', message: '符合首期学习与题库品类。' },
+        {
+          key: 'category',
+          status: outOfCategory ? 'failed' : 'passed',
+          message: outOfCategory
+            ? '不属于首期学习与题库品类。'
+            : '符合首期学习与题库品类。',
+        },
       ]
       return {
         normalizedUrl,
         checks,
         duplicateProjectId: duplicate,
-        canCreateDraft: !risky && !duplicate,
+        canCreateDraft: !risky && !duplicate && !outOfCategory,
       }
     })
   },

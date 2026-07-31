@@ -19,6 +19,7 @@ export {
   type SearchResponse,
 } from './searchService'
 export {
+  normalizeSubmissionUrl,
   submissionService,
   type ExtractionResult,
   type UrlCheckItem,

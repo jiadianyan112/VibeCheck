@@ -19,6 +19,8 @@ describe('application route skeleton', () => {
     ['/discover/result', '同类作品分析'],
     ['/project/project-quizforge', '题练工坊'],
     ['/compare/comparison-anonymous-pdf', '比较会话'],
+    ['/submit', '发布作品'],
+    ['/auth?from=%2Fsubmit', '选择原型身份'],
     ['/admin/project/project-001', 'A03 作品编辑'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)

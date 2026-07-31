@@ -7,4 +7,5 @@ export const featureRegistry: FeatureRegistration[] = []
 export * from './auth'
 export * from './categories'
 export * from './comparison'
+export * from './submission'
 export * from './discovery'

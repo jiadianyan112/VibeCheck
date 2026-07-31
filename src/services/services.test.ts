@@ -85,6 +85,22 @@ describe('typed prototype services', () => {
     }
   })
 
+  it('returns a recoverable URL-check result when only the public access probe times out', async () => {
+    const response = await submissionService.checkUrl('example.test/slow-tool', {
+      scenario: 'timeout',
+    })
+    expect(response).toMatchObject({
+      ok: true,
+      data: {
+        normalizedUrl: 'https://example.test/slow-tool',
+        canCreateDraft: true,
+      },
+    })
+    expect(response.ok && response.data.checks.find(({ key }) => key === 'access')).toMatchObject({
+      status: 'warning',
+    })
+  })
+
   it('returns notifications and admin queues through services', async () => {
     const notifications = await notificationService.listForUser(userId('user-mia'))
     const queue = await adminService.listProjectQueue()
