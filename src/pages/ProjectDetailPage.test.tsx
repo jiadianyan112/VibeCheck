@@ -169,3 +169,49 @@ describe('ProjectDetailPage discussion interactions', () => {
     expect(summary.closest('.comment-card')).toHaveTextContent('3 次举报记录')
   })
 })
+
+describe('ProjectDetailPage trust variants', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
+
+  it.each([
+    ['project-pdfquizlab', '尚未关联验证作者'],
+    ['project-papertopractice', '部分流程异常，其他事实仍保留'],
+    ['project-dictaflow', '新地址身份等待确认'],
+    ['project-mocksprint', '暂停更新不等于失败'],
+    ['project-echoscore', '作品已结束，不等于失败'],
+  ])('opens %s as a fixed trust-state URL', async (id, expected) => {
+    renderProject(id)
+    expect(await screen.findByText(expected)).toBeInTheDocument()
+  })
+
+  it('keeps an expired unknown project visible with reduced-trust language', async () => {
+    renderProject('project-learntrack')
+    expect(await screen.findByText('没有足够证据确认当前可用性')).toBeInTheDocument()
+    expect(screen.getByText('可继续查看，但请降低对当前字段的信任')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '产品结构' })).toBeInTheDocument()
+    expect(screen.queryByText(/作品失败/)).not.toBeInTheDocument()
+  })
+
+  it('holds the original public status during a first anomaly check', async () => {
+    renderProject('project-quizforge?variant=first-anomaly')
+    expect(await screen.findByText('首次异常验证中')).toBeInTheDocument()
+    expect(screen.getByText('维持原公开状态：normal')).toBeInTheDocument()
+    expect(screen.getAllByText('正常可访问').length).toBeGreaterThan(0)
+  })
+
+  it('places disputed sources and their update times side by side', async () => {
+    renderProject('project-dictaflow?variant=disputed')
+    expect(await screen.findByText('争议并列来源')).toBeInTheDocument()
+    expect(screen.getByText('平台核验记录')).toBeInTheDocument()
+    expect(screen.getByText('提交方补充说明')).toBeInTheDocument()
+    expect(screen.getByText('2026/7/30 18:00 更新')).toBeInTheDocument()
+    expect(screen.getByText('核查完成前不选择性覆盖')).toBeInTheDocument()
+  })
+
+  it('exposes supplement, report and evidence entry points', async () => {
+    renderProject('project-quizforge')
+    expect(await screen.findByRole('link', { name: '补充字段信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
+    expect(screen.getByText('报告状态问题')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /展开本作品证据/ })).toBeInTheDocument()
+  })
+})

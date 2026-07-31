@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { useAuthGate, useComparison } from '../features'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
@@ -63,6 +63,7 @@ function readableChange(value: unknown) {
 
 export function ProjectDetailPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const { state, dispatch } = useAppState()
   const { requireLogin } = useAuthGate()
   const { addProject } = useComparison()
@@ -113,6 +114,7 @@ export function ProjectDetailPage() {
   const favorited = state.favoriteProjectIds.includes(project.id)
   const followed = state.followedProjectIds.includes(project.id)
   const liked = state.likedProjectIds.includes(project.id)
+  const trustVariant = searchParams.get('variant')
   const orderedFlow = project.coreFlow.state === 'known' ? [...project.coreFlow.value].sort((a, b) => a.order - b.order) : []
 
   function protectedToggle(kind: 'favorite' | 'follow') {
@@ -170,6 +172,22 @@ export function ProjectDetailPage() {
       </section>
 
       <section className="interaction-strip" aria-label="社区互动弱信号"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{project.interactionSummary.likeCount + (liked ? 1 : 0)}</strong><span>点赞（弱信号）</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} onClick={() => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })}>{liked ? '已点赞' : '点赞'}</Button><span className="page-description">点赞只作为轻量社区信号，不参与作品质量排序。</span></section>
+
+      <section className="trust-variants stack" aria-labelledby="trust-variants-heading">
+        <div className="section-heading cluster cluster--between"><div><p className="eyebrow">Trust state</p><h2 id="trust-variants-heading">可信状态与异常入口</h2></div><div className="cluster"><Link className="button button--quiet" to={`/submit?mode=supplement&project=${project.id}`}>补充字段信息</Link><details className="status-report-placeholder"><summary>报告状态问题</summary><p>原型占位：提交后进入人工复核，不会立刻改写当前状态或历史。</p></details></div></div>
+        <div className="trust-notice-list">
+          {project.recordSource === 'platform_editor' && project.authorLinkStatus === 'unlinked' ? <aside className="trust-notice"><Tag tone="dashed">平台收录</Tag><strong>尚未关联验证作者</strong><p>字段来自公开页面和平台核验，不能视为作者自述。</p></aside> : null}
+          {status === 'unknown' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">当前状态未知</Tag><strong>没有足够证据确认当前可用性</strong><p>未知不是异常或失败；历史记录仍可查看。</p></aside> : null}
+          {project.freshnessStatus === 'expired' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">信息已过期</Tag><strong>可继续查看，但请降低对当前字段的信任</strong><p>最近核验：{new Date(project.lastVerifiedAt).toLocaleDateString('zh-CN')}。历史事实不会因过期删除。</p></aside> : null}
+          {status === 'partial_abnormal' || status === 'link_unavailable' ? <aside className="trust-notice trust-notice--caution"><Tag tone="strong">访问异常</Tag><strong>{status === 'partial_abnormal' ? '部分流程异常，其他事实仍保留' : '当前公开链接不可用'}</strong><p>异常描述不等同于作品失败或结束；请结合核验时间与历史事件判断。</p></aside> : null}
+          {status === 'suspected_migration' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">疑似迁移</Tag><strong>新地址身份等待确认</strong><p>旧地址和待确认新地址已在当前状态区并列展示。</p></aside> : null}
+          {status === 'paused' ? <aside className="trust-notice"><Tag tone="strong">作者声明暂停</Tag><strong>暂停更新不等于失败</strong><p>现有演示和历史仍按各自证据展示。</p></aside> : null}
+          {status === 'ended' ? <aside className="trust-notice"><Tag tone="strong">作者声明结束</Tag><strong>作品已结束，不等于失败</strong><p>仍可查看历史与独立有效的复用资产。</p></aside> : null}
+          {trustVariant === 'first-anomaly' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">首次异常验证中</Tag><strong>维持原公开状态：{status}</strong><p>一次技术检查不能直接推导暂停、结束或失败；等待复检后再更新。</p></aside> : null}
+          {trustVariant === 'disputed' ? <aside className="trust-notice trust-notice--disputed"><Tag tone="strong">争议并列来源</Tag><strong>核查完成前不选择性覆盖</strong><div className="dispute-source-grid"><article><span>平台核验记录</span><p>{bundle.evidences[0]?.sourceSummary ?? '平台当前没有可引用记录。'}</p><time dateTime={bundle.evidences[0]?.verifiedAt}>{bundle.evidences[0] ? new Date(bundle.evidences[0].verifiedAt).toLocaleString('zh-CN') : '更新时间未知'}</time></article><article><span>提交方补充说明</span><p>提交方称新入口仍属于同一作品，当前缺少足够公开材料完成确认。</p><time dateTime="2026-07-30T18:00:00+08:00">2026/7/30 18:00 更新</time></article></div></aside> : null}
+        </div>
+        <EvidenceDrawer label="展开本作品证据" evidences={bundle.evidences} />
+      </section>
 
       <section className="project-profile stack" aria-labelledby="product-structure-heading">
         <div className="section-heading cluster cluster--between"><div><p className="eyebrow">Product structure</p><h2 id="product-structure-heading">产品结构</h2><p>字段来自公开事实与固定模拟数据，不使用生成摘要补全未知值。</p></div><Link className="button" to={similarPath(project)}>从这些字段查看同类</Link></div>

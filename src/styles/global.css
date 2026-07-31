@@ -1130,6 +1130,67 @@ textarea {
   font-size: var(--font-size-xl);
 }
 
+.trust-variants {
+  padding: var(--space-5);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised);
+}
+
+.status-report-placeholder {
+  max-width: 22rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-line-strong);
+}
+
+.status-report-placeholder summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.trust-notice-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.trust-notice {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-4);
+  border-left: 4px solid var(--color-line-strong);
+  background: var(--color-surface-muted);
+}
+
+.trust-notice--caution {
+  border-left-style: dashed;
+}
+
+.trust-notice--disputed {
+  grid-column: 1 / -1;
+  border: 2px solid var(--color-line-strong);
+}
+
+.trust-notice p {
+  margin: 0;
+}
+
+.dispute-source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dispute-source-grid article {
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-raised);
+}
+
+.dispute-source-grid span {
+  font-weight: 800;
+}
+
 .discussion-section {
   padding: var(--space-6);
   border: 1px solid var(--color-line-strong);
@@ -1286,7 +1347,9 @@ textarea {
 
   .profile-field-grid,
   .core-flow ol,
-  .relationship-list {
+  .relationship-list,
+  .trust-notice-list,
+  .dispute-source-grid {
     grid-template-columns: 1fr;
   }
 
