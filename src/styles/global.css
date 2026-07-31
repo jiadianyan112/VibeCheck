@@ -120,6 +120,37 @@ textarea {
   background: var(--color-surface-raised);
 }
 
+.prototype-debug {
+  position: fixed;
+  z-index: 15;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: min(22rem, calc(100vw - 2 * var(--space-4)));
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-canvas);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 12%);
+}
+
+.prototype-debug summary {
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  font-weight: 700;
+}
+
+.prototype-debug__body {
+  max-height: min(70vh, 34rem);
+  overflow: auto;
+  border-top: 1px solid var(--color-line);
+  padding: var(--space-4);
+}
+
+.prototype-debug__events {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
 .wire-panel {
   padding: clamp(1rem, 3vw, 1.5rem);
 }
