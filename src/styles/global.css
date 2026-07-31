@@ -52,6 +52,11 @@ body {
 .check-row { display: flex; gap: var(--space-2); align-items: center; }
 .event-list { display: grid; gap: var(--space-2); }
 .event-list a { display: grid; grid-template-columns: 8rem minmax(0, 1fr) auto; gap: var(--space-4); text-decoration: none; }
+.activity-filters { display: grid; grid-template-columns: repeat(2, minmax(14rem, 20rem)) auto; align-items: end; gap: var(--space-4); border-block: 1px solid var(--color-line-strong); padding-block: var(--space-4); }
+.activity-stream { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.activity-item { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--space-4); border-bottom: 1px solid var(--color-line); padding-block: var(--space-6); }
+.activity-item__rail { display: grid; align-content: start; justify-items: start; gap: var(--space-2); color: var(--color-muted); font-size: 0.8rem; }
+.event-anchor-link { width: fit-content; font-weight: 700; }
 
 h1,
 h2,
@@ -826,6 +831,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item { grid-template-columns: 1fr; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }
   .sandbox-grid {

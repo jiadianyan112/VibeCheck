@@ -29,15 +29,19 @@ export interface ProjectBundle {
 
 export const projectService = {
   list(options?: ServiceOptions) {
-    return runService(options, () => projects)
+    return runService(options, () => options?.scenario === 'empty_results' ? [] : projects)
   },
 
   listEvents(options?: ServiceOptions) {
-    return runService(options, () => lifecycleEvents)
+    return runService(options, () => options?.scenario === 'empty_results' ? [] : lifecycleEvents)
   },
 
   listAssets(options?: ServiceOptions) {
-    return runService(options, () => reusableAssets)
+    return runService(options, () => options?.scenario === 'empty_results' ? [] : reusableAssets)
+  },
+
+  listEvidence(options?: ServiceOptions) {
+    return runService(options, () => options?.scenario === 'empty_results' ? [] : evidences)
   },
 
   async getById(

@@ -4,14 +4,14 @@ import {
   type RouteObject,
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
-import { CategoriesPage, CategoryDetailPage, NotFoundPage, ProjectsHomePage, RoutePlaceholderPage, StyleSandboxPage } from '../pages'
+import { ActivityPage, CategoriesPage, CategoryDetailPage, NotFoundPage, ProjectsHomePage, RoutePlaceholderPage, StyleSandboxPage } from '../pages'
 import { AdminLayout, FrontstageLayout } from '../components'
 
 const frontstageRoutes = routeCatalog
   .filter((route) => route.area === 'frontstage')
   .map((route) => ({
     path: route.path,
-    element: route.id === 'P01' ? <ProjectsHomePage /> : route.id === 'P02' ? <CategoriesPage /> : route.id === 'P03' ? <CategoryDetailPage /> : <RoutePlaceholderPage route={route} />,
+    element: route.id === 'P01' ? <ProjectsHomePage /> : route.id === 'P02' ? <CategoriesPage /> : route.id === 'P03' ? <CategoryDetailPage /> : route.id === 'P04' ? <ActivityPage /> : <RoutePlaceholderPage route={route} />,
   }))
 
 const adminRoutes = routeCatalog
