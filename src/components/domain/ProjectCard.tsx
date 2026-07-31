@@ -46,7 +46,11 @@ export function ProjectCard({
           {definitionFact.state === 'known' ? <p>{definitionFact.value}</p> : <UnknownFact reason={definitionFact.reason} />}
           <div className="cluster"><CompletenessLabel level={project.completenessLevel} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /></div>
         </div>
-        {onToggleCompare ? <Button variant="quiet" aria-pressed={selectedForCompare} onClick={() => onToggleCompare(project)}>{selectedForCompare ? '移出比较' : '加入比较'}</Button> : null}
+        <div className="cluster">
+          {onToggleFavorite ? <Button variant="quiet" aria-pressed={favorited} onClick={() => onToggleFavorite(project)}>{favorited ? '已收藏' : '收藏'}</Button> : null}
+          {onToggleFollow ? <Button variant="quiet" aria-pressed={followed} onClick={() => onToggleFollow(project)}>{followed ? '已关注更新' : '关注更新'}</Button> : null}
+          {onToggleCompare ? <Button variant="quiet" aria-pressed={selectedForCompare} onClick={() => onToggleCompare(project)}>{selectedForCompare ? '移出比较' : '加入比较'}</Button> : null}
+        </div>
       </Card>
     )
   }

@@ -1,4 +1,5 @@
 export { CategoriesPage } from './CategoriesPage'
+export { CategoryDetailPage } from './CategoryDetailPage'
 export { NotFoundPage } from './NotFoundPage'
 export { ProjectsHomePage } from './ProjectsHomePage'
 export { RoutePlaceholderPage } from './RoutePlaceholderPage'
