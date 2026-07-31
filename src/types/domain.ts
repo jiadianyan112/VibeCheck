@@ -677,6 +677,46 @@ export interface PrototypeSession {
   role: UserRole
 }
 
+export const commentCategories = [
+  'usage_feedback',
+  'development_question',
+  'reuse_feedback',
+  'status_update',
+] as const
+export type CommentCategory = (typeof commentCategories)[number]
+
+export const moderationStatuses = [
+  'visible',
+  'collapsed',
+  'under_review',
+  'hidden',
+] as const
+export type ModerationStatus = (typeof moderationStatuses)[number]
+
+export interface ProjectComment {
+  id: string
+  projectId: ProjectId
+  authorUserId: UserId
+  category: CommentCategory
+  body: string
+  parentId: string | null
+  moderationStatus: ModerationStatus
+  reportCount: number
+  createdAt: string
+}
+
+export interface UserAssets {
+  userId: UserId
+  favoriteProjectIds: ProjectId[]
+  followedProjectIds: ProjectId[]
+  recentProjectIds: ProjectId[]
+  comparisonSessionIds: ComparisonSessionId[]
+  decisionRecordIds: DecisionRecordId[]
+  submissionDraftIds: SubmissionDraftId[]
+  verificationRequestIds: VerificationRequestId[]
+  notificationIds: NotificationId[]
+}
+
 export function isTerminalAccessStatus(status: AccessStatus) {
   return status === 'paused' || status === 'ended'
 }

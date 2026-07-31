@@ -48,6 +48,9 @@ interface ProjectSeed {
   statusNote?: string | null
   historicalUrls?: Project['historicalUrls']
   unknownFields?: Array<'modelsUsed' | 'techStack' | 'developmentCycle'>
+  versionKeys?: string[]
+  eventKeys?: string[]
+  relationKeys?: string[]
 }
 
 function makeProject(seed: ProjectSeed): Project {
@@ -124,10 +127,10 @@ function makeProject(seed: ProjectSeed): Project {
     lastVerifiedAt: seed.lastVerifiedAt,
     maintenanceSignal: seed.accessStatus === 'ended' ? 'no_public_change' : 'page_updated',
     statusNote: knownFact(seed.statusNote ?? null, factOptions),
-    versionIds: [],
-    eventIds: [],
+    versionIds: (seed.versionKeys ?? []).map((key) => key as Project['versionIds'][number]),
+    eventIds: (seed.eventKeys ?? []).map((key) => key as Project['eventIds'][number]),
     assetIds: (seed.assetKeys ?? []).map(assetId),
-    relationIds: [],
+    relationIds: (seed.relationKeys ?? []).map((key) => key as Project['relationIds'][number]),
     creatorIds: seed.creatorIds,
     recordSource: seed.recordSource,
     authorLinkStatus: seed.authorLinkStatus,
@@ -165,6 +168,9 @@ export const projects: Project[] = [
     assetKeys: ['asset-quizforge-source'],
     repositoryUrl: 'https://example.test/repos/quizforge',
     aiTools: ['cursor', 'claude_code'],
+    versionKeys: ['version-quizforge-1-1'],
+    eventKeys: ['event-quizforge-first', 'event-quizforge-v11', 'event-quizforge-asset'],
+    relationKeys: ['relation-quizforge-pdfquizlab', 'relation-quizforge-papertopractice'],
   }),
   makeProject({
     id: 'project-pdfquizlab',
@@ -186,6 +192,8 @@ export const projects: Project[] = [
     completeness: 'partial',
     assetKeys: ['asset-pdfquiz-template'],
     unknownFields: ['modelsUsed', 'developmentCycle'],
+    eventKeys: ['event-pdfquizlab-first'],
+    relationKeys: ['relation-quizforge-pdfquizlab'],
   }),
   makeProject({
     id: 'project-papertopractice',
@@ -207,6 +215,8 @@ export const projects: Project[] = [
     completeness: 'complete',
     statusNote: '图片识别演示偶发超时，文字 PDF 流程可用。',
     aiTools: ['lovable', 'cursor'],
+    eventKeys: ['event-papertopractice-abnormal'],
+    relationKeys: ['relation-quizforge-papertopractice'],
   }),
   makeProject({
     id: 'project-speakmirror',
@@ -228,6 +238,9 @@ export const projects: Project[] = [
     completeness: 'complete',
     assetKeys: ['asset-speakmirror-prompt'],
     aiTools: ['codex'],
+    versionKeys: ['version-speakmirror-2'],
+    eventKeys: ['event-speakmirror-first', 'event-speakmirror-v2', 'event-speakmirror-asset'],
+    relationKeys: ['relation-speakmirror-oralaiexam', 'relation-speakmirror-echoscore'],
   }),
   makeProject({
     id: 'project-oralaiexam',
@@ -248,6 +261,8 @@ export const projects: Project[] = [
     creatorIds: [creatorId('creator-mu')],
     completeness: 'complete',
     aiTools: ['bolt'],
+    eventKeys: ['event-oralaiexam-first'],
+    relationKeys: ['relation-speakmirror-oralaiexam'],
   }),
   makeProject({
     id: 'project-echoscore',
@@ -270,6 +285,8 @@ export const projects: Project[] = [
     assetKeys: ['asset-echoscore-component'],
     repositoryUrl: 'https://example.test/repos/echoscore-recorder',
     statusNote: '作者已确认产品实验结束，开放组件继续维护。',
+    eventKeys: ['event-echoscore-ended', 'event-echoscore-asset'],
+    relationKeys: ['relation-speakmirror-echoscore'],
   }),
   makeProject({
     id: 'project-lexideck',
@@ -292,6 +309,8 @@ export const projects: Project[] = [
     assetKeys: ['asset-lexideck-source'],
     repositoryUrl: 'https://example.test/repos/lexideck',
     aiTools: ['replit'],
+    versionKeys: ['version-lexideck-1-2'],
+    eventKeys: ['event-lexideck-v12', 'event-lexideck-asset'],
   }),
   makeProject({
     id: 'project-dictaflow',
@@ -313,6 +332,7 @@ export const projects: Project[] = [
     completeness: 'partial',
     statusNote: '旧地址发生重定向，新地址身份仍待确认。',
     historicalUrls: [{ url: 'https://example.test/old/dictaflow', effectiveFrom: '2026-03-01', effectiveTo: null }],
+    eventKeys: ['event-dictaflow-redirect'],
   }),
   makeProject({
     id: 'project-mistakeloop',
@@ -333,6 +353,7 @@ export const projects: Project[] = [
     creatorIds: [creatorId('creator-lin')],
     completeness: 'complete',
     aiTools: ['v0', 'codex'],
+    eventKeys: ['event-mistakeloop-first'],
   }),
   makeProject({
     id: 'project-mocksprint',
@@ -353,6 +374,7 @@ export const projects: Project[] = [
     creatorIds: [creatorId('creator-han')],
     completeness: 'complete',
     statusNote: '作者声明暂时暂停新功能开发，现有演示仍可访问。',
+    eventKeys: ['event-mocksprint-paused'],
   }),
   makeProject({
     id: 'project-dailydrill',
@@ -374,6 +396,7 @@ export const projects: Project[] = [
     completeness: 'partial',
     statusNote: '连续检查后公开地址仍无法解析，停止原因未知。',
     unknownFields: ['modelsUsed', 'techStack', 'developmentCycle'],
+    eventKeys: ['event-dailydrill-abnormal'],
   }),
   makeProject({
     id: 'project-learntrack',
@@ -396,6 +419,7 @@ export const projects: Project[] = [
     freshness: 'expired',
     statusNote: '仅能确认作品曾公开，当前状态和技术信息待验证。',
     unknownFields: ['modelsUsed', 'techStack', 'developmentCycle'],
+    eventKeys: ['event-learntrack-first'],
   }),
 ]
 

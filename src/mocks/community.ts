@@ -1,0 +1,48 @@
+import { projectId, userId, type ProjectComment } from '../types'
+
+export const comments: ProjectComment[] = [
+  {
+    id: 'comment-quizforge-usage',
+    projectId: projectId('project-quizforge'),
+    authorUserId: userId('user-mia'),
+    category: 'usage_feedback',
+    body: 'PDF 章节较长时，先拆成小节再生成题目更容易检查。',
+    parentId: null,
+    moderationStatus: 'visible',
+    reportCount: 0,
+    createdAt: '2026-07-29T10:00:00+08:00',
+  },
+  {
+    id: 'comment-speakmirror-development',
+    projectId: projectId('project-speakmirror'),
+    authorUserId: userId('user-editor'),
+    category: 'development_question',
+    body: '分项评分在短录音场景下是否也使用相同权重？',
+    parentId: null,
+    moderationStatus: 'visible',
+    reportCount: 0,
+    createdAt: '2026-07-28T16:00:00+08:00',
+  },
+  {
+    id: 'comment-echoscore-reuse',
+    projectId: projectId('project-echoscore'),
+    authorUserId: userId('user-mia'),
+    category: 'reuse_feedback',
+    body: '录音回放组件仍能独立运行，适合作为口语原型的基础。',
+    parentId: null,
+    moderationStatus: 'visible',
+    reportCount: 0,
+    createdAt: '2026-07-20T11:00:00+08:00',
+  },
+  {
+    id: 'comment-promo-collapsed',
+    projectId: projectId('project-pdfquizlab'),
+    authorUserId: userId('user-editor'),
+    category: 'status_update',
+    body: '与作品无关的推广示例。',
+    parentId: null,
+    moderationStatus: 'collapsed',
+    reportCount: 3,
+    createdAt: '2026-07-19T11:00:00+08:00',
+  },
+]
