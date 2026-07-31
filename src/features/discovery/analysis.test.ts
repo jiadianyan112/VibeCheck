@@ -35,4 +35,11 @@ describe('discovery analysis', () => {
     expect(result.representative?.project.id).toBe('project-quizforge')
     expect(result.representative?.reason).toContain('公开复用资产 1 项')
   })
+
+  it('keeps relaxed matches separate and explains the missing strict dimensions', () => {
+    const result = buildDiscoveryAnalysis(projects, reusableAssets, pdfIntent)
+    expect(result.relaxedProjects[0]?.project.id).toBe('project-pdfquizlab')
+    expect(result.relaxedProjects[0]?.reason).toContain('但未满足全部意图维度')
+    expect(result.exactProjects.some(({ id }) => id === result.relaxedProjects[0]?.project.id)).toBe(false)
+  })
 })

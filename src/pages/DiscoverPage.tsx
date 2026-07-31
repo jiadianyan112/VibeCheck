@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, LoadingState, Tag } from '../components'
 import { IntentEditor } from '../features'
 import { intentService, type IntentParseResult, type ServiceError } from '../services'
@@ -32,7 +32,12 @@ export function DiscoverPage() {
     setLoading(true)
     intentService.parse(idea, { scenario: state.serviceScenario }).then((result) => {
       if (!active) return
-      if (!result.ok) setError(result.error)
+      if (!result.ok) {
+        setError(result.error)
+        setParseResult(null)
+        setIntent((current) => current.originalQuery === idea ? current : emptyIntent(idea))
+        setReadyToPersist(true)
+      }
       else {
         const parsed = result.data
         setParseResult(parsed); setOriginalIntent(parsed.intent); setError(null)
@@ -63,7 +68,7 @@ export function DiscoverPage() {
       <header className="page-intro stack stack--small"><p className="eyebrow">Find similar</p><h1>先确认你要解决的问题</h1><p>系统只按固定规则拆解文本。请修正标签后再严格筛选，原始想法不会被改写。</p></header>
       <section className="idea-input-panel stack"><label className="field"><span className="field__label">完整产品想法</span><textarea className="input textarea" rows={4} value={draftText} onChange={(event) => setDraftText(event.target.value)} placeholder="例如：我想把大学 PDF 讲义生成选择题和简答题" /></label><div className="cluster"><Button variant="primary" disabled={!draftText.trim()} onClick={beginParse}>{idea ? '重新解析这段文本' : '解析并确认'}</Button>{idea ? <Button variant="quiet" onClick={() => { setDraftText(''); navigate('/discover') }}>清空</Button> : null}</div></section>
 
-      {loading ? <LoadingState label="意图解析中，同时可返回关键词搜索" /> : error ? <ErrorPanel message={error.message} detail={error.code} onRetry={beginParse} /> : idea && parseResult ? <section className="stack">
+      {loading ? <LoadingState label="意图解析中，同时可返回关键词搜索" /> : error ? <section className="stack"><ErrorPanel message={error.message} detail={error.code} onRetry={beginParse} /><aside className="fallback-panel stack"><h2>自动解析暂不可用，原始文本已保留</h2><p>可以先看关键词结果，或在下方手工补充标签；两条路径都不会伪造解析结果。</p><div className="cluster"><Link className="button" to={`/search?q=${encodeURIComponent(idea)}&mode=works`}>查看关键词结果</Link><a className="button button--quiet" href="#manual-intent">改用手工标签</a></div><div id="manual-intent"><IntentEditor value={intent} onChange={setIntent} /></div><Button variant="primary" disabled={!hasAnyIntent(intent)} onClick={confirm}>使用手工标签查看同类</Button>{!hasAnyIntent(intent) ? <p className="field__error" role="alert">请至少添加一个标签后继续。</p> : null}</aside></section> : idea && parseResult ? <section className="stack">
         <div className={`parse-notice parse-notice--${parseResult.status}`} role="status"><div className="cluster"><Tag tone={parseResult.confidence === 'high' ? 'default' : 'dashed'}>{confidenceText}</Tag><strong>{parseResult.status === 'failed' ? '自动解析失败' : parseResult.status === 'partial' ? '只识别出部分字段' : '自动解析完成'}</strong></div><p>{parseResult.message}</p>{parseResult.matchedRules.length ? <p>命中规则：{parseResult.matchedRules.join('、')}</p> : null}</div>
         <IntentEditor value={intent} onChange={setIntent} />
         <div className="cluster cluster--between"><Button onClick={() => setIntent(originalIntent)}>恢复原始解析</Button><div className="cluster"><Button variant="quiet" onClick={() => navigate(`/search?q=${encodeURIComponent(idea)}&mode=similar`)}>先看关键词结果</Button><Button variant="primary" disabled={!hasAnyIntent(intent)} onClick={confirm}>确认并查看同类分析</Button></div></div>

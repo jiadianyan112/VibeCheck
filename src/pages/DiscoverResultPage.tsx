@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, Tabs, Tag } from '../components'
-import { buildDiscoveryAnalysis, useComparison } from '../features'
+import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, Tabs, Tag, useToast } from '../components'
+import { buildDiscoveryAnalysis, categoryCatalog, useComparison } from '../features'
 import { projectService, type ServiceError } from '../services'
 import { useAppState } from '../state'
 import type { AccessStatus, AssetType, ComparisonIntent, InputType, OutputType, PracticeFormat, Project, ReusableAsset, TargetUser, UseScenario } from '../types'
@@ -29,12 +29,12 @@ export function DiscoverResultPage() {
   const [params, setParams] = useSearchParams()
   const { state, dispatch } = useAppState()
   const { addProject } = useComparison()
+  const { pushToast } = useToast()
   const [projects, setProjects] = useState<Project[]>([])
   const [assets, setAssets] = useState<ReusableAsset[]>([])
   const [error, setError] = useState<ServiceError | null>(null)
   const [loading, setLoading] = useState(true)
   const intent = useMemo(() => intentFromParams(params), [params])
-  const view = (params.get('view') as ResultView | null) ?? 'analysis'
 
   useEffect(() => {
     let active = true
@@ -57,6 +57,11 @@ export function DiscoverResultPage() {
   }, [state.serviceScenario])
 
   const analysis = useMemo(() => buildDiscoveryAnalysis(projects, assets, intent), [assets, intent, projects])
+  const view = (params.get('view') as ResultView | null) ?? (analysis.exactProjects.length < 3 ? 'works' : 'analysis')
+  const adjacentCategories = useMemo(() => categoryCatalog.map((category) => ({
+    category,
+    score: (intent.useScenarios.includes(category.scenario) ? 3 : 0) + (category.requirePdf && intent.inputs.includes('pdf') ? 1 : 0),
+  })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score || a.category.slug.localeCompare(b.category.slug)).slice(0, 3), [intent.inputs, intent.useScenarios])
   const assetsByProject = useMemo(() => new Map(analysis.exactProjects.map((project) => [project.id, assets.filter((asset) => asset.projectId === project.id)])), [analysis.exactProjects, assets])
   const filteredProjects = useMemo(() => {
     const status = params.get('status') as AccessStatus | null
@@ -87,6 +92,24 @@ export function DiscoverResultPage() {
     else addProject(project.id)
   }
 
+  function clearResultFilters() {
+    const next = new URLSearchParams(params)
+    next.delete('status'); next.delete('asset')
+    setParams(next, { replace: true })
+  }
+
+  function saveQuery() {
+    const key = 'vibecheck:saved-discovery-queries'
+    let saved: string[] = []
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown
+      if (Array.isArray(stored) && stored.every((item) => typeof item === 'string')) saved = stored
+    } catch { /* discard a malformed prototype-only saved-query value */ }
+    const path = `/discover/result?${params}`
+    localStorage.setItem(key, JSON.stringify([...new Set([...saved, path])]))
+    pushToast('已保存这次查询，可用相同 URL 恢复。', 'success')
+  }
+
   if (loading) return <main className="page-container"><LoadingState label="同类作品与资产统计中" /></main>
   if (error) return <main className="page-container"><ErrorPanel message={error.message} detail={error.code} /></main>
 
@@ -111,14 +134,21 @@ export function DiscoverResultPage() {
         <div className="cluster">
           {params.get('status') ? <Tag tone="dashed">状态：{accessStatusText[params.get('status') as AccessStatus]}</Tag> : null}
           {params.get('asset') ? <Tag tone="dashed">资产：{assetLabels[params.get('asset') as AssetType | 'none']}</Tag> : null}
-          {(params.get('status') || params.get('asset')) ? <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('status'); next.delete('asset'); setParams(next, { replace: true }) }}>清除统计筛选</Button> : null}
+          {(params.get('status') || params.get('asset')) ? <Button variant="quiet" onClick={clearResultFilters}>清除统计筛选</Button> : null}
         </div>
       </div>
 
       {view === 'works' ? (
         <section className="analysis-works stack">
-          <div className="cluster cluster--between"><h2>精确匹配作品</h2><strong aria-live="polite">{filteredProjects.length} 个结果</strong></div>
-          {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : <EmptyState title="当前统计筛选下没有作品" description="清除状态或资产筛选即可回到完整精确结果。" action={<Button onClick={() => { const next = new URLSearchParams(params); next.delete('status'); next.delete('asset'); setParams(next, { replace: true }) }}>清除统计筛选</Button>} />}
+          <div className="result-tier result-tier--exact stack"><div className="cluster cluster--between"><div><Tag tone="strong">精确匹配</Tag><h2>精确匹配作品</h2></div><strong aria-live="polite">{filteredProjects.length} 个结果</strong></div>
+            {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : analysis.exactProjects.length ? <EmptyState title="当前筛选下没有精确作品" description="精确结果仍在，只是被状态或资产筛选隐藏。" action={<Button onClick={clearResultFilters}>清除筛选</Button>} /> : <EmptyState title="当前固定数据中没有精确匹配" description="这只说明当前收录样本未命中，不代表需求不存在。" />}
+          </div>
+
+          {analysis.exactProjects.length > 0 && analysis.exactProjects.length < 3 ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">放宽匹配</Tag><h2>相近作品</h2><p>精确结果少于 3 个，因此补充只命中部分维度的作品；它们不会计入上方精确数量。</p></div>{analysis.relaxedProjects.length ? <div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>放宽原因：</strong>{reason}</p><ProjectCard project={project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div> : <EmptyState title="没有可解释的放宽结果" description="原型不会为了凑足数量补造作品。" />}</div> : null}
+
+          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相邻分类</Tag><h2>从相邻问题继续探索</h2><p>这些入口依据已确认场景与输入映射到分类，不属于精确结果。</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>进入相邻分类 →</Link></article>)}</div> : <EmptyState title="暂无可映射的相邻分类" description="可返回意图确认页手工调整标签。" />}
+            <div className="cluster"><Link className="button" to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>修改条件</Link><Button onClick={clearResultFilters}>清除筛选</Button><Button variant="primary" onClick={saveQuery}>保存查询</Button><Link className="button button--quiet" to="/projects">回到作品广场</Link></div>
+          </div> : null}
         </section>
       ) : (
         <div className="stack">

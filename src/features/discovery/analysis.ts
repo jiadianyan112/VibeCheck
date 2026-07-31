@@ -32,6 +32,7 @@ export interface SolutionGroup {
 
 export interface DiscoveryAnalysis {
   exactProjects: Project[]
+  relaxedProjects: Array<{ project: Project; matchedDimensions: number; reason: string }>
   solutionGroups: SolutionGroup[]
   statusDistribution: AnalysisDistribution<string>[]
   assetDistribution: AnalysisDistribution<AssetType | 'none'>[]
@@ -44,6 +45,22 @@ export function buildDiscoveryAnalysis(
   intent: ComparisonIntent,
 ): DiscoveryAnalysis {
   const exactProjects = projects.filter((project) => projectMatchesIntent(project, intent))
+  const relaxedProjects = projects
+    .filter((project) => !exactProjects.includes(project))
+    .map((project) => {
+      const dimensions = [
+        ['目标用户', values(project.targetUsers), intent.targetUsers],
+        ['使用场景', values(project.useScenarios), intent.useScenarios],
+        ['材料输入', values(project.mainInputs), intent.inputs],
+        ['练习形式', values(project.practiceFormats), intent.practiceFormats],
+        ['主要输出', values(project.mainOutputs), intent.outputs],
+      ] as Array<[string, string[], string[]]>
+      const matched = dimensions.filter(([, actual, expected]) => expected.length > 0 && dimensionMatches(actual, expected)).map(([label]) => label)
+      return { project, matchedDimensions: matched.length, reason: matched.length ? `命中${matched.join('、')}，但未满足全部意图维度。` : '未命中已确认维度。' }
+    })
+    .filter(({ matchedDimensions }) => matchedDimensions > 0)
+    .sort((a, b) => b.matchedDimensions - a.matchedDimensions || b.project.lastVerifiedAt.localeCompare(a.project.lastVerifiedAt) || a.project.id.localeCompare(b.project.id))
+    .slice(0, 4)
   const exactIds = new Set(exactProjects.map(({ id }) => id))
   const assetsByProject = new Map<ProjectId, ReusableAsset[]>()
   assets.filter((asset) => exactIds.has(asset.projectId)).forEach((asset) => {
@@ -84,6 +101,7 @@ export function buildDiscoveryAnalysis(
 
   return {
     exactProjects,
+    relaxedProjects,
     solutionGroups: [...groupMap.values()].sort((a, b) => b.projectIds.length - a.projectIds.length || a.id.localeCompare(b.id)),
     statusDistribution: [...statusMap].map(([key, projectIds]) => ({ key, count: projectIds.length, projectIds })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
     assetDistribution: [...assetMap].map(([key, projectIds]) => ({ key, count: projectIds.length, projectIds })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),

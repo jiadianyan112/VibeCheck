@@ -978,6 +978,32 @@ textarea {
   min-height: 10rem;
 }
 
+.result-tier {
+  padding: var(--space-5);
+  border: 1px solid var(--color-line-strong);
+}
+
+.result-tier--exact {
+  background: var(--color-surface-raised);
+}
+
+.result-tier--relaxed,
+.result-tier--adjacent,
+.fallback-panel {
+  background: var(--color-surface-muted);
+  border-style: dashed;
+}
+
+.relaxed-hit {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.relaxed-hit > p {
+  margin: 0;
+  color: var(--color-ink-muted);
+}
+
 .stat-trace {
   display: grid;
   grid-template-columns: minmax(12rem, 1fr) auto;

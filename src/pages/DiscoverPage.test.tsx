@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { AppStateProvider } from '../state'
+import { AppStateProvider, createInitialAppState, persistAppState } from '../state'
 import { DiscoverPage } from './DiscoverPage'
 
 function Destination() { const location = useLocation(); return <output aria-label="结果地址">{location.pathname}{location.search}</output> }
@@ -41,5 +41,15 @@ describe('DiscoverPage', () => {
     expect(screen.getByRole('button', { name: '确认并查看同类分析' })).toBeEnabled()
     view.unmount(); renderDiscover(path)
     expect(await screen.findByRole('button', { name: '删除使用场景：日常刷题' })).toBeInTheDocument()
+  })
+
+  it('offers keyword and manual-tag exits when parsing times out', async () => {
+    const seeded = createInitialAppState(); seeded.serviceScenario = 'timeout'; persistAppState(seeded)
+    const user = userEvent.setup(); renderDiscover('/discover?idea=%E4%B8%80%E4%B8%AA%E5%8F%A3%E8%AF%AD%E7%BB%83%E4%B9%A0%E6%83%B3%E6%B3%95')
+    expect(await screen.findByRole('heading', { name: '自动解析暂不可用，原始文本已保留' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看关键词结果' })).toHaveAttribute('href', '/search?q=%E4%B8%80%E4%B8%AA%E5%8F%A3%E8%AF%AD%E7%BB%83%E4%B9%A0%E6%83%B3%E6%B3%95&mode=works')
+    expect(screen.getByRole('button', { name: '使用手工标签查看同类' })).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('添加使用场景'), 'speaking_mock_exam')
+    expect(screen.getByRole('button', { name: '使用手工标签查看同类' })).toBeEnabled()
   })
 })
