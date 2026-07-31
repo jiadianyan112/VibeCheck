@@ -591,6 +591,8 @@ export interface ComparisonSession {
 export interface SubmissionProjectFields {
   currentName: string
   publicUrl: string
+  screenshotUrl: string | null
+  accessStatus: AccessStatus
   repositoryUrl: string | null
   oneLineDefinition: string
   targetUsers: TargetUser[]

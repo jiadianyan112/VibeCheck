@@ -1044,6 +1044,121 @@ textarea {
   justify-self: start;
 }
 
+.submission-form-layout {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+  margin-top: var(--space-8);
+}
+
+.submission-progress {
+  position: sticky;
+  top: 6rem;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  padding: var(--space-4);
+}
+
+.submission-percent {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.submission-progress progress {
+  width: 100%;
+  accent-color: var(--color-ink);
+}
+
+.submission-progress ol {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.submission-progress li {
+  border-left: 3px solid var(--color-line);
+  padding: var(--space-2) var(--space-3);
+}
+
+.submission-progress li[aria-current='step'] {
+  border-left-color: var(--color-ink);
+  background: var(--color-canvas);
+  font-weight: 800;
+}
+
+.submission-progress li.is-complete::after {
+  margin-left: var(--space-2);
+  content: '✓';
+}
+
+.submission-progress code {
+  overflow-wrap: anywhere;
+}
+
+.submission-form-panel {
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised);
+  padding: var(--space-6);
+}
+
+.submission-guidance {
+  border-left: 4px solid var(--color-ink);
+  background: var(--color-surface);
+  padding: var(--space-4);
+}
+
+.submission-guidance p {
+  margin-top: var(--space-1);
+  color: var(--color-muted);
+}
+
+.original-extraction {
+  margin-top: var(--space-2);
+  border-left: 2px solid var(--color-line);
+  padding-left: var(--space-3);
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.original-extraction--missing {
+  border-left-style: dashed;
+}
+
+.submission-choice-field {
+  margin: 0;
+  border: 1px solid var(--color-line-strong);
+  padding: var(--space-4);
+}
+
+.submission-choice-field legend {
+  padding: 0 var(--space-2);
+  font-weight: 800;
+}
+
+.submission-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.submission-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.submission-step-actions {
+  position: sticky;
+  bottom: 0;
+  border-top: 2px solid var(--color-ink);
+  background: var(--color-canvas);
+  padding-top: var(--space-4);
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -1133,7 +1248,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }
@@ -1190,6 +1305,7 @@ textarea {
   .decision-complete { margin-bottom: 8rem; }
   .submission-url-panel { position: static; }
   .duplicate-summary div { grid-template-columns: 1fr; gap: var(--space-1); }
+  .submission-progress { position: static; }
 
   .placeholder-layout {
     grid-template-columns: 1fr;

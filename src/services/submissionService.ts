@@ -104,11 +104,13 @@ export const submissionService = {
         publicUrl: url,
         currentName: '自动提取的作品名称',
         oneLineDefinition: '从公开页面提取的作品说明，需作者确认。',
+        screenshotUrl: partial ? null : 'https://example.test/assets/extracted-cover.png',
+        accessStatus: 'normal',
         repositoryUrl: partial ? undefined : 'https://example.test/repos/extracted-project',
       }
       return {
         fields,
-        failedFields: partial ? ['repositoryUrl', 'oneLineDefinition'] : [],
+        failedFields: partial ? ['repositoryUrl', 'screenshotUrl'] : [],
       } satisfies ExtractionResult
     })
   },

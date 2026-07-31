@@ -1,4 +1,4 @@
-import type { AccessStatus, FeedbackMethod, InputType, LifecycleEventType, PracticeFormat, TargetUser, UseScenario } from '../types'
+import type { AccessStatus, AiCodingTool, FeedbackMethod, InputType, LifecycleEventType, OutputType, PracticeFormat, TargetUser, UseScenario } from '../types'
 
 export const targetUserLabels: Record<TargetUser, string> = {
   primary_students: '小学生', secondary_students: '中学生', university_students: '大学生', language_learners: '语言学习者', professional_exam_candidates: '职业考试备考者', teachers: '教师', enterprise_learners: '企业学习者', other: '其他',
@@ -9,11 +9,17 @@ export const scenarioLabels: Record<UseScenario, string> = {
 export const inputTypeLabels: Record<InputType, string> = {
   pdf: 'PDF', word: 'Word', ppt: 'PPT', image: '图片', webpage: '网页', plain_text: '纯文本', audio: '音频', video: '视频', preset_question_bank: '预设题库', manual_entry: '手动输入',
 }
+export const outputTypeLabels: Record<OutputType, string> = {
+  questions: '题目', practice_set: '练习集', exam: '试卷', score: '评分', answer_explanation: '答案解析', learning_report: '学习报告', mistake_set: '错题集', flashcards: '闪卡',
+}
 export const practiceFormatLabels: Record<PracticeFormat, string> = {
   single_choice: '单选题', multiple_choice: '多选题', true_false: '判断题', fill_blank: '填空题', short_answer: '简答题', flashcard: '闪卡', dictation: '听写', spoken_response: '口语作答', full_mock_exam: '整套模考',
 }
 export const feedbackMethodLabels: Record<FeedbackMethod, string> = {
   correctness: '对错反馈', answer_explanation: '答案解析', knowledge_explanation: '知识点解释', ai_follow_up: 'AI 追问', scoring: '评分', mistake_book: '错题本', learning_suggestion: '学习建议',
+}
+export const aiCodingToolLabels: Record<AiCodingTool, string> = {
+  cursor: 'Cursor', lovable: 'Lovable', bolt: 'Bolt', v0: 'v0', replit: 'Replit', claude_code: 'Claude Code', codex: 'Codex', other: '其他', unknown: '未知',
 }
 export const accessStatusText: Record<AccessStatus, string> = {
   normal: '正常可访问', login_required: '需要登录', pending_recheck: '等待复检', partial_abnormal: '部分异常', link_unavailable: '链接不可用', suspected_migration: '疑似迁移', paused: '已暂停', ended: '已结束', recovered: '已恢复', unknown: '未知',

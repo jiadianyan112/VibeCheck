@@ -56,6 +56,8 @@ describe('submission entry and URL checks', () => {
     await user.click(screen.getByRole('button', { name: '保存地址草稿' }))
     await user.click(screen.getByRole('button', { name: '草稿已保存' }))
     await waitFor(() => expect(persistedDrafts()).toHaveLength(1))
+    await user.click(screen.getByRole('button', { name: '继续自动预填' }))
+    expect(await screen.findByRole('heading', { name: '发布新作品' })).toBeInTheDocument()
   })
 
   it('does not create a draft for an invalid URL', async () => {

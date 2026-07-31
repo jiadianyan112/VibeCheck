@@ -71,7 +71,7 @@ describe('typed prototype services', () => {
     })
     expect(extraction).toMatchObject({
       ok: true,
-      data: { failedFields: ['repositoryUrl', 'oneLineDefinition'] },
+      data: { failedFields: ['repositoryUrl', 'screenshotUrl'] },
     })
     const draft = await submissionService.getDraft(
       submissionDraftId('draft-mia-study-review'),

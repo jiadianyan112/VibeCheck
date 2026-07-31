@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, PageFrame, useToast } from '../components'
 import { canContinueAfterUrlCheck, createUrlCheckDraft, duplicateDetailPath, duplicateVerificationPath, getDuplicateProjectSummary, urlCheckLabels } from '../features'
 import {
@@ -37,6 +37,7 @@ function scenarioFromQuery(value: string | null): ServiceScenarioId | null {
 export function SubmitEntryPage() {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryScenario = scenarioFromQuery(searchParams.get('scenario'))
   const scenario = queryScenario ?? state.serviceScenario
@@ -125,6 +126,13 @@ export function SubmitEntryPage() {
     dispatch({ type: 'DRAFT_UPSERT', draft })
     setSavedDraftId(draft.id)
     pushToast('地址检查草稿已保存。', 'success')
+  }
+
+  const continueNewSubmission = () => {
+    if (!result || !allPassed || !state.session.user) return
+    const draft = { ...createUrlCheckDraft(result, state.session.user.id), step: 'prefill' as const }
+    dispatch({ type: 'DRAFT_UPSERT', draft })
+    navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: 'prefill' })}`)
   }
 
   const allPassed = result ? canContinueAfterUrlCheck(result) : false
@@ -241,10 +249,11 @@ export function SubmitEntryPage() {
               <strong>{allPassed ? '地址检查通过' : result.canCreateDraft ? '检查未完全通过，可先保存草稿' : '当前地址不能创建发布草稿'}</strong>
               <div className="cluster">
                 {result.canCreateDraft ? <Button type="button" onClick={saveDraft}>{savedDraftId ? '草稿已保存' : '保存地址草稿'}</Button> : null}
+                {allPassed ? <Button type="button" variant="primary" onClick={continueNewSubmission}>继续自动预填</Button> : null}
                 {!allPassed ? <Button type="button" variant="primary" disabled>继续发布</Button> : null}
               </div>
               {savedDraftId ? <p>草稿编号：<code>{savedDraftId}</code>。重复保存会更新同一条草稿。</p> : null}
-              {allPassed ? <p>下一任务 T37 将根据查重结果接入后续分流；此处不提前创建分支页。</p> : null}
+              {allPassed ? <p>检查通过后进入分步编辑；重复作品仍只能查看已有档案或进入低频验证分支。</p> : null}
             </div>
           ) : null}
         </section>
