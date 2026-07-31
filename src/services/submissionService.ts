@@ -1,4 +1,5 @@
 import { projects, submissionDrafts } from '../mocks'
+import { applySubmissionReview } from '../features/submission/review'
 import {
   projectId,
   type ProjectId,
@@ -127,7 +128,10 @@ export const submissionService = {
       if (options?.scenario === 'review_changes_requested') status = 'changes_requested'
       if (options?.scenario === 'review_approved') status = 'approved'
       if (options?.scenario === 'review_rejected') status = 'rejected'
-      return { ...draft, status, submittedAt: '2026-07-31T10:30:00+08:00' }
+      return applySubmissionReview(
+        draft,
+        status as Extract<ReviewStatus, 'pending_review' | 'changes_requested' | 'approved' | 'rejected'>,
+      )
     })
   },
 }

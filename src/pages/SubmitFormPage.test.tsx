@@ -23,9 +23,15 @@ function seedDraft() {
     duplicateProjectId: null,
     validationErrors: {},
     reviewMessages: {},
+    submittedFields: null,
+    submittedAssetIds: [],
+    supplementalMaterial: '',
+    publishedProjectId: null,
+    publishedEventId: null,
     createdAt: '2026-07-31T10:00:00+08:00',
     updatedAt: '2026-07-31T10:00:00+08:00',
     submittedAt: null,
+    withdrawnAt: null,
   }
   state = appReducer(state, { type: 'DRAFT_UPSERT', draft })
   persistAppState(state)
@@ -81,11 +87,11 @@ describe('new project multi-step submission form', () => {
     expect(screen.getByText('100%', { selector: '.submission-percent' })).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: /Codex/ }))
     await user.click(screen.getByRole('checkbox', { name: /PDF 题库页面模板/ }))
-    await user.click(screen.getByRole('button', { name: '保存完整草稿' }))
-    expect(await screen.findByText('结构化草稿已保存')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '保存并预览' }))
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
 
     await waitFor(() => expect(persistedDraft()).toMatchObject({
-      step: 'development',
+      step: 'preview',
       fields: {
         currentName: '五分钟发布测试',
         screenshotUrl: 'https://example.test/changed-cover.png',

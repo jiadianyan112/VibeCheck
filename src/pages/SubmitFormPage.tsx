@@ -13,6 +13,7 @@ import {
 import { reusableAssets } from '../mocks'
 import { submissionService, type ServiceError } from '../services'
 import { useAppState } from '../state'
+import { SubmissionReviewPage } from './SubmissionReviewPage'
 import {
   accessStatuses,
   aiCodingTools,
@@ -163,7 +164,6 @@ export function SubmitFormPage() {
   const step = parseStep(searchParams.get('step'), draft?.step ?? 'prefill')
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<ServiceError | null>(null)
-  const [finished, setFinished] = useState(false)
   const extractionFieldCount = draft ? Object.keys(draft.originalExtraction).length : 0
   const extractionUrl = draft?.fields.publicUrl ?? ''
 
@@ -185,6 +185,9 @@ export function SubmitFormPage() {
 
   if (!state.session.user) return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to="/auth?from=%2Fsubmit">返回登录</Link></section></PageFrame>
   if (!draft) return <PageFrame title="未找到发布草稿" description="草稿可能不存在、属于其他测试身份或已被清除。"><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
+  const requestedStep = searchParams.get('step')
+  const editingRequestedChanges = draft.status === 'changes_requested' && submissionFormSteps.includes(requestedStep as SubmissionFormStep)
+  if (requestedStep === 'preview' || (draft.status !== 'draft' && !editingRequestedChanges)) return <SubmissionReviewPage draft={draft} />
 
   const update = <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
   const updateAssets = (assetIds: AssetId[]) => dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, assetIds, updatedAt: '2026-07-31T10:15:00+08:00' } })
@@ -198,9 +201,9 @@ export function SubmitFormPage() {
       return
     }
     if (index === submissionFormSteps.length - 1) {
-      dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: 'development', validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
-      setFinished(true)
-      pushToast('完整发布草稿已保存。', 'success')
+      dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: 'preview', validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
+      pushToast('完整发布草稿已保存，请确认预览。', 'success')
+      navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: 'preview' })}`)
       return
     }
     const next = submissionFormSteps[index + 1]!
@@ -234,9 +237,8 @@ export function SubmitFormPage() {
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">
           <div className="cluster cluster--between"><div><p className="eyebrow">模块 {index + 2} / 5</p><h2 id="submission-step-heading">{submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><Tag tone="dashed">自动保存</Tag></div>
           {extractionError ? <ErrorPanel title="自动提取未完成" message={extractionError.message} onRetry={() => setExtractionError(null)} /> : null}
-          {finished ? <section className="feedback" role="status"><strong>结构化草稿已保存</strong><p>核心字段已完成；T39 将接入预览和提交审核状态。</p></section> : null}
           {body}
-          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" onClick={goNext}>{index === submissionFormSteps.length - 1 ? '保存完整草稿' : '保存并继续'}</Button></footer>
+          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" onClick={goNext}>{index === submissionFormSteps.length - 1 ? '保存并预览' : '保存并继续'}</Button></footer>
         </section>
       </div>
     </PageFrame>

@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
-import { useAuthGate, useComparison } from '../features'
+import { publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison } from '../features'
 import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { prototypeUsers } from '../mocks'
@@ -77,10 +77,27 @@ export function ProjectDetailPage() {
   const [commentCategory, setCommentCategory] = useState<CommentCategory>('usage_feedback')
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
+  const submittedBundle = useMemo<ProjectBundle | null>(() => {
+    const draft = state.submissionDrafts.find((item) => item.publishedProjectId === id && item.status === 'approved')
+    if (!draft) return null
+    const project = publishedProjectFromSubmission(draft)
+    const event = publishedEventFromSubmission(draft)
+    if (!project || !event) return null
+    return { project, relatedProjects: [], creators: [], events: [event], assets: [], relations: [], evidences: [] }
+  }, [id, state.submissionDrafts])
 
   useEffect(() => {
     let active = true
     setLoading(true)
+    if (submittedBundle) {
+      setBundle(submittedBundle)
+      setComments([])
+      setError(null)
+      setLoading(false)
+      dispatch({ type: 'RECENT_PROJECT_ADD', projectId: submittedBundle.project.id })
+      dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: submittedBundle.project.id }) })
+      return () => { active = false }
+    }
     Promise.all([
       projectService.getBundle(id as Project['id'], { scenario: state.serviceScenario }),
       communityService.listComments(id as Project['id'], { scenario: state.serviceScenario }),
@@ -95,7 +112,7 @@ export function ProjectDetailPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, id, state.serviceScenario])
+  }, [dispatch, id, state.serviceScenario, submittedBundle])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return

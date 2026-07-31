@@ -13,9 +13,15 @@ const baseDraft: SubmissionDraft = {
   duplicateProjectId: null,
   validationErrors: {},
   reviewMessages: {},
+  submittedFields: null,
+  submittedAssetIds: [],
+  supplementalMaterial: '',
+  publishedProjectId: null,
+  publishedEventId: null,
   createdAt: '2026-07-31T10:00:00+08:00',
   updatedAt: '2026-07-31T10:00:00+08:00',
   submittedAt: null,
+  withdrawnAt: null,
 }
 
 const extraction: ExtractionResult = {

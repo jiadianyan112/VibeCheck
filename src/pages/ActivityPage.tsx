@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { EmptyState, ErrorPanel, LoadingState, ProjectCard, Tag } from '../components'
-import { categoryCatalog, projectMatchesCategory } from '../features'
+import { categoryCatalog, projectMatchesCategory, publishedEventFromSubmission, publishedProjectFromSubmission } from '../features'
 import { projectService, type ServiceError } from '../services'
 import { useAppState } from '../state'
 import type { Evidence, LifecycleEvent, LifecycleEventType, Project } from '../types'
@@ -29,15 +29,18 @@ export function ActivityPage() {
     return () => { active = false }
   }, [state.serviceScenario])
 
-  const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+  const approvedSubmissions = useMemo(() => state.submissionDrafts.filter((draft) => draft.status === 'approved'), [state.submissionDrafts])
+  const allProjects = useMemo(() => [...projects, ...approvedSubmissions.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))], [approvedSubmissions, projects])
+  const allEvents = useMemo(() => [...events, ...approvedSubmissions.map(publishedEventFromSubmission).filter((event): event is LifecycleEvent => Boolean(event))], [approvedSubmissions, events])
+  const projectMap = useMemo(() => new Map(allProjects.map((project) => [project.id, project])), [allProjects])
   const filtered = useMemo(() => {
     const type = params.get('type') as LifecycleEventType | null
     const category = categoryCatalog.find((item) => item.slug === params.get('category'))
-    return events.filter((event) => {
+    return allEvents.filter((event) => {
       const project = projectMap.get(event.projectId)
       return (!type || event.type === type) && (!category || Boolean(project && projectMatchesCategory(project, category)))
     }).sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
-  }, [events, params, projectMap])
+  }, [allEvents, params, projectMap])
 
   function setFilter(key: string, value: string) { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next, { replace: true }) }
 

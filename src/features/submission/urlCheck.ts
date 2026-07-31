@@ -39,9 +39,15 @@ export function createUrlCheckDraft(
       ? { publicUrl: '首次访问检查超时，需重试通过后才能继续发布。' }
       : {},
     reviewMessages: {},
+    submittedFields: null,
+    submittedAssetIds: [],
+    supplementalMaterial: '',
+    publishedProjectId: null,
+    publishedEventId: null,
     createdAt: now,
     updatedAt: now,
     submittedAt: null,
+    withdrawnAt: null,
   }
 }
 

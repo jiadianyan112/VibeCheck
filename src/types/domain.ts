@@ -618,9 +618,16 @@ export interface SubmissionDraft {
   duplicateProjectId: ProjectId | null
   validationErrors: Record<string, string>
   reviewMessages: Record<string, string>
+  /** Immutable copy of the author-visible fields at the first submission. */
+  submittedFields: Partial<SubmissionProjectFields> | null
+  submittedAssetIds: AssetId[]
+  supplementalMaterial: string
+  publishedProjectId: ProjectId | null
+  publishedEventId: LifecycleEventId | null
   createdAt: string
   updatedAt: string
   submittedAt: string | null
+  withdrawnAt: string | null
 }
 
 export interface AuthorVerificationRequest {

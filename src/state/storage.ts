@@ -57,9 +57,19 @@ export function hydrateAppState(
     if (!raw) return fallback
     const persisted = JSON.parse(raw) as Partial<PersistedState>
     if (persisted.schemaVersion !== 1) return fallback
+    const submissionDrafts = (persisted.submissionDrafts ?? fallback.submissionDrafts).map((draft) => ({
+      ...draft,
+      submittedFields: draft.submittedFields ?? null,
+      submittedAssetIds: draft.submittedAssetIds ?? [],
+      supplementalMaterial: draft.supplementalMaterial ?? '',
+      publishedProjectId: draft.publishedProjectId ?? null,
+      publishedEventId: draft.publishedEventId ?? null,
+      withdrawnAt: draft.withdrawnAt ?? null,
+    }))
     return {
       ...fallback,
       ...persisted,
+      submissionDrafts,
       eventLog: [],
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,

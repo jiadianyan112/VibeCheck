@@ -1159,6 +1159,81 @@ textarea {
   padding-top: var(--space-4);
 }
 
+.submission-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.75fr) minmax(0, 1.25fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.submission-card-preview {
+  border: 2px solid var(--color-ink);
+  background: var(--color-surface-raised);
+  padding: var(--space-4);
+}
+
+.submission-card-preview__media {
+  min-height: 10rem;
+}
+
+.submission-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.submission-summary-grid div {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-2);
+}
+
+.submission-summary-grid dt {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.submission-summary-grid dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.submission-review-state {
+  border: 2px solid var(--color-ink);
+  padding: var(--space-5);
+}
+
+.submission-review-state--changes_requested,
+.submission-review-state--rejected {
+  border-style: dashed;
+}
+
+.submission-review-state--approved {
+  background: var(--color-surface-raised);
+}
+
+.review-message-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-message-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-3);
+}
+
+.submission-version summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -1248,7 +1323,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid, .submission-preview-grid, .submission-summary-grid { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }
