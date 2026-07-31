@@ -1,5 +1,6 @@
 import { createPrototypeEvent } from './eventLogger'
 import { addComparisonProject, createComparisonSession, mergeComparisonProjects, removeComparisonProject, reorderComparisonProject, replaceComparisonProject, saveComparisonSession, updateComparisonProjects } from '../features/comparison/session'
+import { completeDecisionDraft, deserializeDecisionDraft } from '../features/comparison/decision'
 import { comparisonSessionId } from '../types'
 import type { AppAction, AppState, PrototypeEvent } from './types'
 
@@ -161,6 +162,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
               projectId: pending.projectId,
             })
       }
+      if (pending.kind === 'decision' && state.session.user) {
+        const draft = deserializeDecisionDraft(pending.payload)
+        if (draft) nextState = appReducer(state, { type: 'DECISION_SAVE', decision: completeDecisionDraft(draft, state.session.user.id) })
+      }
       return {
         ...nextState,
         pendingAction: null,
@@ -171,20 +176,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const exists = state.decisionRecords.some(
         (decision) => decision.id === action.decision.id,
       )
+      if (exists) return state
+      const comparisonSessions = state.comparisonSessions.map((session) => session.id === action.decision.sessionId
+        ? { ...saveComparisonSession(session, action.decision.userId, action.decision.createdAt), decisionId: action.decision.id }
+        : session)
       return {
         ...state,
-        decisionRecords: exists
-          ? state.decisionRecords.map((decision) =>
-              decision.id === action.decision.id ? action.decision : decision,
-            )
-          : [...state.decisionRecords, action.decision],
-        eventLog: appendEvent(
-          state,
-          createPrototypeEvent('decision_submitted', {
+        comparisonSessions,
+        decisionRecords: [...state.decisionRecords, action.decision],
+        eventLog: appendEvent({ ...state, eventLog: appendEvent(state, createPrototypeEvent('decision_submitted', {
             decisionId: action.decision.id,
             action: action.decision.action,
-          }),
-        ),
+          })) }, createPrototypeEvent('comparison_completed', {
+            sessionId: action.decision.sessionId,
+            decisionId: action.decision.id,
+          })),
       }
     }
     case 'DRAFT_UPSERT': {

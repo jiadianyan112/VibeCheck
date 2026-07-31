@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, EmptyState, EvidenceDrawer, FreshnessLabel, Tag, UnknownFact, useToast } from '../components'
-import { buildComparisonMatrix, type ComparisonCell } from '../features'
+import { buildComparisonMatrix, DecisionForm, type ComparisonCell } from '../features'
 import { evidenceById, projectById, projects, reusableAssets } from '../mocks'
 import { useAppState } from '../state'
 import { comparisonSessionId, type ProjectId } from '../types'
@@ -200,6 +200,7 @@ export function CompareSessionPage() {
             <div className="section-heading"><p className="eyebrow">Reusable assets</p><h3 id="comparison-assets-heading">可复用资产快捷区</h3><p>资产状态、许可和价格独立于作品是否仍可访问。</p></div>
             {selectedAssets.length ? <div className="card-grid">{selectedAssets.map((asset) => <AssetCard key={asset.id} asset={asset} projectName={projectName(asset.projectId)} />)}</div> : <EmptyState title="所选作品暂无公开资产" description="这不代表作品没有技术实现，只表示当前档案没有可获取资产。" />}
           </section>
+          <DecisionForm session={session} assets={selectedAssets} />
         </section>
       ) : null}
 
