@@ -1040,6 +1040,77 @@ textarea {
   border: 1px solid var(--color-line-strong);
 }
 
+.current-status-panel {
+  padding: var(--space-5);
+  border-left: 4px solid var(--color-ink);
+  background: var(--color-surface-muted);
+}
+
+.migration-note {
+  padding: var(--space-4);
+  border: 1px dashed var(--color-line-strong);
+  background: var(--color-surface-raised);
+}
+
+.lifecycle-timeline {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0 0 0 var(--space-5);
+  border-left: 2px solid var(--color-line-strong);
+  list-style: none;
+}
+
+.timeline-event {
+  position: relative;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface-raised);
+  scroll-margin-top: 6rem;
+}
+
+.timeline-event::before {
+  position: absolute;
+  top: var(--space-6);
+  left: calc(-1 * var(--space-5) - 0.45rem);
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--color-surface-raised);
+  background: var(--color-ink);
+  content: '';
+}
+
+.event-changes,
+.event-changes div {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.event-changes div {
+  grid-template-columns: minmax(8rem, 0.3fr) 1fr;
+  padding: var(--space-3);
+  background: var(--color-surface-muted);
+}
+
+.event-changes dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.relationship-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.relationship-card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-muted);
+}
+
 .development-profile {
   background: var(--color-surface-muted);
 }
@@ -1162,7 +1233,8 @@ textarea {
   }
 
   .profile-field-grid,
-  .core-flow ol {
+  .core-flow ol,
+  .relationship-list {
     grid-template-columns: 1fr;
   }
 

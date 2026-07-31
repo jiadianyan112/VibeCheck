@@ -16,8 +16,8 @@ describe('ProjectDetailPage hero', () => {
   it('shows current status, verification time and verified creator above the fold', async () => {
     renderProject('project-quizforge')
     expect(await screen.findByRole('heading', { name: '题练工坊' })).toBeInTheDocument()
-    expect(screen.getByText('正常可访问')).toBeInTheDocument()
-    expect(screen.getByText(/核验于 2026年7月28日/)).toBeInTheDocument()
+    expect(screen.getAllByText('正常可访问').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/核验于 2026年7月28日/).length).toBeGreaterThan(0)
     expect(screen.getByText('已关联验证作者')).toBeInTheDocument()
     expect(screen.getByText('林序 · 已验证')).toBeInTheDocument()
   })
@@ -78,5 +78,46 @@ describe('ProjectDetailPage structured profile', () => {
     await user.click(await screen.findByRole('button', { name: '核心问题来源（1）' }))
     expect(screen.getByRole('dialog', { name: '事实来源与核验记录' })).toBeInTheDocument()
     expect(screen.getByText('公开页面可访问并展示 PDF 生成题目流程。')).toBeInTheDocument()
+  })
+})
+
+describe('ProjectDetailPage lifecycle, assets and relations', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
+
+  it('keeps reusable assets available after a product has ended', async () => {
+    renderProject('project-echoscore')
+    expect(await screen.findByRole('heading', { name: 'EchoScore' })).toBeInTheDocument()
+    expect(screen.getAllByText('已结束').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: '复用资产' })).toBeInTheDocument()
+    expect(screen.getByText('录音波形与回放组件')).toBeInTheDocument()
+    expect(screen.getByText(/作品结束不等于资产失效/)).toBeInTheDocument()
+  })
+
+  it('shows old and pending new addresses for a suspected migration', async () => {
+    renderProject('project-dictaflow')
+    expect(await screen.findByText('疑似迁移，身份尚待确认')).toBeInTheDocument()
+    expect(screen.getByText('旧地址：https://example.test/old/dictaflow')).toBeInTheDocument()
+    expect(screen.getByText(/待确认新地址：https:\/\/example\.test\/products\/project-dictaflow/)).toBeInTheDocument()
+  })
+
+  it('renders addressable timeline events with source and before-after changes', async () => {
+    renderProject('project-quizforge')
+    expect(await screen.findByRole('heading', { name: '生命周期时间线' })).toBeInTheDocument()
+    const event = document.getElementById('event-quizforge-v11')
+    expect(event).not.toBeNull()
+    expect(event).toHaveTextContent('已验证作者声明')
+    expect(event).toHaveTextContent('之前：选择题')
+    expect(event).toHaveTextContent('之后：选择题、简答题、答案解析')
+  })
+
+  it('shows relation type, direction and confirmation beside recommendations', async () => {
+    renderProject('project-speakmirror')
+    expect(await screen.findByRole('heading', { name: '作品关系与相关推荐' })).toBeInTheDocument()
+    expect(screen.getByText('替代')).toBeInTheDocument()
+    expect(screen.getByText('平台确认')).toBeInTheDocument()
+    expect(screen.getAllByText('复用资产').length).toBeGreaterThan(1)
+    expect(screen.getByText('一方确认')).toBeInTheDocument()
+    expect(screen.getByText('OralExam AI')).toBeInTheDocument()
+    expect(screen.getByText('EchoScore')).toBeInTheDocument()
   })
 })

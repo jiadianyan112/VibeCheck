@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AccessStatusBadge, Button, CompletenessLabel, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, Tag, UnknownFact, useToast } from '../components'
+import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { useAuthGate, useComparison } from '../features'
 import { projectService, type ProjectBundle, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import type { Evidence, FieldFact, Project } from '../types'
-import { inputTypeLabels, practiceFormatLabels, scenarioLabels, targetUserLabels } from '../utils'
+import { inputTypeLabels, lifecycleEventLabels, practiceFormatLabels, scenarioLabels, targetUserLabels } from '../utils'
 
 const sourceLabels: Record<Project['recordSource'], string> = {
   platform_editor: '平台编辑收录',
@@ -30,6 +30,8 @@ const outputLabels: Record<string, string> = { questions: '题目', practice_set
 const loginLabels: Record<string, string> = { none: '无需登录', partial: '部分功能需登录', required: '必须登录', unknown: '未知' }
 const sharingLabels: Record<string, string> = { none: '不支持公开分享', link: '链接分享', result: '结果分享', question_bank: '题库分享', collaboration: '协作分享', unknown: '未知' }
 const aiToolLabels: Record<string, string> = { cursor: 'Cursor', lovable: 'Lovable', bolt: 'Bolt', v0: 'v0', replit: 'Replit', claude_code: 'Claude Code', codex: 'Codex', other: '其他', unknown: '未知' }
+const relationLabels: Record<string, string> = { similar: '相似', alternative: '替代', inspired_by: '启发', fork: 'Fork', remix: 'Remix', migration: '迁移', derivative: '衍生', uses_asset: '复用资产' }
+const relationStatusLabels: Record<string, string> = { pending: '待确认', one_party_confirmed: '一方确认', both_parties_confirmed: '双方确认', platform_confirmed: '平台确认', disputed: '存在争议' }
 
 function FactBlock<T>({ label, fact, evidences, children }: { label: string; fact: FieldFact<T>; evidences: Evidence[]; children: (value: T) => ReactNode }) {
   const sources = evidences.filter((evidence) => fact.evidenceIds.includes(evidence.id))
@@ -48,6 +50,13 @@ function similarPath(project: Project) {
   if (project.practiceFormats.state === 'known') project.practiceFormats.value.forEach((value) => params.append('practice', value))
   if (project.mainOutputs.state === 'known') project.mainOutputs.value.forEach((value) => params.append('output', value))
   return `/discover/result?${params}`
+}
+
+function readableChange(value: unknown) {
+  if (value === null) return '空值'
+  if (Array.isArray(value)) return value.join('、')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
 }
 
 export function ProjectDetailPage() {
@@ -146,6 +155,19 @@ export function ProjectDetailPage() {
           <FactBlock label="关键依赖" fact={project.keyDependencies} evidences={bundle.evidences}>{(value) => tagList(value, {})}</FactBlock>
         </dl>
       </section>
+
+      <section className="current-status-panel stack" aria-labelledby="current-status-heading">
+        <div className="section-heading"><p className="eyebrow">Current status</p><h2 id="current-status-heading">当前状态说明</h2></div>
+        <div className="cluster"><AccessStatusBadge status={status} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /><Tag tone="dashed">技术检查：{project.httpCheckStatus}</Tag></div>
+        {project.statusNote.state === 'known' && project.statusNote.value ? <p>{project.statusNote.value}</p> : project.statusNote.state === 'unknown' ? <UnknownFact reason={project.statusNote.reason} /> : <p>当前没有额外状态说明。</p>}
+        {status === 'suspected_migration' ? <aside className="migration-note stack stack--small"><strong>疑似迁移，身份尚待确认</strong>{project.historicalUrls.map((item) => <span key={item.url}>旧地址：{item.url}</span>)}{project.publicUrl.state === 'known' ? <span>待确认新地址：{project.publicUrl.value}</span> : <UnknownFact reason={project.publicUrl.reason} />}</aside> : null}
+      </section>
+
+      <section className="stack" aria-labelledby="assets-heading"><div className="section-heading"><p className="eyebrow">Reusable assets</p><h2 id="assets-heading">复用资产</h2><p>资产可用性与作品当前状态分开记录；作品结束不等于资产失效。</p></div>{bundle.assets.length ? <div className="card-grid">{bundle.assets.map((asset) => <AssetCard key={asset.id} asset={asset} />)}</div> : <EmptyState title="暂无公开复用资产" description="原型不会根据技术栈推测资产存在。" />}</section>
+
+      <section className="stack" aria-labelledby="timeline-heading"><div className="section-heading"><p className="eyebrow">Lifecycle</p><h2 id="timeline-heading">生命周期时间线</h2><p>历史事件追加展示，不会被当前字段覆盖。</p></div>{bundle.events.length ? <ol className="lifecycle-timeline">{[...bundle.events].sort((a, b) => b.happenedAt.localeCompare(a.happenedAt)).map((event) => { const eventEvidence = bundle.evidences.filter((evidence) => event.evidenceIds.includes(evidence.id)); return <li key={event.id} id={event.id} className="timeline-event stack stack--small"><div className="cluster cluster--between"><div className="cluster"><Tag>{lifecycleEventLabels[event.type]}</Tag><Tag tone={event.sourceType === 'system_inference' ? 'dashed' : 'default'}>{evidenceTypeLabels[event.sourceType]}</Tag></div><time dateTime={event.happenedAt}>{new Date(event.happenedAt).toLocaleDateString('zh-CN')}{event.isEstimatedDate ? '（约）' : ''}</time></div><strong>{event.summary}</strong>{event.changes.length ? <dl className="event-changes">{event.changes.map((change, index) => <div key={`${change.fieldKey}-${index}`}><dt>{change.fieldKey}</dt><dd><span>之前：{readableChange(change.before)}</span><span>之后：{readableChange(change.after)}</span></dd></div>)}</dl> : <p className="page-description">该事件没有结构化字段变更。</p>}<DisputeNotice status={event.disputeStatus} /><EvidenceDrawer label="事件来源" evidences={eventEvidence} /></li>})}</ol> : <EmptyState title="暂无生命周期事件" />}</section>
+
+      <section className="stack" aria-labelledby="relations-heading"><div className="section-heading"><p className="eyebrow">Relationships</p><h2 id="relations-heading">作品关系与相关推荐</h2></div>{bundle.relations.length ? <div className="relationship-list">{bundle.relations.map((relation) => { const relatedId = relation.sourceProjectId === project.id ? relation.targetProjectId : relation.sourceProjectId; const related = bundle.relatedProjects.find((item) => item.id === relatedId); return <article key={relation.id} className="relationship-card stack stack--small"><div className="cluster"><Tag tone="strong">{relationLabels[relation.type]}</Tag><Tag tone={relation.confirmationStatus === 'platform_confirmed' ? 'default' : 'dashed'}>{relationStatusLabels[relation.confirmationStatus]}</Tag><span>{relation.direction === 'two_way' ? '双向关系' : '单向关系'}</span></div><p>{relation.summary}</p>{related ? <ProjectCard project={related} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(related.id)} onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)} /> : <UnknownFact reason="关系指向的作品档案不可用" />}<EvidenceDrawer label="关系来源" evidences={bundle.evidences.filter((evidence) => relation.evidenceIds.includes(evidence.id))} /></article>})}</div> : <EmptyState title="暂无已记录的作品关系" description="不会仅凭相似标签自动创建关系。" />}</section>
     </main>
   )
 }

@@ -20,6 +20,7 @@ import type { ServiceResult } from './result'
 
 export interface ProjectBundle {
   project: Project
+  relatedProjects: Project[]
   creators: Creator[]
   events: LifecycleEvent[]
   assets: ReusableAsset[]
@@ -63,6 +64,10 @@ export const projectService = {
     const result = await runService(options, () => {
       const project = projects.find((item) => item.id === id)
       if (!project) return null
+      const relations = projectRelations.filter(
+        (relation) => relation.sourceProjectId === id || relation.targetProjectId === id,
+      )
+      const relatedIds = new Set(relations.flatMap((relation) => [relation.sourceProjectId, relation.targetProjectId]).filter((projectId) => projectId !== id))
       const evidenceIds = new Set([
         ...project.currentName.evidenceIds,
         ...project.oneLineDefinition.evidenceIds,
@@ -72,13 +77,11 @@ export const projectService = {
       ])
       return {
         project,
+        relatedProjects: projects.filter((item) => relatedIds.has(item.id)),
         creators: creators.filter((creator) => project.creatorIds.includes(creator.id)),
         events: lifecycleEvents.filter((event) => event.projectId === id),
         assets: reusableAssets.filter((asset) => asset.projectId === id),
-        relations: projectRelations.filter(
-          (relation) =>
-            relation.sourceProjectId === id || relation.targetProjectId === id,
-        ),
+        relations,
         evidences: evidences.filter((evidence) => evidenceIds.has(evidence.id)),
       }
     })
