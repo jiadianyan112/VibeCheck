@@ -1,4 +1,5 @@
 import { Form, Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { ComparisonProvider, FloatingCompareBar } from '../features'
 import { useAppState } from '../state'
 
 const primaryNavigation = [
@@ -17,7 +18,7 @@ function restrictedPath(path: string, isLoggedIn: boolean, from: string) {
   return isLoggedIn ? path : `/auth?from=${encodeURIComponent(from)}`
 }
 
-export function FrontstageLayout() {
+function FrontstageContent() {
   const { state } = useAppState()
   const location = useLocation()
   const isLoggedIn = state.session.role !== 'guest'
@@ -112,6 +113,11 @@ export function FrontstageLayout() {
       <div className="app-shell__content">
         <Outlet />
       </div>
+      <FloatingCompareBar />
     </div>
   )
+}
+
+export function FrontstageLayout() {
+  return <ComparisonProvider><FrontstageContent /></ComparisonProvider>
 }

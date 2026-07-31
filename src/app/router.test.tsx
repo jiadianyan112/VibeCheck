@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { ToastProvider } from '../components'
 import { AppStateProvider } from '../state'
 import { appRoutes } from './router'
 
@@ -7,7 +8,9 @@ function renderRoute(path: string) {
   const memoryRouter = createMemoryRouter(appRoutes, { initialEntries: [path] })
   return render(
     <AppStateProvider>
-      <RouterProvider router={memoryRouter} />
+      <ToastProvider>
+        <RouterProvider router={memoryRouter} />
+      </ToastProvider>
     </AppStateProvider>,
   )
 }

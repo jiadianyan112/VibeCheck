@@ -13,7 +13,7 @@ function renderCard(node: React.ReactNode) {
 describe('ProjectCard', () => {
   it('renders a standard card from props with source metadata', () => {
     renderCard(<ProjectCard project={project} evidence={[evidences[0]!]} />)
-    expect(screen.getByRole('link', { name: '题练工坊' })).toHaveAttribute('href', `/projects/${project.id}`)
+    expect(screen.getByRole('link', { name: '题练工坊' })).toHaveAttribute('href', `/project/${project.id}`)
     expect(screen.getByText(/核验于/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看来源（1）' })).toBeInTheDocument()
   })

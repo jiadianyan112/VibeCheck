@@ -42,7 +42,7 @@ export function ProjectCard({
     return (
       <Card className="project-card project-card--compact">
         <div className="stack stack--small">
-          <div className="cluster cluster--between"><Link to={`/projects/${project.id}`}><strong>{name}</strong></Link><AccessStatusBadge status={status} /></div>
+          <div className="cluster cluster--between"><Link to={`/project/${project.id}`}><strong>{name}</strong></Link><AccessStatusBadge status={status} /></div>
           {definitionFact.state === 'known' ? <p>{definitionFact.value}</p> : <UnknownFact reason={definitionFact.reason} />}
           <div className="cluster"><CompletenessLabel level={project.completenessLevel} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /></div>
         </div>
@@ -54,7 +54,7 @@ export function ProjectCard({
   if (variant === 'event') {
     return (
       <Card className="project-card project-card--event stack stack--small">
-        <div className="cluster cluster--between"><Link to={`/projects/${project.id}`}><strong>{name}</strong></Link><AccessStatusBadge status={status} /></div>
+        <div className="cluster cluster--between"><Link to={`/project/${project.id}`}><strong>{name}</strong></Link><AccessStatusBadge status={status} /></div>
         {event ? <><time dateTime={event.happenedAt}>{new Date(event.happenedAt).toLocaleDateString('zh-CN')}{event.isEstimatedDate ? '（约）' : ''}</time><p>{event.summary}</p><Tag tone={event.disputeStatus === 'none' ? 'default' : 'dashed'}>{event.sourceType === 'system_inference' ? '系统推断' : '有来源记录'}</Tag></> : <UnknownFact reason="尚无可展示的生命周期事件" />}
         <EvidenceDrawer label="查看事件来源" evidences={evidence} />
       </Card>
@@ -65,7 +65,7 @@ export function ProjectCard({
     <Card className="project-card project-card--standard stack">
       <div className="media-placeholder" aria-label={project.coverMedia[0]?.alt ?? `${name} 截图占位`}>{project.coverMedia[0]?.kind === 'placeholder' ? '16:9 作品截图' : '作品媒体'}</div>
       <div className="stack stack--small">
-        <div className="cluster cluster--between"><h3><Link to={`/projects/${project.id}`}>{name}</Link></h3><AccessStatusBadge status={status} /></div>
+        <div className="cluster cluster--between"><h3><Link to={`/project/${project.id}`}>{name}</Link></h3><AccessStatusBadge status={status} /></div>
         {definitionFact.state === 'known' ? <p>{definitionFact.value}</p> : <UnknownFact reason={definitionFact.reason} />}
         <div className="cluster"><CompletenessLabel level={project.completenessLevel} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /><EvidenceDrawer evidences={evidence} /></div>
       </div>
