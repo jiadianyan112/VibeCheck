@@ -32,6 +32,14 @@ export const projectService = {
     return runService(options, () => projects)
   },
 
+  listEvents(options?: ServiceOptions) {
+    return runService(options, () => lifecycleEvents)
+  },
+
+  listAssets(options?: ServiceOptions) {
+    return runService(options, () => reusableAssets)
+  },
+
   async getById(
     id: ProjectId,
     options?: ServiceOptions,
