@@ -1,4 +1,4 @@
-import { projects } from '../mocks'
+import { projects, reusableAssets } from '../mocks'
 import type {
   AccessStatus,
   AssetType,
@@ -76,6 +76,10 @@ function matchesFilters(project: Project, filters: SearchFilters) {
     overlaps(
       project.accessStatus.state === 'known' ? [project.accessStatus.value] : [],
       filters.statuses,
+    ) &&
+    overlaps(
+      reusableAssets.filter((asset) => project.assetIds.includes(asset.id)).map((asset) => asset.type),
+      filters.assetTypes,
     )
   )
 }
