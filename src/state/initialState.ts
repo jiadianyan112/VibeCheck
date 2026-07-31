@@ -13,6 +13,7 @@ export function createInitialAppState(): AppState {
     schemaVersion: 1,
     session: { user: null, role: 'guest' },
     comparisonProjectIds: anonymousSession?.projectIds ?? [],
+    activeComparisonSessionId: anonymousSession?.id ?? null,
     likedProjectIds: [],
     comparisonSessions,
     favoriteProjectIds: [],

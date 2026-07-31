@@ -18,7 +18,7 @@ describe('application route skeleton', () => {
     ['/discover', '先确认你要解决的问题'],
     ['/discover/result', '同类作品分析'],
     ['/project/project-quizforge', '题练工坊'],
-    ['/compare/session-001', 'P09 作品比较'],
+    ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/admin/project/project-001', 'A03 作品编辑'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)

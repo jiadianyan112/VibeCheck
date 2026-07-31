@@ -7,6 +7,8 @@ type PersistedState = Pick<
   | 'schemaVersion'
   | 'session'
   | 'comparisonProjectIds'
+  | 'activeComparisonSessionId'
+  | 'comparisonSessions'
   | 'likedProjectIds'
   | 'favoriteProjectIds'
   | 'followedProjectIds'
@@ -23,6 +25,8 @@ export function selectPersistedState(state: AppState): PersistedState {
     schemaVersion: state.schemaVersion,
     session: state.session,
     comparisonProjectIds: state.comparisonProjectIds,
+    activeComparisonSessionId: state.activeComparisonSessionId,
+    comparisonSessions: state.comparisonSessions,
     likedProjectIds: state.likedProjectIds,
     favoriteProjectIds: state.favoriteProjectIds,
     followedProjectIds: state.followedProjectIds,
@@ -57,7 +61,8 @@ export function hydrateAppState(
       ...fallback,
       ...persisted,
       eventLog: [],
-      comparisonSessions: fallback.comparisonSessions,
+      comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
+      activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,
       notifications: fallback.notifications,
     }
   } catch {

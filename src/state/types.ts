@@ -58,6 +58,7 @@ export interface AppState {
   schemaVersion: 1
   session: PrototypeSession
   comparisonProjectIds: ProjectId[]
+  activeComparisonSessionId: ComparisonSession['id'] | null
   likedProjectIds: ProjectId[]
   comparisonSessions: ComparisonSession[]
   favoriteProjectIds: ProjectId[]
@@ -77,6 +78,9 @@ export type AppAction =
   | { type: 'COMPARISON_REMOVE'; projectId: ProjectId }
   | { type: 'COMPARISON_REPLACE'; removeId: ProjectId; addId: ProjectId }
   | { type: 'COMPARISON_CLEAR' }
+  | { type: 'COMPARISON_REORDER'; projectId: ProjectId; direction: -1 | 1 }
+  | { type: 'COMPARISON_SESSION_SAVE' }
+  | { type: 'COMPARISON_SESSION_RESTORE'; sessionId: ComparisonSession['id'] }
   | { type: 'FAVORITE_TOGGLE'; projectId: ProjectId }
   | { type: 'LIKE_TOGGLE'; projectId: ProjectId }
   | { type: 'FOLLOW_TOGGLE'; projectId: ProjectId }

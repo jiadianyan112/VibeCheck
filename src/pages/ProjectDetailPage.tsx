@@ -6,7 +6,7 @@ import { communityService, projectService, type ProjectBundle, type ServiceError
 import { prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
 import type { CommentCategory, Evidence, FieldFact, Project, ProjectComment, UserId } from '../types'
-import { inputTypeLabels, lifecycleEventLabels, practiceFormatLabels, scenarioLabels, targetUserLabels } from '../utils'
+import { inputTypeLabels, lifecycleEventLabels, scenarioLabels, targetUserLabels } from '../utils'
 
 const sourceLabels: Record<Project['recordSource'], string> = {
   platform_editor: '平台编辑收录',

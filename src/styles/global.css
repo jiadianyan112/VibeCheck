@@ -770,6 +770,38 @@ textarea {
 .compare-chip button { border: 0; background: transparent; cursor: pointer; }
 .replacement-list { display: grid; gap: var(--space-2); }
 
+.comparison-session-hero {
+  border-top: 2px solid var(--color-ink);
+  border-bottom: 1px solid var(--color-line-strong);
+  padding: var(--space-7) 0;
+}
+
+.comparison-session-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.comparison-session-meta div { display: grid; gap: var(--space-1); }
+.comparison-session-meta dt { color: var(--color-muted); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+.comparison-session-meta dd { margin: 0; overflow-wrap: anywhere; }
+.comparison-selection-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+
+.comparison-selection-item {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.comparison-selection-order { color: var(--color-muted); font-family: var(--font-display); font-size: 1.75rem; }
+.comparison-selection-actions { justify-content: flex-end; }
+.comparison-picker { max-width: 38rem; }
+.comparison-picker select { width: 100%; }
+.comparison-session-footer { position: sticky; z-index: 8; bottom: 0; border-top: 1px solid var(--color-line-strong); background: var(--color-canvas); padding: var(--space-4) 0; }
+.comparison-session-footer p { margin: 0; }
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -859,7 +891,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }

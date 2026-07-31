@@ -80,7 +80,7 @@ export function FloatingCompareBar() {
       </div>
       <div className="cluster">
         <Button variant="quiet" onClick={() => setConfirmClear(true)}>清空</Button>
-        {ids.length >= 2 ? <Link className="button button--primary" to={`/compare/current?ids=${ids.join(',')}`}>开始比较</Link> : <Button variant="primary" disabled>开始比较</Button>}
+        {ids.length >= 2 && state.activeComparisonSessionId ? <Link className="button button--primary" to={`/compare/${state.activeComparisonSessionId}`}>开始比较</Link> : <Button variant="primary" disabled>开始比较</Button>}
       </div>
       <ConfirmDialog open={confirmClear} title="清空比较栏？" description="已选择的作品将从本次比较中移除。" confirmLabel="确认清空" onCancel={() => setConfirmClear(false)} onConfirm={() => { dispatch({ type: 'COMPARISON_CLEAR' }); setConfirmClear(false) }} />
     </aside>

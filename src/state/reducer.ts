@@ -1,4 +1,6 @@
 import { createPrototypeEvent } from './eventLogger'
+import { addComparisonProject, createComparisonSession, mergeComparisonProjects, removeComparisonProject, reorderComparisonProject, replaceComparisonProject, saveComparisonSession, updateComparisonProjects } from '../features/comparison/session'
+import { comparisonSessionId } from '../types'
 import type { AppAction, AppState, PrototypeEvent } from './types'
 
 function toggle<T>(values: T[], value: T) {
@@ -15,6 +17,21 @@ function appendEvent(state: AppState, event: PrototypeEvent) {
   return [...state.eventLog, event].slice(-200)
 }
 
+function updateActiveComparison(state: AppState, update: (session: AppState['comparisonSessions'][number]) => AppState['comparisonSessions'][number]) {
+  const activeId = state.activeComparisonSessionId ?? comparisonSessionId('comparison-local-current')
+  const existing = state.comparisonSessions.find((session) => session.id === activeId)
+  const current = existing
+    ? updateComparisonProjects(existing, state.comparisonProjectIds)
+    : createComparisonSession({ id: activeId, projectIds: state.comparisonProjectIds, sourcePath: '/compare/current' })
+  const next = update(current)
+  return {
+    ...state,
+    activeComparisonSessionId: activeId,
+    comparisonProjectIds: next.projectIds,
+    comparisonSessions: existing ? state.comparisonSessions.map((session) => session.id === activeId ? next : session) : [...state.comparisonSessions, next],
+  }
+}
+
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'COMPARISON_ADD': {
@@ -25,8 +42,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return state
       }
       return {
-        ...state,
-        comparisonProjectIds: [...state.comparisonProjectIds, action.projectId],
+        ...updateActiveComparison(state, (session) => addComparisonProject(session, action.projectId)),
         eventLog: appendEvent(
           state,
           createPrototypeEvent('comparison_added', { projectId: action.projectId }),
@@ -34,24 +50,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
     case 'COMPARISON_REMOVE':
-      return {
-        ...state,
-        comparisonProjectIds: state.comparisonProjectIds.filter(
-          (id) => id !== action.projectId,
-        ),
-      }
+      return updateActiveComparison(state, (session) => removeComparisonProject(session, action.projectId))
     case 'COMPARISON_REPLACE':
-      return {
-        ...state,
-        comparisonProjectIds: uniqueLimit(
-          state.comparisonProjectIds.map((id) =>
-            id === action.removeId ? action.addId : id,
-          ),
-          5,
-        ),
-      }
+      return updateActiveComparison(state, (session) => replaceComparisonProject(session, action.removeId, action.addId))
     case 'COMPARISON_CLEAR':
-      return { ...state, comparisonProjectIds: [] }
+      return updateActiveComparison(state, (session) => updateComparisonProjects(session, []))
+    case 'COMPARISON_REORDER':
+      return updateActiveComparison(state, (session) => reorderComparisonProject(session, action.projectId, action.direction))
+    case 'COMPARISON_SESSION_SAVE':
+      return updateActiveComparison(state, (session) => saveComparisonSession(session, state.session.user?.id ?? null))
+    case 'COMPARISON_SESSION_RESTORE': {
+      const session = state.comparisonSessions.find(({ id }) => id === action.sessionId)
+      return session ? { ...state, activeComparisonSessionId: session.id, comparisonProjectIds: session.projectIds } : state
+    }
     case 'FAVORITE_TOGGLE': {
       const willAdd = !state.favoriteProjectIds.includes(action.projectId)
       return {
@@ -102,12 +113,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'LOGIN_COMPLETED':
       return {
-        ...state,
+        ...updateActiveComparison(state, (session) => mergeComparisonProjects(session, action.userComparisonProjectIds ?? [], action.user.id)),
         session: { user: action.user, role: action.user.role },
-        comparisonProjectIds: uniqueLimit(
-          [...state.comparisonProjectIds, ...(action.userComparisonProjectIds ?? [])],
-          5,
-        ),
         eventLog: appendEvent(
           state,
           createPrototypeEvent('auth_completed', {

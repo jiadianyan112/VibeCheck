@@ -30,6 +30,9 @@ function FrontstageContent() {
       ).length
     : 0
   const from = `${location.pathname}${location.search}${location.hash}`
+  const comparisonPath = state.activeComparisonSessionId
+    ? `/compare/${state.activeComparisonSessionId}`
+    : '/projects'
 
   return (
     <div className="app-shell">
@@ -60,7 +63,7 @@ function FrontstageContent() {
             </button>
           </Form>
           <div className="header-actions" aria-label="账户与创作入口">
-            <Link className="header-action" to="/compare/current">
+            <Link className="header-action" to={comparisonPath}>
               比较 <span aria-label={`${state.comparisonProjectIds.length} 个作品`}>{state.comparisonProjectIds.length}</span>
             </Link>
             <Link
@@ -91,7 +94,7 @@ function FrontstageContent() {
                   {item.label}
                 </NavLink>
               ))}
-              <Link className="nav-link" to="/compare/current">
+              <Link className="nav-link" to={comparisonPath}>
                 当前比较（{state.comparisonProjectIds.length}）
               </Link>
               <Link

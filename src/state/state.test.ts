@@ -35,6 +35,8 @@ describe('global state and persistence', () => {
     expect(restored.comparisonProjectIds).toContain(
       projectId('project-papertopractice'),
     )
+    expect(restored.activeComparisonSessionId).toBe(comparisonSessionId('comparison-anonymous-pdf'))
+    expect(restored.comparisonSessions.find(({ id }) => id === restored.activeComparisonSessionId)?.projectIds).toEqual(restored.comparisonProjectIds)
     expect(restored.submissionDrafts[0]?.id).toBe(
       submissionDraftId('draft-mia-study-review'),
     )
@@ -57,6 +59,7 @@ describe('global state and persistence', () => {
     expect(new Set(state.comparisonProjectIds).size).toBe(
       state.comparisonProjectIds.length,
     )
+    expect(state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)?.ownerUserId).toBe(user.id)
   })
 
   it('replays a queued login action exactly once', () => {
@@ -101,6 +104,18 @@ describe('global state and persistence', () => {
     expect(restored.comparisonSessions.some(
       ({ id }) => id === comparisonSessionId('comparison-mia-speaking'),
     )).toBe(true)
+  })
+
+  it('reorders, saves and restores the same active comparison session', () => {
+    const initial = createInitialAppState()
+    const firstId = initial.comparisonProjectIds[0]!
+    let state = appReducer(initial, { type: 'COMPARISON_REORDER', projectId: firstId, direction: 1 })
+    expect(state.comparisonProjectIds[1]).toBe(firstId)
+    state = appReducer(state, { type: 'COMPARISON_SESSION_SAVE' })
+    expect(state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)?.savedAt).toBeTruthy()
+    state = appReducer(state, { type: 'COMPARISON_SESSION_RESTORE', sessionId: comparisonSessionId('comparison-mia-speaking') })
+    expect(state.activeComparisonSessionId).toBe(comparisonSessionId('comparison-mia-speaking'))
+    expect(state.comparisonProjectIds).toHaveLength(3)
   })
 
   it('persists the lightweight like signal without changing fixture metrics', () => {

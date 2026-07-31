@@ -22,7 +22,7 @@ describe('FloatingCompareBar', () => {
   it('shows 2–5 selected works and rejects duplicates', async () => {
     const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
     expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '开始比较' })).toHaveAttribute('href', expect.stringContaining('/compare/current'))
+    expect(screen.getByRole('link', { name: '开始比较' })).toHaveAttribute('href', '/compare/comparison-anonymous-pdf')
     await user.click(screen.getByRole('button', { name: '添加重复作品' }))
     expect(screen.getByText('这个作品已经在比较栏中。')).toBeInTheDocument()
     expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()

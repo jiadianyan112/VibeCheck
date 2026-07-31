@@ -1,6 +1,6 @@
 import { comparisonSessions, projects } from '../mocks'
+import { createComparisonSession } from '../features/comparison/session'
 import {
-  comparisonSessionId,
   type ComparisonSession,
   type ComparisonSessionId,
   type ProjectId,
@@ -28,18 +28,7 @@ export const comparisonService = {
         throw new Error('比较会话需要一至五个唯一作品。')
       }
       const validIds = uniqueIds.filter((id) => projects.some((project) => project.id === id))
-      const session: ComparisonSession = {
-        id: comparisonSessionId('comparison-service-draft'),
-        ownerUserId: null,
-        intent: null,
-        projectIds: validIds,
-        sourcePath,
-        decisionId: null,
-        createdAt: '2026-07-31T10:00:00+08:00',
-        updatedAt: '2026-07-31T10:00:00+08:00',
-        savedAt: null,
-      }
-      return session
+      return createComparisonSession({ projectIds: validIds, sourcePath })
     })
   },
 
