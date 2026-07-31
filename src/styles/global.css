@@ -345,6 +345,7 @@ textarea {
   padding: 0.625rem 1rem;
   font-weight: 650;
   cursor: pointer;
+  gap: var(--space-2);
 }
 
 .button:disabled {
@@ -371,6 +372,23 @@ textarea {
   text-underline-offset: 0.2em;
 }
 
+.button--danger {
+  border-color: var(--color-ink);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-decoration-style: double;
+}
+
+.button__spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-turn 0.8s linear infinite;
+}
+
 .field {
   display: grid;
   gap: var(--space-2);
@@ -383,6 +401,16 @@ textarea {
 .field__hint {
   color: var(--color-muted);
   font-size: 0.875rem;
+}
+
+.field__error {
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.input--error {
+  border-width: 2px;
 }
 
 .input {
@@ -412,6 +440,26 @@ textarea {
 
 .tag--dashed {
   border-style: dashed;
+}
+
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-line-strong);
+}
+
+.tabs__tab {
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+.tabs__tab[aria-selected='true'] {
+  border-bottom-color: var(--color-ink);
+  font-weight: 750;
 }
 
 .table-scroll {
@@ -465,6 +513,18 @@ textarea {
   gap: var(--space-3);
   padding: var(--space-6);
   background: var(--color-surface);
+}
+
+.feedback {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  border: 2px solid var(--color-line-strong);
+  padding: var(--space-4);
+}
+
+.feedback--error {
+  border-style: double;
 }
 
 .placeholder-layout {
@@ -522,6 +582,28 @@ textarea {
   max-height: calc(100vh - 2 * var(--page-gutter));
   overflow: auto;
   padding: var(--space-6);
+}
+
+.drawer-backdrop {
+  position: fixed;
+  z-index: 21;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(0 0 0 / 55%);
+}
+
+.drawer-panel {
+  width: min(100%, 30rem);
+  height: 100%;
+  overflow: auto;
+  border-left: 1px solid var(--color-line-strong);
+  background: var(--color-canvas);
+  padding: var(--space-6);
+}
+
+@keyframes spinner-turn {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes skeleton-pulse {
@@ -604,6 +686,10 @@ textarea {
   }
 
   .skeleton {
+    animation: none;
+  }
+
+  .button__spinner {
     animation: none;
   }
 }
