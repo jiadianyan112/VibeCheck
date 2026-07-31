@@ -57,6 +57,17 @@ body {
 .activity-item { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--space-4); border-bottom: 1px solid var(--color-line); padding-block: var(--space-6); }
 .activity-item__rail { display: grid; align-content: start; justify-items: start; gap: var(--space-2); color: var(--color-muted); font-size: 0.8rem; }
 .event-anchor-link { width: fit-content; font-weight: 700; }
+.about-hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(20rem, 0.6fr); border-bottom: 1px solid var(--color-line-strong); }
+.about-hero > div { padding: clamp(4rem, 9vw, 8rem) max(var(--page-gutter), calc((100vw - var(--page-max)) / 2)); }
+.about-hero > div > p { max-width: 50rem; color: var(--color-muted); font-size: 1.15rem; }
+.about-hero > aside { display: grid; align-content: center; gap: var(--space-3); border-left: 1px solid var(--color-line-strong); background: var(--color-surface); padding: clamp(2rem, 5vw, 4rem); }
+.about-sections { gap: 0; }
+.about-split { display: grid; grid-template-columns: minmax(12rem, 0.5fr) minmax(0, 1.5fr); gap: var(--space-10); border-bottom: 1px solid var(--color-line-strong); padding-block: clamp(3rem, 7vw, 5rem); }
+.rule-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+.rule-columns > div { border: 1px solid var(--color-line-strong); padding: var(--space-4); }
+.rule-columns li { margin-bottom: var(--space-3); }
+.numbered-flow { display: grid; gap: var(--space-4); margin: 0; padding-left: 1.5rem; }
+.numbered-flow li { border-bottom: 1px solid var(--color-line); padding: 0 0 var(--space-4) var(--space-2); }
 
 h1,
 h2,
@@ -831,7 +842,8 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns { grid-template-columns: 1fr; }
+  .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }
   .sandbox-grid {

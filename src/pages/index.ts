@@ -1,4 +1,5 @@
 export { ActivityPage } from './ActivityPage'
+export { AboutPage } from './AboutPage'
 export { CategoriesPage } from './CategoriesPage'
 export { CategoryDetailPage } from './CategoryDetailPage'
 export { NotFoundPage } from './NotFoundPage'
