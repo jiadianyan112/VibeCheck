@@ -1,1 +1,5 @@
+export { reusableAssets } from './assets'
+export { creators } from './creators'
+export { knownFact, unknownFact } from './factories'
+export { plannedProjectEvidenceIds, projectById, projects } from './projects'
 export { defaultScenario, type PrototypeScenario } from './scenario'
