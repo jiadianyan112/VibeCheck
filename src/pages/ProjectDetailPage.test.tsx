@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from '../components'
@@ -119,5 +119,53 @@ describe('ProjectDetailPage lifecycle, assets and relations', () => {
     expect(screen.getByText('一方确认')).toBeInTheDocument()
     expect(screen.getByText('OralExam AI')).toBeInTheDocument()
     expect(screen.getByText('EchoScore')).toBeInTheDocument()
+  })
+})
+
+describe('ProjectDetailPage discussion interactions', () => {
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
+
+  it('only renders comments bound to the current project and treats likes as weak signals', async () => {
+    const user = userEvent.setup(); renderProject('project-quizforge')
+    expect(await screen.findByRole('heading', { name: '围绕此作品的讨论' })).toBeInTheDocument()
+    expect(screen.getByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')).toBeInTheDocument()
+    expect(screen.queryByText('分项评分在短录音场景下是否也使用相同权重？')).not.toBeInTheDocument()
+    expect(screen.getByText(/点赞只作为轻量社区信号/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '点赞' }))
+    expect(screen.getByRole('button', { name: '已点赞' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('restores a guest comment body and category after login', async () => {
+    const user = userEvent.setup(); renderProject('project-papertopractice')
+    await screen.findByRole('heading', { name: '围绕此作品的讨论' })
+    expect(screen.getByText('还没有围绕这个作品的讨论')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('评论类别'), 'development_question')
+    await user.type(screen.getByLabelText('评论内容'), 'OCR 超时时是否会保留已经识别的段落？')
+    await user.click(screen.getByRole('button', { name: '发布评论' }))
+    expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
+    expect(screen.getByLabelText('评论内容')).toHaveValue('OCR 超时时是否会保留已经识别的段落？')
+    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    const posted = await screen.findByText('OCR 超时时是否会保留已经识别的段落？')
+    expect(within(posted.closest('.comment-card') as HTMLElement).getByText('开发问题')).toBeInTheDocument()
+    expect(screen.getByLabelText('评论内容')).toHaveValue('')
+  })
+
+  it('keeps reported history visible and allows a structured reply target', async () => {
+    const user = userEvent.setup(); renderProject('project-quizforge')
+    const body = await screen.findByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')
+    const card = body.closest('.comment-card') as HTMLElement
+    await user.click(within(card).getByRole('button', { name: '回复' }))
+    expect(screen.getByRole('heading', { name: '回复评论 comment-quizforge-usage' })).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: '举报' }))
+    expect(screen.getByText('举报已记录，评论历史保留并进入审核。')).toBeInTheDocument()
+    expect(screen.getByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: '已举报审核中' })).toBeInTheDocument()
+  })
+
+  it('collapses the fixed malicious example without deleting it', async () => {
+    renderProject('project-pdfquizlab')
+    const summary = await screen.findByText('该评论因与作品无关而折叠')
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    expect(summary.closest('.comment-card')).toHaveTextContent('3 次举报记录')
   })
 })

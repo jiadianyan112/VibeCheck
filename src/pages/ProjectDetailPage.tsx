@@ -2,9 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { useAuthGate, useComparison } from '../features'
-import { projectService, type ProjectBundle, type ServiceError } from '../services'
+import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
+import { prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
-import type { Evidence, FieldFact, Project } from '../types'
+import type { CommentCategory, Evidence, FieldFact, Project, ProjectComment, UserId } from '../types'
 import { inputTypeLabels, lifecycleEventLabels, practiceFormatLabels, scenarioLabels, targetUserLabels } from '../utils'
 
 const sourceLabels: Record<Project['recordSource'], string> = {
@@ -32,6 +33,7 @@ const sharingLabels: Record<string, string> = { none: '不支持公开分享', l
 const aiToolLabels: Record<string, string> = { cursor: 'Cursor', lovable: 'Lovable', bolt: 'Bolt', v0: 'v0', replit: 'Replit', claude_code: 'Claude Code', codex: 'Codex', other: '其他', unknown: '未知' }
 const relationLabels: Record<string, string> = { similar: '相似', alternative: '替代', inspired_by: '启发', fork: 'Fork', remix: 'Remix', migration: '迁移', derivative: '衍生', uses_asset: '复用资产' }
 const relationStatusLabels: Record<string, string> = { pending: '待确认', one_party_confirmed: '一方确认', both_parties_confirmed: '双方确认', platform_confirmed: '平台确认', disputed: '存在争议' }
+const commentCategoryLabels: Record<CommentCategory, string> = { usage_feedback: '使用反馈', development_question: '开发问题', reuse_feedback: '复用反馈', status_update: '状态补充' }
 
 function FactBlock<T>({ label, fact, evidences, children }: { label: string; fact: FieldFact<T>; evidences: Evidence[]; children: (value: T) => ReactNode }) {
   const sources = evidences.filter((evidence) => fact.evidenceIds.includes(evidence.id))
@@ -68,21 +70,38 @@ export function ProjectDetailPage() {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
   const [error, setError] = useState<ServiceError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [comments, setComments] = useState<ProjectComment[]>([])
+  const [commentDraft, setCommentDraft] = useState('')
+  const [commentCategory, setCommentCategory] = useState<CommentCategory>('usage_feedback')
+  const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    projectService.getBundle(id as Project['id'], { scenario: state.serviceScenario }).then((result) => {
+    Promise.all([
+      projectService.getBundle(id as Project['id'], { scenario: state.serviceScenario }),
+      communityService.listComments(id as Project['id'], { scenario: state.serviceScenario }),
+    ]).then(([result, commentResult]) => {
       if (!active) return
-      if (result.ok) {
+      if (result.ok && commentResult.ok) {
         setBundle(result.data); setError(null)
+        setComments(commentResult.data)
         dispatch({ type: 'RECENT_PROJECT_ADD', projectId: result.data.project.id })
         dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: result.data.project.id }) })
-      } else setError(result.error)
+      } else setError(!result.ok ? result.error : commentResult.ok ? null : commentResult.error)
       setLoading(false)
     })
     return () => { active = false }
   }, [dispatch, id, state.serviceScenario])
+
+  useEffect(() => {
+    if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return
+    const newComment: ProjectComment = { id: pendingCommentId, projectId: id as Project['id'], authorUserId: state.session.user.id, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
+    setComments((current) => [...current, newComment])
+    dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: newComment.projectId, commentId: newComment.id }) })
+    setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
+  }, [commentCategory, commentDraft, dispatch, id, pendingCommentId, replyTo, state.lastReplayedActionId, state.session.user])
 
   if (loading) return <main className="page-container"><LoadingState label="作品档案加载中" /></main>
   if (error || !bundle) return <main className="page-container stack"><ErrorPanel message={error?.message ?? '未找到作品'} detail={error?.code} /><Link to="/projects">返回作品广场</Link></main>
@@ -93,6 +112,7 @@ export function ProjectDetailPage() {
   const selected = state.comparisonProjectIds.includes(project.id)
   const favorited = state.favoriteProjectIds.includes(project.id)
   const followed = state.followedProjectIds.includes(project.id)
+  const liked = state.likedProjectIds.includes(project.id)
   const orderedFlow = project.coreFlow.state === 'known' ? [...project.coreFlow.value].sort((a, b) => a.order - b.order) : []
 
   function protectedToggle(kind: 'favorite' | 'follow') {
@@ -103,6 +123,26 @@ export function ProjectDetailPage() {
     const shareText = `${name} · VibeCheck`
     try { await navigator.clipboard?.writeText(window.location.href) } catch { /* the prototype still provides visible share feedback */ }
     pushToast(`已准备分享：${shareText}`, 'success')
+  }
+
+  function appendComment(authorUserId: UserId, commentId: string) {
+    const next: ProjectComment = { id: commentId, projectId: project.id, authorUserId, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
+    setComments((current) => [...current, next])
+    dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: project.id, commentId }) })
+    setCommentDraft(''); setReplyTo(null)
+  }
+
+  function submitComment() {
+    if (!commentDraft.trim()) return
+    const commentId = `comment-${project.id}-${Date.now()}`
+    if (state.session.user) { appendComment(state.session.user.id, commentId); return }
+    setPendingCommentId(commentId)
+    requireLogin({ id: commentId, kind: 'comment', sourcePath: `/project/${project.id}#discussion`, payload: { body: commentDraft, category: commentCategory, parentId: replyTo ?? '' } })
+  }
+
+  function reportComment(commentId: string) {
+    setComments((current) => current.map((comment) => comment.id === commentId ? { ...comment, reportCount: comment.reportCount + 1, moderationStatus: 'under_review' } : comment))
+    pushToast('举报已记录，评论历史保留并进入审核。')
   }
 
   return (
@@ -128,6 +168,8 @@ export function ProjectDetailPage() {
           </div>
         </div>
       </section>
+
+      <section className="interaction-strip" aria-label="社区互动弱信号"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{project.interactionSummary.likeCount + (liked ? 1 : 0)}</strong><span>点赞（弱信号）</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} onClick={() => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })}>{liked ? '已点赞' : '点赞'}</Button><span className="page-description">点赞只作为轻量社区信号，不参与作品质量排序。</span></section>
 
       <section className="project-profile stack" aria-labelledby="product-structure-heading">
         <div className="section-heading cluster cluster--between"><div><p className="eyebrow">Product structure</p><h2 id="product-structure-heading">产品结构</h2><p>字段来自公开事实与固定模拟数据，不使用生成摘要补全未知值。</p></div><Link className="button" to={similarPath(project)}>从这些字段查看同类</Link></div>
@@ -168,6 +210,12 @@ export function ProjectDetailPage() {
       <section className="stack" aria-labelledby="timeline-heading"><div className="section-heading"><p className="eyebrow">Lifecycle</p><h2 id="timeline-heading">生命周期时间线</h2><p>历史事件追加展示，不会被当前字段覆盖。</p></div>{bundle.events.length ? <ol className="lifecycle-timeline">{[...bundle.events].sort((a, b) => b.happenedAt.localeCompare(a.happenedAt)).map((event) => { const eventEvidence = bundle.evidences.filter((evidence) => event.evidenceIds.includes(evidence.id)); return <li key={event.id} id={event.id} className="timeline-event stack stack--small"><div className="cluster cluster--between"><div className="cluster"><Tag>{lifecycleEventLabels[event.type]}</Tag><Tag tone={event.sourceType === 'system_inference' ? 'dashed' : 'default'}>{evidenceTypeLabels[event.sourceType]}</Tag></div><time dateTime={event.happenedAt}>{new Date(event.happenedAt).toLocaleDateString('zh-CN')}{event.isEstimatedDate ? '（约）' : ''}</time></div><strong>{event.summary}</strong>{event.changes.length ? <dl className="event-changes">{event.changes.map((change, index) => <div key={`${change.fieldKey}-${index}`}><dt>{change.fieldKey}</dt><dd><span>之前：{readableChange(change.before)}</span><span>之后：{readableChange(change.after)}</span></dd></div>)}</dl> : <p className="page-description">该事件没有结构化字段变更。</p>}<DisputeNotice status={event.disputeStatus} /><EvidenceDrawer label="事件来源" evidences={eventEvidence} /></li>})}</ol> : <EmptyState title="暂无生命周期事件" />}</section>
 
       <section className="stack" aria-labelledby="relations-heading"><div className="section-heading"><p className="eyebrow">Relationships</p><h2 id="relations-heading">作品关系与相关推荐</h2></div>{bundle.relations.length ? <div className="relationship-list">{bundle.relations.map((relation) => { const relatedId = relation.sourceProjectId === project.id ? relation.targetProjectId : relation.sourceProjectId; const related = bundle.relatedProjects.find((item) => item.id === relatedId); return <article key={relation.id} className="relationship-card stack stack--small"><div className="cluster"><Tag tone="strong">{relationLabels[relation.type]}</Tag><Tag tone={relation.confirmationStatus === 'platform_confirmed' ? 'default' : 'dashed'}>{relationStatusLabels[relation.confirmationStatus]}</Tag><span>{relation.direction === 'two_way' ? '双向关系' : '单向关系'}</span></div><p>{relation.summary}</p>{related ? <ProjectCard project={related} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(related.id)} onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)} /> : <UnknownFact reason="关系指向的作品档案不可用" />}<EvidenceDrawer label="关系来源" evidences={bundle.evidences.filter((evidence) => relation.evidenceIds.includes(evidence.id))} /></article>})}</div> : <EmptyState title="暂无已记录的作品关系" description="不会仅凭相似标签自动创建关系。" />}</section>
+
+      <section id="discussion" className="discussion-section stack" aria-labelledby="discussion-heading">
+        <div className="section-heading"><p className="eyebrow">Discussion</p><h2 id="discussion-heading">围绕此作品的讨论</h2><p>所有评论都绑定当前作品；这里不提供独立帖子、私信或用户群组。</p></div>
+        {comments.length ? <ol className="comment-list">{comments.map((comment) => { const author = prototypeUsers.find((user) => user.id === comment.authorUserId); const content = <><div className="cluster cluster--between"><div className="cluster"><Tag>{commentCategoryLabels[comment.category]}</Tag><strong>{author?.displayName ?? '原型用户'}</strong>{comment.parentId ? <span>回复 {comment.parentId}</span> : null}</div><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleDateString('zh-CN')}</time></div><p>{comment.body}</p><div className="cluster"><Button variant="quiet" onClick={() => { setReplyTo(comment.id); document.getElementById('comment-body')?.focus() }}>回复</Button><Button variant="quiet" onClick={() => reportComment(comment.id)}>{comment.moderationStatus === 'under_review' ? '已举报审核中' : '举报'}</Button>{comment.reportCount ? <span>{comment.reportCount} 次举报记录</span> : null}</div></>; return <li key={comment.id} className={`comment-card ${comment.parentId ? 'comment-card--reply' : ''}`}>{comment.moderationStatus === 'collapsed' ? <details><summary>该评论因与作品无关而折叠</summary>{content}</details> : content}</li>})}</ol> : <EmptyState title="还没有围绕这个作品的讨论" description="下方评论表单是唯一发布入口。" />}
+        <div className="comment-composer stack"><div className="cluster cluster--between"><h3>{replyTo ? `回复评论 ${replyTo}` : '添加结构化评论'}</h3>{replyTo ? <Button variant="quiet" onClick={() => setReplyTo(null)}>取消回复</Button> : null}</div><label className="field"><span className="field__label">评论类别</span><select className="input" value={commentCategory} onChange={(event) => setCommentCategory(event.target.value as CommentCategory)}>{Object.entries(commentCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field__label">评论内容</span><textarea id="comment-body" className="input textarea" rows={4} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="围绕使用、开发、复用或状态提供具体信息" /></label><Button variant="primary" disabled={!commentDraft.trim()} onClick={submitComment}>发布评论</Button></div>
+      </section>
     </main>
   )
 }

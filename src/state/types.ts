@@ -58,6 +58,7 @@ export interface AppState {
   schemaVersion: 1
   session: PrototypeSession
   comparisonProjectIds: ProjectId[]
+  likedProjectIds: ProjectId[]
   comparisonSessions: ComparisonSession[]
   favoriteProjectIds: ProjectId[]
   followedProjectIds: ProjectId[]
@@ -77,6 +78,7 @@ export type AppAction =
   | { type: 'COMPARISON_REPLACE'; removeId: ProjectId; addId: ProjectId }
   | { type: 'COMPARISON_CLEAR' }
   | { type: 'FAVORITE_TOGGLE'; projectId: ProjectId }
+  | { type: 'LIKE_TOGGLE'; projectId: ProjectId }
   | { type: 'FOLLOW_TOGGLE'; projectId: ProjectId }
   | { type: 'RECENT_PROJECT_ADD'; projectId: ProjectId }
   | { type: 'LOGIN_COMPLETED'; user: PrototypeUser; userComparisonProjectIds?: ProjectId[] }

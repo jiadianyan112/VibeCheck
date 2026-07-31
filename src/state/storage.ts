@@ -7,6 +7,7 @@ type PersistedState = Pick<
   | 'schemaVersion'
   | 'session'
   | 'comparisonProjectIds'
+  | 'likedProjectIds'
   | 'favoriteProjectIds'
   | 'followedProjectIds'
   | 'recentProjectIds'
@@ -22,6 +23,7 @@ export function selectPersistedState(state: AppState): PersistedState {
     schemaVersion: state.schemaVersion,
     session: state.session,
     comparisonProjectIds: state.comparisonProjectIds,
+    likedProjectIds: state.likedProjectIds,
     favoriteProjectIds: state.favoriteProjectIds,
     followedProjectIds: state.followedProjectIds,
     recentProjectIds: state.recentProjectIds,

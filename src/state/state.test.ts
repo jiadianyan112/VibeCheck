@@ -102,4 +102,13 @@ describe('global state and persistence', () => {
       ({ id }) => id === comparisonSessionId('comparison-mia-speaking'),
     )).toBe(true)
   })
+
+  it('persists the lightweight like signal without changing fixture metrics', () => {
+    const id = projectId('project-quizforge')
+    const liked = appReducer(createInitialAppState(), { type: 'LIKE_TOGGLE', projectId: id })
+    expect(liked.likedProjectIds).toEqual([id])
+    expect(liked.eventLog.at(-1)?.name).toBe('project_liked')
+    persistAppState(liked)
+    expect(hydrateAppState(createInitialAppState()).likedProjectIds).toEqual([id])
+  })
 })

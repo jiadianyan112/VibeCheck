@@ -67,6 +67,16 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           : state.eventLog,
       }
     }
+    case 'LIKE_TOGGLE': {
+      const willAdd = !state.likedProjectIds.includes(action.projectId)
+      return {
+        ...state,
+        likedProjectIds: toggle(state.likedProjectIds, action.projectId),
+        eventLog: willAdd
+          ? appendEvent(state, createPrototypeEvent('project_liked', { projectId: action.projectId }))
+          : state.eventLog,
+      }
+    }
     case 'FOLLOW_TOGGLE': {
       const willAdd = !state.followedProjectIds.includes(action.projectId)
       return {
@@ -111,6 +121,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         session: { user: null, role: 'guest' },
         favoriteProjectIds: [],
+        likedProjectIds: [],
         followedProjectIds: [],
         decisionRecords: [],
         submissionDrafts: [],
