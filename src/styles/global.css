@@ -527,6 +527,82 @@ textarea {
   border-style: double;
 }
 
+.fact-label,
+.evidence-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.fact-label--expired {
+  border-bottom: 2px dashed var(--color-ink);
+}
+
+.dispute-notice {
+  display: grid;
+  gap: var(--space-1);
+  border: 2px dashed var(--color-line-strong);
+  padding: var(--space-3);
+  background: var(--color-surface);
+}
+
+.evidence-trigger,
+.external-link {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.evidence-list {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.evidence-list > li {
+  border-bottom: 1px solid var(--color-line);
+  padding-bottom: var(--space-4);
+}
+
+.unknown-value {
+  display: inline-block;
+  width: fit-content;
+  border-bottom: 1px dashed var(--color-line-strong);
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.asset-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.asset-meta div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.asset-meta dt {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.asset-meta dd {
+  margin: 0;
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -623,6 +699,10 @@ textarea {
 
   .button {
     max-width: 100%;
+  }
+
+  .asset-meta {
+    grid-template-columns: 1fr;
   }
 
   .placeholder-layout {
