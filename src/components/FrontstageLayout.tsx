@@ -116,7 +116,7 @@ function FrontstageContent() {
       <div className="app-shell__content">
         <Outlet />
       </div>
-      <FloatingCompareBar />
+      {location.pathname.startsWith('/compare/') ? null : <FloatingCompareBar />}
     </div>
   )
 }

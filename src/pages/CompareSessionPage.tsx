@@ -7,8 +7,23 @@ import { useAppState } from '../state'
 import { comparisonSessionId, type ProjectId } from '../types'
 
 function projectName(projectId: ProjectId) {
-  const name = projectById.get(projectId)?.currentName
+  const project = projectById.get(projectId)
+  if (!project) return '已删除作品'
+  const name = project.currentName
   return name?.state === 'known' ? name.value : '名称未知的作品'
+}
+
+function useMobileComparison() {
+  const [mobile, setMobile] = useState(false)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(max-width: 48rem)')
+    const update = () => setMobile(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return mobile
 }
 
 function ComparisonCellView({ cell }: { cell: ComparisonCell }) {
@@ -33,11 +48,14 @@ export function CompareSessionPage() {
   const { pushToast } = useToast()
   const [replacementFor, setReplacementFor] = useState<ProjectId | null>(null)
   const [comparisonView, setComparisonView] = useState<'differences' | 'all'>('differences')
+  const [mobileProjectId, setMobileProjectId] = useState<ProjectId | null>(null)
+  const isMobileComparison = useMobileComparison()
   const routeSessionId = comparisonSessionId(sessionId)
   const session = state.comparisonSessions.find(({ id }) => id === routeSessionId)
   const selectedIds = session?.projectIds ?? []
   const candidates = projects.filter(({ id }) => !selectedIds.includes(id))
   const selectedProjects = selectedIds.map((id) => projectById.get(id)).filter((project) => project !== undefined)
+  const missingProjectIds = selectedIds.filter((id) => !projectById.has(id))
   const selectedAssets = reusableAssets.filter(({ projectId }) => selectedIds.includes(projectId))
   const dimensions = buildComparisonMatrix(selectedProjects, selectedAssets)
   const comparisonCount = Math.max(selectedProjects.length, 2)
@@ -48,6 +66,10 @@ export function CompareSessionPage() {
       dispatch({ type: 'COMPARISON_SESSION_RESTORE', sessionId: session.id })
     }
   }, [dispatch, session, state.activeComparisonSessionId])
+
+  useEffect(() => {
+    if (!mobileProjectId || !selectedProjects.some(({ id }) => id === mobileProjectId)) setMobileProjectId(selectedProjects[0]?.id ?? null)
+  }, [mobileProjectId, selectedProjects])
 
   function addCandidate(value: string) {
     if (!value) return
@@ -96,7 +118,7 @@ export function CompareSessionPage() {
         <div className="section-heading">
           <p className="eyebrow">Selection</p>
           <h2 id="session-projects-heading">管理比较作品</h2>
-          <p>{selectedIds.length >= 2 ? '已满足正式比较数量规则。' : '至少选择两个作品，才能进入正式比较。'}</p>
+          <p>{selectedProjects.length >= 2 ? '已满足正式比较数量规则。' : '至少选择两个仍有档案的作品，才能进入正式比较。'}</p>
         </div>
         <ol className="comparison-selection-list" aria-label="已选比较作品">
           {selectedIds.map((projectId, index) => (
@@ -104,7 +126,7 @@ export function CompareSessionPage() {
               <span className="comparison-selection-order" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
               <div className="stack stack--small">
                 <strong>{projectName(projectId)}</strong>
-                <Link to={`/project/${projectId}`}>查看作品档案</Link>
+                {projectById.has(projectId) ? <Link to={`/project/${projectId}`}>查看作品档案</Link> : <p className="unknown-value">原作品档案已删除或不可用；会话保留其位置，便于替换或移除。</p>}
               </div>
               <div className="cluster comparison-selection-actions">
                 <Button variant="quiet" disabled={index === 0} aria-label={`上移${projectName(projectId)}`} onClick={() => dispatch({ type: 'COMPARISON_REORDER', projectId, direction: -1 })}>上移</Button>
@@ -134,6 +156,7 @@ export function CompareSessionPage() {
             </select>
           </div>
         ) : <p className="boundary-note">已达到 5 个作品上限；可先移除或替换一个作品。</p>}
+        {missingProjectIds.length ? <aside className="boundary-note" role="note"><strong>有 {missingProjectIds.length} 个作品档案不可用</strong><p>它们不会参与字段比较，但不会从历史会话中自动消失。请在上方替换或移除。</p></aside> : null}
       </section>
 
       {selectedProjects.length >= 2 ? (
@@ -154,7 +177,20 @@ export function CompareSessionPage() {
             </div>
           </div>
 
-          <div className="comparison-matrix-scroll" tabIndex={0} aria-label={`${selectedProjects.length} 个作品的横向比较表`}>
+          {isMobileComparison ? (
+            <div className="mobile-comparison stack" aria-label={`${selectedProjects.length} 个作品的移动比较`}>
+              <nav className="mobile-project-switch" aria-label="移动端作品切换" role="tablist">
+                {selectedProjects.map((project) => <button key={project.id} type="button" role="tab" aria-selected={mobileProjectId === project.id} onClick={() => setMobileProjectId(project.id)}>{projectName(project.id)}</button>)}
+              </nav>
+              <div role="tabpanel" aria-label={mobileProjectId ? `${projectName(mobileProjectId)}的比较字段` : '比较字段'} className="stack">
+                {dimensions.map((dimension) => {
+                  const projectIndex = selectedProjects.findIndex(({ id }) => id === mobileProjectId)
+                  const rows = comparisonView === 'differences' ? dimension.rows.filter(({ isSame }) => !isSame) : dimension.rows
+                  return <section key={dimension.id} id={`mobile-dimension-${dimension.id}`} className="mobile-comparison-dimension stack stack--small"><h3>{dimension.label}</h3>{rows.length ? rows.map((row) => <article key={row.id} className="mobile-comparison-row stack stack--small"><div className="cluster cluster--between"><strong>{row.label}</strong>{row.isSame ? <Tag tone="dashed">各作品相同</Tag> : <Tag tone="strong">有差异</Tag>}</div>{row.cells[projectIndex] ? <ComparisonCellView cell={row.cells[projectIndex]} /> : <UnknownFact reason="作品档案不可用" />}</article>) : <p className="page-description">本维度没有差异；切换“查看全部”可查看相同项。</p>}</section>
+                })}
+              </div>
+            </div>
+          ) : <div className="comparison-matrix-scroll" tabIndex={0} aria-label={`${selectedProjects.length} 个作品的横向比较表`}>
             <div className="comparison-project-header" style={matrixStyle}>
               <strong>比较维度</strong>
               {selectedProjects.map((project) => {
@@ -194,7 +230,7 @@ export function CompareSessionPage() {
                 </section>
               )
             })}
-          </div>
+          </div>}
 
           <section id="comparison-assets" className="stack" aria-labelledby="comparison-assets-heading">
             <div className="section-heading"><p className="eyebrow">Reusable assets</p><h3 id="comparison-assets-heading">可复用资产快捷区</h3><p>资产状态、许可和价格独立于作品是否仍可访问。</p></div>
@@ -202,16 +238,17 @@ export function CompareSessionPage() {
           </section>
           <DecisionForm session={session} assets={selectedAssets} />
         </section>
-      ) : null}
+      ) : selectedIds.length === 0 ? <EmptyState title="还没有选择比较作品" description="请从作品广场、搜索或查同类结果中加入 2–5 个作品。" action={<Link className="button button--primary" to="/projects">返回选择作品</Link>} /> : <EmptyState title="还不能开始正式比较" description={missingProjectIds.length ? '当前只有一个仍有档案的作品，请替换已删除作品或再添加一个。' : '当前只有一个作品，请再添加一个。'} action={<Link className="button button--primary" to="/projects">继续选择作品</Link>} />}
 
       <footer className="comparison-session-footer cluster cluster--between">
         <div className="cluster">
           <Button onClick={() => { dispatch({ type: 'COMPARISON_SESSION_SAVE' }); pushToast('比较会话已保存。', 'success') }}>保存比较</Button>
           <Button variant="quiet" onClick={() => navigate(session.sourcePath)}>返回来源页</Button>
+          {selectedProjects.length >= 2 ? <a className="button button--primary" href="#comparison-decision">记录行动</a> : null}
         </div>
-        {selectedIds.length >= 2
+        {selectedProjects.length >= 2
           ? <p><strong>下一步：</strong>基于比较结果记录继续、调整、复用或暂停。</p>
-          : <p role="status">还需添加 {2 - selectedIds.length} 个作品。</p>}
+          : <p role="status">还需添加 {2 - selectedProjects.length} 个有效作品。</p>}
       </footer>
     </main>
   )
