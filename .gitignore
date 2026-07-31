@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.vite/
+*.local
+
+# Original research and design inputs remain outside the app repository.
+/设计文件/
+/vibcoding作品数据/
