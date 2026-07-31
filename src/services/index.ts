@@ -1,1 +1,26 @@
-export type { ServiceResult } from './result'
+export { adminService } from './adminService'
+export { comparisonService } from './comparisonService'
+export { notificationService } from './notificationService'
+export { projectService, type ProjectBundle } from './projectService'
+export {
+  clone,
+  configureServiceRuntime,
+  runService,
+  serviceScenarioIds,
+  type ServiceOptions,
+  type ServiceScenarioId,
+} from './runtime'
+export {
+  searchService,
+  type SearchFilters,
+  type SearchHit,
+  type SearchResponse,
+} from './searchService'
+export {
+  submissionService,
+  type ExtractionResult,
+  type UrlCheckItem,
+  type UrlCheckResult,
+} from './submissionService'
+export { verificationService } from './verificationService'
+export type { ServiceError, ServiceErrorKind, ServiceResult } from './result'
