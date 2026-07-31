@@ -1,2 +1,4 @@
+export { AdminLayout } from './AdminLayout'
+export { FrontstageLayout } from './FrontstageLayout'
 export { PageFrame } from './PageFrame'
 export { PrototypeDebugPanel } from './PrototypeDebugPanel'

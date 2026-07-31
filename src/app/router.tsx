@@ -5,23 +5,44 @@ import {
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
 import { NotFoundPage, RoutePlaceholderPage, StyleSandboxPage } from '../pages'
+import { AdminLayout, FrontstageLayout } from '../components'
+
+const frontstageRoutes = routeCatalog
+  .filter((route) => route.area === 'frontstage')
+  .map((route) => ({
+    path: route.path,
+    element: <RoutePlaceholderPage route={route} />,
+  }))
+
+const adminRoutes = routeCatalog
+  .filter((route) => route.area === 'admin')
+  .map((route) => ({
+    path: route.path,
+    element: <RoutePlaceholderPage route={route} />,
+  }))
 
 export const appRoutes: RouteObject[] = [
   {
-    path: '/',
-    element: <Navigate to="/projects" replace />,
+    element: <FrontstageLayout />,
+    children: [
+      {
+        path: '/',
+        element: <Navigate to="/projects" replace />,
+      },
+      ...frontstageRoutes,
+      {
+        path: '*',
+        element: <NotFoundPage />,
+      },
+    ],
   },
-  ...routeCatalog.map((route) => ({
-    path: route.path,
-    element: <RoutePlaceholderPage route={route} />,
-  })),
+  {
+    element: <AdminLayout />,
+    children: adminRoutes,
+  },
   {
     path: '/__sandbox',
     element: <StyleSandboxPage />,
-  },
-  {
-    path: '*',
-    element: <NotFoundPage />,
   },
 ]
 

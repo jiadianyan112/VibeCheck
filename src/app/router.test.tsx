@@ -1,10 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { AppStateProvider } from '../state'
 import { appRoutes } from './router'
 
 function renderRoute(path: string) {
   const memoryRouter = createMemoryRouter(appRoutes, { initialEntries: [path] })
-  return render(<RouterProvider router={memoryRouter} />)
+  return render(
+    <AppStateProvider>
+      <RouterProvider router={memoryRouter} />
+    </AppStateProvider>,
+  )
 }
 
 describe('application route skeleton', () => {
@@ -28,6 +33,27 @@ describe('application route skeleton', () => {
     renderRoute('/not-a-real-route')
     expect(screen.getByRole('heading', { name: '404 页面不存在' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回作品广场' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
+  })
+
+  it('renders the shared frontstage navigation with active state', () => {
+    renderRoute('/projects')
+    const mainNavigation = screen.getByRole('navigation', { name: '主导航' })
+    const projectLink = mainNavigation.querySelector('a[href="/projects"]')
+    expect(projectLink).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('search')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '发布' })).toHaveAttribute(
+      'href',
+      '/auth?from=%2Fsubmit',
+    )
+  })
+
+  it('renders a separate admin navigation', () => {
+    renderRoute('/admin/projects')
+    expect(screen.getByRole('navigation', { name: '后台导航' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /返回前台/ })).toHaveAttribute(
       'href',
       '/projects',
     )
