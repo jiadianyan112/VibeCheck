@@ -1,5 +1,6 @@
 export { adminService } from './adminService'
 export { comparisonService } from './comparisonService'
+export { intentService, parseIntent, type IntentParseResult } from './intentService'
 export { notificationService } from './notificationService'
 export { projectService, type ProjectBundle } from './projectService'
 export {

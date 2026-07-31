@@ -1,0 +1,1 @@
+export { IntentEditor } from './IntentEditor'

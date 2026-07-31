@@ -75,6 +75,9 @@ body {
 .search-hit { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--space-2); }
 .match-reason { display: flex; align-content: start; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); border: 1px solid var(--color-line); padding: var(--space-3); }
 .match-reason strong { width: 100%; font-size: 0.8rem; }
+.intent-editor { border: 1px solid var(--color-line-strong); padding: var(--space-4); }
+.intent-original blockquote { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-line-strong); padding-left: var(--space-3); }
+.intent-fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
 
 h1,
 h2,
@@ -849,7 +852,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }

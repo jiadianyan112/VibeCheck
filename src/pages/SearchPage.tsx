@@ -10,14 +10,14 @@ import { accessStatusText, inputTypeLabels, targetUserLabels } from '../utils'
 type SearchMode = 'works' | 'similar'
 const assetLabels: Record<AssetType, string> = { source_code: '源代码', template: '模板', component: '组件', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', other: '其他' }
 
-function defaultMode(query: string): SearchMode {
+export function inferSearchMode(query: string): SearchMode {
   return query.trim().length > 14 ? 'similar' : 'works'
 }
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams()
   const query = params.get('q')?.trim() ?? ''
-  const mode = (params.get('mode') as SearchMode | null) ?? defaultMode(query)
+  const mode = (params.get('mode') as SearchMode | null) ?? inferSearchMode(query)
   const { state, dispatch } = useAppState()
   const { requireLogin } = useAuthGate()
   const { addProject } = useComparison()
