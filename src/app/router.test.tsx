@@ -16,6 +16,7 @@ describe('application route skeleton', () => {
   it.each([
     ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
     ['/discover', '先确认你要解决的问题'],
+    ['/discover/result', '同类作品分析'],
     ['/project/project-001', 'P08 作品详情'],
     ['/compare/session-001', 'P09 作品比较'],
     ['/admin/project/project-001', 'A03 作品编辑'],
