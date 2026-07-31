@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { useAuthGate, useComparison } from '../features'
+import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
@@ -115,6 +116,10 @@ export function ProjectDetailPage() {
   const followed = state.followedProjectIds.includes(project.id)
   const liked = state.likedProjectIds.includes(project.id)
   const trustVariant = searchParams.get('variant')
+  const submissionUrl = searchParams.get('from') === 'submit'
+    ? searchParams.get('submissionUrl')
+    : null
+  const submissionScenario = searchParams.get('submissionScenario')
   const orderedFlow = project.coreFlow.state === 'known' ? [...project.coreFlow.value].sort((a, b) => a.order - b.order) : []
 
   function protectedToggle(kind: 'favorite' | 'follow') {
@@ -149,6 +154,21 @@ export function ProjectDetailPage() {
 
   return (
     <main className="page-container page-with-bottom-space stack">
+      {submissionUrl ? (
+        <aside className="submission-context-banner stack stack--small" aria-label="发布查重上下文">
+          <strong>你正在核对发布时发现的已有档案</strong>
+          <p>待发布地址：<code>{submissionUrl}</code>。返回后地址输入会保留。</p>
+          <Link
+            className="button"
+            to={submissionReturnPath(
+              submissionUrl,
+              submissionScenario === 'duplicate_project' ? 'duplicate_project' : 'default',
+            )}
+          >
+            返回发布查重
+          </Link>
+        </aside>
+      ) : null}
       <nav aria-label="面包屑"><Link to="/projects">作品广场</Link> / {name}</nav>
       <section className="project-hero">
         <div className="media-placeholder project-hero__media" aria-label={project.coverMedia[0]?.alt ?? `${name} 媒体占位`}>16:9 作品媒体占位</div>

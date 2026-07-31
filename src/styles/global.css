@@ -981,6 +981,69 @@ textarea {
   padding-top: var(--space-4);
 }
 
+.duplicate-branch {
+  border: 2px solid var(--color-ink);
+  padding: var(--space-5, 1.25rem);
+}
+
+.duplicate-summary {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.duplicate-summary div {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  padding: var(--space-3) 0;
+}
+
+.duplicate-summary dt {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.duplicate-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.duplicate-branch > .button--primary {
+  justify-self: start;
+}
+
+.duplicate-author-choice {
+  margin-top: var(--space-2);
+}
+
+.duplicate-dispute-placeholder {
+  border-top: 1px dashed var(--color-line-strong);
+  padding-top: var(--space-3);
+}
+
+.duplicate-dispute-placeholder summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.duplicate-dispute-placeholder p {
+  margin: var(--space-2) 0;
+  color: var(--color-muted);
+}
+
+.submission-context-banner {
+  border: 2px solid var(--color-ink);
+  background: var(--color-surface);
+  padding: var(--space-4);
+}
+
+.submission-context-banner .button {
+  justify-self: start;
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -1126,6 +1189,7 @@ textarea {
   .decision-form { padding-bottom: 10rem; }
   .decision-complete { margin-bottom: 8rem; }
   .submission-url-panel { position: static; }
+  .duplicate-summary div { grid-template-columns: 1fr; gap: var(--space-1); }
 
   .placeholder-layout {
     grid-template-columns: 1fr;

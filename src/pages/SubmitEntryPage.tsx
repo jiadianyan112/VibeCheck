@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Input, PageFrame, useToast } from '../components'
-import { canContinueAfterUrlCheck, createUrlCheckDraft, urlCheckLabels } from '../features'
+import { canContinueAfterUrlCheck, createUrlCheckDraft, duplicateDetailPath, duplicateVerificationPath, getDuplicateProjectSummary, urlCheckLabels } from '../features'
 import {
   normalizeSubmissionUrl,
   serviceScenarioIds,
@@ -37,16 +37,17 @@ function scenarioFromQuery(value: string | null): ServiceScenarioId | null {
 export function SubmitEntryPage() {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryScenario = scenarioFromQuery(searchParams.get('scenario'))
   const scenario = queryScenario ?? state.serviceScenario
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState(() => searchParams.get('resumeUrl') ?? '')
   const [touched, setTouched] = useState(false)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<UrlCheckResult | null>(null)
   const [requestError, setRequestError] = useState('')
   const [cancelled, setCancelled] = useState(false)
   const [savedDraftId, setSavedDraftId] = useState<string | null>(null)
+  const [declaredAuthor, setDeclaredAuthor] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
   const validationError = touched ? validateUrl(url) : ''
 
@@ -88,6 +89,7 @@ export function SubmitEntryPage() {
     setRequestError('')
     setCancelled(false)
     setSavedDraftId(null)
+    setDeclaredAuthor(false)
 
     const response = await submissionService.checkUrl(url, {
       scenario,
@@ -105,6 +107,12 @@ export function SubmitEntryPage() {
     }
     setUrl(response.data.normalizedUrl)
     setResult(response.data)
+    if (response.data.duplicateProjectId) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.set('resumeUrl', response.data.normalizedUrl)
+      nextParams.set('scenario', scenario)
+      setSearchParams(nextParams, { replace: true })
+    }
   }
 
   const cancelCheck = () => {
@@ -120,6 +128,9 @@ export function SubmitEntryPage() {
   }
 
   const allPassed = result ? canContinueAfterUrlCheck(result) : false
+  const duplicateSummary = result?.duplicateProjectId
+    ? getDuplicateProjectSummary(result.duplicateProjectId)
+    : null
 
   return (
     <PageFrame
@@ -185,10 +196,49 @@ export function SubmitEntryPage() {
             })}
           </ol>
 
-          {result ? (
+          {duplicateSummary && result ? (
+            <section className="duplicate-branch stack" aria-labelledby="duplicate-heading">
+              <div className="stack stack--small">
+                <p className="eyebrow">发现已有档案</p>
+                <h3 id="duplicate-heading">{duplicateSummary.name}</h3>
+                <p>默认不新建作品；请先核对已有档案。</p>
+              </div>
+              <dl className="duplicate-summary">
+                <div><dt>已有地址</dt><dd>{duplicateSummary.publicUrl}</dd></div>
+                <div><dt>作者关联</dt><dd>{duplicateSummary.authorLinkLabel}</dd></div>
+                <div><dt>档案来源</dt><dd>{duplicateSummary.sourceLabel}</dd></div>
+              </dl>
+              <Link
+                className="button button--primary"
+                to={duplicateDetailPath(duplicateSummary.id, result.normalizedUrl, scenario)}
+              >
+                查看已有作品详情
+              </Link>
+              <label className="choice-card duplicate-author-choice">
+                <input
+                  type="checkbox"
+                  checked={declaredAuthor}
+                  onChange={(event) => setDeclaredAuthor(event.target.checked)}
+                />
+                <span><strong>我是该作品作者，并需要管理档案</strong><small>仅在你需要管理已有档案时继续身份验证。</small></span>
+              </label>
+              {declaredAuthor ? (
+                <Link
+                  className="weak-link"
+                  to={duplicateVerificationPath(duplicateSummary.id, result.normalizedUrl, scenario)}
+                >
+                  继续验证作者身份
+                </Link>
+              ) : null}
+              <details className="duplicate-dispute-placeholder">
+                <summary>这不是同一个作品</summary>
+                <p>可在后续入口提交名称、地址或功能差异证据；平台核验前仍不会默认新建档案。</p>
+                <Button type="button" disabled>提交“非同一作品”证据（占位）</Button>
+              </details>
+            </section>
+          ) : result ? (
             <div className="url-check-outcome stack stack--small" role="status">
               <strong>{allPassed ? '地址检查通过' : result.canCreateDraft ? '检查未完全通过，可先保存草稿' : '当前地址不能创建发布草稿'}</strong>
-              {result.duplicateProjectId ? <p>重复档案：<Link to={`/project/${result.duplicateProjectId}`}>{result.duplicateProjectId}</Link></p> : null}
               <div className="cluster">
                 {result.canCreateDraft ? <Button type="button" onClick={saveDraft}>{savedDraftId ? '草稿已保存' : '保存地址草稿'}</Button> : null}
                 {!allPassed ? <Button type="button" variant="primary" disabled>继续发布</Button> : null}
