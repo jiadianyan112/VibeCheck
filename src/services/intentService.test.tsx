@@ -36,8 +36,8 @@ describe('deterministic intent parser', () => {
     function Example() { const [intent, setIntent] = useState(parseIntent('把 PDF 讲义生成练习题').intent); return <IntentEditor value={intent} onChange={setIntent} /> }
     render(<Example />)
     expect(screen.getByText('把 PDF 讲义生成练习题')).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText('主要输出'), 'learning_report')
-    expect(screen.getByLabelText('主要输出')).toHaveValue('learning_report')
+    await user.selectOptions(screen.getByLabelText('添加主要输出'), 'learning_report')
+    expect(screen.getByText('学习报告')).toBeInTheDocument()
     expect(screen.getByText('把 PDF 讲义生成练习题')).toBeInTheDocument()
   })
 })
