@@ -259,6 +259,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         eventLog: appendEvent(state, createPrototypeEvent('project_updated', { projectId: action.project.id, eventId: action.event.id, updateType: action.record.type })),
       }
     }
+    case 'ADMIN_PROJECT_SAVE': {
+      const exists = state.projectOverrides.some((project) => project.id === action.project.id)
+      return {
+        ...state,
+        projectOverrides: exists
+          ? state.projectOverrides.map((project) => project.id === action.project.id ? action.project : project)
+          : [...state.projectOverrides, action.project],
+      }
+    }
     case 'PROJECT_UPDATE_DRAFT_UPSERT': {
       const exists = state.projectUpdateDrafts.some((draft) => draft.id === action.draft.id)
       return { ...state, projectUpdateDrafts: exists ? state.projectUpdateDrafts.map((draft) => draft.id === action.draft.id ? action.draft : draft) : [...state.projectUpdateDrafts, action.draft] }

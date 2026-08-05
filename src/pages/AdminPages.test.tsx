@@ -37,7 +37,7 @@ describe('T47 admin dashboard and project queue', () => {
 
     await user.click(within(row).getByRole('link', { name: '进入编辑' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/admin/project/project-quizforge'))
-    expect(await screen.findByRole('heading', { name: 'A03 作品编辑' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '编辑 题练工坊' })).toBeInTheDocument()
   })
 
   it('reproduces combined filters from the URL and exposes an explicit empty exit', async () => {

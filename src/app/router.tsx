@@ -4,7 +4,7 @@ import {
   type RouteObject,
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
-import { AboutPage, ActivityPage, AdminDashboardPage, AdminProjectsPage, AuthorVerificationPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, CreatorProfilePage, DiscoverPage, DiscoverResultPage, NotFoundPage, NotificationsPage, PersonalCenterPage, ProjectDetailPage, ProjectUpdatePage, ProjectsHomePage, RoutePlaceholderPage, SearchPage, StyleSandboxPage, SubmitEntryPage, SubmitFormPage } from '../pages'
+import { AboutPage, ActivityPage, AdminDashboardPage, AdminProjectEditorPage, AdminProjectsPage, AuthorVerificationPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, CreatorProfilePage, DiscoverPage, DiscoverResultPage, NotFoundPage, NotificationsPage, PersonalCenterPage, ProjectDetailPage, ProjectUpdatePage, ProjectsHomePage, RoutePlaceholderPage, SearchPage, StyleSandboxPage, SubmitEntryPage, SubmitFormPage } from '../pages'
 import { AdminLayout, FrontstageLayout } from '../components'
 import { AuthenticatedRoute, StaffRoute } from '../features'
 
@@ -22,7 +22,7 @@ const adminRoutes = routeCatalog
   .filter((route) => route.area === 'admin')
   .map((route) => ({
     path: route.path,
-    element: route.id === 'A01' ? <AdminDashboardPage /> : route.id === 'A02' ? <AdminProjectsPage /> : <RoutePlaceholderPage route={route} />,
+    element: route.id === 'A01' ? <AdminDashboardPage /> : route.id === 'A02' ? <AdminProjectsPage /> : route.id === 'A03' ? <AdminProjectEditorPage /> : <RoutePlaceholderPage route={route} />,
   }))
 
 export const appRoutes: RouteObject[] = [

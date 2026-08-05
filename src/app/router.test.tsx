@@ -69,8 +69,8 @@ describe('application route skeleton', () => {
 
   it('renders an admin route for a staff identity', async () => {
     persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
-    renderRoute('/admin/project/project-001')
-    expect(await screen.findByRole('heading', { name: 'A03 作品编辑' })).toBeInTheDocument()
+    renderRoute('/admin/project/project-quizforge')
+    expect(await screen.findByRole('heading', { name: '编辑 题练工坊' })).toBeInTheDocument()
   })
 
   it('redirects a guest admin request to the identity simulator', async () => {
