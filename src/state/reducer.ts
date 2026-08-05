@@ -56,7 +56,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return state
       }
       return {
-        ...updateActiveComparison(state, (session) => addComparisonProject(session, action.projectId)),
+        ...updateActiveComparison(state, (session) => ({
+          ...addComparisonProject(session, action.projectId),
+          sourcePath: action.sourcePath ?? session.sourcePath,
+        })),
         eventLog: appendEvent(
           state,
           createPrototypeEvent('comparison_added', { projectId: action.projectId }),
@@ -268,6 +271,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         lifecycleEventAdditions: [...state.lifecycleEventAdditions, action.event],
         reusableAssetAdditions: action.asset ? [...state.reusableAssetAdditions, action.asset] : state.reusableAssetAdditions,
         projectUpdateRecords: [...state.projectUpdateRecords, action.record],
+        projectUpdateDrafts: state.projectUpdateDrafts.filter((draft) => draft.projectId !== action.record.projectId || draft.userId !== action.record.userId),
         notifications: [...state.notifications, ...action.notifications.filter((notification) => !state.notifications.some((item) => item.id === notification.id))],
         eventLog: appendEvent(state, createPrototypeEvent('project_updated', { projectId: action.project.id, eventId: action.event.id, updateType: action.record.type })),
       }

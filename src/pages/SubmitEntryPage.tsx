@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, Input, PageFrame, useToast } from '../components'
 import { canContinueAfterUrlCheck, createUrlCheckDraft, duplicateDetailPath, duplicateVerificationPath, getDuplicateProjectSummary, urlCheckLabels } from '../features'
 import {
@@ -39,6 +39,7 @@ export function SubmitEntryPage() {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryScenario = scenarioFromQuery(searchParams.get('scenario'))
   const scenario = queryScenario ?? state.serviceScenario
@@ -61,6 +62,7 @@ export function SubmitEntryPage() {
   )
 
   if (!state.session.user) {
+    const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
     return (
       <PageFrame
         title="发布作品"
@@ -69,7 +71,7 @@ export function SubmitEntryPage() {
         <section className="submit-login-callout stack stack--small">
           <h2>先登录，再检查作品地址</h2>
           <p>当前输入步骤不会在访客身份下创建草稿。</p>
-          <Link className="button button--primary" to="/auth?from=%2Fsubmit">
+          <Link className="button button--primary" to={`/auth?from=${returnPath}`}>
             登录后发布
           </Link>
         </section>

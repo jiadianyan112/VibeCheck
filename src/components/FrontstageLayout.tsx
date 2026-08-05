@@ -2,6 +2,7 @@ import { Form, Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ComparisonProvider, FloatingCompareBar } from '../features'
 import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
+import { RouteScrollManager } from './RouteScrollManager'
 
 const primaryNavigation = [
   { to: '/projects', label: '作品广场' },
@@ -37,6 +38,7 @@ function FrontstageContent() {
 
   return (
     <div className="app-shell">
+      <RouteScrollManager />
       <header className="global-header">
         <div className="global-header__inner">
           <Link className="wordmark" to="/projects" aria-label="VibeCheck 作品广场">

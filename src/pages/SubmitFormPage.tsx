@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, Input, LoadingState, PageFrame, Tag, useToast } from '../components'
 import {
   applyExtraction,
@@ -159,6 +159,7 @@ export function SubmitFormPage() {
   const { pushToast } = useToast()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const draftId = searchParams.get('draft')
   const draft = state.submissionDrafts.find((item) => item.id === draftId && item.userId === state.session.user?.id)
   const step = parseStep(searchParams.get('step'), draft?.step ?? 'prefill')
@@ -183,7 +184,10 @@ export function SubmitFormPage() {
 
   const completion = useMemo(() => draft ? submissionCompleteness(draft) : null, [draft])
 
-  if (!state.session.user) return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to="/auth?from=%2Fsubmit">返回登录</Link></section></PageFrame>
+  if (!state.session.user) {
+    const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
+    return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?from=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
+  }
   if (!draft) return <PageFrame title="未找到发布草稿" description="草稿可能不存在、属于其他测试身份或已被清除。"><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
   const requestedStep = searchParams.get('step')
   const editingRequestedChanges = draft.status === 'changes_requested' && submissionFormSteps.includes(requestedStep as SubmissionFormStep)

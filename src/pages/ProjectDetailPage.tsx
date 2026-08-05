@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
@@ -62,6 +62,10 @@ function readableChange(value: unknown) {
   return String(value)
 }
 
+function uniqueById<T extends { id: string }>(items: readonly T[]) {
+  return items.filter((item, index) => items.findIndex((candidate) => candidate.id === item.id) === index)
+}
+
 export function ProjectDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -78,6 +82,14 @@ export function ProjectDetailPage() {
   const [commentCategory, setCommentCategory] = useState<CommentCategory>('usage_feedback')
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
+  const trackedProjectId = useRef<Project['id'] | null>(null)
+
+  const trackProjectView = useCallback((projectId: Project['id']) => {
+    if (trackedProjectId.current === projectId) return
+    trackedProjectId.current = projectId
+    dispatch({ type: 'RECENT_PROJECT_ADD', projectId })
+    dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId }) })
+  }, [dispatch])
   const submittedBundle = useMemo<ProjectBundle | null>(() => {
     const draft = state.submissionDrafts.find((item) => item.publishedProjectId === resolvedId && item.status === 'approved')
     if (!draft) return null
@@ -98,8 +110,7 @@ export function ProjectDetailPage() {
       setComments([])
       setError(null)
       setLoading(false)
-      dispatch({ type: 'RECENT_PROJECT_ADD', projectId: submittedBundle.project.id })
-      dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: submittedBundle.project.id }) })
+      trackProjectView(submittedBundle.project.id)
       return () => { active = false }
     }
     Promise.all([
@@ -113,18 +124,17 @@ export function ProjectDetailPage() {
           ...result.data,
           project: projectOverride ?? result.data.project,
           evidences: mergeEvidenceRecords(result.data.evidences, state.evidenceOverrides.filter((evidence) => evidence.supports.projectId === result.data.project.id)),
-          events: [...result.data.events, ...state.lifecycleEventAdditions.filter((event) => event.projectId === result.data.project.id)],
+          events: uniqueById([...result.data.events, ...state.lifecycleEventAdditions.filter((event) => event.projectId === result.data.project.id)]),
           assets: [...result.data.assets, ...state.reusableAssetAdditions.filter((asset) => asset.projectId === result.data.project.id)],
         }
         setBundle(mergedBundle); setError(null)
         setComments(commentResult.data)
-        dispatch({ type: 'RECENT_PROJECT_ADD', projectId: mergedBundle.project.id })
-        dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: mergedBundle.project.id }) })
+        trackProjectView(mergedBundle.project.id)
       } else setError(!result.ok ? result.error : commentResult.ok ? null : commentResult.error)
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, resolvedId, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
+  }, [resolvedId, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle, trackProjectView])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return

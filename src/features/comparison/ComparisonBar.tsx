@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Button, ConfirmDialog, Modal, Tag, useToast } from '../../components'
 import { projectById } from '../../mocks'
 import { useAppState } from '../../state'
@@ -20,7 +20,9 @@ function projectName(id: ProjectId) {
 export function ComparisonProvider({ children }: PropsWithChildren) {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
+  const location = useLocation()
   const [replacementCandidate, setReplacementCandidate] = useState<ProjectId | null>(null)
+  const sourcePath = `${location.pathname}${location.search}${location.hash}`
 
   const addProject = useCallback((id: ProjectId) => {
     if (state.comparisonProjectIds.includes(id)) {
@@ -31,10 +33,10 @@ export function ComparisonProvider({ children }: PropsWithChildren) {
       setReplacementCandidate(id)
       return 'replace_required' as const
     }
-    dispatch({ type: 'COMPARISON_ADD', projectId: id })
+    dispatch({ type: 'COMPARISON_ADD', projectId: id, sourcePath })
     pushToast('已加入比较。', 'success')
     return 'added' as const
-  }, [dispatch, pushToast, state.comparisonProjectIds])
+  }, [dispatch, pushToast, sourcePath, state.comparisonProjectIds])
 
   const removeProject = useCallback((projectId: ProjectId) => dispatch({ type: 'COMPARISON_REMOVE', projectId }), [dispatch])
   const value = useMemo(() => ({ addProject, removeProject }), [addProject, removeProject])

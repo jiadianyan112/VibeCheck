@@ -109,7 +109,7 @@ export type LoginAssets = Pick<
 >
 
 export type AppAction =
-  | { type: 'COMPARISON_ADD'; projectId: ProjectId }
+  | { type: 'COMPARISON_ADD'; projectId: ProjectId; sourcePath?: string }
   | { type: 'COMPARISON_REMOVE'; projectId: ProjectId }
   | { type: 'COMPARISON_REPLACE'; removeId: ProjectId; addId: ProjectId }
   | { type: 'COMPARISON_CLEAR' }

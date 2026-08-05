@@ -1020,8 +1020,8 @@ textarea {
 .toast-region {
   position: fixed;
   z-index: 40;
+  top: calc(4rem + var(--space-4));
   right: var(--space-4);
-  bottom: var(--space-4);
   display: grid;
   width: min(24rem, calc(100vw - 2 * var(--space-4)));
   gap: var(--space-2);

@@ -101,6 +101,16 @@ describe('global state and persistence', () => {
     expect(new Set(state.comparisonProjectIds).size).toBe(5)
   })
 
+  it('keeps the current filtered source path with a comparison selection', () => {
+    const state = appReducer(createInitialAppState(), {
+      type: 'COMPARISON_ADD',
+      projectId: projectId('project-papertopractice'),
+      sourcePath: '/discover/result?idea=PDF&status=normal',
+    })
+    const session = state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)
+    expect(session?.sourcePath).toBe('/discover/result?idea=PDF&status=normal')
+  })
+
   it('keeps shareable comparison routes while hiding private account records from guests', () => {
     const restored = hydrateAppState(createInitialAppState())
     expect(restored.comparisonSessions.some(

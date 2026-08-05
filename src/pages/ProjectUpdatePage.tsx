@@ -174,7 +174,7 @@ export function ProjectUpdatePage() {
           {validation ? <p className="field-error" role="alert">{validation}</p> : null}
           {operationError ? <div className="stack"><ErrorPanel title="更新提交未完成" message={operationError.message} detail={operationError.code} onRetry={operationError.retryable ? submit : undefined} />{operationError.code === 'VC_UPDATE_PERMISSION_EXPIRED' ? <Link className="button" to={`/project/${project.id}/verify-author`}>重新验证作者权限</Link> : null}</div> : null}
           {completedEventId ? <section className="feedback stack stack--small" role="status"><strong>更新已追加写入</strong><p>详情时间线和公开动态使用同一事件 ID；关注者通知已按关注关系生成。</p><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}#${completedEventId}`}>在详情中查看</Link><Link className="button" to={`/activity#${completedEventId}`}>在动态中查看</Link></div></section> : null}
-          <Button variant="primary" disabled={busy} onClick={requestSubmit}>{busy ? '提交中…' : '预览确认并提交更新'}</Button>
+          <Button variant="primary" disabled={busy || Boolean(completedEventId)} onClick={requestSubmit}>{busy ? '提交中…' : completedEventId ? '本次更新已提交' : '预览确认并提交更新'}</Button>
         </section>
       </div>
       <ConfirmDialog open={confirming} title={`确认提交${projectUpdateTypeLabels[type]}？`} description="更新会追加一条不可直接删除的公开生命周期事件，并同步详情、动态和关注者通知。" confirmLabel="确认提交更新" onConfirm={() => void submit()} onCancel={() => setConfirming(false)} />

@@ -44,6 +44,14 @@ describe('submission entry and URL checks', () => {
     expect(await screen.findByRole('heading', { name: '先检查作品地址' })).toBeInTheDocument()
   })
 
+  it('keeps the complete publication scenario through the login return', () => {
+    renderRoute('/submit?scenario=duplicate_project&resumeUrl=https%3A%2F%2Fexample.test%2Ftool')
+    expect(screen.getByRole('link', { name: '登录后发布' })).toHaveAttribute(
+      'href',
+      '/auth?from=%2Fsubmit%3Fscenario%3Dduplicate_project%26resumeUrl%3Dhttps%253A%252F%252Fexample.test%252Ftool',
+    )
+  })
+
   it('completes a missing protocol and updates one stable draft on repeated saves', async () => {
     loginInStorage()
     const user = userEvent.setup()

@@ -42,6 +42,8 @@ describe('verified author project updates', () => {
     expect(state.projectOverrides[0].historicalUrls).toEqual(expect.arrayContaining([expect.objectContaining({ url: 'https://example.test/products/project-speakmirror' })]))
     expect(state.lifecycleEventAdditions[0].changes[0]).toMatchObject({ before: 'https://example.test/products/project-speakmirror', after: 'https://example.test/products/speakmirror-v3' })
     expect(state.notifications).toEqual(expect.arrayContaining([expect.objectContaining({ userId: 'user-mia', eventId: state.lifecycleEventAdditions[0].id })]))
+    expect(state.projectUpdateDrafts).toHaveLength(0)
+    expect(screen.getByRole('button', { name: '本次更新已提交' })).toBeDisabled()
 
     await act(async () => { await router.navigate('/project/project-speakmirror') })
     expect(await screen.findByText('公开地址迁移：https://example.test/products/speakmirror-v3')).toBeInTheDocument()
@@ -91,10 +93,10 @@ describe('verified author project updates', () => {
     await user.click(screen.getByRole('button', { name: '预览确认并提交更新' }))
     await user.click(screen.getByRole('button', { name: '确认提交更新' }))
     expect(await screen.findByText('更新已追加写入')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '预览确认并提交更新' }))
-    await user.click(screen.getByRole('button', { name: '确认提交更新' }))
+    expect(screen.getByRole('button', { name: '本次更新已提交' })).toBeDisabled()
     await waitFor(() => expect(persistedState().projectUpdateRecords).toHaveLength(1))
     expect(persistedState().lifecycleEventAdditions).toHaveLength(1)
+    expect(persistedState().projectUpdateDrafts).toHaveLength(0)
   }, 10_000)
 
   it('preserves the draft and redirects when permission expires during submission', async () => {

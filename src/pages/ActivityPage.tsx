@@ -35,7 +35,10 @@ export function ActivityPage() {
     const baseIds = new Set(base.map((project) => project.id))
     return [...base.map((project) => state.projectOverrides.find((item) => item.id === project.id) ?? project), ...state.projectOverrides.filter((project) => !baseIds.has(project.id))]
   }, [approvedSubmissions, projects, state.projectOverrides])
-  const allEvents = useMemo(() => [...events, ...approvedSubmissions.map(publishedEventFromSubmission).filter((event): event is LifecycleEvent => Boolean(event)), ...state.lifecycleEventAdditions], [approvedSubmissions, events, state.lifecycleEventAdditions])
+  const allEvents = useMemo(() => {
+    const combined = [...events, ...approvedSubmissions.map(publishedEventFromSubmission).filter((event): event is LifecycleEvent => Boolean(event)), ...state.lifecycleEventAdditions]
+    return combined.filter((event, index) => combined.findIndex((candidate) => candidate.id === event.id) === index)
+  }, [approvedSubmissions, events, state.lifecycleEventAdditions])
   const projectMap = useMemo(() => new Map(allProjects.map((project) => [project.id, project])), [allProjects])
   const filtered = useMemo(() => {
     const type = params.get('type') as LifecycleEventType | null
