@@ -1,0 +1,1 @@
+export { buildPersonalCenterData } from './dashboard'

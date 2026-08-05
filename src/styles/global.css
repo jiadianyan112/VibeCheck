@@ -948,6 +948,66 @@ textarea {
   list-style: none;
 }
 
+.personal-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+  align-items: flex-end;
+  padding: var(--space-6);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised);
+}
+
+.personal-section-nav {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.personal-section-nav a { white-space: nowrap; }
+
+.personal-section {
+  scroll-margin-top: 6rem;
+  padding-top: var(--space-3);
+}
+
+.personal-item-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.personal-item-list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-4);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-raised);
+}
+
+.personal-management-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 48rem) {
+  .personal-summary,
+  .personal-item-list > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .personal-management-grid { grid-template-columns: 1fr; }
+}
+
 .submission-entry-layout {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(22rem, 1.1fr);
