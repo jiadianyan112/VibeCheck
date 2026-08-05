@@ -1,4 +1,5 @@
 import { verificationRequests } from '../mocks'
+import { applyVerificationReview } from '../features/authorVerification'
 import type {
   AuthorVerificationRequest,
   AuthorVerificationStatus,
@@ -26,7 +27,11 @@ export const verificationService = {
       if (options?.scenario === 'review_changes_requested') status = 'changes_requested'
       if (options?.scenario === 'review_approved') status = 'verified'
       if (options?.scenario === 'review_rejected') status = 'failed'
-      return { ...request, status, updatedAt: '2026-07-31T10:40:00+08:00' }
+      if (options?.scenario === 'verification_disputed') status = 'disputed'
+      return applyVerificationReview(
+        request,
+        status as Extract<AuthorVerificationStatus, 'pending' | 'changes_requested' | 'verified' | 'failed' | 'disputed'>,
+      )
     })
   },
 }

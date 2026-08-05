@@ -21,6 +21,7 @@ export function createInitialAppState(): AppState {
     recentProjectIds: anonymousAssets.recentProjectIds,
     decisionRecords: [],
     submissionDrafts: [],
+    verificationRequests: [],
     notifications,
     pendingAction: null,
     lastReplayedActionId: null,

@@ -2,6 +2,7 @@ import type { ServiceScenarioId } from '../services'
 import type {
   ComparisonSession,
   DecisionRecord,
+  AuthorVerificationRequest,
   Notification,
   ProjectId,
   PrototypeSession,
@@ -66,6 +67,7 @@ export interface AppState {
   recentProjectIds: ProjectId[]
   decisionRecords: DecisionRecord[]
   submissionDrafts: SubmissionDraft[]
+  verificationRequests: AuthorVerificationRequest[]
   notifications: Notification[]
   pendingAction: PendingAction | null
   lastReplayedActionId: string | null
@@ -92,6 +94,7 @@ export type AppAction =
   | { type: 'PENDING_ACTION_CLEAR' }
   | { type: 'DECISION_SAVE'; decision: DecisionRecord }
   | { type: 'DRAFT_UPSERT'; draft: SubmissionDraft }
+  | { type: 'VERIFICATION_UPSERT'; request: AuthorVerificationRequest }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }
   | { type: 'SCENARIO_SET'; scenario: ServiceScenarioId }
   | { type: 'EVENT_LOGGED'; event: PrototypeEvent }

@@ -1234,6 +1234,58 @@ textarea {
   font-weight: 800;
 }
 
+.verification-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.verification-boundary {
+  position: sticky;
+  top: 6rem;
+}
+
+.verification-method-grid,
+.verification-next-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.verification-status {
+  border: 2px solid var(--color-ink);
+  padding: var(--space-5);
+}
+
+.verification-status--changes_requested,
+.verification-status--failed,
+.verification-status--disputed {
+  border-style: dashed;
+}
+
+.verification-history summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.verification-history ol {
+  display: grid;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+}
+
+.verification-history li {
+  border-left: 2px solid var(--color-line-strong);
+  padding-left: var(--space-3);
+}
+
+.verification-history time {
+  margin-left: var(--space-2);
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -1323,7 +1375,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid, .submission-preview-grid, .submission-summary-grid { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid, .submission-preview-grid, .submission-summary-grid, .verification-layout, .verification-method-grid, .verification-next-grid { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }

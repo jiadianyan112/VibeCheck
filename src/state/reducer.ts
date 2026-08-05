@@ -133,6 +133,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         followedProjectIds: [],
         decisionRecords: [],
         submissionDrafts: [],
+        verificationRequests: [],
         notifications: [],
         pendingAction: null,
       }
@@ -204,6 +205,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
               draft.id === action.draft.id ? action.draft : draft,
             )
           : [...state.submissionDrafts, action.draft],
+      }
+    }
+    case 'VERIFICATION_UPSERT': {
+      const exists = state.verificationRequests.some((request) => request.id === action.request.id)
+      return {
+        ...state,
+        verificationRequests: exists
+          ? state.verificationRequests.map((request) => request.id === action.request.id ? action.request : request)
+          : [...state.verificationRequests, action.request],
       }
     }
     case 'NOTIFICATION_MARK_READ':

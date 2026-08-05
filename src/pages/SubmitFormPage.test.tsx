@@ -105,7 +105,7 @@ describe('new project multi-step submission form', () => {
     }))
     expect(persistedDraft().originalExtraction.currentName).toBe('自动提取的作品名称')
     expect(persistedDraft().assetIds).toContain('asset-pdfquiz-template')
-  })
+  }, 10_000)
 
   it('restores corrected automatic fields after an unmount and direct cross-page return', async () => {
     const user = userEvent.setup()

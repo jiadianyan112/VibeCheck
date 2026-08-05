@@ -1,6 +1,7 @@
 export { ActivityPage } from './ActivityPage'
 export { AuthPage } from './AuthPage'
 export { AboutPage } from './AboutPage'
+export { AuthorVerificationPage } from './AuthorVerificationPage'
 export { CategoriesPage } from './CategoriesPage'
 export { CategoryDetailPage } from './CategoryDetailPage'
 export { CompareSessionPage } from './CompareSessionPage'

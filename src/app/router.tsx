@@ -4,14 +4,14 @@ import {
   type RouteObject,
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
-import { AboutPage, ActivityPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, DiscoverPage, DiscoverResultPage, NotFoundPage, ProjectDetailPage, ProjectsHomePage, RoutePlaceholderPage, SearchPage, StyleSandboxPage, SubmitEntryPage, SubmitFormPage } from '../pages'
+import { AboutPage, ActivityPage, AuthorVerificationPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, DiscoverPage, DiscoverResultPage, NotFoundPage, ProjectDetailPage, ProjectsHomePage, RoutePlaceholderPage, SearchPage, StyleSandboxPage, SubmitEntryPage, SubmitFormPage } from '../pages'
 import { AdminLayout, FrontstageLayout } from '../components'
 
 const frontstageRoutes = routeCatalog
   .filter((route) => route.area === 'frontstage')
   .map((route) => ({
     path: route.path,
-    element: route.id === 'P01' ? <ProjectsHomePage /> : route.id === 'P02' ? <CategoriesPage /> : route.id === 'P03' ? <CategoryDetailPage /> : route.id === 'P04' ? <ActivityPage /> : route.id === 'P05' ? <SearchPage /> : route.id === 'P06' ? <DiscoverPage /> : route.id === 'P07' ? <DiscoverResultPage /> : route.id === 'P08' ? <ProjectDetailPage /> : route.id === 'P09' ? <CompareSessionPage /> : route.id === 'P10' ? <SubmitEntryPage /> : route.id === 'P11' ? <SubmitFormPage /> : route.id === 'P17' ? <AuthPage /> : route.id === 'P18' ? <AboutPage /> : <RoutePlaceholderPage route={route} />,
+    element: route.id === 'P01' ? <ProjectsHomePage /> : route.id === 'P02' ? <CategoriesPage /> : route.id === 'P03' ? <CategoryDetailPage /> : route.id === 'P04' ? <ActivityPage /> : route.id === 'P05' ? <SearchPage /> : route.id === 'P06' ? <DiscoverPage /> : route.id === 'P07' ? <DiscoverResultPage /> : route.id === 'P08' ? <ProjectDetailPage /> : route.id === 'P09' ? <CompareSessionPage /> : route.id === 'P10' ? <SubmitEntryPage /> : route.id === 'P11' ? <SubmitFormPage /> : route.id === 'P12' ? <AuthorVerificationPage /> : route.id === 'P17' ? <AuthPage /> : route.id === 'P18' ? <AboutPage /> : <RoutePlaceholderPage route={route} />,
   }))
 
 const adminRoutes = routeCatalog

@@ -639,8 +639,15 @@ export interface AuthorVerificationRequest {
   materialSummary: string
   privateMaterialReference: string
   reviewMessage: string | null
+  statusHistory: Array<{
+    status: AuthorVerificationStatus
+    happenedAt: string
+    message: string | null
+  }>
   createdAt: string
   updatedAt: string
+  submittedAt: string | null
+  resolvedAt: string | null
 }
 
 export const notificationTypes = [

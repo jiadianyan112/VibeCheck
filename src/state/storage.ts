@@ -15,6 +15,7 @@ type PersistedState = Pick<
   | 'recentProjectIds'
   | 'decisionRecords'
   | 'submissionDrafts'
+  | 'verificationRequests'
   | 'pendingAction'
   | 'lastReplayedActionId'
   | 'serviceScenario'
@@ -33,6 +34,7 @@ export function selectPersistedState(state: AppState): PersistedState {
     recentProjectIds: state.recentProjectIds,
     decisionRecords: state.decisionRecords,
     submissionDrafts: state.submissionDrafts,
+    verificationRequests: state.verificationRequests,
     pendingAction: state.pendingAction,
     lastReplayedActionId: state.lastReplayedActionId,
     serviceScenario: state.serviceScenario,
@@ -70,6 +72,12 @@ export function hydrateAppState(
       ...fallback,
       ...persisted,
       submissionDrafts,
+      verificationRequests: (persisted.verificationRequests ?? fallback.verificationRequests).map((request) => ({
+        ...request,
+        statusHistory: request.statusHistory ?? [{ status: request.status, happenedAt: request.updatedAt, message: request.reviewMessage }],
+        submittedAt: request.submittedAt ?? request.createdAt,
+        resolvedAt: request.resolvedAt ?? null,
+      })),
       eventLog: [],
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,

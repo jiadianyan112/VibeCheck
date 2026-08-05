@@ -120,8 +120,11 @@ export const verificationRequests: AuthorVerificationRequest[] = [
     materialSummary: '公开个人主页包含作品地址。',
     privateMaterialReference: 'private://verification/verification-mia-pdfquizlab',
     reviewMessage: null,
+    statusHistory: [{ status: 'pending', happenedAt: '2026-07-30T16:00:00+08:00', message: null }],
     createdAt: '2026-07-30T16:00:00+08:00',
     updatedAt: '2026-07-30T16:00:00+08:00',
+    submittedAt: '2026-07-30T16:00:00+08:00',
+    resolvedAt: null,
   },
 ]
 

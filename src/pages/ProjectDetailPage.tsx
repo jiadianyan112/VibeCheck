@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
-import { publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison } from '../features'
+import { authorManagementState, latestVerificationFor, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { prototypeUsers } from '../mocks'
@@ -138,6 +138,9 @@ export function ProjectDetailPage() {
     : null
   const submissionScenario = searchParams.get('submissionScenario')
   const orderedFlow = project.coreFlow.state === 'known' ? [...project.coreFlow.value].sort((a, b) => a.order - b.order) : []
+  const ownVerification = latestVerificationFor(state.verificationRequests, project.id, state.session.user?.id)
+  const management = authorManagementState(ownVerification)
+  const effectiveAuthorLinkStatus = management.linked ? 'linked' : management.highRiskEditingFrozen ? 'disputed' : ownVerification ? 'pending' : project.authorLinkStatus
 
   function protectedToggle(kind: 'favorite' | 'follow') {
     requireLogin({ id: `${kind}-${project.id}`, kind, projectId: project.id, sourcePath: `/project/${project.id}` }, () => dispatch({ type: kind === 'favorite' ? 'FAVORITE_TOGGLE' : 'FOLLOW_TOGGLE', projectId: project.id }))
@@ -194,8 +197,9 @@ export function ProjectDetailPage() {
           <div className="stack stack--small"><p className="eyebrow">Project profile</p><h1>{name}</h1>{project.oneLineDefinition.state === 'known' ? <p className="project-hero__definition">{project.oneLineDefinition.value}</p> : <UnknownFact reason={project.oneLineDefinition.reason} />}</div>
 
           <section className="project-source stack stack--small" aria-label="作者与来源">
-            <div className="cluster cluster--between"><div><strong>{authorLinkLabels[project.authorLinkStatus]}</strong><p>{sourceLabels[project.recordSource]}</p></div>{creators.length ? <div className="cluster">{creators.map((creator) => <Link key={creator.id} to={`/creator/${creator.id}`}><Tag tone={creator.verificationStatus === 'verified' ? 'default' : 'dashed'}>{creator.displayName} · {creator.verificationStatus === 'verified' ? '已验证' : '未验证'}</Tag></Link>)}</div> : <span className="unknown-value">未发现已确认的公开作者</span>}</div>
-            <Link className="weak-link" to={`/project/${project.id}/verify-author`}>我是作者，申请关联</Link>
+            <div className="cluster cluster--between"><div><strong>{authorLinkLabels[effectiveAuthorLinkStatus]}</strong><p>{sourceLabels[project.recordSource]}</p></div>{creators.length || management.linked ? <div className="cluster">{creators.map((creator) => <Link key={creator.id} to={`/creator/${creator.id}`}><Tag tone={creator.verificationStatus === 'verified' ? 'default' : 'dashed'}>{creator.displayName} · {creator.verificationStatus === 'verified' ? '已验证' : '未验证'}</Tag></Link>)}{management.linked && state.session.user ? <Tag>{state.session.user.displayName} · 已验证管理权限</Tag> : null}</div> : <span className="unknown-value">未发现已确认的公开作者</span>}</div>
+            <div className="cluster"><Link className="weak-link" to={`/project/${project.id}/verify-author`}>{ownVerification ? `查看身份验证：${verificationStatusLabels[ownVerification.status]}` : '我是作者，申请关联'}</Link>{management.canEdit ? <Link className="button" to={`/project/${project.id}/update`}>管理作品</Link> : null}</div>
+            {management.highRiskEditingFrozen ? <aside className="trust-notice trust-notice--disputed"><strong>归属争议处理中</strong><p>高风险编辑已冻结；公开档案和历史事实继续保留。</p></aside> : null}
           </section>
 
           <div className="project-primary-actions" aria-label="作品核心操作">
