@@ -5,6 +5,7 @@ playwright-report/
 test-results/
 .vite/
 *.local
+.vibecheck-dev.log
 
 # Original research and design inputs remain outside the app repository.
 /设计文件/
