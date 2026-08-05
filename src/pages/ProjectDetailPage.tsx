@@ -66,6 +66,7 @@ export function ProjectDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const { state, dispatch } = useAppState()
+  const resolvedId = (id ? state.projectAliases[id] ?? id : id) as Project['id']
   const { requireLogin } = useAuthGate()
   const { addProject } = useComparison()
   const { pushToast } = useToast()
@@ -78,14 +79,16 @@ export function ProjectDetailPage() {
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
   const submittedBundle = useMemo<ProjectBundle | null>(() => {
-    const draft = state.submissionDrafts.find((item) => item.publishedProjectId === id && item.status === 'approved')
+    const draft = state.submissionDrafts.find((item) => item.publishedProjectId === resolvedId && item.status === 'approved')
     if (!draft) return null
     const project = publishedProjectFromSubmission(draft)
     const event = publishedEventFromSubmission(draft)
     if (!project || !event) return null
     const currentProject = state.projectOverrides.find((item) => item.id === project.id) ?? project
-    return { project: currentProject, relatedProjects: [], creators: [], events: [event, ...state.lifecycleEventAdditions.filter((item) => item.projectId === project.id)], assets: state.reusableAssetAdditions.filter((item) => item.projectId === project.id), relations: [], evidences: [] }
-  }, [id, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.submissionDrafts])
+    const events = [event, ...state.lifecycleEventAdditions.filter((item) => item.projectId === project.id)]
+      .filter((item, index, values) => values.findIndex((value) => value.id === item.id) === index)
+    return { project: currentProject, relatedProjects: [], creators: [], events, assets: state.reusableAssetAdditions.filter((item) => item.projectId === project.id), relations: [], evidences: [] }
+  }, [resolvedId, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.submissionDrafts])
 
   useEffect(() => {
     let active = true
@@ -100,8 +103,8 @@ export function ProjectDetailPage() {
       return () => { active = false }
     }
     Promise.all([
-      projectService.getBundle(id as Project['id'], { scenario: state.serviceScenario }),
-      communityService.listComments(id as Project['id'], { scenario: state.serviceScenario }),
+      projectService.getBundle(resolvedId, { scenario: state.serviceScenario }),
+      communityService.listComments(resolvedId, { scenario: state.serviceScenario }),
     ]).then(([result, commentResult]) => {
       if (!active) return
       if (result.ok && commentResult.ok) {
@@ -121,15 +124,15 @@ export function ProjectDetailPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, id, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
+  }, [dispatch, resolvedId, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return
-    const newComment: ProjectComment = { id: pendingCommentId, projectId: id as Project['id'], authorUserId: state.session.user.id, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
+    const newComment: ProjectComment = { id: pendingCommentId, projectId: resolvedId, authorUserId: state.session.user.id, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
     setComments((current) => [...current, newComment])
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: newComment.projectId, commentId: newComment.id }) })
     setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
-  }, [commentCategory, commentDraft, dispatch, id, pendingCommentId, replyTo, state.lastReplayedActionId, state.session.user])
+  }, [commentCategory, commentDraft, dispatch, pendingCommentId, replyTo, resolvedId, state.lastReplayedActionId, state.session.user])
 
   if (loading) return <main className="page-container"><LoadingState label="作品档案加载中" /></main>
   if (error || !bundle) return <main className="page-container stack"><ErrorPanel message={error?.message ?? '未找到作品'} detail={error?.code} /><Link to="/projects">返回作品广场</Link></main>
@@ -183,6 +186,8 @@ export function ProjectDetailPage() {
 
   return (
     <main className="page-container page-with-bottom-space stack">
+      {id && resolvedId !== id ? <aside className="feedback" role="status"><strong>此旧作品 ID 已合并</strong><p><code>{id}</code> 已稳定映射到主档 <code>{resolvedId}</code>；历史引用继续可访问。</p></aside> : null}
+      {project.reviewStatus === 'restricted' ? <aside className="feedback feedback--error" role="alert"><strong>此作品已限制公开展示</strong><p>档案与历史仍保留用于审计，公开体验入口暂不可用。</p></aside> : null}
       {submissionUrl ? (
         <aside className="submission-context-banner stack stack--small" aria-label="发布查重上下文">
           <strong>你正在核对发布时发现的已有档案</strong>
@@ -212,7 +217,7 @@ export function ProjectDetailPage() {
           </section>
 
           <div className="project-primary-actions" aria-label="作品核心操作">
-            {project.publicUrl.state === 'known' ? <ExternalLinkGuard href={project.publicUrl.value}>立即体验</ExternalLinkGuard> : <Button variant="primary" disabled>体验地址未知</Button>}
+            {project.reviewStatus === 'restricted' ? <Button variant="primary" disabled>展示已限制</Button> : project.publicUrl.state === 'known' ? <ExternalLinkGuard href={project.publicUrl.value}>立即体验</ExternalLinkGuard> : <Button variant="primary" disabled>体验地址未知</Button>}
             <Button aria-pressed={favorited} onClick={() => protectedToggle('favorite')}>{favorited ? '已收藏' : '收藏'}</Button>
             <Button aria-pressed={followed} onClick={() => protectedToggle('follow')}>{followed ? '已关注更新' : '关注更新'}</Button>
             <Button onClick={shareProject}>分享</Button>

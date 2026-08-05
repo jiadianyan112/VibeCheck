@@ -540,6 +540,47 @@ textarea {
   border-color: var(--color-ink);
 }
 
+.admin-workflow-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.admin-workflow-card {
+  min-width: 0;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  padding: var(--space-4);
+}
+
+.admin-workflow-card--selected {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+.admin-duplicate-grid,
+.admin-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.admin-status-card {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: var(--space-4);
+  text-align: left;
+}
+
+.admin-status-card--selected {
+  border-width: 2px;
+  border-color: var(--color-ink);
+}
+
 .global-search {
   min-width: 0;
   border: 1px solid var(--color-line-strong);
@@ -1934,6 +1975,12 @@ textarea {
   }
 
   .admin-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-workflow-list,
+  .admin-duplicate-grid,
+  .admin-status-grid {
     grid-template-columns: 1fr;
   }
 

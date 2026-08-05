@@ -1,9 +1,11 @@
 import type { ServiceScenarioId } from '../services'
+import type { AdminWorkflowMutation } from '../features/admin/workflows'
 import type {
   ComparisonSession,
   DecisionRecord,
   AuthorVerificationRequest,
   AdminAuditLog,
+  AdminWorkflowLog,
   Evidence,
   LifecycleEvent,
   Project,
@@ -79,6 +81,9 @@ export interface AppState {
   projectOverrides: Project[]
   evidenceOverrides: Evidence[]
   adminAuditLogs: AdminAuditLog[]
+  adminWorkflowLogs: AdminWorkflowLog[]
+  projectAliases: Record<string, ProjectId>
+  statusReviewCounts: Record<string, number>
   lifecycleEventAdditions: LifecycleEvent[]
   reusableAssetAdditions: ReusableAsset[]
   projectUpdateRecords: ProjectUpdateRecord[]
@@ -126,6 +131,7 @@ export type AppAction =
   | { type: 'PROJECT_UPDATE_APPLY'; project: Project; event: LifecycleEvent; record: ProjectUpdateRecord; asset?: ReusableAsset; notifications: Notification[] }
   | { type: 'ADMIN_PROJECT_SAVE'; project: Project; logs: AdminAuditLog[] }
   | { type: 'ADMIN_EVIDENCE_REVIEW'; evidence: Evidence; log: AdminAuditLog }
+  | { type: 'ADMIN_WORKFLOW_APPLY'; mutation: AdminWorkflowMutation }
   | { type: 'PROJECT_UPDATE_DRAFT_UPSERT'; draft: ProjectUpdateDraft }
   | { type: 'SUBMISSION_ENTRY_VALUE_SET'; value: string }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }

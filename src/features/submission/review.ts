@@ -21,6 +21,7 @@ export const submissionReviewStatusLabels: Partial<Record<ReviewStatus, string>>
   changes_requested: '需修改',
   approved: '已通过',
   rejected: '已拒绝',
+  restricted: '争议复核中',
   withdrawn: '已撤回',
 }
 

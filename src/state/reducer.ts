@@ -14,6 +14,19 @@ function uniqueLimit<T>(values: T[], limit: number) {
   return [...new Set(values)].slice(0, limit)
 }
 
+function upsertRecords<T extends { id: string }>(current: T[], incoming: readonly T[]) {
+  const incomingById = new Map(incoming.map((item) => [item.id, item]))
+  const currentIds = new Set(current.map((item) => item.id))
+  return [
+    ...current.map((item) => incomingById.get(item.id) ?? item),
+    ...incoming.filter((item) => !currentIds.has(item.id)),
+  ]
+}
+
+function replaceProjectId<T>(values: T[], from: T, to: T) {
+  return [...new Set(values.map((value) => value === from ? to : value))]
+}
+
 function appendEvent(state: AppState, event: PrototypeEvent) {
   return [...state.eventLog, event].slice(-200)
 }
@@ -132,9 +145,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         followedProjectIds: action.assets?.followedProjectIds ?? state.followedProjectIds,
         recentProjectIds: action.assets?.recentProjectIds ?? state.recentProjectIds,
         decisionRecords: action.assets?.decisionRecords ?? state.decisionRecords,
-        submissionDrafts: action.assets?.submissionDrafts ?? state.submissionDrafts,
-        verificationRequests: action.assets?.verificationRequests ?? state.verificationRequests,
-        notifications: action.assets?.notifications ?? state.notifications,
+        submissionDrafts: upsertRecords(action.assets?.submissionDrafts ?? [], state.submissionDrafts),
+        verificationRequests: upsertRecords(action.assets?.verificationRequests ?? [], state.verificationRequests),
+        notifications: upsertRecords(action.assets?.notifications ?? [], state.notifications),
         eventLog: appendEvent(
           state,
           createPrototypeEvent('auth_completed', {
@@ -279,6 +292,42 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           ? state.evidenceOverrides.map((evidence) => evidence.id === action.evidence.id ? action.evidence : evidence)
           : [...state.evidenceOverrides, action.evidence],
         adminAuditLogs: logExists ? state.adminAuditLogs : [...state.adminAuditLogs, action.log],
+      }
+    }
+    case 'ADMIN_WORKFLOW_APPLY': {
+      const mutation = action.mutation
+      const alias = mutation.alias
+      const projects = upsertRecords(state.projectOverrides, mutation.projects ?? [])
+      const submissionDrafts = mutation.submissionDraft
+        ? upsertRecords(state.submissionDrafts, [mutation.submissionDraft])
+        : state.submissionDrafts
+      const verificationRequests = mutation.verificationRequest
+        ? upsertRecords(state.verificationRequests, [mutation.verificationRequest])
+        : state.verificationRequests
+      const notifications = upsertRecords(state.notifications, mutation.notifications ?? [])
+      const lifecycleEventAdditions = upsertRecords(state.lifecycleEventAdditions, mutation.lifecycleEvents ?? [])
+      const adminWorkflowLogs = state.adminWorkflowLogs.some((log) => log.id === mutation.log.id)
+        ? state.adminWorkflowLogs
+        : [...state.adminWorkflowLogs, mutation.log]
+      return {
+        ...state,
+        projectOverrides: projects,
+        submissionDrafts,
+        verificationRequests,
+        notifications,
+        lifecycleEventAdditions,
+        adminWorkflowLogs,
+        projectAliases: alias ? { ...state.projectAliases, [alias.from]: alias.to } : state.projectAliases,
+        statusReviewCounts: mutation.statusReview
+          ? { ...state.statusReviewCounts, [mutation.statusReview.projectId]: mutation.statusReview.count }
+          : state.statusReviewCounts,
+        favoriteProjectIds: alias ? replaceProjectId(state.favoriteProjectIds, alias.from, alias.to) : state.favoriteProjectIds,
+        followedProjectIds: alias ? replaceProjectId(state.followedProjectIds, alias.from, alias.to) : state.followedProjectIds,
+        recentProjectIds: alias ? replaceProjectId(state.recentProjectIds, alias.from, alias.to) : state.recentProjectIds,
+        comparisonProjectIds: alias ? replaceProjectId(state.comparisonProjectIds, alias.from, alias.to) : state.comparisonProjectIds,
+        comparisonSessions: alias
+          ? state.comparisonSessions.map((session) => ({ ...session, projectIds: replaceProjectId(session.projectIds, alias.from, alias.to).slice(0, 5) }))
+          : state.comparisonSessions,
       }
     }
     case 'PROJECT_UPDATE_DRAFT_UPSERT': {

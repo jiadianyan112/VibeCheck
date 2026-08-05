@@ -9,6 +9,7 @@ export { projectRelations } from './relations'
 export { defaultScenario, type PrototypeScenario } from './scenario'
 export {
   anonymousAssets,
+  adminReviewDrafts,
   comparisonSessions,
   decisionRecords,
   notifications,

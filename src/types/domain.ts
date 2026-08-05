@@ -415,6 +415,34 @@ export interface AdminAuditLog {
   createdAt: string
 }
 
+export const adminWorkflowActions = [
+  'publication_approved',
+  'publication_returned',
+  'publication_rejected',
+  'publication_disputed',
+  'duplicate_merged',
+  'display_restricted',
+  'identity_verified',
+  'identity_changes_requested',
+  'identity_failed',
+  'identity_disputed',
+  'status_recheck_queued',
+  'status_confirmed',
+] as const
+export type AdminWorkflowAction = (typeof adminWorkflowActions)[number]
+
+export interface AdminWorkflowLog {
+  id: string
+  actorUserId: UserId
+  action: AdminWorkflowAction
+  targetId: string
+  projectId: ProjectId | null
+  beforeValue: unknown
+  afterValue: unknown
+  reason: string
+  createdAt: string
+}
+
 export interface ProjectVersion {
   id: VersionId
   projectId: ProjectId
