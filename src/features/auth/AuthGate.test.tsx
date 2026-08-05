@@ -5,7 +5,7 @@ import { projectId } from '../../types'
 import { AppStateProvider, useAppState } from '../../state'
 import { AuthGateProvider, LoginGate } from './AuthGate'
 
-const targetId = projectId('project-quizforge')
+const targetId = projectId('project-papertopractice')
 
 function StateProbe() {
   const { state, dispatch } = useAppState()
@@ -32,11 +32,11 @@ describe('AuthGate', () => {
     expect(screen.getByLabelText('待执行动作')).toHaveTextContent('favorite')
     await user.click(screen.getByRole('button', { name: /米娅/ }))
     expect(screen.getByLabelText('登录状态')).toHaveTextContent('米娅')
-    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('1')
+    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('4')
     expect(screen.getByLabelText('待执行动作')).toHaveTextContent('无')
     expect(screen.getByText('登录成功，已恢复刚才的操作。')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '再次回放' }))
-    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('1')
+    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('4')
   })
 
   it('runs an authenticated action without reopening the gate', async () => {
@@ -46,7 +46,7 @@ describe('AuthGate', () => {
     await user.click(screen.getByRole('button', { name: /米娅/ }))
     await user.click(screen.getByRole('button', { name: '收藏测试作品' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('0')
+    expect(screen.getByLabelText('收藏数量')).toHaveTextContent('3')
   })
 
   it('supports destructive confirmation cancellation with Escape', async () => {

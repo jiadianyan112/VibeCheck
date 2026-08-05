@@ -1,5 +1,6 @@
 import { Form, Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ComparisonProvider, FloatingCompareBar } from '../features'
+import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
 
 const primaryNavigation = [
@@ -63,6 +64,12 @@ function FrontstageContent() {
             </button>
           </Form>
           <div className="header-actions" aria-label="账户与创作入口">
+            {state.session.user?.creatorId ? (
+              <Link className="header-action" to={`/creator/${state.session.user.creatorId}`}>作者主页</Link>
+            ) : null}
+            {isStaffRole(state.session.role) ? (
+              <Link className="header-action" to="/admin">管理后台</Link>
+            ) : null}
             <Link className="header-action" to={comparisonPath}>
               比较 <span aria-label={`${state.comparisonProjectIds.length} 个作品`}>{state.comparisonProjectIds.length}</span>
             </Link>
@@ -109,6 +116,12 @@ function FrontstageContent() {
               >
                 {isLoggedIn ? '个人中心' : '登录／注册'}
               </Link>
+              {state.session.user?.creatorId ? (
+                <Link className="nav-link" to={`/creator/${state.session.user.creatorId}`}>作者主页</Link>
+              ) : null}
+              {isStaffRole(state.session.role) ? (
+                <Link className="nav-link" to="/admin">管理后台</Link>
+              ) : null}
             </nav>
           </details>
         </div>

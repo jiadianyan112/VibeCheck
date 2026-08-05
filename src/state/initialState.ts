@@ -1,7 +1,6 @@
 import {
   anonymousAssets,
   comparisonSessions,
-  notifications,
 } from '../mocks'
 import type { AppState } from './types'
 
@@ -28,7 +27,7 @@ export function createInitialAppState(): AppState {
     projectUpdateRecords: [],
     projectUpdateDrafts: [],
     submissionEntryValue: '',
-    notifications,
+    notifications: [],
     pendingAction: null,
     lastReplayedActionId: null,
     serviceScenario: 'default',

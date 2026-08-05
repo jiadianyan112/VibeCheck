@@ -40,7 +40,7 @@ describe('submission entry and URL checks', () => {
     const user = userEvent.setup()
     renderRoute('/auth?from=%2Fsubmit')
     expect(screen.getByText('/submit')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    await user.click(screen.getByRole('button', { name: '使用米娅测试身份' }))
     expect(await screen.findByRole('heading', { name: '先检查作品地址' })).toBeInTheDocument()
   })
 

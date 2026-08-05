@@ -3,6 +3,7 @@ import { prototypeUsers } from '../../mocks'
 import { useAppState, type PendingAction } from '../../state'
 import type { PrototypeUser } from '../../types'
 import { Button, Modal, useToast } from '../../components'
+import { createLoginAction, roleLabels } from './session'
 
 interface AuthGateContextValue {
   requireLogin: (action: PendingAction, onAuthorized?: () => void) => void
@@ -16,7 +17,7 @@ export function AuthModal({ open, onClose, onLogin }: { open: boolean; onClose: 
     <Modal open={open} title="登录后继续刚才的操作" onClose={onClose}>
       <p>低保真原型不收集密码。请选择一个固定测试身份：</p>
       <div className="auth-choice-list">
-        {prototypeUsers.map((user) => <Button key={user.id} onClick={() => onLogin(user)}>{user.displayName} · {user.role}</Button>)}
+        {prototypeUsers.map((user) => <Button key={user.id} onClick={() => onLogin(user)}>{user.displayName} · {roleLabels[user.role]}</Button>)}
       </div>
     </Modal>
   )
@@ -37,7 +38,7 @@ export function AuthGateProvider({ children }: PropsWithChildren) {
   }, [dispatch, state.session.user])
 
   const handleLogin = useCallback((user: PrototypeUser) => {
-    dispatch({ type: 'LOGIN_COMPLETED', user })
+    dispatch(createLoginAction(user))
     dispatch({ type: 'PENDING_ACTION_REPLAY' })
     setOpen(false)
     pushToast('登录成功，已恢复刚才的操作。', 'success')

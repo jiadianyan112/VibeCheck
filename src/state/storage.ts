@@ -82,7 +82,7 @@ export function hydrateAppState(
       publishedEventId: draft.publishedEventId ?? null,
       withdrawnAt: draft.withdrawnAt ?? null,
     }))
-    return {
+    const hydrated: AppState = {
       ...fallback,
       ...persisted,
       submissionDrafts,
@@ -102,6 +102,18 @@ export function hydrateAppState(
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,
       notifications: persisted.notifications ?? fallback.notifications,
+    }
+    if (hydrated.session.role !== 'guest') return hydrated
+    return {
+      ...hydrated,
+      favoriteProjectIds: [],
+      followedProjectIds: [],
+      decisionRecords: [],
+      submissionDrafts: [],
+      verificationRequests: [],
+      projectUpdateDrafts: [],
+      submissionEntryValue: '',
+      notifications: [],
     }
   } catch {
     return fallback

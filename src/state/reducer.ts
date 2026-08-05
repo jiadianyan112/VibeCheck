@@ -112,10 +112,29 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           20,
         ),
       }
-    case 'LOGIN_COMPLETED':
+    case 'LOGIN_COMPLETED': {
+      const loginSessions = action.assets?.comparisonSessions ?? []
+      const comparisonSessions = [
+        ...state.comparisonSessions.filter((session) => !loginSessions.some(({ id }) => id === session.id)),
+        ...loginSessions,
+      ]
+      const preferredSessionId = loginSessions[0]?.id ?? comparisonSessionId(`comparison-${action.user.id}-current`)
+      const loginBase = {
+        ...state,
+        comparisonSessions,
+        activeComparisonSessionId: preferredSessionId,
+      }
+      const userProjectIds = action.userComparisonProjectIds ?? loginSessions.flatMap((session) => session.projectIds)
       return {
-        ...updateActiveComparison(state, (session) => mergeComparisonProjects(session, action.userComparisonProjectIds ?? [], action.user.id)),
+        ...updateActiveComparison(loginBase, (session) => mergeComparisonProjects(session, userProjectIds, action.user.id)),
         session: { user: action.user, role: action.user.role },
+        favoriteProjectIds: action.assets?.favoriteProjectIds ?? state.favoriteProjectIds,
+        followedProjectIds: action.assets?.followedProjectIds ?? state.followedProjectIds,
+        recentProjectIds: action.assets?.recentProjectIds ?? state.recentProjectIds,
+        decisionRecords: action.assets?.decisionRecords ?? state.decisionRecords,
+        submissionDrafts: action.assets?.submissionDrafts ?? state.submissionDrafts,
+        verificationRequests: action.assets?.verificationRequests ?? state.verificationRequests,
+        notifications: action.assets?.notifications ?? state.notifications,
         eventLog: appendEvent(
           state,
           createPrototypeEvent('auth_completed', {
@@ -124,13 +143,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           }),
         ),
       }
-    case 'LOGOUT':
+    }
+    case 'LOGOUT': {
+      const anonymousSessions = state.comparisonSessions.filter((session) => session.ownerUserId === null)
+      const activeAnonymousSession = anonymousSessions[0]
       return {
         ...state,
         session: { user: null, role: 'guest' },
+        comparisonProjectIds: activeAnonymousSession?.projectIds ?? [],
+        activeComparisonSessionId: activeAnonymousSession?.id ?? null,
+        comparisonSessions: state.comparisonSessions,
         favoriteProjectIds: [],
-        likedProjectIds: [],
         followedProjectIds: [],
+        recentProjectIds: [],
         decisionRecords: [],
         submissionDrafts: [],
         verificationRequests: [],
@@ -139,6 +164,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         notifications: [],
         pendingAction: null,
       }
+    }
     case 'PENDING_ACTION_QUEUE':
       return { ...state, pendingAction: action.action }
     case 'PENDING_ACTION_CLEAR':

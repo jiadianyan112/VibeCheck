@@ -18,7 +18,9 @@ export function DecisionForm({ session, assets }: { session: ComparisonSession; 
   const [reason, setReason] = useState('')
   const [assetIds, setAssetIds] = useState<AssetId[]>([])
   const [error, setError] = useState('')
-  const existing = state.decisionRecords.find(({ sessionId }) => sessionId === session.id)
+  const existing = state.decisionRecords
+    .filter(({ sessionId, userId }) => sessionId === session.id && userId === state.session.user?.id)
+    .at(-1)
 
   function toggleField(field: AffectedField) {
     setAffectedFields((current) => current.includes(field) ? current.filter((item) => item !== field) : [...current, field])

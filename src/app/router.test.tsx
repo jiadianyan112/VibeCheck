@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from './providers'
 import { appRoutes } from './router'
+import { prototypeUsers } from '../mocks'
+import { appReducer, createInitialAppState, persistAppState } from '../state'
+import { createLoginAction } from '../features/auth/session'
 
 function renderRoute(path: string) {
   const memoryRouter = createMemoryRouter(appRoutes, { initialEntries: [path] })
@@ -13,6 +16,8 @@ function renderRoute(path: string) {
 }
 
 describe('application route skeleton', () => {
+  beforeEach(() => localStorage.clear())
+
   it.each([
     ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
     ['/discover', '先确认你要解决的问题'],
@@ -21,7 +26,6 @@ describe('application route skeleton', () => {
     ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/submit', '发布作品'],
     ['/auth?from=%2Fsubmit', '选择原型身份'],
-    ['/admin/project/project-001', 'A03 作品编辑'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
@@ -54,11 +58,24 @@ describe('application route skeleton', () => {
   })
 
   it('renders a separate admin navigation', () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
     renderRoute('/admin/projects')
     expect(screen.getByRole('navigation', { name: '后台导航' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /返回前台/ })).toHaveAttribute(
       'href',
       '/projects',
     )
+  })
+
+  it('renders an admin route for a staff identity', async () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
+    renderRoute('/admin/project/project-001')
+    expect(await screen.findByRole('heading', { name: 'A03 作品编辑' })).toBeInTheDocument()
+  })
+
+  it('redirects a guest admin request to the identity simulator', async () => {
+    renderRoute('/admin/projects')
+    expect(await screen.findByRole('heading', { name: '选择原型身份' })).toBeInTheDocument()
+    expect(screen.getByText('/admin/projects')).toBeInTheDocument()
   })
 })

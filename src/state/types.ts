@@ -86,6 +86,18 @@ export interface AppState {
   eventLog: PrototypeEvent[]
 }
 
+export type LoginAssets = Pick<
+  AppState,
+  | 'comparisonSessions'
+  | 'favoriteProjectIds'
+  | 'followedProjectIds'
+  | 'recentProjectIds'
+  | 'decisionRecords'
+  | 'submissionDrafts'
+  | 'verificationRequests'
+  | 'notifications'
+>
+
 export type AppAction =
   | { type: 'COMPARISON_ADD'; projectId: ProjectId }
   | { type: 'COMPARISON_REMOVE'; projectId: ProjectId }
@@ -98,7 +110,7 @@ export type AppAction =
   | { type: 'LIKE_TOGGLE'; projectId: ProjectId }
   | { type: 'FOLLOW_TOGGLE'; projectId: ProjectId }
   | { type: 'RECENT_PROJECT_ADD'; projectId: ProjectId }
-  | { type: 'LOGIN_COMPLETED'; user: PrototypeUser; userComparisonProjectIds?: ProjectId[] }
+  | { type: 'LOGIN_COMPLETED'; user: PrototypeUser; userComparisonProjectIds?: ProjectId[]; assets?: LoginAssets }
   | { type: 'LOGOUT' }
   | { type: 'PENDING_ACTION_QUEUE'; action: PendingAction }
   | { type: 'PENDING_ACTION_REPLAY' }

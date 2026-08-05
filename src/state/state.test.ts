@@ -5,6 +5,7 @@ import {
   userId,
 } from '../types'
 import { prototypeUsers, submissionDrafts } from '../mocks'
+import { createLoginAction } from '../features/auth/session'
 import { createInitialAppState } from './initialState'
 import { appReducer } from './reducer'
 import {
@@ -19,7 +20,7 @@ describe('global state and persistence', () => {
     localStorage.clear()
   })
 
-  it('persists and restores anonymous comparison and drafts', () => {
+  it('persists and restores a merged comparison and authenticated draft', () => {
     let state = createInitialAppState()
     state = appReducer(state, {
       type: 'COMPARISON_ADD',
@@ -29,13 +30,14 @@ describe('global state and persistence', () => {
       type: 'DRAFT_UPSERT',
       draft: submissionDrafts[0]!,
     })
+    state = appReducer(state, createLoginAction(prototypeUsers[0]!))
     expect(persistAppState(state)).toBe(true)
     expect(localStorage.getItem(APP_STORAGE_KEY)).toBeTruthy()
     const restored = hydrateAppState(createInitialAppState())
     expect(restored.comparisonProjectIds).toContain(
       projectId('project-papertopractice'),
     )
-    expect(restored.activeComparisonSessionId).toBe(comparisonSessionId('comparison-anonymous-pdf'))
+    expect(restored.session.user?.id).toBe(prototypeUsers[0]!.id)
     expect(restored.comparisonSessions.find(({ id }) => id === restored.activeComparisonSessionId)?.projectIds).toEqual(restored.comparisonProjectIds)
     expect(restored.submissionDrafts[0]?.id).toBe(
       submissionDraftId('draft-mia-study-review'),
@@ -99,15 +101,16 @@ describe('global state and persistence', () => {
     expect(new Set(state.comparisonProjectIds).size).toBe(5)
   })
 
-  it('keeps fixture comparison sessions available after hydration', () => {
+  it('keeps shareable comparison routes while hiding private account records from guests', () => {
     const restored = hydrateAppState(createInitialAppState())
     expect(restored.comparisonSessions.some(
       ({ id }) => id === comparisonSessionId('comparison-mia-speaking'),
     )).toBe(true)
+    expect(restored.decisionRecords).toEqual([])
   })
 
   it('reorders, saves and restores the same active comparison session', () => {
-    const initial = createInitialAppState()
+    const initial = appReducer(createInitialAppState(), createLoginAction(prototypeUsers[0]!))
     const firstId = initial.comparisonProjectIds[0]!
     let state = appReducer(initial, { type: 'COMPARISON_REORDER', projectId: firstId, direction: 1 })
     expect(state.comparisonProjectIds[1]).toBe(firstId)
@@ -115,7 +118,8 @@ describe('global state and persistence', () => {
     expect(state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)?.savedAt).toBeTruthy()
     state = appReducer(state, { type: 'COMPARISON_SESSION_RESTORE', sessionId: comparisonSessionId('comparison-mia-speaking') })
     expect(state.activeComparisonSessionId).toBe(comparisonSessionId('comparison-mia-speaking'))
-    expect(state.comparisonProjectIds).toHaveLength(3)
+    expect(state.comparisonProjectIds).toEqual(state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)?.projectIds)
+    expect(state.comparisonProjectIds.length).toBeLessThanOrEqual(5)
   })
 
   it('persists the lightweight like signal without changing fixture metrics', () => {
@@ -125,5 +129,22 @@ describe('global state and persistence', () => {
     expect(liked.eventLog.at(-1)?.name).toBe('project_liked')
     persistAppState(liked)
     expect(hydrateAppState(createInitialAppState()).likedProjectIds).toEqual([id])
+  })
+
+  it('loads user assets on login and clears private state on logout', () => {
+    const user = prototypeUsers[0]!
+    const loggedIn = appReducer(createInitialAppState(), createLoginAction(user))
+    expect(loggedIn.favoriteProjectIds).toHaveLength(3)
+    expect(loggedIn.submissionDrafts).toHaveLength(1)
+    expect(loggedIn.notifications.every((notification) => notification.userId === user.id)).toBe(true)
+    expect(loggedIn.comparisonSessions.some((session) => session.ownerUserId === user.id)).toBe(true)
+
+    const loggedOut = appReducer(loggedIn, { type: 'LOGOUT' })
+    expect(loggedOut.session.role).toBe('guest')
+    expect(loggedOut.favoriteProjectIds).toEqual([])
+    expect(loggedOut.submissionDrafts).toEqual([])
+    expect(loggedOut.notifications).toEqual([])
+    expect(loggedOut.comparisonSessions.some((session) => session.ownerUserId === user.id)).toBe(true)
+    expect(loggedOut.comparisonProjectIds).toHaveLength(2)
   })
 })
