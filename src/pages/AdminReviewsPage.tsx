@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button, ConfirmDialog, EmptyState, Tag } from '../components'
 import { applyPublicationWorkflow, isAdminWorkflowAllowed, mergeAdminProjects, restrictProjectDisplay, submissionReviewStatusLabels, type PublicationDecision } from '../features'
 import { adminReviewDrafts, projects } from '../mocks'
@@ -17,6 +18,7 @@ const decisionLabels: Record<PublicationDecision, string> = {
 
 export function AdminReviewsPage() {
   const { state, dispatch } = useAppState()
+  const [searchParams] = useSearchParams()
   const actor = state.session.user!
   const drafts = useMemo(() => mergeDrafts(adminReviewDrafts, state.submissionDrafts).filter((draft) => draft.status !== 'draft' && draft.status !== 'withdrawn'), [state.submissionDrafts])
   const allProjects = useMemo(() => mergeAdminProjects(projects, state.projectOverrides), [state.projectOverrides])
@@ -24,9 +26,14 @@ export function AdminReviewsPage() {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<{ kind: 'publication'; draftId: SubmissionDraft['id']; decision: PublicationDecision } | { kind: 'restrict'; projectId: (typeof projects)[number]['id'] } | null>(null)
   const [restrictId, setRestrictId] = useState(allProjects[0]?.id ?? projects[0]!.id)
+  const [duplicateRefreshed, setDuplicateRefreshed] = useState(false)
 
   function requestPublication(draft: SubmissionDraft, decision: PublicationDecision) {
     if (!reason.trim()) { setError('所有审核操作都必须填写原因。'); return }
+    if (searchParams.get('scenario') === 'duplicate_review' && !duplicateRefreshed) {
+      setError('检测到同一提交版本已有审核单，未创建重复审核或重复事件。请刷新现有审核单后继续。')
+      return
+    }
     setError(null)
     setPending({ kind: 'publication', draftId: draft.id, decision })
   }
@@ -59,6 +66,7 @@ export function AdminReviewsPage() {
       <header className="admin-page-header"><div><p className="eyebrow">A05 · Publication review</p><h1>发布审核</h1><p>通过、退回、拒绝和争议均要求原因；通过后使用稳定提交 ID 生成公开档案。</p></div><Tag>{drafts.filter((draft) => draft.status === 'pending_review').length} 项待审核</Tag></header>
       <label className="field"><span className="field__label">本次操作原因（必填）</span><textarea className="input textarea" rows={3} value={reason} onChange={(event) => { setReason(event.target.value); setError(null) }} placeholder="说明核对结论与依据" /></label>
       {error ? <p className="field-error" role="alert">{error}</p> : null}
+      {error?.startsWith('检测到同一提交版本已有审核单') ? <div className="cluster"><Button onClick={() => { setDuplicateRefreshed(true); setError(null) }}>刷新现有审核单</Button><Link to="/admin/projects">返回作品列表</Link></div> : null}
 
       {drafts.length ? <section className="admin-workflow-list stack" aria-label="发布审核队列">{drafts.map((draft) => <article className="admin-workflow-card stack" key={draft.id}><div className="cluster cluster--between"><div><strong>{draft.fields.currentName ?? '未命名提交'}</strong><code>{draft.id}</code></div><Tag tone={draft.status === 'pending_review' ? 'strong' : 'dashed'}>{submissionReviewStatusLabels[draft.status] ?? (draft.status === 'restricted' ? '争议复核中' : draft.status)}</Tag></div><p>{draft.fields.oneLineDefinition ?? '未提供一句话定义'}</p><p>提交者：{draft.userId}；提交时间：{draft.submittedAt ? new Date(draft.submittedAt).toLocaleString('zh-CN') : '未记录'}</p>{draft.reviewMessages.submission ? <aside className="feedback"><strong>最近审核原因</strong><p>{draft.reviewMessages.submission}</p></aside> : null}<div className="cluster"><Button disabled={!isAdminWorkflowAllowed('publication_approved', state.session.role)} onClick={() => requestPublication(draft, 'approve')}>通过</Button><Button onClick={() => requestPublication(draft, 'return')}>退回</Button><Button variant="danger" onClick={() => requestPublication(draft, 'reject')}>拒绝</Button><Button variant="danger" disabled={!isAdminWorkflowAllowed('publication_disputed', state.session.role)} onClick={() => requestPublication(draft, 'dispute')}>标争议</Button></div></article>)}</section> : <EmptyState title="当前没有发布审核记录" description="提交者确认发布后，冻结版本会进入这里。" />}
 

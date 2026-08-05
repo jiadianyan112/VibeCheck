@@ -313,8 +313,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         projectOverrides: projects,
         submissionDrafts,
-        verificationRequests,
-        notifications,
+        verificationRequests: alias ? verificationRequests.map((request) => request.projectId === alias.from ? { ...request, projectId: alias.to } : request) : verificationRequests,
+        notifications: alias ? notifications.map((notification) => notification.projectId === alias.from ? { ...notification, projectId: alias.to } : notification) : notifications,
         lifecycleEventAdditions,
         adminWorkflowLogs,
         projectAliases: alias ? { ...state.projectAliases, [alias.from]: alias.to } : state.projectAliases,
@@ -328,6 +328,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         comparisonSessions: alias
           ? state.comparisonSessions.map((session) => ({ ...session, projectIds: replaceProjectId(session.projectIds, alias.from, alias.to).slice(0, 5) }))
           : state.comparisonSessions,
+        projectUpdateDrafts: alias ? state.projectUpdateDrafts.map((draft) => draft.projectId === alias.from ? { ...draft, projectId: alias.to } : draft) : state.projectUpdateDrafts,
       }
     }
     case 'PROJECT_UPDATE_DRAFT_UPSERT': {

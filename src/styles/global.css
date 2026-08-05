@@ -581,6 +581,18 @@ textarea {
   border-color: var(--color-ink);
 }
 
+.admin-conflict-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.admin-conflict-grid article {
+  border: 1px solid currentColor;
+  padding: var(--space-3);
+}
+
 .global-search {
   min-width: 0;
   border: 1px solid var(--color-line-strong);
@@ -1981,6 +1993,10 @@ textarea {
   .admin-workflow-list,
   .admin-duplicate-grid,
   .admin-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-conflict-grid {
     grid-template-columns: 1fr;
   }
 

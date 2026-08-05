@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Tag } from '../components'
 import {
   buildAdminProjectQueue,
+  checkAdminConsistency,
   mergeAdminProjects,
   summarizeAdminProjectQueue,
 } from '../features'
@@ -12,6 +13,7 @@ export function AdminDashboardPage() {
   const { state } = useAppState()
   const rows = buildAdminProjectQueue(mergeAdminProjects(projects, state.projectOverrides))
   const summary = summarizeAdminProjectQueue(rows)
+  const consistency = checkAdminConsistency(state, projects)
 
   return (
     <div className="admin-page stack">
@@ -38,6 +40,12 @@ export function AdminDashboardPage() {
           <li><div><strong>复核访问状态异常</strong><p>异常信号来自作品当前访问状态，不自动得出作品结束结论。</p></div><Link className="button" to="/admin/projects?exception=1">查看 {summary.activeExceptions} 项</Link></li>
           <li><div><strong>关注作者关联状态</strong><p>待审核或争议归属需要人工核对，不公开身份材料。</p></div><Link className="button" to="/admin/projects?author=pending">查看 {summary.authorAttention} 项</Link></li>
         </ul>
+      </section>
+
+      <section className="wire-panel stack" aria-labelledby="consistency-heading">
+        <div className="cluster cluster--between"><div><p className="eyebrow">Consistency gate</p><h2 id="consistency-heading">前后台一致性检查</h2></div><Tag tone={consistency.ok ? 'strong' : 'dashed'}>{consistency.ok ? '通过' : `${consistency.issues.length} 项异常`}</Tag></div>
+        <p>已核对 {consistency.checkedProjects} 个作品、{consistency.checkedEvents} 条本地追加事件和 {consistency.checkedNotifications} 条通知。</p>
+        {consistency.issues.length ? <ol className="admin-audit-list">{consistency.issues.map((issue) => <li key={`${issue.code}-${issue.targetId}`}><strong>{issue.code}</strong><p>{issue.targetId}：{issue.message}</p></li>)}</ol> : <p>当前状态、事件、通知、身份关联和稳定 ID 映射未发现不一致。</p>}
       </section>
     </div>
   )

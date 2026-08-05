@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Button, DisputeNotice, Drawer, EmptyState, EvidenceBadge, ExternalLinkGuard, Tag } from '../components'
 import {
   adminProjectDraftFrom,
@@ -77,11 +77,13 @@ function MultiChoice<T extends string>({ values, selected, labels, onChange, dis
 
 export function AdminProjectEditorPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const { state, dispatch } = useAppState()
   const allProjects = useMemo(() => mergeAdminProjects(projects, state.projectOverrides), [state.projectOverrides])
   const allEvidence = useMemo(() => mergeEvidenceRecords(evidences, state.evidenceOverrides), [state.evidenceOverrides])
   const project = allProjects.find((item) => item.id === id) ?? null
   const [draft, setDraft] = useState<AdminProjectDraft | null>(() => project ? adminProjectDraftFrom(project) : null)
+  const [baseProject, setBaseProject] = useState<Project | null>(() => project)
   const [errors, setErrors] = useState<AdminProjectDraftErrors>({})
   const [saved, setSaved] = useState(false)
   const [saveReason, setSaveReason] = useState('')
@@ -91,12 +93,20 @@ export function AdminProjectEditorPage() {
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<Evidence['id'] | null>(null)
   const [evidenceReason, setEvidenceReason] = useState('')
   const [evidenceError, setEvidenceError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState<{ latest: Project } | null>(null)
+  const [scenarioConflictResolved, setScenarioConflictResolved] = useState(false)
   const isAdministrator = state.session.role === 'admin'
+  const exceptionScenario = searchParams.get('scenario')
   const closeEvidence = useCallback(() => setEvidenceTarget(null), [])
 
   useEffect(() => {
-    if (project) setDraft(adminProjectDraftFrom(project))
-  }, [project])
+    if (project && baseProject?.id !== project.id) {
+      setDraft(adminProjectDraftFrom(project))
+      setBaseProject(project)
+      setConflict(null)
+      setScenarioConflictResolved(false)
+    }
+  }, [baseProject?.id, project])
 
   if (!project || !draft) return <div className="admin-page stack"><EmptyState title="后台未找到对应作品" description="该稳定 ID 不存在，或作品尚未进入当前原型数据集。" action={<Link className="button" to="/admin/projects">返回作品列表</Link>} /></div>
 
@@ -110,7 +120,7 @@ export function AdminProjectEditorPage() {
   function sectionHasError(section: keyof typeof sectionErrorKeys) {
     return sectionErrorKeys[section]?.some((key) => errors[key]) ?? false
   }
-  function save() {
+  function save(isRetry = false) {
     const result = saveAdminProjectDraft(project!, draft!, isAdministrator)
     setErrors(result.errors)
     if (!result.project) {
@@ -123,6 +133,18 @@ export function AdminProjectEditorPage() {
       setSaved(false)
       return
     }
+    const hasActualConflict = Boolean(baseProject && JSON.stringify(baseProject) !== JSON.stringify(project))
+    if (hasActualConflict || !isRetry && exceptionScenario === 'version_conflict' && !scenarioConflictResolved) {
+      setConflict({ latest: project! })
+      setSaveError('检测到并发版本冲突。当前编辑内容已保留，请比较版本后选择刷新或重新基于最新版本。')
+      setSaved(false)
+      return
+    }
+    if (!isRetry && exceptionScenario === 'save_error') {
+      setSaveError('保存服务暂时失败。当前编辑内容和操作原因已保留，可直接重试。')
+      setSaved(false)
+      return
+    }
     const logs = createAdminFieldAuditLogs(project!, result.project, state.session.user!, saveReason)
     if (!logs.length) {
       setSaveError('当前没有需要保存的字段变化。')
@@ -130,6 +152,9 @@ export function AdminProjectEditorPage() {
       return
     }
     dispatch({ type: 'ADMIN_PROJECT_SAVE', project: result.project, logs })
+    setBaseProject(result.project)
+    setConflict(null)
+    setScenarioConflictResolved(true)
     setSaved(true)
     setSaveError(null)
     setSaveReason('')
@@ -163,7 +188,7 @@ export function AdminProjectEditorPage() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const projectEvents = [...lifecycleEvents, ...state.lifecycleEventAdditions].filter((event) => event.projectId === project.id).sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
   const versions = projectVersions.filter((version) => version.projectId === project.id)
-  const targetEvidence = evidenceTarget ? allEvidence.filter((evidence) => evidenceTarget.evidenceIds.includes(evidence.id)) : []
+  const targetEvidence = evidenceTarget && exceptionScenario !== 'evidence_missing' ? allEvidence.filter((evidence) => evidenceTarget.evidenceIds.includes(evidence.id)) : []
   return (
     <div className="admin-page stack">
       <header className="admin-editor-summary"><div><p className="eyebrow">A03 · Stable record</p><h1>编辑 {projectName}</h1><code>{project.id}</code></div><div className="cluster"><Tag>{reviewStatusLabels[project.reviewStatus]}</Tag><Tag tone="dashed">{authorLinkStatusLabels[project.authorLinkStatus]}</Tag><Link className="button" to={`/project/${project.id}`}>查看前台</Link></div></header>
@@ -194,9 +219,11 @@ export function AdminProjectEditorPage() {
 
           {saved ? <div className="feedback" role="status"><strong>作品字段已保存并同步前台。</strong><p>前值、后值、修改者和原因已追加到操作日志；受保护状态、历史、资产和关系未被普通保存修改。</p></div> : null}
           {Object.keys(errors).length ? <div className="feedback feedback--error" role="alert"><strong>部分字段未保存</strong><p>请按模块导航中的错误提示修正后重试。</p></div> : null}
+          {conflict ? <section className="feedback feedback--error stack" role="alert" aria-labelledby="version-conflict-heading"><h2 id="version-conflict-heading">并发版本冲突</h2><p>系统没有静默覆盖最新记录。你的输入和原因仍在表单中。</p><details open><summary>比较版本</summary><div className="admin-conflict-grid"><article><strong>打开编辑器时</strong><p>{baseProject?.currentName.state === 'known' ? baseProject.currentName.value : '名称未知'}</p><p>{baseProject?.oneLineDefinition.state === 'known' ? baseProject.oneLineDefinition.value : '定义未知'}</p></article><article><strong>后台最新版本</strong><p>{conflict.latest.currentName.state === 'known' ? conflict.latest.currentName.value : '名称未知'}</p><p>{conflict.latest.oneLineDefinition.state === 'known' ? conflict.latest.oneLineDefinition.value : '定义未知'}</p></article><article><strong>你的未保存版本</strong><p>{draft.currentName}</p><p>{draft.oneLineDefinition}</p></article></div></details><div className="cluster"><Button onClick={() => { setBaseProject(conflict.latest); setConflict(null); setSaveError(null); setScenarioConflictResolved(true) }}>基于最新版本保留编辑内容</Button><Button variant="quiet" onClick={() => { setDraft(adminProjectDraftFrom(conflict.latest)); setBaseProject(conflict.latest); setConflict(null); setSaveError(null); setScenarioConflictResolved(true) }}>刷新为最新版本</Button><Link to="/admin/projects">返回作品列表</Link></div></section> : null}
           <label className="field"><span className="field__label">本次字段修改原因（必填）</span><textarea className="input textarea" rows={2} value={saveReason} onChange={(event) => { setSaveReason(event.target.value); setSaveError(null) }} placeholder="说明核对依据和修改目的" /></label>
           {saveError ? <p className="field-error" role="alert">{saveError}</p> : null}
-          <div className="admin-editor-actions"><Button variant="primary" onClick={save}>保存允许字段</Button><Button variant="quiet" onClick={() => { setDraft(adminProjectDraftFrom(project)); setErrors({}); setSaved(false); setSaveReason(''); setSaveError(null) }}>撤销未保存修改</Button><Link to="/admin/projects">返回作品列表</Link></div>
+          {saveError?.startsWith('保存服务暂时失败') ? <div className="cluster"><Button onClick={() => save(true)}>重试保存</Button><Link to="/admin/projects">返回作品列表</Link></div> : null}
+          <div className="admin-editor-actions"><Button variant="primary" onClick={() => save()}>保存允许字段</Button><Button variant="quiet" onClick={() => { setDraft(adminProjectDraftFrom(project)); setBaseProject(project); setErrors({}); setSaved(false); setSaveReason(''); setSaveError(null); setConflict(null) }}>撤销未保存修改</Button><Link to="/admin/projects">返回作品列表</Link></div>
         </div>
       </div>
       <Drawer open={Boolean(evidenceTarget)} title={`${evidenceTarget?.label ?? ''} · 证据核对`} onClose={closeEvidence}>
