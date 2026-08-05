@@ -30,8 +30,12 @@ export function ActivityPage() {
   }, [state.serviceScenario])
 
   const approvedSubmissions = useMemo(() => state.submissionDrafts.filter((draft) => draft.status === 'approved'), [state.submissionDrafts])
-  const allProjects = useMemo(() => [...projects, ...approvedSubmissions.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))], [approvedSubmissions, projects])
-  const allEvents = useMemo(() => [...events, ...approvedSubmissions.map(publishedEventFromSubmission).filter((event): event is LifecycleEvent => Boolean(event))], [approvedSubmissions, events])
+  const allProjects = useMemo(() => {
+    const base = [...projects, ...approvedSubmissions.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))]
+    const baseIds = new Set(base.map((project) => project.id))
+    return [...base.map((project) => state.projectOverrides.find((item) => item.id === project.id) ?? project), ...state.projectOverrides.filter((project) => !baseIds.has(project.id))]
+  }, [approvedSubmissions, projects, state.projectOverrides])
+  const allEvents = useMemo(() => [...events, ...approvedSubmissions.map(publishedEventFromSubmission).filter((event): event is LifecycleEvent => Boolean(event)), ...state.lifecycleEventAdditions], [approvedSubmissions, events, state.lifecycleEventAdditions])
   const projectMap = useMemo(() => new Map(allProjects.map((project) => [project.id, project])), [allProjects])
   const filtered = useMemo(() => {
     const type = params.get('type') as LifecycleEventType | null

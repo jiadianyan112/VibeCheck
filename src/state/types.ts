@@ -3,6 +3,10 @@ import type {
   ComparisonSession,
   DecisionRecord,
   AuthorVerificationRequest,
+  LifecycleEvent,
+  Project,
+  ProjectUpdateRecord,
+  ReusableAsset,
   Notification,
   ProjectId,
   PrototypeSession,
@@ -68,6 +72,10 @@ export interface AppState {
   decisionRecords: DecisionRecord[]
   submissionDrafts: SubmissionDraft[]
   verificationRequests: AuthorVerificationRequest[]
+  projectOverrides: Project[]
+  lifecycleEventAdditions: LifecycleEvent[]
+  reusableAssetAdditions: ReusableAsset[]
+  projectUpdateRecords: ProjectUpdateRecord[]
   notifications: Notification[]
   pendingAction: PendingAction | null
   lastReplayedActionId: string | null
@@ -95,6 +103,7 @@ export type AppAction =
   | { type: 'DECISION_SAVE'; decision: DecisionRecord }
   | { type: 'DRAFT_UPSERT'; draft: SubmissionDraft }
   | { type: 'VERIFICATION_UPSERT'; request: AuthorVerificationRequest }
+  | { type: 'PROJECT_UPDATE_APPLY'; project: Project; event: LifecycleEvent; record: ProjectUpdateRecord; asset?: ReusableAsset; notifications: Notification[] }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }
   | { type: 'SCENARIO_SET'; scenario: ServiceScenarioId }
   | { type: 'EVENT_LOGGED'; event: PrototypeEvent }

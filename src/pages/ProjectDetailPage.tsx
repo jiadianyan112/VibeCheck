@@ -83,8 +83,9 @@ export function ProjectDetailPage() {
     const project = publishedProjectFromSubmission(draft)
     const event = publishedEventFromSubmission(draft)
     if (!project || !event) return null
-    return { project, relatedProjects: [], creators: [], events: [event], assets: [], relations: [], evidences: [] }
-  }, [id, state.submissionDrafts])
+    const currentProject = state.projectOverrides.find((item) => item.id === project.id) ?? project
+    return { project: currentProject, relatedProjects: [], creators: [], events: [event, ...state.lifecycleEventAdditions.filter((item) => item.projectId === project.id)], assets: state.reusableAssetAdditions.filter((item) => item.projectId === project.id), relations: [], evidences: [] }
+  }, [id, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.submissionDrafts])
 
   useEffect(() => {
     let active = true
@@ -104,15 +105,22 @@ export function ProjectDetailPage() {
     ]).then(([result, commentResult]) => {
       if (!active) return
       if (result.ok && commentResult.ok) {
-        setBundle(result.data); setError(null)
+        const projectOverride = state.projectOverrides.find((project) => project.id === result.data.project.id)
+        const mergedBundle = {
+          ...result.data,
+          project: projectOverride ?? result.data.project,
+          events: [...result.data.events, ...state.lifecycleEventAdditions.filter((event) => event.projectId === result.data.project.id)],
+          assets: [...result.data.assets, ...state.reusableAssetAdditions.filter((asset) => asset.projectId === result.data.project.id)],
+        }
+        setBundle(mergedBundle); setError(null)
         setComments(commentResult.data)
-        dispatch({ type: 'RECENT_PROJECT_ADD', projectId: result.data.project.id })
-        dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: result.data.project.id }) })
+        dispatch({ type: 'RECENT_PROJECT_ADD', projectId: mergedBundle.project.id })
+        dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId: mergedBundle.project.id }) })
       } else setError(!result.ok ? result.error : commentResult.ok ? null : commentResult.error)
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, id, state.serviceScenario, submittedBundle])
+  }, [dispatch, id, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return

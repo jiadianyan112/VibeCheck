@@ -1286,6 +1286,48 @@ textarea {
   font-size: 0.8rem;
 }
 
+.project-update-layout {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.project-update-menu {
+  position: sticky;
+  top: 6rem;
+  border: 1px solid var(--color-line-strong);
+  padding: var(--space-3);
+}
+
+.project-update-menu .button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.update-diff-preview {
+  border: 2px solid var(--color-ink);
+  padding: var(--space-5);
+}
+
+.update-diff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.update-diff-grid article {
+  min-height: 7rem;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  padding: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.update-diff-grid article:last-child {
+  border-width: 2px;
+}
+
 .placeholder-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
@@ -1375,7 +1417,7 @@ textarea {
   .home-hero, .card-grid, .compact-list, .problem-grid, .home-explainer, .category-grid, .solution-paths, .topic-browser { grid-template-columns: 1fr; }
   .filter-panel { position: static; }
   .event-list a { grid-template-columns: 1fr; }
-  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid, .submission-preview-grid, .submission-summary-grid, .verification-layout, .verification-method-grid, .verification-next-grid { grid-template-columns: 1fr; }
+  .activity-filters, .activity-item, .about-hero, .about-split, .rule-columns, .search-layout, .search-hit, .intent-fields, .comparison-session-meta, .comparison-selection-item, .decision-option-grid, .decision-asset-list, .decision-summary, .auth-page-choices, .submission-entry-layout, .submission-form-layout, .submission-choice-grid, .submission-asset-grid, .submission-preview-grid, .submission-summary-grid, .verification-layout, .verification-method-grid, .verification-next-grid, .project-update-layout, .update-diff-grid { grid-template-columns: 1fr; }
   .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .home-hero__aside { border-top: 1px solid var(--color-line-strong); border-left: 0; }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }

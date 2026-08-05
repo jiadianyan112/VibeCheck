@@ -14,6 +14,7 @@ export type SubmissionDraftId = Brand<string, 'SubmissionDraftId'>
 export type VerificationRequestId = Brand<string, 'VerificationRequestId'>
 export type NotificationId = Brand<string, 'NotificationId'>
 export type UserId = Brand<string, 'UserId'>
+export type ProjectUpdateRecordId = Brand<string, 'ProjectUpdateRecordId'>
 
 export const projectId = (value: string) => value as ProjectId
 export const creatorId = (value: string) => value as CreatorId
@@ -28,6 +29,7 @@ export const submissionDraftId = (value: string) => value as SubmissionDraftId
 export const verificationRequestId = (value: string) => value as VerificationRequestId
 export const notificationId = (value: string) => value as NotificationId
 export const userId = (value: string) => value as UserId
+export const projectUpdateRecordId = (value: string) => value as ProjectUpdateRecordId
 
 export const accessStatuses = [
   'normal',
@@ -648,6 +650,26 @@ export interface AuthorVerificationRequest {
   updatedAt: string
   submittedAt: string | null
   resolvedAt: string | null
+}
+
+export const projectUpdateTypes = ['version', 'address', 'status', 'asset', 'description'] as const
+export type ProjectUpdateType = (typeof projectUpdateTypes)[number]
+
+export const projectUpdateSourceTypes = ['author_statement', 'public_page', 'repository', 'release_notes'] as const
+export type ProjectUpdateSourceType = (typeof projectUpdateSourceTypes)[number]
+
+export interface ProjectUpdateRecord {
+  id: ProjectUpdateRecordId
+  projectId: ProjectId
+  userId: UserId
+  type: ProjectUpdateType
+  beforeValue: unknown
+  afterValue: unknown
+  sourceType: ProjectUpdateSourceType
+  sourceSummary: string
+  impactScope: string
+  eventId: LifecycleEventId
+  createdAt: string
 }
 
 export const notificationTypes = [

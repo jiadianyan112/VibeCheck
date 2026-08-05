@@ -216,6 +216,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           : [...state.verificationRequests, action.request],
       }
     }
+    case 'PROJECT_UPDATE_APPLY': {
+      if (state.projectUpdateRecords.some((record) => record.id === action.record.id)) return state
+      const hasProject = state.projectOverrides.some((project) => project.id === action.project.id)
+      return {
+        ...state,
+        projectOverrides: hasProject
+          ? state.projectOverrides.map((project) => project.id === action.project.id ? action.project : project)
+          : [...state.projectOverrides, action.project],
+        lifecycleEventAdditions: [...state.lifecycleEventAdditions, action.event],
+        reusableAssetAdditions: action.asset ? [...state.reusableAssetAdditions, action.asset] : state.reusableAssetAdditions,
+        projectUpdateRecords: [...state.projectUpdateRecords, action.record],
+        notifications: [...state.notifications, ...action.notifications.filter((notification) => !state.notifications.some((item) => item.id === notification.id))],
+        eventLog: appendEvent(state, createPrototypeEvent('project_updated', { projectId: action.project.id, eventId: action.event.id, updateType: action.record.type })),
+      }
+    }
     case 'NOTIFICATION_MARK_READ':
       return {
         ...state,

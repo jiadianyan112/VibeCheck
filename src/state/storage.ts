@@ -16,6 +16,11 @@ type PersistedState = Pick<
   | 'decisionRecords'
   | 'submissionDrafts'
   | 'verificationRequests'
+  | 'projectOverrides'
+  | 'lifecycleEventAdditions'
+  | 'reusableAssetAdditions'
+  | 'projectUpdateRecords'
+  | 'notifications'
   | 'pendingAction'
   | 'lastReplayedActionId'
   | 'serviceScenario'
@@ -35,6 +40,11 @@ export function selectPersistedState(state: AppState): PersistedState {
     decisionRecords: state.decisionRecords,
     submissionDrafts: state.submissionDrafts,
     verificationRequests: state.verificationRequests,
+    projectOverrides: state.projectOverrides,
+    lifecycleEventAdditions: state.lifecycleEventAdditions,
+    reusableAssetAdditions: state.reusableAssetAdditions,
+    projectUpdateRecords: state.projectUpdateRecords,
+    notifications: state.notifications,
     pendingAction: state.pendingAction,
     lastReplayedActionId: state.lastReplayedActionId,
     serviceScenario: state.serviceScenario,
@@ -78,10 +88,14 @@ export function hydrateAppState(
         submittedAt: request.submittedAt ?? request.createdAt,
         resolvedAt: request.resolvedAt ?? null,
       })),
+      projectOverrides: persisted.projectOverrides ?? fallback.projectOverrides,
+      lifecycleEventAdditions: persisted.lifecycleEventAdditions ?? fallback.lifecycleEventAdditions,
+      reusableAssetAdditions: persisted.reusableAssetAdditions ?? fallback.reusableAssetAdditions,
+      projectUpdateRecords: persisted.projectUpdateRecords ?? fallback.projectUpdateRecords,
       eventLog: [],
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,
-      notifications: fallback.notifications,
+      notifications: persisted.notifications ?? fallback.notifications,
     }
   } catch {
     return fallback
