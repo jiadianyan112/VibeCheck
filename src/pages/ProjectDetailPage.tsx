@@ -38,7 +38,7 @@ const commentCategoryLabels: Record<CommentCategory, string> = { usage_feedback:
 
 function FactBlock<T>({ label, fact, evidences, children }: { label: string; fact: FieldFact<T>; evidences: Evidence[]; children: (value: T) => ReactNode }) {
   const sources = evidences.filter((evidence) => fact.evidenceIds.includes(evidence.id))
-  return <div className="profile-field"><dt>{label}</dt><dd>{fact.state === 'known' ? children(fact.value) : <UnknownFact reason={fact.reason} />}</dd><EvidenceDrawer label={`${label}来源`} evidences={sources} /></div>
+  return <div className="profile-field"><dt>{label}</dt><dd className="profile-field__value">{fact.state === 'known' ? children(fact.value) : <UnknownFact reason={fact.reason} />}<EvidenceDrawer label={`${label}来源`} evidences={sources} /></dd></div>
 }
 
 function tagList(values: readonly string[], labels: Record<string, string>) {

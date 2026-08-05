@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, Input, LoadingState, PageFrame, Tag, useToast } from '../components'
 import {
@@ -66,8 +66,9 @@ function CheckboxField<T extends string>({
   onChange: (values: T[]) => void
   optional?: boolean
 }) {
+  const errorId = useId()
   return (
-    <fieldset className="submission-choice-field">
+    <fieldset className="submission-choice-field" aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}>
       <legend>{legend}{optional ? '（可跳过）' : '（必填）'}</legend>
       <div className="submission-choice-grid">
         {values.map((value) => (
@@ -81,7 +82,7 @@ function CheckboxField<T extends string>({
           </label>
         ))}
       </div>
-      {error ? <p className="field-error" role="alert">{error}</p> : null}
+      {error ? <p id={errorId} className="field-error" role="alert">{error}</p> : null}
     </fieldset>
   )
 }
@@ -97,8 +98,8 @@ function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K ext
         <OriginalValue label="名称" value={original.currentName} />
       </div>
       <div>
-        <label className="field"><span className="field__label">一句话定义</span><textarea className="input textarea" value={fields.oneLineDefinition ?? ''} aria-invalid={Boolean(draft.validationErrors.oneLineDefinition)} onChange={(event) => update('oneLineDefinition', event.target.value)} /></label>
-        {draft.validationErrors.oneLineDefinition ? <p className="field-error" role="alert">{draft.validationErrors.oneLineDefinition}</p> : null}
+        <label className="field" htmlFor="submission-definition"><span className="field__label">一句话定义</span><textarea id="submission-definition" className="input textarea" value={fields.oneLineDefinition ?? ''} aria-invalid={Boolean(draft.validationErrors.oneLineDefinition)} aria-describedby={draft.validationErrors.oneLineDefinition ? 'submission-definition-error' : undefined} onChange={(event) => update('oneLineDefinition', event.target.value)} /></label>
+        {draft.validationErrors.oneLineDefinition ? <p id="submission-definition-error" className="field-error" role="alert">{draft.validationErrors.oneLineDefinition}</p> : null}
         <OriginalValue label="定义" value={original.oneLineDefinition} />
       </div>
       <div>
@@ -110,8 +111,8 @@ function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K ext
         <OriginalValue label="仓库" value={original.repositoryUrl} />
       </div>
       <div>
-        <label className="field"><span className="field__label">基础访问状态（必填）</span><select className="input" value={fields.accessStatus ?? ''} aria-invalid={Boolean(draft.validationErrors.accessStatus)} onChange={(event) => update('accessStatus', event.target.value as SubmissionProjectFields['accessStatus'])}><option value="">请选择</option>{accessStatuses.map((status) => <option key={status} value={status}>{accessStatusText[status]}</option>)}</select></label>
-        {draft.validationErrors.accessStatus ? <p className="field-error" role="alert">{draft.validationErrors.accessStatus}</p> : null}
+        <label className="field" htmlFor="submission-access-status"><span className="field__label">基础访问状态（必填）</span><select id="submission-access-status" className="input" value={fields.accessStatus ?? ''} aria-invalid={Boolean(draft.validationErrors.accessStatus)} aria-describedby={draft.validationErrors.accessStatus ? 'submission-access-status-error' : undefined} onChange={(event) => update('accessStatus', event.target.value as SubmissionProjectFields['accessStatus'])}><option value="">请选择</option>{accessStatuses.map((status) => <option key={status} value={status}>{accessStatusText[status]}</option>)}</select></label>
+        {draft.validationErrors.accessStatus ? <p id="submission-access-status-error" className="field-error" role="alert">{draft.validationErrors.accessStatus}</p> : null}
         <OriginalValue label="状态" value={original.accessStatus ? accessStatusText[original.accessStatus] : undefined} />
       </div>
     </div>
@@ -122,8 +123,8 @@ function DefinitionStep({ draft, update }: { draft: SubmissionDraft; update: <K 
   return (
     <div className="submission-step-fields stack">
       <CheckboxField legend="目标用户" values={targetUsers} selected={draft.fields.targetUsers ?? []} labels={targetUserLabels} error={draft.validationErrors.targetUsers} onChange={(value) => update('targetUsers', value)} />
-      <label className="field"><span className="field__label">核心问题（必填）</span><textarea className="input textarea" value={draft.fields.coreProblem ?? ''} onChange={(event) => update('coreProblem', event.target.value)} /></label>
-      {draft.validationErrors.coreProblem ? <p className="field-error" role="alert">{draft.validationErrors.coreProblem}</p> : null}
+      <label className="field" htmlFor="submission-core-problem"><span className="field__label">核心问题（必填）</span><textarea id="submission-core-problem" className="input textarea" value={draft.fields.coreProblem ?? ''} aria-invalid={Boolean(draft.validationErrors.coreProblem)} aria-describedby={draft.validationErrors.coreProblem ? 'submission-core-problem-error' : undefined} onChange={(event) => update('coreProblem', event.target.value)} /></label>
+      {draft.validationErrors.coreProblem ? <p id="submission-core-problem-error" className="field-error" role="alert">{draft.validationErrors.coreProblem}</p> : null}
       <CheckboxField legend="使用场景" values={useScenarios} selected={draft.fields.useScenarios ?? []} labels={scenarioLabels} error={draft.validationErrors.useScenarios} onChange={(value) => update('useScenarios', value)} />
     </div>
   )
@@ -135,8 +136,8 @@ function SolutionStep({ draft, update }: { draft: SubmissionDraft; update: <K ex
     <div className="submission-step-fields stack">
       <CheckboxField legend="主要输入" values={inputTypes} selected={draft.fields.mainInputs ?? []} labels={inputTypeLabels} error={draft.validationErrors.mainInputs} onChange={(value) => update('mainInputs', value)} />
       <CheckboxField legend="主要输出" values={outputTypes} selected={draft.fields.mainOutputs ?? []} labels={outputTypeLabels} error={draft.validationErrors.mainOutputs} onChange={(value) => update('mainOutputs', value)} />
-      <label className="field"><span className="field__label">核心流程（必填，每行一步）</span><textarea className="input textarea" value={flowText} onChange={(event) => update('coreFlow', event.target.value.split('\n').map((line) => line.trim()).filter(Boolean).map((label, index) => ({ id: `draft-flow-${index + 1}`, order: index + 1, label, description: '' })))} /></label>
-      {draft.validationErrors.coreFlow ? <p className="field-error" role="alert">{draft.validationErrors.coreFlow}</p> : null}
+      <label className="field" htmlFor="submission-core-flow"><span className="field__label">核心流程（必填，每行一步）</span><textarea id="submission-core-flow" className="input textarea" value={flowText} aria-invalid={Boolean(draft.validationErrors.coreFlow)} aria-describedby={draft.validationErrors.coreFlow ? 'submission-core-flow-error' : undefined} onChange={(event) => update('coreFlow', event.target.value.split('\n').map((line) => line.trim()).filter(Boolean).map((label, index) => ({ id: `draft-flow-${index + 1}`, order: index + 1, label, description: '' })))} /></label>
+      {draft.validationErrors.coreFlow ? <p id="submission-core-flow-error" className="field-error" role="alert">{draft.validationErrors.coreFlow}</p> : null}
       <CheckboxField legend="练习形式" values={practiceFormats} selected={draft.fields.practiceFormats ?? []} labels={practiceFormatLabels} optional onChange={(value) => update('practiceFormats', value)} />
       <CheckboxField legend="反馈方式" values={feedbackMethods} selected={draft.fields.feedbackMethods ?? []} labels={feedbackMethodLabels} optional onChange={(value) => update('feedbackMethods', value)} />
       <label className="field"><span className="field__label">差异化说明（可跳过）</span><textarea className="input textarea" value={draft.fields.differentiation ?? ''} onChange={(event) => update('differentiation', event.target.value)} /></label>
@@ -203,6 +204,7 @@ export function SubmitFormPage() {
     if (Object.keys(errors).length) {
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors: { ...draft.validationErrors, ...errors } } })
       pushToast('请先完成当前步骤的必填字段。', 'error')
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('.submission-form-panel [aria-invalid="true"]')?.focus())
       return
     }
     if (index === submissionFormSteps.length - 1) {
@@ -236,7 +238,7 @@ export function SubmitFormPage() {
           <p className="eyebrow">草稿完整度</p>
           <strong className="submission-percent">{completion?.percent ?? 0}%</strong>
           <progress value={completion?.completed ?? 0} max={completion?.total ?? 10}>{completion?.percent ?? 0}%</progress>
-          <ol>{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{submissionFormStepLabels[item]}</li>)}</ol>
+          <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{submissionFormStepLabels[item]}</li>)}</ol>
           <p>草稿：<code>{draft.id}</code></p>
         </aside>
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">

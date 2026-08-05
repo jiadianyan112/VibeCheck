@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, EmptyState, EvidenceDrawer, FreshnessLabel, Tag, UnknownFact, useToast } from '../components'
 import { buildComparisonMatrix, DecisionForm, type ComparisonCell } from '../features'
@@ -82,6 +82,21 @@ export function CompareSessionPage() {
     dispatch({ type: 'COMPARISON_REPLACE', removeId: replacementFor, addId: value as ProjectId })
     setReplacementFor(null)
     pushToast('已替换比较作品。', 'success')
+  }
+
+  function handleMobileProjectKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % selectedProjects.length
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + selectedProjects.length) % selectedProjects.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = selectedProjects.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const nextProject = selectedProjects[nextIndex]
+    if (!nextProject) return
+    setMobileProjectId(nextProject.id)
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')
+    tabs?.[nextIndex]?.focus()
   }
 
   if (!session) {
@@ -181,9 +196,9 @@ export function CompareSessionPage() {
           {isMobileComparison ? (
             <div className="mobile-comparison stack" aria-label={`${selectedProjects.length} 个作品的移动比较`}>
               <nav className="mobile-project-switch" aria-label="移动端作品切换" role="tablist">
-                {selectedProjects.map((project) => <button key={project.id} type="button" role="tab" aria-selected={mobileProjectId === project.id} onClick={() => setMobileProjectId(project.id)}>{projectName(project.id)}</button>)}
+                {selectedProjects.map((project, index) => <button id={`mobile-project-tab-${project.id}`} key={project.id} type="button" role="tab" aria-selected={mobileProjectId === project.id} aria-controls="mobile-comparison-panel" tabIndex={mobileProjectId === project.id ? 0 : -1} onClick={() => setMobileProjectId(project.id)} onKeyDown={(event) => handleMobileProjectKey(event, index)}>{projectName(project.id)}</button>)}
               </nav>
-              <div role="tabpanel" aria-label={mobileProjectId ? `${projectName(mobileProjectId)}的比较字段` : '比较字段'} className="stack">
+              <div id="mobile-comparison-panel" role="tabpanel" aria-label={mobileProjectId ? `${projectName(mobileProjectId)}的比较字段` : '比较字段'} className="stack">
                 {dimensions.map((dimension) => {
                   const projectIndex = selectedProjects.findIndex(({ id }) => id === mobileProjectId)
                   const rows = comparisonView === 'differences' ? dimension.rows.filter(({ isSame }) => !isSame) : dimension.rows

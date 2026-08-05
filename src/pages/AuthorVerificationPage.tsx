@@ -55,6 +55,7 @@ export function AuthorVerificationPage() {
     if (!project || !state.session.user || busy) return
     if (!summary.trim() || !privateReference.trim()) {
       setValidation('请同时填写材料摘要和仅供审核使用的材料引用。')
+      requestAnimationFrame(() => document.getElementById(summary.trim() ? 'verification-private-reference' : 'verification-summary')?.focus())
       return
     }
     setValidation(null)
@@ -100,9 +101,9 @@ export function AuthorVerificationPage() {
           {canSubmit ? <section className="wire-panel stack" aria-labelledby="verification-material-heading">
             <div><p className="eyebrow">Private evidence</p><h2 id="verification-material-heading">选择一种主要证明方式</h2></div>
             <fieldset className="submission-choice-field"><legend>证明方式</legend><div className="verification-method-grid">{verificationMethods.map((value) => <label key={value} className="choice-card"><input type="radio" name="verification-method" value={value} checked={method === value} onChange={() => setMethod(value)} /><span><strong>{verificationMethodLabels[value]}</strong></span></label>)}</div></fieldset>
-            <label className="field"><span className="field__label">材料摘要</span><textarea className="input textarea" rows={4} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="说明材料如何连接你的身份与该作品" /></label>
-            <label className="field"><span className="field__label">私有材料引用</span><textarea className="input textarea" rows={3} value={privateReference} onChange={(event) => setPrivateReference(event.target.value)} placeholder="审核专用链接、仓库校验位置或材料编号" /></label>
-            {validation ? <p className="field-error" role="alert">{validation}</p> : null}
+            <label className="field" htmlFor="verification-summary"><span className="field__label">材料摘要</span><textarea id="verification-summary" className="input textarea" rows={4} value={summary} aria-invalid={Boolean(validation && !summary.trim())} aria-describedby={validation ? 'verification-error' : undefined} onChange={(event) => { setSummary(event.target.value); setValidation(null) }} placeholder="说明材料如何连接你的身份与该作品" /></label>
+            <label className="field" htmlFor="verification-private-reference"><span className="field__label">私有材料引用</span><textarea id="verification-private-reference" className="input textarea" rows={3} value={privateReference} aria-invalid={Boolean(validation && !privateReference.trim())} aria-describedby={validation ? 'verification-error' : undefined} onChange={(event) => { setPrivateReference(event.target.value); setValidation(null) }} placeholder="审核专用链接、仓库校验位置或材料编号" /></label>
+            {validation ? <p id="verification-error" className="field-error" role="alert">{validation}</p> : null}
             <Button variant="primary" disabled={busy} onClick={submit}>{request ? '更新材料并重新提交' : '提交人工审核'}</Button>
           </section> : null}
 

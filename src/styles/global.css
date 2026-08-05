@@ -2386,10 +2386,13 @@ textarea {
   margin: 0;
 }
 
-.profile-field .evidence-trigger {
-  grid-column: 2;
-  justify-self: start;
+.profile-field__value {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
 }
+
+.profile-field .evidence-trigger { justify-self: start; }
 
 .core-flow ol {
   display: grid;
@@ -2493,9 +2496,6 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .profile-field .evidence-trigger {
-    grid-column: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

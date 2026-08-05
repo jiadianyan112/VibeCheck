@@ -15,14 +15,14 @@ export function ToastProvider({ children }: PropsWithChildren) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="toast-region" aria-live="polite" aria-label="操作反馈">
+      <section className="toast-region" aria-live="polite" aria-label="操作反馈">
         {messages.map((item) => (
           <div key={item.id} className={`toast toast--${item.tone}`} role={item.tone === 'error' ? 'alert' : 'status'}>
             <span>{item.message}</span>
             <button type="button" aria-label="关闭提示" onClick={() => setMessages((current) => current.filter((message) => message.id !== item.id))}>×</button>
           </div>
         ))}
-      </div>
+      </section>
     </ToastContext.Provider>
   )
 }

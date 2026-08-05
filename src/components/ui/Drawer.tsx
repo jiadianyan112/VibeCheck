@@ -1,5 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 import { Button } from './Button'
+import { useDialogFocus } from './useDialogFocus'
 
 export interface DrawerProps {
   open: boolean
@@ -10,21 +11,8 @@ export interface DrawerProps {
 
 export function Drawer({ open, title, children, onClose }: DrawerProps) {
   const panelRef = useRef<HTMLElement>(null)
-  const previousFocus = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    previousFocus.current = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-      previousFocus.current?.focus()
-    }
-  }, [onClose, open])
+  const titleId = useId()
+  useDialogFocus(open, panelRef, onClose)
 
   if (!open) return null
 
@@ -35,12 +23,12 @@ export function Drawer({ open, title, children, onClose }: DrawerProps) {
         className="drawer-panel stack"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="drawer-title"
+        aria-labelledby={titleId}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="cluster cluster--between">
-          <h2 id="drawer-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <Button variant="quiet" onClick={onClose} aria-label="关闭抽屉">
             关闭
           </Button>

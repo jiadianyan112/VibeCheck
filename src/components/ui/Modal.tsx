@@ -1,5 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 import { Button } from './Button'
+import { useDialogFocus } from './useDialogFocus'
 
 export interface ModalProps {
   open: boolean
@@ -11,23 +12,8 @@ export interface ModalProps {
 
 export function Modal({ open, title, children, onClose, footer }: ModalProps) {
   const panelRef = useRef<HTMLElement>(null)
-  const previousFocus = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    previousFocus.current = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-    return () => previousFocus.current?.focus()
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [onClose, open])
+  const titleId = useId()
+  useDialogFocus(open, panelRef, onClose)
 
   if (!open) return null
 
@@ -38,12 +24,12 @@ export function Modal({ open, title, children, onClose, footer }: ModalProps) {
         className="dialog-panel stack"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="cluster cluster--between">
-          <h2 id="modal-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <Button variant="quiet" onClick={onClose} aria-label="关闭弹层">
             关闭
           </Button>
