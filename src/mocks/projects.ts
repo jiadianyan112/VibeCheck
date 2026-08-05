@@ -332,6 +332,7 @@ export const projects: Project[] = [
     completeness: 'partial',
     statusNote: '旧地址发生重定向，新地址身份仍待确认。',
     historicalUrls: [{ url: 'https://example.test/old/dictaflow', effectiveFrom: '2026-03-01', effectiveTo: null }],
+    reviewStatus: 'update_pending',
     eventKeys: ['event-dictaflow-redirect'],
   }),
   makeProject({

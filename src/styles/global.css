@@ -292,6 +292,107 @@ textarea {
   color: var(--color-inverse);
 }
 
+.admin-page {
+  max-width: 88rem;
+  margin: 0 auto;
+}
+
+.admin-page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-5);
+  align-items: flex-start;
+  padding-bottom: var(--space-5);
+  border-bottom: 2px solid var(--color-ink);
+}
+
+.admin-page-header p:last-child {
+  max-width: 54rem;
+  color: var(--color-muted);
+}
+
+.admin-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--color-line-strong);
+  border-left: 1px solid var(--color-line-strong);
+}
+
+.admin-metric-grid article {
+  display: grid;
+  gap: var(--space-2);
+  min-height: 12rem;
+  align-content: space-between;
+  border-right: 1px solid var(--color-line-strong);
+  border-bottom: 1px solid var(--color-line-strong);
+  padding: var(--space-4);
+  background: var(--color-surface-raised);
+}
+
+.admin-metric-grid strong {
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  line-height: 1;
+}
+
+.admin-todo-panel,
+.admin-filter-panel {
+  border: 1px solid var(--color-line-strong);
+  padding: var(--space-5);
+  background: var(--color-surface-raised);
+}
+
+.admin-todo-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-todo-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  align-items: center;
+  border-top: 1px solid var(--color-line);
+  padding-block: var(--space-4);
+}
+
+.admin-todo-list p { margin: var(--space-1) 0 0; color: var(--color-muted); }
+
+.admin-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(12rem, 1fr));
+  gap: var(--space-3);
+}
+
+.admin-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-line-strong);
+}
+
+.admin-project-table {
+  width: 100%;
+  min-width: 75rem;
+  border-collapse: collapse;
+  background: var(--color-surface-raised);
+  font-size: 0.85rem;
+}
+
+.admin-project-table th,
+.admin-project-table td {
+  border-bottom: 1px solid var(--color-line);
+  padding: var(--space-3);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-project-table thead th { background: var(--color-surface); }
+.admin-project-table tbody th { display: grid; min-width: 13rem; gap: var(--space-1); }
+.admin-project-table code { overflow-wrap: anywhere; font-size: 0.7rem; }
+.admin-narrow-note { display: none; }
+
 .global-search {
   min-width: 0;
   border: 1px solid var(--color-line-strong);
@@ -1668,6 +1769,21 @@ textarea {
 
   .admin-nav-link {
     flex: 0 0 auto;
+  }
+
+  .admin-page-header,
+  .admin-todo-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-metric-grid,
+  .admin-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-narrow-note {
+    display: block;
   }
 }
 
