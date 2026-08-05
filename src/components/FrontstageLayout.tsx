@@ -99,6 +99,7 @@ function FrontstageContent() {
           <details className="mobile-navigation">
             <summary>菜单</summary>
             <nav aria-label="移动导航">
+              <Link className="nav-link" to="/search">搜索作品</Link>
               {primaryNavigation.map((item) => (
                 <NavLink key={item.to} className={navClassName} to={item.to}>
                   {item.label}

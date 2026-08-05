@@ -195,7 +195,7 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <main className="page-container page-with-bottom-space stack">
+    <main className="page-container page-with-bottom-space project-detail-page stack">
       {id && resolvedId !== id ? <aside className="feedback" role="status"><strong>此旧作品 ID 已合并</strong><p><code>{id}</code> 已稳定映射到主档 <code>{resolvedId}</code>；历史引用继续可访问。</p></aside> : null}
       {project.reviewStatus === 'restricted' ? <aside className="feedback feedback--error" role="alert"><strong>此作品已限制公开展示</strong><p>档案与历史仍保留用于审计，公开体验入口暂不可用。</p></aside> : null}
       {submissionUrl ? (
