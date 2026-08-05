@@ -10,7 +10,7 @@ import {
   validateSubmissionStep,
   type SubmissionFormStep,
 } from '../features'
-import { reusableAssets } from '../mocks'
+import { resolveServiceScenario, reusableAssets } from '../mocks'
 import { submissionService, type ServiceError } from '../services'
 import { useAppState } from '../state'
 import { SubmissionReviewPage } from './SubmissionReviewPage'
@@ -161,6 +161,7 @@ export function SubmitFormPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const draftId = searchParams.get('draft')
+  const scenario = resolveServiceScenario(searchParams, state.serviceScenario)
   const draft = state.submissionDrafts.find((item) => item.id === draftId && item.userId === state.session.user?.id)
   const step = parseStep(searchParams.get('step'), draft?.step ?? 'prefill')
   const [extracting, setExtracting] = useState(false)
@@ -172,7 +173,7 @@ export function SubmitFormPage() {
     if (!draft || step !== 'prefill' || extractionFieldCount > 1 || extractionError) return
     let active = true
     setExtracting(true)
-    submissionService.extract(extractionUrl, { scenario: state.serviceScenario }).then((result) => {
+    submissionService.extract(extractionUrl, { scenario }).then((result) => {
       if (!active) return
       setExtracting(false)
       if (!result.ok) { setExtractionError(result.error); return }
@@ -180,7 +181,7 @@ export function SubmitFormPage() {
       dispatch({ type: 'DRAFT_UPSERT', draft: applyExtraction(draft, result.data) })
     })
     return () => { active = false }
-  }, [dispatch, draft, extractionError, extractionFieldCount, extractionUrl, state.serviceScenario, step])
+  }, [dispatch, draft, extractionError, extractionFieldCount, extractionUrl, scenario, step])
 
   const completion = useMemo(() => draft ? submissionCompleteness(draft) : null, [draft])
 

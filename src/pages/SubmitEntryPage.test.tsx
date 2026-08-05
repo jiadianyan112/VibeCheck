@@ -134,6 +134,16 @@ describe('submission entry and URL checks', () => {
     expect(screen.queryByRole('button', { name: '保存地址草稿' })).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['/submit?prototypeScenario=publication_duplicate&resumeUrl=https%3A%2F%2Fexample.test%2Fscenario-duplicate&autoCheck=1', '发现已有作品档案。'],
+    ['/submit?prototypeScenario=external_link_risk&resumeUrl=https%3A%2F%2Funsafe.example%2Fscenario&autoCheck=1', '检测到外链风险，已阻止继续。'],
+  ])('opens the unified %s result without a second tester action', async (path, message) => {
+    loginInStorage()
+    renderRoute(path)
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(persistedDrafts()).toHaveLength(0)
+  })
+
   it('branches a duplicate to details while keeping verification secondary and preserving context', async () => {
     loginInStorage()
     const initialProjectCount = projects.length

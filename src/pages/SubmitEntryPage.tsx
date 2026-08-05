@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, Input, PageFrame, useToast } from '../components'
 import { canContinueAfterUrlCheck, createUrlCheckDraft, duplicateDetailPath, duplicateVerificationPath, getDuplicateProjectSummary, urlCheckLabels } from '../features'
+import { resolveServiceScenario } from '../mocks'
 import {
   normalizeSubmissionUrl,
-  serviceScenarioIds,
   submissionService,
-  type ServiceScenarioId,
   type ServiceError,
   type UrlCheckItem,
   type UrlCheckResult,
@@ -31,18 +30,14 @@ function validateUrl(value: string) {
   }
 }
 
-function scenarioFromQuery(value: string | null): ServiceScenarioId | null {
-  return serviceScenarioIds.find((scenario) => scenario === value) ?? null
-}
-
 export function SubmitEntryPage() {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const queryScenario = scenarioFromQuery(searchParams.get('scenario'))
-  const scenario = queryScenario ?? state.serviceScenario
+  const scenario = resolveServiceScenario(searchParams, state.serviceScenario)
+  const scenarioLocked = searchParams.has('prototypeScenario') || searchParams.has('scenario')
   const [url, setUrl] = useState(() => searchParams.get('resumeUrl') ?? state.submissionEntryValue)
   const [touched, setTouched] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -52,34 +47,12 @@ export function SubmitEntryPage() {
   const [savedDraftId, setSavedDraftId] = useState<string | null>(null)
   const [declaredAuthor, setDeclaredAuthor] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
+  const autoCheckKeyRef = useRef('')
   const validationError = touched ? validateUrl(url) : ''
 
   useEffect(() => () => controllerRef.current?.abort(), [])
 
-  const checkByKey = useMemo(
-    () => new Map(result?.checks.map((check) => [check.key, check]) ?? []),
-    [result],
-  )
-
-  if (!state.session.user) {
-    const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
-    return (
-      <PageFrame
-        title="发布作品"
-        description="发布前需要选择一个固定测试身份，登录后会自动返回这里。"
-      >
-        <section className="submit-login-callout stack stack--small">
-          <h2>先登录，再检查作品地址</h2>
-          <p>当前输入步骤不会在访客身份下创建草稿。</p>
-          <Link className="button button--primary" to={`/auth?from=${returnPath}`}>
-            登录后发布
-          </Link>
-        </section>
-      </PageFrame>
-    )
-  }
-
-  const checkUrl = async (event?: FormEvent) => {
+  const checkUrl = useCallback(async (event?: FormEvent) => {
     event?.preventDefault()
     setTouched(true)
     const error = validateUrl(url)
@@ -118,7 +91,20 @@ export function SubmitEntryPage() {
       nextParams.set('scenario', scenario)
       setSearchParams(nextParams, { replace: true })
     }
-  }
+  }, [checking, dispatch, scenario, searchParams, setSearchParams, url])
+
+  useEffect(() => {
+    if (!state.session.user || searchParams.get('autoCheck') !== '1') return
+    const autoCheckKey = `${scenario}:${searchParams.get('resumeUrl') ?? ''}`
+    if (autoCheckKeyRef.current === autoCheckKey) return
+    autoCheckKeyRef.current = autoCheckKey
+    void checkUrl()
+  }, [checkUrl, scenario, searchParams, state.session.user])
+
+  const checkByKey = useMemo(
+    () => new Map(result?.checks.map((check) => [check.key, check]) ?? []),
+    [result],
+  )
 
   const cancelCheck = () => {
     controllerRef.current?.abort()
@@ -143,6 +129,24 @@ export function SubmitEntryPage() {
   const duplicateSummary = result?.duplicateProjectId
     ? getDuplicateProjectSummary(result.duplicateProjectId)
     : null
+
+  if (!state.session.user) {
+    const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
+    return (
+      <PageFrame
+        title="发布作品"
+        description="发布前需要选择一个固定测试身份，登录后会自动返回这里。"
+      >
+        <section className="submit-login-callout stack stack--small">
+          <h2>先登录，再检查作品地址</h2>
+          <p>当前输入步骤不会在访客身份下创建草稿。</p>
+          <Link className="button button--primary" to={`/auth?from=${returnPath}`}>
+            登录后发布
+          </Link>
+        </section>
+      </PageFrame>
+    )
+  }
 
   return (
     <PageFrame
@@ -186,7 +190,7 @@ export function SubmitEntryPage() {
           </div>
           <p className="submission-scenario-note">
             固定模拟场景：<strong>{scenario}</strong>
-            {queryScenario ? '（由当前地址参数锁定）' : '（可在原型调试面板切换）'}
+            {scenarioLocked ? '（由当前地址参数锁定）' : '（可在开发场景面板切换）'}
           </p>
           {requestError ? <ErrorPanel title="检查未完成" message={requestError.message} detail={requestError.code} onRetry={requestError.retryable ? () => void checkUrl() : undefined} /> : null}
           {cancelled ? <div className="feedback" role="status"><strong>检查已取消</strong><p>没有创建草稿，也没有发出重复检查。</p></div> : null}

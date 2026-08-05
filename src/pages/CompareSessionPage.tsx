@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, EmptyState, EvidenceDrawer, FreshnessLabel, Tag, UnknownFact, useToast } from '../components'
 import { buildComparisonMatrix, DecisionForm, type ComparisonCell } from '../features'
-import { evidenceById, projectById, projects, reusableAssets } from '../mocks'
+import { evidenceById, projectById, projects, prototypeScenarioFromParams, reusableAssets } from '../mocks'
 import { useAppState } from '../state'
 import { comparisonSessionId, type ProjectId } from '../types'
 
@@ -43,6 +43,7 @@ function ComparisonCellView({ cell }: { cell: ComparisonCell }) {
 
 export function CompareSessionPage() {
   const { sessionId = '' } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
@@ -52,7 +53,7 @@ export function CompareSessionPage() {
   const isMobileComparison = useMobileComparison()
   const routeSessionId = comparisonSessionId(sessionId)
   const session = state.comparisonSessions.find(({ id }) => id === routeSessionId)
-  const selectedIds = session?.projectIds ?? []
+  const selectedIds = prototypeScenarioFromParams(searchParams) === 'comparison_insufficient' ? session?.projectIds.slice(0, 1) ?? [] : session?.projectIds ?? []
   const candidates = projects.filter(({ id }) => !selectedIds.includes(id))
   const selectedProjects = selectedIds.map((id) => projectById.get(id)).filter((project) => project !== undefined)
   const missingProjectIds = selectedIds.filter((id) => !projectById.has(id))

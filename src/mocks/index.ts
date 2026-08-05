@@ -6,7 +6,7 @@ export { eventById, lifecycleEvents } from './events'
 export { knownFact, unknownFact } from './factories'
 export { plannedProjectEvidenceIds, projectById, projects } from './projects'
 export { projectRelations } from './relations'
-export { defaultScenario, type PrototypeScenario } from './scenario'
+export { defaultScenario, prototypeScenarioFromParams, prototypeScenarioIds, prototypeScenarios, resolveServiceScenario, scenarioExtractionDraftId, type PrototypeScenario, type PrototypeScenarioGroup, type PrototypeScenarioId } from './scenario'
 export {
   anonymousAssets,
   adminReviewDrafts,

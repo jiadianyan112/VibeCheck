@@ -3,6 +3,7 @@ import { ComparisonProvider, FloatingCompareBar } from '../features'
 import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
 import { RouteScrollManager } from './RouteScrollManager'
+import { ScenarioPanel } from './ScenarioPanel'
 
 const primaryNavigation = [
   { to: '/projects', label: '作品广场' },
@@ -132,6 +133,7 @@ function FrontstageContent() {
         <Outlet />
       </div>
       {location.pathname.startsWith('/compare/') ? null : <FloatingCompareBar />}
+      {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
   )
 }

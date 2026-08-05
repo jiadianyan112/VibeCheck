@@ -9,8 +9,8 @@ import {
   publishedProjectFromSubmission,
   type ProjectUpdateInput,
 } from '../features'
-import { userAssets } from '../mocks'
-import { projectService, projectUpdateService, serviceScenarioIds, type ServiceError, type ServiceScenarioId } from '../services'
+import { resolveServiceScenario, userAssets } from '../mocks'
+import { projectService, projectUpdateService, type ServiceError } from '../services'
 import { useAppState } from '../state'
 import {
   assetTypes,
@@ -50,8 +50,7 @@ export function ProjectUpdatePage() {
   const queryType = params.get('type')
   const type = queryType ? resolvedType(queryType) : storedDraft?.input.type ?? 'version'
   const shouldRestore = Boolean(storedDraft && (!queryType || storedDraft.input.type === type))
-  const requestedScenario = params.get('scenario') as ServiceScenarioId | null
-  const scenario = requestedScenario && serviceScenarioIds.includes(requestedScenario) ? requestedScenario : state.serviceScenario
+  const scenario = resolveServiceScenario(params, state.serviceScenario)
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<ServiceError | null>(null)

@@ -8,7 +8,8 @@ import {
   verificationMethodLabels,
   verificationStatusLabels,
 } from '../features'
-import { projectService, serviceScenarioIds, verificationService, type ServiceError, type ServiceScenarioId } from '../services'
+import { resolveServiceScenario } from '../mocks'
+import { projectService, verificationService, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import { verificationMethods, type Project, type VerificationMethod } from '../types'
 
@@ -27,8 +28,7 @@ export function AuthorVerificationPage() {
   const [summary, setSummary] = useState('')
   const [privateReference, setPrivateReference] = useState('')
   const [validation, setValidation] = useState<string | null>(null)
-  const requestedScenario = params.get('scenario') as ServiceScenarioId | null
-  const scenario = requestedScenario && serviceScenarioIds.includes(requestedScenario) ? requestedScenario : state.serviceScenario
+  const scenario = resolveServiceScenario(params, state.serviceScenario)
   const request = project ? latestVerificationFor(state.verificationRequests, project.id, state.session.user?.id) : null
   const management = authorManagementState(request)
 

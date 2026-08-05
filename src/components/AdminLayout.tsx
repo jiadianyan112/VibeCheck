@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { ScenarioPanel } from './ScenarioPanel'
 
 const adminNavigation = [
   { to: '/admin', label: '后台首页', end: true },
@@ -40,6 +41,7 @@ export function AdminLayout() {
       <main className="admin-main">
         <Outlet />
       </main>
+      {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
   )
 }

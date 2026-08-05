@@ -217,6 +217,32 @@ textarea {
   font-size: 0.75rem;
 }
 
+.scenario-panel {
+  right: auto;
+  left: var(--space-4);
+  width: min(26rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.scenario-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.scenario-panel__button {
+  min-height: 4.5rem;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  text-align: left;
+  white-space: normal;
+}
+
+.scenario-panel__button small {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

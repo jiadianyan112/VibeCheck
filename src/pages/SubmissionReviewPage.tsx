@@ -7,7 +7,8 @@ import {
   submissionReviewStatusLabels,
   withdrawSubmission,
 } from '../features'
-import { serviceScenarioIds, submissionService, type ServiceError, type ServiceScenarioId } from '../services'
+import { resolveServiceScenario } from '../mocks'
+import { submissionService, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import type { SubmissionDraft, SubmissionProjectFields } from '../types'
 import {
@@ -95,8 +96,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<ServiceError | null>(null)
   const [material, setMaterial] = useState(draft.supplementalMaterial)
-  const requested = params.get('scenario') as ServiceScenarioId | null
-  const scenario = requested && serviceScenarioIds.includes(requested) ? requested : state.serviceScenario
+  const scenario = resolveServiceScenario(params, state.serviceScenario)
   const isEditableSubmission = draft.status === 'draft' || draft.status === 'changes_requested'
 
   async function submit() {

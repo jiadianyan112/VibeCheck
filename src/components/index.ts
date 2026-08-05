@@ -1,7 +1,7 @@
 export { AdminLayout } from './AdminLayout'
 export { FrontstageLayout } from './FrontstageLayout'
 export { PageFrame } from './PageFrame'
-export { PrototypeDebugPanel } from './PrototypeDebugPanel'
+export { ScenarioPanel } from './ScenarioPanel'
 export * from './domain'
 export * from './feedback'
 export * from './ui'

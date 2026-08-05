@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, Tabs, Tag } from '../components'
 import { useAuthGate, useComparison } from '../features'
+import { resolveServiceScenario } from '../mocks'
 import { searchService, type SearchHit, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import { accessStatuses, assetTypes, inputTypes, targetUsers, type AccessStatus, type AssetType, type InputType, type Project, type TargetUser } from '../types'
@@ -24,6 +25,7 @@ export function SearchPage() {
   const [hits, setHits] = useState<SearchHit[]>([])
   const [error, setError] = useState<ServiceError | null>(null)
   const [loading, setLoading] = useState(true)
+  const scenario = resolveServiceScenario(params, state.serviceScenario)
 
   const filters = useMemo(() => ({
     targetUsers: params.get('target') ? [params.get('target') as TargetUser] : undefined,
@@ -35,14 +37,14 @@ export function SearchPage() {
   useEffect(() => {
     let active = true
     setLoading(true)
-    searchService.search(query, filters, { scenario: state.serviceScenario }).then((result) => {
+    searchService.search(query, filters, { scenario }).then((result) => {
       if (!active) return
       if (result.ok) { setHits(result.data.hits); setError(null); dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('search_submitted', { query, resultCount: result.data.hits.length, mode }) }) }
       else setError(result.error)
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, filters, mode, query, state.serviceScenario])
+  }, [dispatch, filters, mode, query, scenario])
 
   const sorted = useMemo(() => {
     const sort = params.get('sort') ?? 'relevance'
