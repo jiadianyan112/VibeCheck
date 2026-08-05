@@ -71,4 +71,19 @@ describe('author verification page', () => {
     expect(screen.queryByRole('link', { name: '管理作品' })).not.toBeInTheDocument()
     expect(screen.queryByText('private://secret-disputed-material')).not.toBeInTheDocument()
   })
+
+  it('keeps the private material draft and error code after a review service failure', async () => {
+    const user = userEvent.setup()
+    const first = renderVerification('service_error')
+    await fillAndSubmit(user, 'private://secret-service-retry')
+    expect(await screen.findByText('模拟服务暂时不可用，请稍后重试。')).toBeInTheDocument()
+    expect(screen.getByText('VC_SERVICE_UNAVAILABLE')).toBeInTheDocument()
+    await waitFor(() => expect(persistedRequest()).toMatchObject({ status: 'draft', privateMaterialReference: 'private://secret-service-retry' }))
+    first.unmount()
+
+    renderVerification()
+    const restoredReference = await screen.findByRole('textbox', { name: '私有材料引用' })
+    await waitFor(() => expect(restoredReference).toHaveValue('private://secret-service-retry'))
+    expect(screen.getByRole('textbox', { name: '材料摘要' })).toHaveValue('仓库公开页面包含作品域名与维护者资料。')
+  })
 })

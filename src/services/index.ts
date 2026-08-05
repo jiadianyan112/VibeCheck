@@ -4,6 +4,7 @@ export { communityService } from './communityService'
 export { intentService, parseIntent, type IntentParseResult } from './intentService'
 export { notificationService } from './notificationService'
 export { projectService, type ProjectBundle } from './projectService'
+export { projectUpdateService } from './projectUpdateService'
 export {
   clone,
   configureServiceRuntime,

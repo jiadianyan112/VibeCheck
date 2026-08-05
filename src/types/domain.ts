@@ -672,6 +672,25 @@ export interface ProjectUpdateRecord {
   createdAt: string
 }
 
+export interface ProjectUpdateDraft {
+  id: string
+  projectId: ProjectId
+  userId: UserId
+  input: {
+    type: ProjectUpdateType
+    value: string
+    sourceType: ProjectUpdateSourceType
+    sourceSummary: string
+    impactScope: string
+    terminalDeclared: boolean
+    assetName: string
+    assetType: AssetType
+    assetLicense: string
+  }
+  lastErrorCode: string | null
+  updatedAt: string
+}
+
 export const notificationTypes = [
   'project_updated',
   'comment_replied',

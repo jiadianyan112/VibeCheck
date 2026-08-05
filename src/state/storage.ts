@@ -20,6 +20,8 @@ type PersistedState = Pick<
   | 'lifecycleEventAdditions'
   | 'reusableAssetAdditions'
   | 'projectUpdateRecords'
+  | 'projectUpdateDrafts'
+  | 'submissionEntryValue'
   | 'notifications'
   | 'pendingAction'
   | 'lastReplayedActionId'
@@ -44,6 +46,8 @@ export function selectPersistedState(state: AppState): PersistedState {
     lifecycleEventAdditions: state.lifecycleEventAdditions,
     reusableAssetAdditions: state.reusableAssetAdditions,
     projectUpdateRecords: state.projectUpdateRecords,
+    projectUpdateDrafts: state.projectUpdateDrafts,
+    submissionEntryValue: state.submissionEntryValue,
     notifications: state.notifications,
     pendingAction: state.pendingAction,
     lastReplayedActionId: state.lastReplayedActionId,
@@ -92,6 +96,8 @@ export function hydrateAppState(
       lifecycleEventAdditions: persisted.lifecycleEventAdditions ?? fallback.lifecycleEventAdditions,
       reusableAssetAdditions: persisted.reusableAssetAdditions ?? fallback.reusableAssetAdditions,
       projectUpdateRecords: persisted.projectUpdateRecords ?? fallback.projectUpdateRecords,
+      projectUpdateDrafts: persisted.projectUpdateDrafts ?? fallback.projectUpdateDrafts,
+      submissionEntryValue: persisted.submissionEntryValue ?? fallback.submissionEntryValue,
       eventLog: [],
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,

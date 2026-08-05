@@ -70,6 +70,21 @@ describe('submission entry and URL checks', () => {
     expect(persistedDrafts()).toHaveLength(0)
   })
 
+  it('preserves the URL across a network failure and cross-page remount with a retryable code', async () => {
+    loginInStorage()
+    const user = userEvent.setup()
+    const first = renderRoute('/submit?scenario=network_error')
+    await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), 'example.test/network-draft')
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    expect(await screen.findByText('网络连接不可用，已保留当前内容。')).toBeInTheDocument()
+    expect(screen.getByText('VC_NETWORK_UNAVAILABLE')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    first.unmount()
+
+    renderRoute('/submit')
+    expect(screen.getByRole('textbox', { name: /^作品地址/ })).toHaveValue('https://example.test/network-draft')
+  })
+
   it('allows a first timeout to be saved but blocks direct continuation', async () => {
     loginInStorage()
     const user = userEvent.setup()

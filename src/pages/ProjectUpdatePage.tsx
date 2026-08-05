@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { Button, ConfirmDialog, ErrorPanel, LoadingState, PageFrame, Tag, useToast } from '../components'
 import {
-  applyProjectUpdate,
   canUserUpdateProject,
   followerNotifications,
   projectUpdateSourceLabels,
@@ -11,7 +10,7 @@ import {
   type ProjectUpdateInput,
 } from '../features'
 import { userAssets } from '../mocks'
-import { projectService, type ServiceError } from '../services'
+import { projectService, projectUpdateService, serviceScenarioIds, type ServiceError, type ServiceScenarioId } from '../services'
 import { useAppState } from '../state'
 import {
   assetTypes,
@@ -47,37 +46,59 @@ export function ProjectUpdatePage() {
   const [params, setParams] = useSearchParams()
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
+  const storedDraft = state.projectUpdateDrafts.find((draft) => draft.projectId === id && draft.userId === state.session.user?.id)
+  const queryType = params.get('type')
+  const type = queryType ? resolvedType(queryType) : storedDraft?.input.type ?? 'version'
+  const shouldRestore = Boolean(storedDraft && (!queryType || storedDraft.input.type === type))
+  const requestedScenario = params.get('scenario') as ServiceScenarioId | null
+  const scenario = requestedScenario && serviceScenarioIds.includes(requestedScenario) ? requestedScenario : state.serviceScenario
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<ServiceError | null>(null)
+  const [loadError, setLoadError] = useState<ServiceError | null>(null)
+  const [operationError, setOperationError] = useState<ServiceError | null>(null)
+  const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [validation, setValidation] = useState<string | null>(null)
   const [completedEventId, setCompletedEventId] = useState<string | null>(null)
-  const type = resolvedType(params.get('type'))
-  const [value, setValue] = useState('')
-  const [sourceType, setSourceType] = useState<ProjectUpdateInput['sourceType']>('author_statement')
-  const [sourceSummary, setSourceSummary] = useState('')
-  const [impactScope, setImpactScope] = useState('')
-  const [terminalDeclared, setTerminalDeclared] = useState(false)
-  const [assetName, setAssetName] = useState('')
-  const [assetType, setAssetType] = useState<AssetType>('source_code')
-  const [assetLicense, setAssetLicense] = useState('')
+  const [value, setValue] = useState(shouldRestore ? storedDraft!.input.value : '')
+  const [sourceType, setSourceType] = useState<ProjectUpdateInput['sourceType']>(shouldRestore ? storedDraft!.input.sourceType : 'author_statement')
+  const [sourceSummary, setSourceSummary] = useState(shouldRestore ? storedDraft!.input.sourceSummary : '')
+  const [impactScope, setImpactScope] = useState(shouldRestore ? storedDraft!.input.impactScope : '')
+  const [terminalDeclared, setTerminalDeclared] = useState(shouldRestore ? storedDraft!.input.terminalDeclared : false)
+  const [assetName, setAssetName] = useState(shouldRestore ? storedDraft!.input.assetName : '')
+  const [assetType, setAssetType] = useState<AssetType>(shouldRestore ? storedDraft!.input.assetType : 'source_code')
+  const [assetLicense, setAssetLicense] = useState(shouldRestore ? storedDraft!.input.assetLicense : '')
 
   useEffect(() => {
     const override = state.projectOverrides.find((item) => item.id === id)
-    if (override) { setProject(override); setLoading(false); setError(null); return }
+    if (override) { setProject(override); setLoading(false); setLoadError(null); return }
     const submitted = state.submissionDrafts.find((draft) => draft.publishedProjectId === id)
     const submittedProject = submitted ? publishedProjectFromSubmission(submitted) : null
-    if (submittedProject) { setProject(submittedProject); setLoading(false); setError(null); return }
+    if (submittedProject) { setProject(submittedProject); setLoading(false); setLoadError(null); return }
     let active = true
     setLoading(true)
     projectService.getById(id as Project['id'], { scenario: state.serviceScenario }).then((result) => {
       if (!active) return
-      if (result.ok) { setProject(result.data); setError(null) } else setError(result.error)
+      if (result.ok) { setProject(result.data); setLoadError(null) } else setLoadError(result.error)
       setLoading(false)
     })
     return () => { active = false }
   }, [id, state.projectOverrides, state.serviceScenario, state.submissionDrafts])
+
+  useEffect(() => {
+    if (!id || !state.session.user) return
+    dispatch({
+      type: 'PROJECT_UPDATE_DRAFT_UPSERT',
+      draft: {
+        id: `project-update-draft-${state.session.user.id}-${id}`,
+        projectId: id as Project['id'],
+        userId: state.session.user.id,
+        input: { type, value, sourceType, sourceSummary, impactScope, terminalDeclared, assetName, assetType, assetLicense },
+        lastErrorCode: operationError?.code ?? null,
+        updatedAt: '2026-07-31T11:55:00+08:00',
+      },
+    })
+  }, [assetLicense, assetName, assetType, dispatch, id, impactScope, operationError?.code, sourceSummary, sourceType, state.session.user, terminalDeclared, type, value])
 
   const permission = useMemo(() => project ? canUserUpdateProject(project, state.session.user, state.verificationRequests) : { allowed: false, disputed: false }, [project, state.session.user, state.verificationRequests])
   const beforeValue = useMemo(() => {
@@ -90,7 +111,7 @@ export function ProjectUpdatePage() {
   }, [project, type])
 
   function selectType(next: ProjectUpdateType) {
-    setParams({ type: next })
+    const nextParams = new URLSearchParams(params); nextParams.set('type', next); setParams(nextParams)
     setValue(''); setValidation(null); setTerminalDeclared(false); setCompletedEventId(null)
   }
 
@@ -110,14 +131,18 @@ export function ProjectUpdatePage() {
     setValidation(null); setConfirming(true)
   }
 
-  function submit() {
+  async function submit() {
     if (!project || !state.session.user || !permission.allowed) return
-    const result = applyProjectUpdate(project, state.session.user, { type, value, sourceType, sourceSummary, impactScope, terminalDeclared, assetName, assetType, assetLicense })
-    const notifications = followerNotifications(result.project, result.event, state.session.user, userAssets)
-    dispatch({ type: 'PROJECT_UPDATE_APPLY', ...result, notifications })
-    setProject(result.project)
-    setCompletedEventId(result.event.id)
     setConfirming(false)
+    setBusy(true)
+    const response = await projectUpdateService.submit(project, state.session.user, { type, value, sourceType, sourceSummary, impactScope, terminalDeclared, assetName, assetType, assetLicense }, { scenario })
+    setBusy(false)
+    if (!response.ok) { setOperationError(response.error); return }
+    setOperationError(null)
+    const notifications = followerNotifications(response.data.project, response.data.event, state.session.user, userAssets)
+    dispatch({ type: 'PROJECT_UPDATE_APPLY', ...response.data, notifications })
+    setProject(response.data.project)
+    setCompletedEventId(response.data.event.id)
     pushToast('更新已写入作品详情、生命周期时间线和公开动态。', 'success')
   }
 
@@ -125,7 +150,7 @@ export function ProjectUpdatePage() {
     return <PageFrame title="作品更新" description="更新作品需要已验证的作者管理权限。"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?from=${encodeURIComponent(`${location.pathname}${location.search}`)}`}>登录并继续</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="作品更新权限加载中" /></main>
-  if (error || !project) return <main className="page-container stack"><ErrorPanel message={error?.message ?? '未找到作品'} detail={error?.code} /><Link to="/projects">返回作品广场</Link></main>
+  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} detail={loadError?.code} /><Link to="/projects">返回作品广场</Link></main>
   if (!permission.allowed) return <PageFrame title="没有此作品的更新权限" description={permission.disputed ? '作者归属存在争议，高风险编辑已冻结。' : '身份验证只用于取得管理权限；普通纠错不要求声明作者身份。'}><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}/verify-author`}>{permission.disputed ? '查看归属争议状态' : '申请作者身份验证'}</Link><Link className="button" to="/about#corrections">提交公开纠错</Link><Link to={`/project/${project.id}`}>返回作品详情</Link></div></PageFrame>
 
   const projectName = project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'
@@ -147,11 +172,12 @@ export function ProjectUpdatePage() {
 
           <section className="wire-panel stack"><h2>来源与影响范围</h2><label className="field"><span className="field__label">来源类型</span><select className="input" value={sourceType} onChange={(event) => setSourceType(event.target.value as ProjectUpdateInput['sourceType'])}>{projectUpdateSourceTypes.map((item) => <option key={item} value={item}>{projectUpdateSourceLabels[item]}</option>)}</select></label><label className="field"><span className="field__label">来源说明</span><textarea className="input textarea" rows={3} value={sourceSummary} onChange={(event) => setSourceSummary(event.target.value)} placeholder="说明公开页面、仓库或作者声明中的依据" /></label><label className="field"><span className="field__label">影响范围</span><textarea className="input textarea" rows={3} value={impactScope} onChange={(event) => setImpactScope(event.target.value)} placeholder="说明详情、访问入口、使用者或复用方会受到什么影响" /></label></section>
           {validation ? <p className="field-error" role="alert">{validation}</p> : null}
+          {operationError ? <div className="stack"><ErrorPanel title="更新提交未完成" message={operationError.message} detail={operationError.code} onRetry={operationError.retryable ? submit : undefined} />{operationError.code === 'VC_UPDATE_PERMISSION_EXPIRED' ? <Link className="button" to={`/project/${project.id}/verify-author`}>重新验证作者权限</Link> : null}</div> : null}
           {completedEventId ? <section className="feedback stack stack--small" role="status"><strong>更新已追加写入</strong><p>详情时间线和公开动态使用同一事件 ID；关注者通知已按关注关系生成。</p><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}#${completedEventId}`}>在详情中查看</Link><Link className="button" to={`/activity#${completedEventId}`}>在动态中查看</Link></div></section> : null}
-          <Button variant="primary" onClick={requestSubmit}>预览确认并提交更新</Button>
+          <Button variant="primary" disabled={busy} onClick={requestSubmit}>{busy ? '提交中…' : '预览确认并提交更新'}</Button>
         </section>
       </div>
-      <ConfirmDialog open={confirming} title={`确认提交${projectUpdateTypeLabels[type]}？`} description="更新会追加一条不可直接删除的公开生命周期事件，并同步详情、动态和关注者通知。" confirmLabel="确认提交更新" onConfirm={submit} onCancel={() => setConfirming(false)} />
+      <ConfirmDialog open={confirming} title={`确认提交${projectUpdateTypeLabels[type]}？`} description="更新会追加一条不可直接删除的公开生命周期事件，并同步详情、动态和关注者通知。" confirmLabel="确认提交更新" onConfirm={() => void submit()} onCancel={() => setConfirming(false)} />
     </PageFrame>
   )
 }

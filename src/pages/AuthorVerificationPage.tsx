@@ -8,11 +8,9 @@ import {
   verificationMethodLabels,
   verificationStatusLabels,
 } from '../features'
-import { projectService, verificationService, type ServiceError, type ServiceScenarioId } from '../services'
+import { projectService, serviceScenarioIds, verificationService, type ServiceError, type ServiceScenarioId } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import { verificationMethods, type Project, type VerificationMethod } from '../types'
-
-const fixedScenarios: ServiceScenarioId[] = ['default', 'review_changes_requested', 'review_approved', 'review_rejected', 'verification_disputed']
 
 export function AuthorVerificationPage() {
   const { id } = useParams()
@@ -23,13 +21,14 @@ export function AuthorVerificationPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<ServiceError | null>(null)
+  const [loadError, setLoadError] = useState<ServiceError | null>(null)
+  const [operationError, setOperationError] = useState<ServiceError | null>(null)
   const [method, setMethod] = useState<VerificationMethod>('domain_control')
   const [summary, setSummary] = useState('')
   const [privateReference, setPrivateReference] = useState('')
   const [validation, setValidation] = useState<string | null>(null)
   const requestedScenario = params.get('scenario') as ServiceScenarioId | null
-  const scenario = requestedScenario && fixedScenarios.includes(requestedScenario) ? requestedScenario : state.serviceScenario
+  const scenario = requestedScenario && serviceScenarioIds.includes(requestedScenario) ? requestedScenario : state.serviceScenario
   const request = project ? latestVerificationFor(state.verificationRequests, project.id, state.session.user?.id) : null
   const management = authorManagementState(request)
 
@@ -38,8 +37,8 @@ export function AuthorVerificationPage() {
     setLoading(true)
     projectService.getById(id as Project['id'], { scenario: state.serviceScenario }).then((result) => {
       if (!active) return
-      if (result.ok) { setProject(result.data); setError(null) }
-      else setError(result.error)
+      if (result.ok) { setProject(result.data); setLoadError(null) }
+      else setLoadError(result.error)
       setLoading(false)
     })
     return () => { active = false }
@@ -63,10 +62,11 @@ export function AuthorVerificationPage() {
     const base = request
       ? { ...request, method, materialSummary: summary.trim(), privateMaterialReference: privateReference.trim() }
       : createVerificationRequest({ projectId: project.id, userId: state.session.user.id, method, materialSummary: summary, privateMaterialReference: privateReference })
+    dispatch({ type: 'VERIFICATION_UPSERT', request: base })
     const result = await verificationService.submit(base, { scenario })
     setBusy(false)
-    if (!result.ok) { setError(result.error); return }
-    setError(null)
+    if (!result.ok) { setOperationError(result.error); return }
+    setOperationError(null)
     dispatch({ type: 'VERIFICATION_UPSERT', request: result.data })
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent(request ? 'author_verification_completed' : 'author_verification_started', { requestId: result.data.id, projectId: project.id, status: result.data.status }) })
     pushToast(result.data.status === 'verified' ? '作者身份已通过人工审核。' : '身份材料已提交并保存在私有审核区。', 'success')
@@ -77,9 +77,9 @@ export function AuthorVerificationPage() {
     setBusy(true)
     const result = await verificationService.submit(request, { scenario })
     setBusy(false)
-    if (!result.ok) { setError(result.error); return }
+    if (!result.ok) { setOperationError(result.error); return }
     dispatch({ type: 'VERIFICATION_UPSERT', request: result.data })
-    setError(null)
+    setOperationError(null)
   }
 
   if (!state.session.user) {
@@ -87,7 +87,7 @@ export function AuthorVerificationPage() {
     return <PageFrame title="作者身份验证" description="这是低频的管理权限申请，不影响浏览作品。"><section className="submit-login-callout stack"><h2>请先登录后提交身份材料</h2><p>登录后会回到当前作品，材料不会公开展示。</p><Link className="button button--primary" to={`/auth?from=${from}`}>登录并继续</Link><Link to={`/project/${id}`}>先查看作品详情</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="身份验证页面加载中" /></main>
-  if (error || !project) return <main className="page-container stack"><ErrorPanel message={error?.message ?? '未找到作品'} detail={error?.code} /><Link to="/projects">返回作品广场</Link></main>
+  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} detail={loadError?.code} /><Link to="/projects">返回作品广场</Link></main>
 
   const projectName = project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'
   const canSubmit = !request || request.status === 'draft' || request.status === 'changes_requested' || request.status === 'failed'
@@ -117,6 +117,7 @@ export function AuthorVerificationPage() {
           </section> : null}
 
           {request ? <details className="wire-panel verification-history"><summary>查看申请状态历史</summary><ol>{request.statusHistory.map((item, index) => <li key={`${item.status}-${index}`}><Tag>{verificationStatusLabels[item.status]}</Tag><time dateTime={item.happenedAt}>{new Date(item.happenedAt).toLocaleString('zh-CN')}</time>{item.message ? <p>{item.message}</p> : null}</li>)}</ol></details> : null}
+          {operationError ? <ErrorPanel title="身份材料提交未完成" message={operationError.message} detail={operationError.code} onRetry={operationError.retryable ? (request?.status === 'pending' || request?.status === 'changes_requested' ? refresh : submit) : undefined} /> : null}
         </section>
         <aside className="wire-panel stack verification-boundary"><h2>权限影响</h2><dl className="definition-list"><div><dt>作者关联</dt><dd>{management.linked ? '已关联' : '未关联'}</dd></div><div><dt>编辑权限</dt><dd>{management.canEdit ? '已开放' : '未开放'}</dd></div><div><dt>高风险编辑</dt><dd>{management.highRiskEditingFrozen ? '因争议冻结' : management.canEdit ? '按更新流程提交' : '不可用'}</dd></div><div><dt>作品数量</dt><dd>保持不变</dd></div></dl><Link to={`/project/${project.id}`}>返回作品详情</Link></aside>
       </div>

@@ -26,6 +26,8 @@ export function createInitialAppState(): AppState {
     lifecycleEventAdditions: [],
     reusableAssetAdditions: [],
     projectUpdateRecords: [],
+    projectUpdateDrafts: [],
+    submissionEntryValue: '',
     notifications,
     pendingAction: null,
     lastReplayedActionId: null,

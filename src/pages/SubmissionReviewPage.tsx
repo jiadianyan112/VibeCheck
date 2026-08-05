@@ -7,7 +7,7 @@ import {
   submissionReviewStatusLabels,
   withdrawSubmission,
 } from '../features'
-import { submissionService, type ServiceError, type ServiceScenarioId } from '../services'
+import { serviceScenarioIds, submissionService, type ServiceError, type ServiceScenarioId } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import type { SubmissionDraft, SubmissionProjectFields } from '../types'
 import {
@@ -20,8 +20,6 @@ import {
   scenarioLabels,
   targetUserLabels,
 } from '../utils'
-
-const reviewScenarios: ServiceScenarioId[] = ['default', 'review_changes_requested', 'review_approved', 'review_rejected']
 
 const reviewScenarioLabels: Record<string, string> = {
   default: '待审核',
@@ -98,7 +96,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const [error, setError] = useState<ServiceError | null>(null)
   const [material, setMaterial] = useState(draft.supplementalMaterial)
   const requested = params.get('scenario') as ServiceScenarioId | null
-  const scenario = requested && reviewScenarios.includes(requested) ? requested : state.serviceScenario
+  const scenario = requested && serviceScenarioIds.includes(requested) ? requested : state.serviceScenario
   const isEditableSubmission = draft.status === 'draft' || draft.status === 'changes_requested'
 
   async function submit() {
@@ -141,7 +139,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         <div className="stack">
           <PreviewSummary draft={draft} />
           <aside className="submission-guidance stack stack--small"><strong>来源说明</strong><p>当前内容来自用户提交与公开页面自动提取。原始提取值已保留；平台审核只确认是否可收录，不自动证明提交者是作者。</p></aside>
-          {error ? <ErrorPanel title="提交未完成" message={error.message} detail={error.code} onRetry={() => setError(null)} /> : null}
+          {error ? <ErrorPanel title="提交未完成" message={error.message} detail={error.code} onRetry={error.retryable ? submit : undefined} /> : null}
           <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>{busy ? '提交中…' : '确认并提交审核'}</Button></div>
         </div>
         <ConfirmDialog open={confirming} title="提交当前版本？" description="提交后会冻结一个可回看的版本，并创建一份审核记录；不会虚构审核完成时间。" confirmLabel="确认提交" onConfirm={submit} onCancel={() => setConfirming(false)} />
@@ -168,7 +166,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
 
         <SubmittedVersion draft={draft} />
         <aside className="submission-guidance"><strong>固定场景</strong><p>当前：{reviewScenarioLabels[scenario] ?? scenario}。可通过调试面板或 URL 的 scenario 参数切换 pending、changes_requested、approved、rejected。</p></aside>
-        {error ? <ErrorPanel title="审核状态操作未完成" message={error.message} detail={error.code} onRetry={() => setError(null)} /> : null}
+        {error ? <ErrorPanel title="审核状态操作未完成" message={error.message} detail={error.code} onRetry={error.retryable ? refreshStatus : undefined} /> : null}
       </div>
       <ConfirmDialog open={confirming} title="重新提交当前修改？" description="这会将当前字段冻结为新的提交版本，保留同一份审核单标识。" confirmLabel="重新提交" onConfirm={submit} onCancel={() => setConfirming(false)} />
       <ConfirmDialog open={withdrawing} title="撤回当前审核？" description="审核会停止，已提交版本仍保留并可查看。" confirmLabel="确认撤回" danger onConfirm={withdraw} onCancel={() => setWithdrawing(false)} />

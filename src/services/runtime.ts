@@ -13,6 +13,7 @@ export const serviceScenarioIds = [
   'review_approved',
   'review_rejected',
   'verification_disputed',
+  'permission_expired',
   'duplicate_project',
   'external_link_risk',
 ] as const

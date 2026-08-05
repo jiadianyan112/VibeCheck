@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, PageFrame, useToast } from '../components'
+import { Button, ErrorPanel, Input, PageFrame, useToast } from '../components'
 import { canContinueAfterUrlCheck, createUrlCheckDraft, duplicateDetailPath, duplicateVerificationPath, getDuplicateProjectSummary, urlCheckLabels } from '../features'
 import {
   normalizeSubmissionUrl,
   serviceScenarioIds,
   submissionService,
   type ServiceScenarioId,
+  type ServiceError,
   type UrlCheckItem,
   type UrlCheckResult,
 } from '../services'
@@ -41,11 +42,11 @@ export function SubmitEntryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryScenario = scenarioFromQuery(searchParams.get('scenario'))
   const scenario = queryScenario ?? state.serviceScenario
-  const [url, setUrl] = useState(() => searchParams.get('resumeUrl') ?? '')
+  const [url, setUrl] = useState(() => searchParams.get('resumeUrl') ?? state.submissionEntryValue)
   const [touched, setTouched] = useState(false)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<UrlCheckResult | null>(null)
-  const [requestError, setRequestError] = useState('')
+  const [requestError, setRequestError] = useState<ServiceError | null>(null)
   const [cancelled, setCancelled] = useState(false)
   const [savedDraftId, setSavedDraftId] = useState<string | null>(null)
   const [declaredAuthor, setDeclaredAuthor] = useState(false)
@@ -87,7 +88,7 @@ export function SubmitEntryPage() {
     controllerRef.current = controller
     setChecking(true)
     setResult(null)
-    setRequestError('')
+    setRequestError(null)
     setCancelled(false)
     setSavedDraftId(null)
     setDeclaredAuthor(false)
@@ -103,10 +104,11 @@ export function SubmitEntryPage() {
         setCancelled(true)
         return
       }
-      setRequestError(response.error.message)
+      setRequestError(response.error)
       return
     }
     setUrl(response.data.normalizedUrl)
+    dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: response.data.normalizedUrl })
     setResult(response.data)
     if (response.data.duplicateProjectId) {
       const nextParams = new URLSearchParams(searchParams)
@@ -160,13 +162,18 @@ export function SubmitEntryPage() {
             autoComplete="url"
             onChange={(event) => {
               setUrl(event.target.value)
+              dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: event.target.value })
               setTouched(true)
               setResult(null)
               setSavedDraftId(null)
             }}
             onBlur={() => {
               setTouched(true)
-              if (!validateUrl(url)) setUrl(normalizeSubmissionUrl(url.trim()))
+              if (!validateUrl(url)) {
+                const normalized = normalizeSubmissionUrl(url.trim())
+                setUrl(normalized)
+                dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: normalized })
+              }
             }}
           />
           <div className="cluster">
@@ -179,7 +186,7 @@ export function SubmitEntryPage() {
             固定模拟场景：<strong>{scenario}</strong>
             {queryScenario ? '（由当前地址参数锁定）' : '（可在原型调试面板切换）'}
           </p>
-          {requestError ? <div className="feedback feedback--error" role="alert"><strong>检查未完成</strong><p>{requestError}</p></div> : null}
+          {requestError ? <ErrorPanel title="检查未完成" message={requestError.message} detail={requestError.code} onRetry={requestError.retryable ? () => void checkUrl() : undefined} /> : null}
           {cancelled ? <div className="feedback" role="status"><strong>检查已取消</strong><p>没有创建草稿，也没有发出重复检查。</p></div> : null}
         </form>
 

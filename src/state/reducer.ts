@@ -134,6 +134,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         decisionRecords: [],
         submissionDrafts: [],
         verificationRequests: [],
+        projectUpdateDrafts: [],
+        submissionEntryValue: '',
         notifications: [],
         pendingAction: null,
       }
@@ -231,6 +233,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         eventLog: appendEvent(state, createPrototypeEvent('project_updated', { projectId: action.project.id, eventId: action.event.id, updateType: action.record.type })),
       }
     }
+    case 'PROJECT_UPDATE_DRAFT_UPSERT': {
+      const exists = state.projectUpdateDrafts.some((draft) => draft.id === action.draft.id)
+      return { ...state, projectUpdateDrafts: exists ? state.projectUpdateDrafts.map((draft) => draft.id === action.draft.id ? action.draft : draft) : [...state.projectUpdateDrafts, action.draft] }
+    }
+    case 'SUBMISSION_ENTRY_VALUE_SET':
+      return { ...state, submissionEntryValue: action.value }
     case 'NOTIFICATION_MARK_READ':
       return {
         ...state,
