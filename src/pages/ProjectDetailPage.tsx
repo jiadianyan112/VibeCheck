@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
-import { authorManagementState, latestVerificationFor, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
+import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { prototypeUsers } from '../mocks'
@@ -109,6 +109,7 @@ export function ProjectDetailPage() {
         const mergedBundle = {
           ...result.data,
           project: projectOverride ?? result.data.project,
+          evidences: mergeEvidenceRecords(result.data.evidences, state.evidenceOverrides.filter((evidence) => evidence.supports.projectId === result.data.project.id)),
           events: [...result.data.events, ...state.lifecycleEventAdditions.filter((event) => event.projectId === result.data.project.id)],
           assets: [...result.data.assets, ...state.reusableAssetAdditions.filter((asset) => asset.projectId === result.data.project.id)],
         }
@@ -120,7 +121,7 @@ export function ProjectDetailPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [dispatch, id, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
+  }, [dispatch, id, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return

@@ -261,11 +261,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'ADMIN_PROJECT_SAVE': {
       const exists = state.projectOverrides.some((project) => project.id === action.project.id)
+      const newLogs = action.logs.filter((log) => !state.adminAuditLogs.some((item) => item.id === log.id))
       return {
         ...state,
         projectOverrides: exists
           ? state.projectOverrides.map((project) => project.id === action.project.id ? action.project : project)
           : [...state.projectOverrides, action.project],
+        adminAuditLogs: [...state.adminAuditLogs, ...newLogs],
+      }
+    }
+    case 'ADMIN_EVIDENCE_REVIEW': {
+      const exists = state.evidenceOverrides.some((evidence) => evidence.id === action.evidence.id)
+      const logExists = state.adminAuditLogs.some((log) => log.id === action.log.id)
+      return {
+        ...state,
+        evidenceOverrides: exists
+          ? state.evidenceOverrides.map((evidence) => evidence.id === action.evidence.id ? action.evidence : evidence)
+          : [...state.evidenceOverrides, action.evidence],
+        adminAuditLogs: logExists ? state.adminAuditLogs : [...state.adminAuditLogs, action.log],
       }
     }
     case 'PROJECT_UPDATE_DRAFT_UPSERT': {

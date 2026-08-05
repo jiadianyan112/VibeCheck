@@ -17,6 +17,8 @@ type PersistedState = Pick<
   | 'submissionDrafts'
   | 'verificationRequests'
   | 'projectOverrides'
+  | 'evidenceOverrides'
+  | 'adminAuditLogs'
   | 'lifecycleEventAdditions'
   | 'reusableAssetAdditions'
   | 'projectUpdateRecords'
@@ -43,6 +45,8 @@ export function selectPersistedState(state: AppState): PersistedState {
     submissionDrafts: state.submissionDrafts,
     verificationRequests: state.verificationRequests,
     projectOverrides: state.projectOverrides,
+    evidenceOverrides: state.evidenceOverrides,
+    adminAuditLogs: state.adminAuditLogs,
     lifecycleEventAdditions: state.lifecycleEventAdditions,
     reusableAssetAdditions: state.reusableAssetAdditions,
     projectUpdateRecords: state.projectUpdateRecords,
@@ -93,6 +97,8 @@ export function hydrateAppState(
         resolvedAt: request.resolvedAt ?? null,
       })),
       projectOverrides: persisted.projectOverrides ?? fallback.projectOverrides,
+      evidenceOverrides: persisted.evidenceOverrides ?? fallback.evidenceOverrides,
+      adminAuditLogs: persisted.adminAuditLogs ?? fallback.adminAuditLogs,
       lifecycleEventAdditions: persisted.lifecycleEventAdditions ?? fallback.lifecycleEventAdditions,
       reusableAssetAdditions: persisted.reusableAssetAdditions ?? fallback.reusableAssetAdditions,
       projectUpdateRecords: persisted.projectUpdateRecords ?? fallback.projectUpdateRecords,

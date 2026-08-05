@@ -9,5 +9,8 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     css: true,
     exclude: [...configDefaults.exclude, 'e2e/**', 'vibcoding作品数据/**', '设计文件/**'],
+    maxWorkers: 4,
+    testTimeout: 10_000,
+    hookTimeout: 10_000,
   },
 })

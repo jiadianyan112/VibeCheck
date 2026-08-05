@@ -393,12 +393,26 @@ export interface Evidence {
   verifiedAt: string
   confidence: ConfidenceLevel
   disputeStatus: DisputeStatus
+  reviewStatus?: 'current' | 'expired' | 'insufficient' | 'disputed'
   supports: {
     projectId: ProjectId
     fieldKey?: keyof Project
     eventId?: LifecycleEventId
     relationId?: RelationId
   }
+}
+
+export interface AdminAuditLog {
+  id: string
+  projectId: ProjectId
+  actorUserId: UserId
+  action: 'field_update' | 'evidence_review'
+  fieldKey: string
+  evidenceId: EvidenceId | null
+  beforeValue: unknown
+  afterValue: unknown
+  reason: string
+  createdAt: string
 }
 
 export interface ProjectVersion {

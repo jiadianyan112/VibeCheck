@@ -3,6 +3,8 @@ import type {
   ComparisonSession,
   DecisionRecord,
   AuthorVerificationRequest,
+  AdminAuditLog,
+  Evidence,
   LifecycleEvent,
   Project,
   ProjectUpdateRecord,
@@ -75,6 +77,8 @@ export interface AppState {
   submissionDrafts: SubmissionDraft[]
   verificationRequests: AuthorVerificationRequest[]
   projectOverrides: Project[]
+  evidenceOverrides: Evidence[]
+  adminAuditLogs: AdminAuditLog[]
   lifecycleEventAdditions: LifecycleEvent[]
   reusableAssetAdditions: ReusableAsset[]
   projectUpdateRecords: ProjectUpdateRecord[]
@@ -120,7 +124,8 @@ export type AppAction =
   | { type: 'DRAFT_UPSERT'; draft: SubmissionDraft }
   | { type: 'VERIFICATION_UPSERT'; request: AuthorVerificationRequest }
   | { type: 'PROJECT_UPDATE_APPLY'; project: Project; event: LifecycleEvent; record: ProjectUpdateRecord; asset?: ReusableAsset; notifications: Notification[] }
-  | { type: 'ADMIN_PROJECT_SAVE'; project: Project }
+  | { type: 'ADMIN_PROJECT_SAVE'; project: Project; logs: AdminAuditLog[] }
+  | { type: 'ADMIN_EVIDENCE_REVIEW'; evidence: Evidence; log: AdminAuditLog }
   | { type: 'PROJECT_UPDATE_DRAFT_UPSERT'; draft: ProjectUpdateDraft }
   | { type: 'SUBMISSION_ENTRY_VALUE_SET'; value: string }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }

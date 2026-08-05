@@ -22,6 +22,8 @@ export function createInitialAppState(): AppState {
     submissionDrafts: [],
     verificationRequests: [],
     projectOverrides: [],
+    evidenceOverrides: [],
+    adminAuditLogs: [],
     lifecycleEventAdditions: [],
     reusableAssetAdditions: [],
     projectUpdateRecords: [],

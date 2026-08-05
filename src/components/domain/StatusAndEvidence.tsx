@@ -87,6 +87,7 @@ export function EvidenceBadge({ evidence }: { evidence: Evidence }) {
   return (
     <span className="evidence-badge">
       <Tag tone={evidence.type === 'system_inference' ? 'dashed' : 'default'}>{evidenceTypeLabels[evidence.type]}</Tag>
+      {evidence.reviewStatus && evidence.reviewStatus !== 'current' ? <Tag tone="strong">{evidence.reviewStatus === 'expired' ? '证据已过期' : evidence.reviewStatus === 'insufficient' ? '证据不足' : '争议核查中'}</Tag> : null}
       <span>{formatCheckedAt(evidence.verifiedAt)}</span>
     </span>
   )
