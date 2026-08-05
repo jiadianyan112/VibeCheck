@@ -274,6 +274,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
             : notification,
         ),
       }
+    case 'NOTIFICATIONS_MARK_ALL_READ':
+      return {
+        ...state,
+        notifications: state.notifications.map((notification) =>
+          notification.userId === action.userId ? { ...notification, isRead: true } : notification,
+        ),
+      }
     case 'SCENARIO_SET':
       return { ...state, serviceScenario: action.scenario }
     case 'EVENT_LOGGED':

@@ -12,6 +12,7 @@ import type {
   ProjectId,
   PrototypeSession,
   PrototypeUser,
+  UserId,
   SubmissionDraft,
 } from '../types'
 
@@ -122,6 +123,7 @@ export type AppAction =
   | { type: 'PROJECT_UPDATE_DRAFT_UPSERT'; draft: ProjectUpdateDraft }
   | { type: 'SUBMISSION_ENTRY_VALUE_SET'; value: string }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }
+  | { type: 'NOTIFICATIONS_MARK_ALL_READ'; userId: UserId }
   | { type: 'SCENARIO_SET'; scenario: ServiceScenarioId }
   | { type: 'EVENT_LOGGED'; event: PrototypeEvent }
   | { type: 'RESET'; state: AppState }
