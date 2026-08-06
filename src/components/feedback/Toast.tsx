@@ -4,11 +4,12 @@ interface ToastMessage { id: string; message: string; tone: 'info' | 'success' |
 interface ToastContextValue { pushToast: (message: string, tone?: ToastMessage['tone']) => void }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
+let nextToastId = 0
 
 export function ToastProvider({ children }: PropsWithChildren) {
   const [messages, setMessages] = useState<ToastMessage[]>([])
   const pushToast = useCallback((message: string, tone: ToastMessage['tone'] = 'info') => {
-    const id = `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const id = `toast-${++nextToastId}`
     setMessages((current) => [...current, { id, message, tone }].slice(-3))
   }, [])
   const value = useMemo(() => ({ pushToast }), [pushToast])

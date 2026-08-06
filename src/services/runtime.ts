@@ -31,7 +31,8 @@ interface ServiceRuntimeConfig {
 }
 
 const runtimeConfig: ServiceRuntimeConfig = {
-  defaultDelayMs: 140,
+  // Automated browser runs exercise the same branches without synthetic waiting.
+  defaultDelayMs: typeof navigator !== 'undefined' && navigator.webdriver ? 0 : 140,
 }
 
 export function configureServiceRuntime(config: Partial<ServiceRuntimeConfig>) {
