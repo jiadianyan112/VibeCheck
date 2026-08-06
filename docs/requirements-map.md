@@ -1,6 +1,6 @@
 # VibeCheck 低保真原型需求追踪矩阵
 
-本文件把产品页面、核心流程、状态与异常、运营后台、原型测试任务映射到任务编号和自动化验收。产品依据为 `docs/source/` 四份源文件及根目录 `设计文件/VibeCheck低保真原型Codex开发任务书.docx`。
+本文件把产品页面、核心流程、状态与异常、运营后台、原型测试任务映射到任务编号和自动化验收。产品依据为 `docs/source/` 四份源文件及根目录 `设计文件/VibeCheck低保真原型Codex开发任务书.docx`。T57 最终核对已完成，最终证据见 `docs/acceptance/final-report.md`。
 
 ## 前台页面
 
@@ -35,7 +35,7 @@
 | A04 | 重复与合并 `/admin/duplicates` | 结构设计 五.2、十一 | T50 | T51、T56 |
 | A05 | 发布审核 `/admin/reviews` | 结构设计 五.2、十.5 | T39、T50 | T51、T56 |
 | A06 | 作者身份审核 `/admin/author-verification` | 结构设计 六.4、十.5 | T40、T50 | T51、T56 |
-| A08 | 证据管理 `/admin/evidence` | 结构设计 八、十三.3 | T49 | T51、T56 |
+| A08 | 证据管理 `/admin/evidence`（独立入口为信息占位；操作合并在 A03） | 结构设计 八、十三.3 | T49 | T51、T56、T57 |
 | A09 | 状态监测 `/admin/status-monitor` | 结构设计 六.5、十三.2 | T50 | T51、T56 |
 
 ## 四条核心流程
@@ -73,12 +73,12 @@
 
 | ID | 任务 | 主要页面 | 对应实现 | E2E |
 |---|---|---|---|---|
-| U01 | 找到 PDF 生成题目的作品并保存 | P01/P03/P05/P08 | T17—T19、T22、T27、T30 | T56 |
-| U02 | 比较三个口语模考作品并记录反馈方式 | P06/P07/P09 | T23—T26、T32—T35 | T56 |
-| U03 | 查看结束作品留下的资产 | P01/P08 | T17、T27—T31 | T56 |
-| U04 | 发布一个新作品 | P10/P11/P15 | T36、T38、T39、T42、T45 | T56 |
-| U05 | 发布时发现已有档案并提交身份材料 | P10/P08/P12 | T37、T40、T42 | T56 |
-| U06 | 发布版本更新并查看时间线与动态 | P15/P13/P08/P04 | T20、T29、T41、T45、T46 | T56 |
+| U01 | 找到 PDF 生成题目的作品并保存 | P01/P03/P05/P08 | T17—T19、T22、T27、T30 | `e2e/prototype-tasks.spec.ts` / T56 |
+| U02 | 比较三个口语模考作品并记录反馈方式 | P06/P07/P09 | T23—T26、T32—T35 | `e2e/prototype-tasks.spec.ts` / T56 |
+| U03 | 查看结束作品留下的资产 | P01/P08 | T17、T27—T31 | `e2e/prototype-tasks.spec.ts` / T56 |
+| U04 | 发布一个新作品 | P10/P11/P15 | T36、T38、T39、T42、T45 | `e2e/prototype-tasks.spec.ts` / T56 |
+| U05 | 发布时发现已有档案并提交身份材料 | P10/P08/P12 | T37、T40、T42 | `e2e/prototype-tasks.spec.ts` / T56 |
+| U06 | 发布版本更新并查看时间线与动态 | P15/P13/P08/P04 | T20、T29、T41、T45、T46 | `e2e/prototype-tasks.spec.ts` / T56 |
 
 ## 任务编号完整性
 
@@ -96,4 +96,4 @@
 - 阶段 9：T47—T51
 - 阶段 10：T52—T57
 
-不存在缺号或重复编号。每个任务的完成报告位于 `docs/task-reports/Txx.md`。
+不存在缺号或重复编号。T00—T57 每个任务的完成报告位于 `docs/task-reports/Txx.md`；T52—T56 的专项验收和 T57 最终清单位于 `docs/acceptance/`。
