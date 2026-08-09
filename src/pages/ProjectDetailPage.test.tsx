@@ -86,6 +86,9 @@ describe('ProjectDetailPage structured profile', () => {
     expect(screen.getByText('个人主页', { selector: '.tag' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '产品结构' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查找相似作品' })).toHaveAttribute('href', expect.stringContaining('category=personal_site_portfolio'))
+    expect(screen.getAllByRole('button', { name: /展开本作品证据/ })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /网站类型来源/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /AI 编程工具来源/ })).not.toBeInTheDocument()
   })
 
   it('marks unknown development fields with their recorded reasons', async () => {
@@ -96,9 +99,13 @@ describe('ProjectDetailPage structured profile', () => {
     expect(screen.getByText('未知：作者未公开开发周期')).toBeInTheDocument()
   })
 
-  it('opens evidence from an individual key field', async () => {
+  it('uses one consolidated project evidence entry instead of field-level sources', async () => {
     const user = userEvent.setup(); renderProject('project-quizforge')
-    await user.click(await screen.findByRole('button', { name: '核心问题来源（1）' }))
+    const evidenceEntries = await screen.findAllByRole('button', { name: /展开本作品证据/ })
+    expect(evidenceEntries).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '核心问题来源（1）' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '核心流程来源（1）' })).not.toBeInTheDocument()
+    await user.click(evidenceEntries[0]!)
     expect(screen.getByRole('dialog', { name: '事实来源与核验记录' })).toBeInTheDocument()
     expect(screen.getByText('公开页面可访问并展示 PDF 生成题目流程。')).toBeInTheDocument()
   })

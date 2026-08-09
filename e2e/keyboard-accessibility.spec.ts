@@ -31,8 +31,8 @@ test.describe('T55 键盘与焦点', () => {
     await expect(evidenceTrigger).toBeFocused()
   })
 
-  test('键盘完成搜索加入比较、决策和登录续办', async ({ page, isMobile }) => {
-    test.skip(isMobile, '移动端同一决策在 comparison-mobile.spec.ts 覆盖')
+  test('键盘完成搜索、加入比较并查看所选作品差异', async ({ page, isMobile }) => {
+    test.skip(isMobile, '移动端比较在 comparison-mobile.spec.ts 覆盖')
     const idea = '我想把大学 PDF 讲义生成选择题'
     await page.goto('/projects')
     const search = page.getByRole('banner').getByRole('search')
@@ -55,23 +55,12 @@ test.describe('T55 键盘与焦点', () => {
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: '比较会话' })).toBeVisible()
 
-    await page.getByRole('radio', { name: '调整' }).focus()
-    await page.keyboard.press('Space')
-    await page.getByRole('checkbox', { name: '定位' }).focus()
-    await page.keyboard.press('Space')
-    const reason = page.getByLabel('判断理由')
-    await reason.focus()
-    await page.keyboard.insertText('根据同类差异调整目标用户与产品定位。')
-    const save = page.getByRole('button', { name: '完成并私密保存' })
-    await save.focus()
+    const reveal = page.getByRole('button', { name: '查看完整字段' })
+    await reveal.focus()
     await page.keyboard.press('Enter')
-
-    const login = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
-    await expect(login).toBeVisible()
-    const mia = login.getByRole('button', { name: /米娅/ })
-    await mia.focus()
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('heading', { name: '决策记录已保存' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '比较维度' })).toBeVisible()
+    await expect(page.getByText(/当前仅比较你选择的 \d+ 个作品/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: '记录比较后的行动' })).toHaveCount(0)
   })
 
   test('键盘进入发布表单，校验错误与控件建立关联', async ({ page, isMobile }) => {

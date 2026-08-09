@@ -10,7 +10,7 @@ import {
 import { resolveServiceScenario } from '../mocks'
 import { submissionService, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
-import type { SubmissionDraft, SubmissionProjectFields } from '../types'
+import type { CoreModule, CreatorRole, PrimaryGoal, SubmissionDraft, SubmissionProjectFields } from '../types'
 import {
   accessStatusText,
   aiCodingToolLabels,
@@ -23,8 +23,12 @@ import {
 } from '../utils'
 
 const reviewFieldLabels: Partial<Record<keyof SubmissionProjectFields, string>> = {
-  currentName: '作品名称', publicUrl: '公开地址', screenshotUrl: '截图地址', accessStatus: '访问状态', repositoryUrl: '代码仓库', oneLineDefinition: '一句话定义', targetUsers: '目标用户', coreProblem: '核心问题', useScenarios: '使用场景', mainInputs: '主要输入', mainOutputs: '主要输出', coreFlow: '核心流程', practiceFormats: '练习形式', feedbackMethods: '反馈方式', differentiation: '差异化说明', aiCodingTools: 'AI 编程工具',
+  currentName: '作品名称', publicUrl: '公开地址', screenshotUrl: '截图地址', accessStatus: '访问状态', repositoryUrl: '代码仓库', oneLineDefinition: '一句话介绍', targetUsers: '目标用户', coreProblem: '核心问题', useScenarios: '使用场景', mainInputs: '主要输入', mainOutputs: '主要输出', coreFlow: '核心流程', practiceFormats: '练习形式', feedbackMethods: '反馈方式', differentiation: '差异化说明', aiCodingTools: 'AI 编程工具', creatorRoles: '创作者身份', primaryGoals: '建站目的', coreModules: '核心内容',
 }
+
+const creatorRoleLabels: Record<CreatorRole, string> = { developer: '开发者', designer: '设计师', product_manager: '产品经理', creator: '创作者', freelancer: '自由职业者', student_recruit: '学生/应届生', researcher_academic: '研究者/学者', multidisciplinary: '跨领域创作者', other: '其他' }
+const primaryGoalLabels: Record<PrimaryGoal, string> = { showcase_projects: '展示项目', professional_presence: '职业形象', job_search: '求职', client_acquisition: '获取客户', personal_brand: '个人品牌', academic_profile: '学术档案', content_hub: '内容枢纽', other: '其他' }
+const coreModuleLabels: Record<CoreModule, string> = { hero: '首屏', about: '关于', projects: '项目', experience: '经历', skills: '技能', services: '服务', testimonials: '客户评价', contact: '联系', blog: '博客', resume: '简历', publications: '论文', speaking: '演讲', now_page: '近况', other: '其他' }
 
 function list(values: readonly string[] | undefined, labels: Record<string, string>) {
   return values?.length ? values.map((value) => labels[value] ?? value).join('、') : '未填写'
@@ -33,17 +37,25 @@ function list(values: readonly string[] | undefined, labels: Record<string, stri
 function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
   const fields = draft.submittedFields
   if (!fields) return null
+  const portfolio = fields.categoryId === 'personal_site_portfolio'
   return (
     <details className="wire-panel submission-version">
       <summary>查看提交版本</summary>
       <p>这是你提交审核时的内容，之后继续编辑草稿不会改变这份记录。</p>
       <dl className="submission-summary-grid">
         <div><dt>作品名称</dt><dd>{fields.currentName ?? '未填写'}</dd></div>
-        <div><dt>一句话定义</dt><dd>{fields.oneLineDefinition ?? '未填写'}</dd></div>
+        <div><dt>一句话介绍</dt><dd>{fields.oneLineDefinition ?? '未填写'}</dd></div>
         <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
-        <div><dt>核心问题</dt><dd>{fields.coreProblem ?? '未填写'}</dd></div>
-        <div><dt>目标用户</dt><dd>{list(fields.targetUsers, targetUserLabels)}</dd></div>
-        <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
+        {portfolio ? <>
+          <div><dt>创作者身份</dt><dd>{list(fields.creatorRoles, creatorRoleLabels)}</dd></div>
+          <div><dt>建站目的</dt><dd>{list(fields.primaryGoals, primaryGoalLabels)}</dd></div>
+          <div><dt>核心内容</dt><dd>{list(fields.coreModules, coreModuleLabels)}</dd></div>
+          <div><dt>AI 编程工具</dt><dd>{list(fields.aiCodingTools, aiCodingToolLabels)}</dd></div>
+        </> : <>
+          <div><dt>核心问题</dt><dd>{fields.coreProblem ?? '未填写'}</dd></div>
+          <div><dt>目标用户</dt><dd>{list(fields.targetUsers, targetUserLabels)}</dd></div>
+          <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
+        </>}
       </dl>
       <p><small>提交时间：{draft.submittedAt ? new Date(draft.submittedAt).toLocaleString('zh-CN') : '未记录'}</small></p>
     </details>
@@ -52,11 +64,12 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
 
 function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
   const fields = draft.fields
+  const portfolio = fields.categoryId === 'personal_site_portfolio'
   return (
     <div className="submission-preview-grid">
       <article className="submission-card-preview stack stack--small" aria-label="社区卡片预览">
         <div className="media-placeholder submission-card-preview__media">{fields.screenshotUrl ? '已提供截图地址' : '16:9 作品截图占位'}</div>
-        <div className="cluster"><Tag>{fields.accessStatus ? accessStatusText[fields.accessStatus] : '状态未填写'}</Tag><Tag tone="dashed">用户提交</Tag></div>
+        <div className="cluster"><Tag>{fields.accessStatus ? accessStatusText[fields.accessStatus] : '状态未填写'}</Tag><Tag tone="dashed">{portfolio ? '个人主页与作品集' : 'AI 学习与题库'}</Tag></div>
         <h2>{fields.currentName ?? '未命名作品'}</h2>
         <p>{fields.oneLineDefinition ?? '尚未填写一句话定义'}</p>
         <small>请确认作品卡片中的名称、介绍和状态是否准确。</small>
@@ -64,16 +77,23 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
       <section className="wire-panel stack" aria-labelledby="submission-detail-summary">
         <div><h2 id="submission-detail-summary">作品预览</h2></div>
         <dl className="submission-summary-grid">
-          <div><dt>目标用户</dt><dd>{list(fields.targetUsers, targetUserLabels)}</dd></div>
-          <div><dt>核心问题</dt><dd>{fields.coreProblem ?? '未填写'}</dd></div>
-          <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
-          <div><dt>主要输入</dt><dd>{list(fields.mainInputs, inputTypeLabels)}</dd></div>
-          <div><dt>主要输出</dt><dd>{list(fields.mainOutputs, outputTypeLabels)}</dd></div>
-          <div><dt>核心流程</dt><dd>{fields.coreFlow?.map((item) => item.label).join(' → ') || '未填写'}</dd></div>
-          <div><dt>练习形式</dt><dd>{list(fields.practiceFormats, practiceFormatLabels)}</dd></div>
-          <div><dt>反馈方式</dt><dd>{list(fields.feedbackMethods, feedbackMethodLabels)}</dd></div>
+          {portfolio ? <>
+            <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
+            <div><dt>创作者身份</dt><dd>{list(fields.creatorRoles, creatorRoleLabels)}</dd></div>
+            <div><dt>建站目的</dt><dd>{list(fields.primaryGoals, primaryGoalLabels)}</dd></div>
+            <div><dt>核心内容</dt><dd>{list(fields.coreModules, coreModuleLabels)}</dd></div>
+          </> : <>
+            <div><dt>目标用户</dt><dd>{list(fields.targetUsers, targetUserLabels)}</dd></div>
+            <div><dt>核心问题</dt><dd>{fields.coreProblem ?? '未填写'}</dd></div>
+            <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
+            <div><dt>主要输入</dt><dd>{list(fields.mainInputs, inputTypeLabels)}</dd></div>
+            <div><dt>主要输出</dt><dd>{list(fields.mainOutputs, outputTypeLabels)}</dd></div>
+            <div><dt>核心流程</dt><dd>{fields.coreFlow?.map((item) => item.label).join(' → ') || '未填写'}</dd></div>
+            <div><dt>练习形式</dt><dd>{list(fields.practiceFormats, practiceFormatLabels)}</dd></div>
+            <div><dt>反馈方式</dt><dd>{list(fields.feedbackMethods, feedbackMethodLabels)}</dd></div>
+          </>}
           <div><dt>AI 编程工具</dt><dd>{list(fields.aiCodingTools, aiCodingToolLabels)}</dd></div>
-          <div><dt>复用资产</dt><dd>{draft.assetIds.length ? `${draft.assetIds.length} 项` : '未关联'}</dd></div>
+          {portfolio ? <div><dt>作者公开资产</dt><dd>发布后可在“管理作品”中添加；不会把其他作品的资产记到这里。</dd></div> : <div><dt>复用资产</dt><dd>{draft.assetIds.length ? `${draft.assetIds.length} 项` : '未关联'}</dd></div>}
         </dl>
       </section>
     </div>

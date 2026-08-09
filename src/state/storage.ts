@@ -27,6 +27,7 @@ type PersistedState = Pick<
   | 'projectUpdateRecords'
   | 'projectUpdateDrafts'
   | 'submissionEntryValue'
+  | 'submissionEntryCategoryId'
   | 'notifications'
   | 'pendingAction'
   | 'lastReplayedActionId'
@@ -58,6 +59,7 @@ export function selectPersistedState(state: AppState): PersistedState {
     projectUpdateRecords: state.projectUpdateRecords,
     projectUpdateDrafts: state.projectUpdateDrafts,
     submissionEntryValue: state.submissionEntryValue,
+    submissionEntryCategoryId: state.submissionEntryCategoryId,
     notifications: state.notifications,
     pendingAction: state.pendingAction,
     lastReplayedActionId: state.lastReplayedActionId,
@@ -120,6 +122,7 @@ export function hydrateAppState(
       projectUpdateRecords: persisted.projectUpdateRecords ?? fallback.projectUpdateRecords,
       projectUpdateDrafts: persisted.projectUpdateDrafts ?? fallback.projectUpdateDrafts,
       submissionEntryValue: persisted.submissionEntryValue ?? fallback.submissionEntryValue,
+      submissionEntryCategoryId: persisted.submissionEntryCategoryId ?? fallback.submissionEntryCategoryId,
       eventLog: [],
       comparisonSessions: persisted.comparisonSessions ?? fallback.comparisonSessions,
       activeComparisonSessionId: persisted.activeComparisonSessionId ?? fallback.activeComparisonSessionId,
@@ -135,6 +138,7 @@ export function hydrateAppState(
       verificationRequests: [],
       projectUpdateDrafts: [],
       submissionEntryValue: '',
+      submissionEntryCategoryId: 'ai_learning_quiz',
       notifications: [],
     }
   } catch {

@@ -36,6 +36,12 @@ describe('deterministic intent parser', () => {
     expect(result.intent.useScenarios).toEqual([])
   })
 
+  it('recognizes natural single-page phrasing', () => {
+    const result = parseIntent('我想用一页展示开发者作品集和源码')
+    expect(result.intent.categoryId).toBe('personal_site_portfolio')
+    expect(result.intent.pageModels).toContain('single_page')
+  })
+
   it('supports the configured parse-failure scenario while retaining text', async () => {
     const result = await intentService.parse('原始想法不能丢', { scenario: 'parse_failure', delayMs: 0 })
     expect(result.ok && result.data.status).toBe('failed')

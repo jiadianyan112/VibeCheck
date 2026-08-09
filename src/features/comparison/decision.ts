@@ -13,7 +13,7 @@ export interface DecisionDraft {
 
 export function createDecisionDraft({ sessionId, projectIds, action, affectedFields, reason, assetIds, now = new Date().toISOString() }: Omit<DecisionDraft, 'id' | 'createdAt'> & { now?: string }): DecisionDraft {
   return {
-    id: decisionRecordId(`decision-local-${sessionId.replace('comparison-', '')}`),
+    id: decisionRecordId(`decision-local-${sessionId.replace('comparison-', '')}-${now.replace(/\D/g, '')}`),
     sessionId,
     projectIds: [...projectIds],
     action,

@@ -1247,7 +1247,7 @@ textarea {
   border-top: 2px solid var(--color-ink);
 }
 
-.comparison-decision-summary { border-top: 1px solid var(--color-line-strong); border-bottom: 1px solid var(--color-line-strong); padding: var(--space-5) 0; }
+.comparison-summary { border-top: 1px solid var(--color-line-strong); border-bottom: 1px solid var(--color-line-strong); padding: var(--space-5) 0; }
 .comparison-key-differences { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin: 0; padding: 0; counter-reset: key-difference; list-style: none; }
 .comparison-key-differences > li { display: grid; align-content: start; gap: var(--space-2); border-top: 2px solid var(--color-ink); padding-top: var(--space-3); counter-increment: key-difference; }
 .comparison-key-differences > li > span { color: var(--color-muted); font-size: 0.8rem; font-weight: 700; }
@@ -2563,8 +2563,6 @@ textarea {
   gap: var(--space-2);
   justify-items: start;
 }
-
-.profile-field .evidence-trigger { justify-self: start; }
 
 .core-flow ol {
   display: grid;

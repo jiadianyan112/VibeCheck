@@ -32,6 +32,7 @@ export function createInitialAppState(): AppState {
     projectUpdateRecords: [],
     projectUpdateDrafts: [],
     submissionEntryValue: '',
+    submissionEntryCategoryId: 'ai_learning_quiz',
     notifications: [],
     pendingAction: null,
     lastReplayedActionId: null,

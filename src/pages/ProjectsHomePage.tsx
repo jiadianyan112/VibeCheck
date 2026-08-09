@@ -43,7 +43,7 @@ export function ProjectsHomePage() {
 
   const sections = useMemo(() => ({
     curated: projects.filter((item) => item.categoryId === 'ai_learning_quiz' && item.completenessLevel === 'complete').slice(0, 3),
-    portfolios: projects.filter((item) => item.categoryId === 'personal_site_portfolio').slice(0, 4),
+    portfolios: projects.filter((item) => item.categoryId === 'personal_site_portfolio').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4),
     latest: [...projects].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4),
     updated: [...projects].sort((a, b) => b.lastVerifiedAt.localeCompare(a.lastVerifiedAt)).slice(0, 4),
     reusable: projects.filter((item) => item.assetIds.length > 0 && item.accessStatus.state === 'known' && item.accessStatus.value !== 'ended').slice(0, 4),

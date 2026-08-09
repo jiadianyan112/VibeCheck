@@ -83,4 +83,14 @@ describe('DiscoverResultPage', () => {
     expect(screen.getAllByText('个人主页与作品集').length).toBeGreaterThan(0)
     expect(screen.queryByText('题练工坊')).not.toBeInTheDocument()
   })
+
+  it('shows honest relaxed portfolio matches when all conditions produce zero exact results', async () => {
+    render(<MemoryRouter initialEntries={['/discover/result?idea=%E7%94%A8%E4%B8%80%E9%A1%B5%E5%B1%95%E7%A4%BA%E5%BC%80%E5%8F%91%E8%80%85%E9%A1%B9%E7%9B%AE%E5%92%8C%E6%BA%90%E7%A0%81&category=personal_site_portfolio&siteType=portfolio&role=developer&goal=showcase_projects&pageModel=single_page&visual=minimal&assetType=source_code&view=works']}><AppStateProvider><ToastProvider><ComparisonProvider><Routes><Route path="/discover/result" element={<DiscoverResultPage />} /></Routes></ComparisonProvider></ToastProvider></AppStateProvider></MemoryRouter>)
+    expect((await screen.findByRole('heading', { name: '找到相似作品' })).closest('header')).toHaveTextContent('0 个完全匹配的作品，并整理了 4 个相近参考')
+    expect(screen.getByRole('heading', { name: '最接近的作品' })).toBeInTheDocument()
+    expect(screen.getAllByText(/命中.+但未满足全部意图维度/).length).toBeGreaterThan(0)
+    expect(screen.getByText('根据你确认的网站类型、创作者身份和建站目的，我们找到了相关专题。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '清除筛选' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '清除统计筛选' })).not.toBeInTheDocument()
+  })
 })

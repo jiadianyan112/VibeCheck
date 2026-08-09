@@ -39,7 +39,12 @@ export function SubmitEntryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const scenario = resolveServiceScenario(searchParams, state.serviceScenario)
   const [url, setUrl] = useState(() => searchParams.get('resumeUrl') ?? state.submissionEntryValue)
-  const [categoryId, setCategoryId] = useState<ProjectCategoryId>(() => searchParams.get('category') === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz')
+  const [categoryId, setCategoryId] = useState<ProjectCategoryId>(() => {
+    const requestedCategory = searchParams.get('category')
+    return requestedCategory === 'personal_site_portfolio' || requestedCategory === 'ai_learning_quiz'
+      ? requestedCategory
+      : state.submissionEntryCategoryId
+  })
   const [touched, setTouched] = useState(false)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<UrlCheckResult | null>(null)
@@ -52,6 +57,10 @@ export function SubmitEntryPage() {
   const validationError = touched ? validateUrl(url) : ''
 
   useEffect(() => () => controllerRef.current?.abort(), [])
+
+  useEffect(() => {
+    if (state.submissionEntryCategoryId !== categoryId) dispatch({ type: 'SUBMISSION_ENTRY_CATEGORY_SET', categoryId })
+  }, [categoryId, dispatch, state.submissionEntryCategoryId])
 
   const checkUrl = useCallback(async (event?: FormEvent) => {
     event?.preventDefault()
@@ -159,7 +168,7 @@ export function SubmitEntryPage() {
           <div className="stack stack--small">
             <h2>公开访问 URL</h2>
           </div>
-          <label className="field"><span className="field__label">作品品类</span><select className="input" value={categoryId} onChange={(event) => { setCategoryId(event.target.value as ProjectCategoryId); setResult(null); setSavedDraftId(null) }}><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option></select><small>{categoryId === 'personal_site_portfolio' ? '需为无需登录即可查看主要内容、围绕明确个人身份且有 AI 辅助开发证据的独立 Web 作品。' : '保留原有材料、练习、反馈与学习记录字段。'}</small></label>
+          <label className="field"><span className="field__label">作品品类</span><select className="input" value={categoryId} onChange={(event) => { const nextCategoryId = event.target.value as ProjectCategoryId; setCategoryId(nextCategoryId); dispatch({ type: 'SUBMISSION_ENTRY_CATEGORY_SET', categoryId: nextCategoryId }); setResult(null); setSavedDraftId(null) }}><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option></select><small>{categoryId === 'personal_site_portfolio' ? '需为无需登录即可查看主要内容、围绕明确个人身份且有 AI 辅助开发证据的独立 Web 作品。' : '保留原有材料、练习、反馈与学习记录字段。'}</small></label>
           <Input
             label="作品地址"
             hint={categoryId === 'personal_site_portfolio' ? '可省略 https://；例如 example.test/my-portfolio' : '可省略 https://；例如 example.test/my-learning-tool'}

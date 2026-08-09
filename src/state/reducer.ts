@@ -201,6 +201,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         verificationRequests: [],
         projectUpdateDrafts: [],
         submissionEntryValue: '',
+        submissionEntryCategoryId: 'ai_learning_quiz',
         notifications: [],
         pendingAction: null,
       }
@@ -365,6 +366,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'SUBMISSION_ENTRY_VALUE_SET':
       return { ...state, submissionEntryValue: action.value }
+    case 'SUBMISSION_ENTRY_CATEGORY_SET':
+      return { ...state, submissionEntryCategoryId: action.categoryId }
     case 'NOTIFICATION_MARK_READ':
       return {
         ...state,

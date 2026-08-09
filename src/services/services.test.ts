@@ -51,6 +51,15 @@ describe('typed prototype services', () => {
     expect(sparse.ok && sparse.data.hits.length).toBeLessThanOrEqual(2)
   })
 
+  it('searches the verified public portfolio records from the shared project dataset', async () => {
+    const result = await searchService.search('Haoqi')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.hits.map(({ project }) => project.id)).toContain(projectId('project-haoqi-design'))
+    const project = result.data.hits.find(({ project }) => project.id === projectId('project-haoqi-design'))?.project
+    expect(project?.publicUrl).toMatchObject({ state: 'known', value: 'https://haoqi.design/' })
+  })
+
   it('provides comparison lookup and size validation', async () => {
     const found = await comparisonService.get(
       comparisonSessionId('comparison-mia-speaking'),
@@ -105,6 +114,6 @@ describe('typed prototype services', () => {
     const notifications = await notificationService.listForUser(userId('user-mia'))
     const queue = await adminService.listProjectQueue()
     expect(notifications.ok && notifications.data.length).toBeGreaterThanOrEqual(2)
-    expect(queue.ok && queue.data).toHaveLength(28)
+    expect(queue.ok && queue.data).toHaveLength(38)
   })
 })

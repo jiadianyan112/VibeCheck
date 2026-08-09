@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('mobile user completes a comparison decision without losing the form', async ({ page, isMobile }) => {
+test('mobile user compares only the selected projects', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'mobile comparison flow')
   await page.goto('/compare/comparison-anonymous-pdf')
   await page.getByRole('button', { name: '查看完整字段' }).click()
@@ -12,15 +12,9 @@ test('mobile user completes a comparison decision without losing the form', asyn
   await expect(switcher.getByRole('tab', { name: 'PDF 题库实验室' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel', { name: 'PDF 题库实验室的比较字段' })).toContainText('定位')
 
-  await page.getByRole('radio', { name: '调整' }).click()
-  await page.getByRole('checkbox', { name: '定位' }).click()
-  await page.getByLabel('判断理由').fill('根据差异调整目标用户与产品定位。')
-  await page.getByRole('button', { name: '完成并私密保存' }).click()
-  await expect(page.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeVisible()
-  await expect(page.getByLabel('判断理由')).toHaveValue('根据差异调整目标用户与产品定位。')
-  await page.getByRole('button', { name: /米娅/ }).click()
-  await expect(page.getByRole('heading', { name: '决策记录已保存' })).toBeVisible()
-  await expect(page.getByText('仅自己可见')).toBeVisible()
+  await expect(page.getByLabel('2 个作品的移动比较')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '记录比较后的行动' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '完成并私密保存' })).toHaveCount(0)
 
   const layout = await page.evaluate(() => ({
     footerPosition: getComputedStyle(document.querySelector('.comparison-session-footer')!).position,

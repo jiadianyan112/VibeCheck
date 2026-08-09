@@ -10,7 +10,7 @@ import { submissionDraftId, type SubmissionDraft } from '../types'
 
 const draftId = submissionDraftId('draft-t39-review')
 
-function seedDraft() {
+function seedDraft(categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 'ai_learning_quiz') {
   let state = appReducer(createInitialAppState(), { type: 'LOGIN_COMPLETED', user: prototypeUsers[0]! })
   const draft: SubmissionDraft = {
     id: draftId,
@@ -18,8 +18,11 @@ function seedDraft() {
     status: 'draft',
     step: 'preview',
     fields: {
-      currentName: '审核状态演示', publicUrl: 'https://example.test/review', screenshotUrl: null, accessStatus: 'normal', repositoryUrl: null,
+      categoryId, currentName: '审核状态演示', publicUrl: 'https://example.test/review', screenshotUrl: null, accessStatus: 'normal', repositoryUrl: null,
       oneLineDefinition: '演示从提交到首次发布的完整状态。', targetUsers: ['university_students'], coreProblem: '审核状态不透明', useScenarios: ['daily_practice'], mainInputs: ['plain_text'], mainOutputs: ['practice_set'], coreFlow: [{ id: 'one', order: 1, label: '提交材料', description: '' }], practiceFormats: [], feedbackMethods: [], differentiation: '', aiCodingTools: ['codex'],
+      creatorRoles: categoryId === 'personal_site_portfolio' ? ['developer'] : undefined,
+      primaryGoals: categoryId === 'personal_site_portfolio' ? ['showcase_projects'] : undefined,
+      coreModules: categoryId === 'personal_site_portfolio' ? ['hero', 'projects'] : undefined,
     },
     originalExtraction: {}, assetIds: [], duplicateProjectId: null, validationErrors: {}, reviewMessages: {}, submittedFields: null, submittedAssetIds: [], supplementalMaterial: '', publishedProjectId: null, publishedEventId: null,
     createdAt: '2026-07-31T10:00:00+08:00', updatedAt: '2026-07-31T10:20:00+08:00', submittedAt: null, withdrawnAt: null,
@@ -72,6 +75,24 @@ describe('submission preview and review status', () => {
     expect(await screen.findByRole('heading', { name: '审核状态演示', level: 1 })).toBeInTheDocument()
     await act(async () => { await router.navigate('/activity') })
     expect(await screen.findByText('审核状态演示通过审核并首次发布。')).toBeInTheDocument()
+  })
+
+  it('keeps portfolio facts category-aware in the preview and submitted snapshot', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const user = userEvent.setup()
+    renderReview()
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('个人主页与作品集')
+    expect(screen.getByText('创作者身份').closest('div')).toHaveTextContent('开发者')
+    expect(screen.getByText('建站目的').closest('div')).toHaveTextContent('展示项目')
+    expect(screen.getByText('核心内容').closest('div')).toHaveTextContent('首屏、项目')
+    expect(screen.queryByText('目标用户')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    expect(screen.getByText('查看提交版本').closest('details')).toHaveTextContent('创作者身份开发者')
+    expect(screen.getByText('查看提交版本').closest('details')).not.toHaveTextContent('目标用户')
   })
 
   it('keeps the same submitted version when the review service fails and retries', async () => {

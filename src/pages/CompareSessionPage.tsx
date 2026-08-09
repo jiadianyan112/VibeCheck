@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, EmptyState, EvidenceDrawer, FreshnessLabel, Tag, UnknownFact, useToast } from '../components'
-import { buildComparisonMatrix, DecisionForm, type ComparisonCell, type ComparisonDimension } from '../features'
+import { buildComparisonMatrix, type ComparisonCell, type ComparisonDimension } from '../features'
 import { evidenceById, projectById, projects, prototypeScenarioFromParams, reusableAssets } from '../mocks'
 import { useAppState } from '../state'
 import { comparisonSessionId, type Project, type ProjectId, type ReusableAsset } from '../types'
@@ -41,15 +41,15 @@ function ComparisonCellView({ cell }: { cell: ComparisonCell }) {
   )
 }
 
-function ComparisonDecisionSummary({ dimensions, selectedProjects, selectedAssets, onRevealDetails }: { dimensions: ComparisonDimension[]; selectedProjects: Project[]; selectedAssets: ReusableAsset[]; onRevealDetails: () => void }) {
+function ComparisonSummary({ dimensions, selectedProjects, selectedAssets, onRevealDetails }: { dimensions: ComparisonDimension[]; selectedProjects: Project[]; selectedAssets: ReusableAsset[]; onRevealDetails: () => void }) {
   const differences = dimensions.flatMap((dimension) => dimension.rows.filter((row) => !row.isSame).map((row) => ({ dimension: dimension.label, row })))
   const unknownCount = dimensions.flatMap((dimension) => dimension.rows).flatMap((row) => row.cells).filter((cell) => cell.state === 'unknown').length
   const riskProjects = selectedProjects.filter((project) => project.freshnessStatus === 'expired' || (project.accessStatus.state === 'known' && !['normal', 'recovered'].includes(project.accessStatus.value)))
   const availableAssets = selectedAssets.filter((asset) => asset.availabilityStatus === 'available')
 
   return (
-    <section className="comparison-decision-summary stack" aria-labelledby="decision-summary-heading">
-      <div className="section-heading cluster cluster--between"><div><p className="eyebrow">先看会改变方案的信息</p><h3 id="decision-summary-heading">关键差异摘要</h3><p>这里只整理事实、风险和公开资产，不替你选择继续、调整、复用或暂停。</p></div><button className="button" type="button" aria-controls="comparison-detail-matrix" onClick={onRevealDetails}>查看完整字段</button></div>
+    <section className="comparison-summary stack" aria-labelledby="comparison-summary-heading">
+      <div className="section-heading cluster cluster--between"><div><p className="eyebrow">先看所选作品的主要差异</p><h3 id="comparison-summary-heading">关键差异摘要</h3><p>摘要只基于当前选择的作品，不要求提交额外判断。</p></div><button className="button" type="button" aria-controls="comparison-detail-matrix" onClick={onRevealDetails}>查看完整字段</button></div>
       <ol className="comparison-key-differences">
         {differences.slice(0, 3).map(({ dimension, row }) => <li key={`${dimension}-${row.id}`}><span>{dimension}</span><strong>{row.label}</strong><ul>{row.cells.map((cell) => <li key={cell.projectId}><b>{projectName(cell.projectId)}：</b>{cell.state === 'known' ? cell.lines.join('、') || '暂无' : `待确认，${cell.reason}`}</li>)}</ul></li>)}
       </ol>
@@ -228,7 +228,7 @@ export function CompareSessionPage() {
             <h2 id="structured-comparison-heading">结构化比较</h2>
             <p>逐项查看作品之间的差异，暂未确认或已经过期的信息会明确标出。</p>
           </div>
-          <ComparisonDecisionSummary dimensions={dimensions} selectedProjects={selectedProjects} selectedAssets={selectedAssets} onRevealDetails={revealDetailMatrix} />
+          <ComparisonSummary dimensions={dimensions} selectedProjects={selectedProjects} selectedAssets={selectedAssets} onRevealDetails={revealDetailMatrix} />
           <details ref={detailMatrixRef} id="comparison-detail-matrix" className="comparison-detail-matrix">
             <summary><strong>完整字段矩阵</strong><span>{dimensions.length} 个维度，按需展开</span></summary>
             <div className="comparison-detail-matrix__body stack">
@@ -303,7 +303,6 @@ export function CompareSessionPage() {
             <div className="section-heading"><h3 id="comparison-assets-heading">可复用资产</h3><p>集中查看这些作品公开的代码、模板、组件和其他资源。</p></div>
             {selectedAssets.length ? <div className="card-grid">{selectedAssets.map((asset) => <AssetCard key={asset.id} asset={asset} projectName={projectName(asset.projectId)} />)}</div> : <EmptyState title="所选作品暂无公开资产" description="这不代表作品没有技术实现，只表示当前档案没有可获取资产。" />}
           </section>
-          <DecisionForm session={session} assets={selectedAssets} />
         </section>
       ) : selectedIds.length === 0 ? <EmptyState title="还没有选择比较作品" description="请从作品广场、搜索或想法分析结果中加入 2–5 个作品。" action={<Link className="button button--primary" to="/projects">返回选择作品</Link>} /> : <EmptyState title="还不能开始比较" description={missingProjectIds.length ? '当前只有一个可用作品，请替换已删除作品或再添加一个。' : '当前只有一个作品，请再添加一个。'} action={<Link className="button button--primary" to="/projects">继续选择作品</Link>} />}
 
@@ -311,10 +310,9 @@ export function CompareSessionPage() {
         <div className="cluster">
           <Button onClick={saveComparison}>{state.session.user ? '保存比较' : '登录并保存比较'}</Button>
           <Button variant="quiet" onClick={() => navigate(session.sourcePath)}>返回来源页</Button>
-          {selectedProjects.length >= 2 ? <a className="button button--primary" href="#comparison-decision">记录行动</a> : null}
         </div>
         {selectedProjects.length >= 2
-          ? <p><strong>下一步：</strong>基于比较结果记录继续、调整、复用或暂停。</p>
+          ? <p role="status">当前仅比较你选择的 {selectedProjects.length} 个作品。</p>
           : <p role="status">还需添加 {2 - selectedProjects.length} 个有效作品。</p>}
       </footer>
     </main>

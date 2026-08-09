@@ -70,6 +70,7 @@ export function DiscoverResultPage() {
   }, [state.serviceScenario])
 
   const analysis = useMemo(() => buildDiscoveryAnalysis(projects, assets, intent), [assets, intent, projects])
+  const hasResultFilters = Boolean(params.get('status') || params.get('asset'))
   const view = (params.get('view') as ResultView | null) ?? (analysis.exactProjects.length < 3 ? 'works' : 'analysis')
   const adjacentCategories = useMemo(() => categoryCatalog.map((category) => ({
     category,
@@ -131,7 +132,7 @@ export function DiscoverResultPage() {
       <nav aria-label="面包屑"><Link to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>确认想法</Link> / 匹配结果</nav>
       <header className="analysis-hero stack stack--small">
         <h1>找到相似作品</h1>
-        <p>围绕“{intent.originalQuery || '你的想法'}”，找到 <strong>{analysis.exactProjects.length}</strong> 个高度匹配的作品。</p>
+        <p>围绕“{intent.originalQuery || '你的想法'}”，找到 <strong>{analysis.exactProjects.length}</strong> 个完全匹配的作品{analysis.exactProjects.length === 0 && analysis.relaxedProjects.length ? `，并整理了 ${analysis.relaxedProjects.length} 个相近参考` : ''}。</p>
         <div className="cluster" aria-label="已确认意图">
           <Tag tone="strong">{intent.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag>
           {intent.targetUsers.map((value) => <Tag key={`target-${value}`}>{targetUserLabels[value]}</Tag>)}
@@ -153,20 +154,20 @@ export function DiscoverResultPage() {
         <div className="cluster">
           {params.get('status') ? <Tag tone="dashed">状态：{accessStatusText[params.get('status') as AccessStatus]}</Tag> : null}
           {params.get('asset') ? <Tag tone="dashed">资产：{assetLabels[params.get('asset') as AssetType | 'none']}</Tag> : null}
-          {(params.get('status') || params.get('asset')) ? <Button variant="quiet" onClick={clearResultFilters}>清除统计筛选</Button> : null}
+          {hasResultFilters ? <Button variant="quiet" onClick={clearResultFilters}>清除统计筛选</Button> : null}
         </div>
       </div>
 
       {view === 'works' ? (
         <section className="analysis-works stack">
           <div className="result-tier result-tier--exact stack"><div className="cluster cluster--between"><div><Tag tone="strong">精确匹配</Tag><h2>精确匹配作品</h2></div><strong aria-live="polite">{filteredProjects.length} 个结果</strong></div>
-            {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : analysis.exactProjects.length ? <EmptyState title="当前筛选下没有精确作品" description="匹配作品仍在，可以清除筛选后查看。" action={<Button onClick={clearResultFilters}>清除筛选</Button>} /> : <EmptyState title="暂未找到完全匹配的作品" description="可以调整想法标签，或从相近作品继续探索。" />}
+            {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : analysis.exactProjects.length ? <EmptyState title="当前筛选下没有精确作品" description="匹配作品仍在，可以清除统计筛选后查看。" action={<Button onClick={clearResultFilters}>清除统计筛选</Button>} /> : <EmptyState title="暂未找到同时满足全部条件的作品" description={analysis.relaxedProjects.length ? '已自动放宽部分条件，下面列出最接近的社区作品。' : '可以返回修改条件，或继续浏览相关专题。'} />}
           </div>
 
-          {analysis.exactProjects.length > 0 && analysis.exactProjects.length < 3 ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">相近推荐</Tag><h2>相近作品</h2><p>这些作品只符合部分条件，可以作为补充参考。</p></div>{analysis.relaxedProjects.length ? <div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>推荐原因：</strong>{reason}</p><ProjectCard project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div> : <EmptyState title="暂时没有合适的相近作品" />}</div> : null}
+          {analysis.exactProjects.length < 3 && analysis.relaxedProjects.length ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">相近推荐</Tag><h2>{analysis.exactProjects.length === 0 ? '最接近的作品' : '相近作品'}</h2><p>{analysis.exactProjects.length === 0 ? '这些作品命中了部分已确认条件，但不满足全部要求；差异会明确标出，不会冒充精确结果。' : '这些作品只符合部分条件，可以作为补充参考。'}</p></div><div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>推荐原因：</strong>{reason}</p><ProjectCard project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div></div> : null}
 
-          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相关问题</Tag><h2>换个方向继续探索</h2><p>根据你的使用场景和输入内容，我们找到了这些相关专题。</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>查看相关专题 →</Link></article>)}</div> : <EmptyState title="暂时没有相关专题" description="可以返回上一步调整想法。" />}
-            <div className="cluster"><Link className="button" to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>修改条件</Link><Button onClick={clearResultFilters}>清除筛选</Button><Button variant="primary" onClick={saveQuery}>保存查询</Button><Link className="button button--quiet" to="/projects">回到作品广场</Link></div>
+          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相关问题</Tag><h2>换个方向继续探索</h2><p>{intent.categoryId === 'personal_site_portfolio' ? '根据你确认的网站类型、创作者身份和建站目的，我们找到了相关专题。' : '根据你的使用场景和输入内容，我们找到了这些相关专题。'}</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>查看相关专题 →</Link></article>)}</div> : <EmptyState title="暂时没有相关专题" description="可以返回上一步调整想法。" />}
+            <div className="cluster"><Link className="button" to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>修改条件</Link>{hasResultFilters ? <Button onClick={clearResultFilters}>清除统计筛选</Button> : null}<Button variant="primary" onClick={saveQuery}>保存查询</Button><Link className="button button--quiet" to="/projects">回到作品广场</Link></div>
           </div> : null}
         </section>
       ) : (

@@ -58,7 +58,7 @@ const portfolioRules: PortfolioIntentRule[] = [
   { name: '产品经理', pattern: /产品经理|产品案例/i, patch: { creatorRoles: ['product_manager'] } },
   { name: '自由职业', pattern: /自由职业|接单|客户|获客/i, patch: { creatorRoles: ['freelancer'], primaryGoals: ['client_acquisition'] } },
   { name: '内容中心', pattern: /博客|文章|内容中心|内容枢纽/i, patch: { primaryGoals: ['content_hub'] } },
-  { name: '单页结构', pattern: /单页|一页式|one.page/i, patch: { pageModels: ['single_page'] } },
+  { name: '单页结构', pattern: /单页|一页式|用一页|一页(?:展示|呈现|完成|做完)|one[ .-]?page/i, patch: { pageModels: ['single_page'] } },
   { name: '多页结构', pattern: /多页|多个页面|multi.page/i, patch: { pageModels: ['multi_page'] } },
   { name: '极简风格', pattern: /极简|minimal/i, patch: { visualStyles: ['minimal'] } },
   { name: '编辑风格', pattern: /编辑感|杂志感|editorial/i, patch: { visualStyles: ['editorial'] } },

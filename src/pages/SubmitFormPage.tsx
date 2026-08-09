@@ -251,7 +251,7 @@ export function SubmitFormPage() {
   else body = <DevelopmentStep draft={draft} update={update} updateAssets={updateAssets} />
 
   return (
-    <PageFrame title="发布新作品" description={draft.fields.categoryId === 'personal_site_portfolio' ? '按 Portfolio Schema 补充定位、结构、视觉、交互与开发信息；未完成内容会自动保存。' : '分步补充作品介绍、解决方案和开发信息，未完成的内容会自动保存。'}>
+    <PageFrame title="发布新作品" description={draft.fields.categoryId === 'personal_site_portfolio' ? '确认作品名称、介绍、公开地址、创作者身份、建站目的和核心内容；其他信息可以发布后补充。' : '分步补充作品介绍、解决方案和开发信息，未完成的内容会自动保存。'}>
       <div className="submission-form-layout">
         <aside className="submission-progress stack stack--small" aria-label="发布进度">
           <p className="eyebrow">填写进度</p>

@@ -93,6 +93,29 @@ describe('submission entry and URL checks', () => {
     expect(screen.getByRole('textbox', { name: /^作品地址/ })).toHaveValue('https://example.test/network-draft')
   })
 
+  it('preserves the selected category with the URL across a remount', async () => {
+    loginInStorage()
+    const user = userEvent.setup()
+    const first = renderRoute('/submit')
+    await user.selectOptions(screen.getByRole('combobox', { name: /作品品类/ }), 'personal_site_portfolio')
+    await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), 'example.test/my-portfolio')
+    await user.tab()
+    first.unmount()
+
+    renderRoute('/submit')
+    expect(screen.getByRole('combobox', { name: /作品品类/ })).toHaveValue('personal_site_portfolio')
+    expect(screen.getByRole('textbox', { name: /^作品地址/ })).toHaveValue('https://example.test/my-portfolio')
+  })
+
+  it('lets an explicit category link override the persisted entry category', async () => {
+    loginInStorage()
+    const persisted = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!)
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify({ ...persisted, submissionEntryCategoryId: 'personal_site_portfolio' }))
+
+    renderRoute('/submit?category=ai_learning_quiz')
+    expect(screen.getByRole('combobox', { name: /作品品类/ })).toHaveValue('ai_learning_quiz')
+  })
+
   it('allows a first timeout to be saved but blocks direct continuation', async () => {
     loginInStorage()
     const user = userEvent.setup()

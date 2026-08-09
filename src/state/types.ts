@@ -16,6 +16,7 @@ import type {
   ProjectId,
   PrototypeSession,
   PrototypeUser,
+  ProjectCategoryId,
   UserId,
   SubmissionDraft,
 } from '../types'
@@ -89,6 +90,7 @@ export interface AppState {
   projectUpdateRecords: ProjectUpdateRecord[]
   projectUpdateDrafts: ProjectUpdateDraft[]
   submissionEntryValue: string
+  submissionEntryCategoryId: ProjectCategoryId
   notifications: Notification[]
   pendingAction: PendingAction | null
   lastReplayedActionId: string | null
@@ -134,6 +136,7 @@ export type AppAction =
   | { type: 'ADMIN_WORKFLOW_APPLY'; mutation: AdminWorkflowMutation }
   | { type: 'PROJECT_UPDATE_DRAFT_UPSERT'; draft: ProjectUpdateDraft }
   | { type: 'SUBMISSION_ENTRY_VALUE_SET'; value: string }
+  | { type: 'SUBMISSION_ENTRY_CATEGORY_SET'; categoryId: ProjectCategoryId }
   | { type: 'NOTIFICATION_MARK_READ'; notificationId: Notification['id'] }
   | { type: 'NOTIFICATIONS_MARK_ALL_READ'; userId: UserId }
   | { type: 'SCENARIO_SET'; scenario: ServiceScenarioId }

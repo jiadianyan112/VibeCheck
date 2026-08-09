@@ -62,6 +62,25 @@ export const evidences: Evidence[] = [
     summary: `${name} 的公开站点、个人身份与 AI 辅助开发声明已核验。`,
     verifiedAt: '2026-08-08T10:00:00+08:00',
   })),
+  ...[
+    ['haoqi-design', 'Haoqi Wen', 'https://haoqi.design/'],
+    ['rodin-portfolio', '罗丹 Rodin', 'https://rodin-danluo.github.io/luodan-Rodin-portfolio/'],
+    ['kane-sherwell', 'Kane Sherwell', 'https://kanesherwell.com/'],
+    ['syd-lawrence', 'Syd Lawrence', 'https://sydlawrence-portfolio.lovable.app/'],
+    ['eden-xie', 'Eden Xie Zheng Heng', 'https://v0-singapore-polytechnic-portfolio.vercel.app/'],
+    ['oil-oil', 'Oil® · 欧呦', 'https://www.oiloil.org/'],
+    ['mae-c', 'MAE-C.SPACE', 'https://mae-c.space/'],
+    ['hangkangfu', '符航康的个人主页', 'https://www.hangkangfu.cn/'],
+    ['kalan-design', 'KALAN', 'https://kalan.design/'],
+    ['jerrygao', 'JerryGao', 'https://www.jerrygao.cn/'],
+  ].map(([key, name, sourceUrl]) => makeEvidence({
+    id: `evidence-${key}-public`,
+    projectKey: `project-${key}`,
+    type: 'platform_verified_fact',
+    summary: `${name} 的公开页面可访问，个人身份与主页或作品集内容已核对。`,
+    sourceUrl,
+    verifiedAt: '2026-08-09T12:00:00+08:00',
+  })),
 ]
 
 export const evidenceById = new Map(evidences.map((evidence) => [evidence.id, evidence]))

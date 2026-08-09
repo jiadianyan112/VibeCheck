@@ -30,6 +30,15 @@ describe('ProjectsHomePage', () => {
     expect(screen.getByRole('link', { name: /把 PDF 变成题库/ })).toHaveAttribute('href', '/categories/pdf-to-quiz')
   })
 
+  it('shows the newest verified public portfolios on the homepage', async () => {
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/projects'] })
+    render(<AppProviders><RouterProvider router={router} /></AppProviders>)
+    const heading = await screen.findByRole('heading', { name: '个人主页与作品集' })
+    const section = heading.closest('section')!
+    expect(within(section).getByRole('link', { name: 'Haoqi Wen' })).toHaveAttribute('href', '/project/project-haoqi-design')
+    expect(within(section).getByRole('link', { name: '罗丹 Rodin' })).toHaveAttribute('href', '/project/project-rodin-portfolio')
+  })
+
   it('shows creators and Vibe Coding tools instead of archive metadata on homepage cards', async () => {
     const router = createMemoryRouter(appRoutes, { initialEntries: ['/projects'] })
     render(<AppProviders><RouterProvider router={router} /></AppProviders>)

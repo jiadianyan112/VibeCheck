@@ -6,7 +6,7 @@ import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { creatorsForProject, prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
-import type { CommentCategory, Evidence, FieldFact, Project, ProjectComment, UserId } from '../types'
+import type { CommentCategory, FieldFact, Project, ProjectComment, UserId } from '../types'
 import { accessStatusText, feedbackMethodLabels, inputTypeLabels, lifecycleEventLabels, scenarioLabels, targetUserLabels } from '../utils'
 
 const sourceLabels: Record<Project['recordSource'], string> = {
@@ -49,9 +49,8 @@ const commentCategoryLabels: Record<CommentCategory, string> = { usage_feedback:
 const changeFieldLabels: Record<string, string> = { currentName: '作品名称', coreFeatures: '核心功能', feedbackMethods: '反馈方式', accessStatus: '访问状态', httpCheckStatus: '链接检查', address: '公开地址', version: '版本', product: '产品信息', development: '开发信息', asset: '复用资产', status: '作品状态' }
 const changeValueLabels: Record<string, string> = { ...accessStatusText, ...feedbackMethodLabels, ...inputTypeLabels, ...outputLabels, ...scenarioLabels, ...targetUserLabels, normal: '正常', redirect: '发生跳转', timeout: '访问超时', unavailable: '无法访问' }
 
-function FactBlock<T>({ label, fact, evidences, children }: { label: string; fact: FieldFact<T>; evidences: Evidence[]; children: (value: T) => ReactNode }) {
-  const sources = evidences.filter((evidence) => fact.evidenceIds.includes(evidence.id))
-  return <div className="profile-field"><dt>{label}</dt><dd className="profile-field__value">{fact.state === 'known' ? children(fact.value) : <UnknownFact reason={fact.reason} />}<EvidenceDrawer label={`${label}来源`} evidences={sources} /></dd></div>
+function FactBlock<T>({ label, fact, children }: { label: string; fact: FieldFact<T>; children: (value: T) => ReactNode }) {
+  return <div className="profile-field"><dt>{label}</dt><dd className="profile-field__value">{fact.state === 'known' ? children(fact.value) : <UnknownFact reason={fact.reason} />}</dd></div>
 }
 
 function tagList(values: readonly string[], labels: Record<string, string>) {
@@ -273,50 +272,50 @@ export function ProjectDetailPage() {
       {portfolio ? <section className="project-profile stack" aria-labelledby="portfolio-structure-heading">
         <div className="section-heading cluster cluster--between"><div><h2 id="portfolio-structure-heading">定位与内容结构</h2><p>了解网站面向什么身份与目的，以及如何组织主页、项目和经历。</p></div><Link className="button" to={similarPath(project)}>查找相似作品</Link></div>
         <dl className="profile-field-grid">
-          <FactBlock label="网站类型" fact={portfolio.siteType} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="作者身份" fact={portfolio.creatorRoles} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
-          <FactBlock label="建站目的" fact={portfolio.primaryGoals} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
-          <FactBlock label="页面结构" fact={portfolio.pageModel} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="导航方式" fact={portfolio.navigationPattern} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="核心模块" fact={portfolio.coreModules} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="网站类型" fact={portfolio.siteType}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="作者身份" fact={portfolio.creatorRoles}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="建站目的" fact={portfolio.primaryGoals}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="页面结构" fact={portfolio.pageModel}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="导航方式" fact={portfolio.navigationPattern}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="核心模块" fact={portfolio.coreModules}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
         </dl>
         <div className="section-heading"><h2>项目展示与 Case Study</h2></div>
-        <dl className="profile-field-grid"><FactBlock label="项目展示形式" fact={portfolio.projectShowcaseFormat} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock><FactBlock label="Case Study 深度" fact={portfolio.caseStudyDepth} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock></dl>
+        <dl className="profile-field-grid"><FactBlock label="项目展示形式" fact={portfolio.projectShowcaseFormat}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock><FactBlock label="Case Study 深度" fact={portfolio.caseStudyDepth}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock></dl>
         <div className="section-heading"><h2>视觉与交互</h2></div>
         <dl className="profile-field-grid">
-          <FactBlock label="视觉风格" fact={portfolio.visualStyles} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
-          <FactBlock label="布局方式" fact={portfolio.layoutPatterns} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
-          <FactBlock label="色彩特征" fact={portfolio.colorCharacter} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="主题模式" fact={portfolio.themeMode} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="交互等级" fact={portfolio.interactionLevel} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="动画方式" fact={portfolio.interactionPatterns} evidences={bundle.evidences}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
-          <FactBlock label="响应式" fact={portfolio.responsiveSupport} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
-          <FactBlock label="博客能力" fact={portfolio.blogSupport} evidences={bundle.evidences}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="视觉风格" fact={portfolio.visualStyles}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="布局方式" fact={portfolio.layoutPatterns}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="色彩特征" fact={portfolio.colorCharacter}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="主题模式" fact={portfolio.themeMode}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="交互等级" fact={portfolio.interactionLevel}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="动画方式" fact={portfolio.interactionPatterns}>{(value) => tagList(value, portfolioLabels)}</FactBlock>
+          <FactBlock label="响应式" fact={portfolio.responsiveSupport}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
+          <FactBlock label="博客能力" fact={portfolio.blogSupport}>{(value) => <Tag>{portfolioLabels[value]}</Tag>}</FactBlock>
         </dl>
       </section> : <section className="project-profile stack" aria-labelledby="product-structure-heading">
         <div className="section-heading cluster cluster--between"><div><h2 id="product-structure-heading">产品结构</h2><p>了解作品面向谁、解决什么问题，以及如何完成核心流程。</p></div><Link className="button" to={similarPath(project)}>查找相似作品</Link></div>
         <dl className="profile-field-grid">
-          <FactBlock label="目标用户" fact={project.targetUsers} evidences={bundle.evidences}>{(value) => tagList(value, targetUserLabels)}</FactBlock>
-          <FactBlock label="核心问题" fact={project.coreProblem} evidences={bundle.evidences}>{(value) => <p>{value}</p>}</FactBlock>
-          <FactBlock label="使用场景" fact={project.useScenarios} evidences={bundle.evidences}>{(value) => tagList(value, scenarioLabels)}</FactBlock>
-          <FactBlock label="主要输入" fact={project.mainInputs} evidences={bundle.evidences}>{(value) => tagList(value, inputTypeLabels)}</FactBlock>
-          <FactBlock label="主要输出" fact={project.mainOutputs} evidences={bundle.evidences}>{(value) => tagList(value, outputLabels)}</FactBlock>
-          <FactBlock label="核心功能" fact={project.coreFeatures} evidences={bundle.evidences}>{(value) => tagList(value, {})}</FactBlock>
-          <FactBlock label="登录要求" fact={project.loginRequirement} evidences={bundle.evidences}>{(value) => <span>{loginLabels[value]}</span>}</FactBlock>
-          <FactBlock label="分享能力" fact={project.sharingCapability} evidences={bundle.evidences}>{(value) => <span>{sharingLabels[value]}</span>}</FactBlock>
+          <FactBlock label="目标用户" fact={project.targetUsers}>{(value) => tagList(value, targetUserLabels)}</FactBlock>
+          <FactBlock label="核心问题" fact={project.coreProblem}>{(value) => <p>{value}</p>}</FactBlock>
+          <FactBlock label="使用场景" fact={project.useScenarios}>{(value) => tagList(value, scenarioLabels)}</FactBlock>
+          <FactBlock label="主要输入" fact={project.mainInputs}>{(value) => tagList(value, inputTypeLabels)}</FactBlock>
+          <FactBlock label="主要输出" fact={project.mainOutputs}>{(value) => tagList(value, outputLabels)}</FactBlock>
+          <FactBlock label="核心功能" fact={project.coreFeatures}>{(value) => tagList(value, {})}</FactBlock>
+          <FactBlock label="登录要求" fact={project.loginRequirement}>{(value) => <span>{loginLabels[value]}</span>}</FactBlock>
+          <FactBlock label="分享能力" fact={project.sharingCapability}>{(value) => <span>{sharingLabels[value]}</span>}</FactBlock>
         </dl>
-        <section className="core-flow stack"><h3>核心流程</h3>{project.coreFlow.state === 'known' ? <ol>{orderedFlow.map((node) => <li key={node.id}><span>{node.order}</span><div><strong>{node.label}</strong><p>{node.description}</p></div></li>)}</ol> : <UnknownFact reason={project.coreFlow.reason} />}<EvidenceDrawer label="核心流程来源" evidences={bundle.evidences.filter((evidence) => project.coreFlow.evidenceIds.includes(evidence.id))} /></section>
+        <section className="core-flow stack"><h3>核心流程</h3>{project.coreFlow.state === 'known' ? <ol>{orderedFlow.map((node) => <li key={node.id}><span>{node.order}</span><div><strong>{node.label}</strong><p>{node.description}</p></div></li>)}</ol> : <UnknownFact reason={project.coreFlow.reason} />}</section>
       </section>}
 
       <section className="development-profile stack" aria-labelledby="development-heading">
         <div className="section-heading"><h2 id="development-heading">开发信息</h2><p>查看构建工具、技术栈和公开的实现信息。</p></div>
         <dl className="profile-field-grid">
-          <FactBlock label="AI 编程工具" fact={project.aiCodingTools} evidences={bundle.evidences}>{(value) => tagList(value, aiToolLabels)}</FactBlock>
-          <FactBlock label="使用模型" fact={project.modelsUsed} evidences={bundle.evidences}>{(value) => tagList(value, {})}</FactBlock>
-          <FactBlock label="技术栈" fact={project.techStack} evidences={bundle.evidences}>{(value) => tagList(value, {})}</FactBlock>
-          <FactBlock label="部署方式" fact={project.deploymentPlatform} evidences={bundle.evidences}>{(value) => <span>{value ?? '未公开部署平台'}</span>}</FactBlock>
-          <FactBlock label="开发周期" fact={project.developmentCycle} evidences={bundle.evidences}>{(value) => <span>{value ?? '未公开开发周期'}</span>}</FactBlock>
-          <FactBlock label="关键依赖" fact={project.keyDependencies} evidences={bundle.evidences}>{(value) => tagList(value, {})}</FactBlock>
+          <FactBlock label="AI 编程工具" fact={project.aiCodingTools}>{(value) => tagList(value, aiToolLabels)}</FactBlock>
+          <FactBlock label="使用模型" fact={project.modelsUsed}>{(value) => tagList(value, {})}</FactBlock>
+          <FactBlock label="技术栈" fact={project.techStack}>{(value) => tagList(value, {})}</FactBlock>
+          <FactBlock label="部署方式" fact={project.deploymentPlatform}>{(value) => <span>{value ?? '未公开部署平台'}</span>}</FactBlock>
+          <FactBlock label="开发周期" fact={project.developmentCycle}>{(value) => <span>{value ?? '未公开开发周期'}</span>}</FactBlock>
+          <FactBlock label="关键依赖" fact={project.keyDependencies}>{(value) => tagList(value, {})}</FactBlock>
         </dl>
       </section>
 

@@ -2,14 +2,18 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Tag, useToast } from '../../components'
 import { useAppState } from '../../state'
-import type { AffectedField, AssetId, ComparisonSession, DecisionAction, ReusableAsset } from '../../types'
+import type { AffectedField, AssetId, ComparisonSession, DecisionAction, ProjectId, ReusableAsset } from '../../types'
 import { useAuthGate } from '../auth'
 import { completeDecisionDraft, createDecisionDraft, serializeDecisionDraft } from './decision'
 
 const actionLabels: Record<DecisionAction, string> = { continue: '继续', adjust: '调整', reuse: '复用', pause: '暂停' }
 const fieldLabels: Record<AffectedField, string> = { target_users: '目标用户', positioning: '定位', features: '功能', core_flow: '核心流程', technical_path: '技术路径', assets: '资产' }
 
-export function DecisionForm({ session, assets }: { session: ComparisonSession; assets: readonly ReusableAsset[] }) {
+function sameProjectSet(left: readonly ProjectId[], right: readonly ProjectId[]) {
+  return left.length === right.length && left.every((projectId) => right.includes(projectId))
+}
+
+export function DecisionForm({ session, assets, projectName }: { session: ComparisonSession; assets: readonly ReusableAsset[]; projectName: (projectId: ProjectId) => string }) {
   const { state, dispatch } = useAppState()
   const { requireLogin } = useAuthGate()
   const { pushToast } = useToast()
@@ -18,9 +22,10 @@ export function DecisionForm({ session, assets }: { session: ComparisonSession; 
   const [reason, setReason] = useState('')
   const [assetIds, setAssetIds] = useState<AssetId[]>([])
   const [error, setError] = useState('')
-  const existing = state.decisionRecords
+  const records = state.decisionRecords
     .filter(({ sessionId, userId }) => sessionId === session.id && userId === state.session.user?.id)
-    .at(-1)
+  const latest = records.at(-1)
+  const existing = records.filter((record) => sameProjectSet(record.projectIds, session.projectIds)).at(-1)
 
   function toggleField(field: AffectedField) {
     setAffectedFields((current) => current.includes(field) ? current.filter((item) => item !== field) : [...current, field])
@@ -62,7 +67,7 @@ export function DecisionForm({ session, assets }: { session: ComparisonSession; 
           <div><dt>受影响字段</dt><dd>{existing.affectedFields.map((field) => fieldLabels[field]).join('、')}</dd></div>
           <div><dt>理由</dt><dd>{existing.reason}</dd></div>
           <div><dt>关联资产</dt><dd>{existing.assetIds.length ? assets.filter(({ id }) => existing.assetIds.includes(id)).map(({ name }) => name).join('、') : '未关联资产'}</dd></div>
-          <div><dt>关联作品</dt><dd>{existing.projectIds.length} 个比较作品</dd></div>
+          <div><dt>关联作品</dt><dd>{existing.projectIds.map(projectName).join('、')}</dd></div>
         </dl>
         <div className="cluster"><a className="button button--primary" href="#structured-comparison-heading">返回比较</a><Link className="button" to="/me#decisions">在个人中心查看</Link></div>
       </section>
@@ -71,6 +76,7 @@ export function DecisionForm({ session, assets }: { session: ComparisonSession; 
 
   return (
     <section id="comparison-decision" className="decision-form-section stack" aria-labelledby="decision-form-heading">
+      {latest ? <aside className="boundary-note" role="status"><strong>比较作品已变化</strong><p>上一条决策基于“{latest.projectIds.map(projectName).join('、')}”，记录仍保留在个人中心。请为当前这组作品记录新的行动。</p></aside> : null}
       <div className="section-heading"><h3 id="decision-form-heading">记录比较后的行动</h3><p>这份记录仅自己可见，之后可以在个人中心继续查看。</p></div>
       <form className="decision-form stack" onSubmit={submit}>
         <fieldset aria-invalid={Boolean(error && !action)} aria-describedby={error ? 'decision-error' : undefined}><legend>下一步行动</legend><div className="decision-option-grid">{(Object.keys(actionLabels) as DecisionAction[]).map((value) => <label key={value} className="choice-card"><input type="radio" name="decision-action" value={value} checked={action === value} onChange={() => { setAction(value); setError('') }} /><strong>{actionLabels[value]}</strong></label>)}</div></fieldset>

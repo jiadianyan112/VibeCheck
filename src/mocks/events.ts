@@ -67,6 +67,26 @@ export const lifecycleEvents: LifecycleEvent[] = [
     sourceType: 'verified_author_statement',
     evidenceKey: `evidence-${key}-public`,
   })),
+  ...[
+    ['haoqi-design', 'Haoqi Wen'],
+    ['rodin-portfolio', '罗丹 Rodin'],
+    ['kane-sherwell', 'Kane Sherwell'],
+    ['syd-lawrence', 'Syd Lawrence'],
+    ['eden-xie', 'Eden Xie Zheng Heng'],
+    ['oil-oil', 'Oil® · 欧呦'],
+    ['mae-c', 'MAE-C.SPACE'],
+    ['hangkangfu', '符航康的个人主页'],
+    ['kalan-design', 'KALAN'],
+    ['jerrygao', 'JerryGao'],
+  ].map(([key, name]) => makeEvent({
+    id: `event-${key}-first`,
+    projectKey: `project-${key}`,
+    type: 'first_seen',
+    happenedAt: '2026-08-09T12:00:00+08:00',
+    summary: `平台首次收录 ${name}。`,
+    sourceType: 'platform_verified_fact',
+    evidenceKey: `evidence-${key}-public`,
+  })),
 ]
 
 export const eventById = new Map(lifecycleEvents.map((event) => [event.id, event]))

@@ -11,7 +11,7 @@ describe('CategoriesPage', () => {
     render(<AppProviders><RouterProvider router={router} /></AppProviders>)
     expect(await screen.findByRole('heading', { name: '选择品类，再寻找同类参考' })).toBeInTheDocument()
     for (const name of ['个人主页与作品集', 'AI 出题', 'PDF 转题库', '刷题', '模拟考试', '背词', '口语', '听写', '错题复习']) expect(screen.getByRole('heading', { name })).toBeInTheDocument()
-    expect(screen.getByText('16 个作品')).toBeInTheDocument()
+    expect(screen.getByText('26 个作品')).toBeInTheDocument()
     expect(screen.getAllByText('3 个作品').length).toBeGreaterThanOrEqual(2)
   })
 
