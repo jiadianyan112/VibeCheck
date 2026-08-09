@@ -34,10 +34,15 @@ test.describe('T55 键盘与焦点', () => {
   test('键盘完成搜索加入比较、决策和登录续办', async ({ page, isMobile }) => {
     test.skip(isMobile, '移动端同一决策在 comparison-mobile.spec.ts 覆盖')
     const idea = '我想把大学 PDF 讲义生成选择题'
-    await page.goto(`/search?q=${encodeURIComponent(idea)}&mode=similar`)
-    await page.getByRole('link', { name: /确认完整意图/ }).focus()
+    await page.goto('/projects')
+    const search = page.getByRole('banner').getByRole('search')
+    const input = search.getByRole('textbox', { name: '搜索作品或输入完整想法' })
+    await input.focus()
+    await page.keyboard.insertText(idea)
+    await search.getByRole('button', { name: '搜索' }).focus()
     await page.keyboard.press('Enter')
-    await page.getByRole('button', { name: '确认并查看同类分析' }).focus()
+    await expect(page.getByRole('heading', { name: '一起把想法说清楚' })).toBeVisible()
+    await page.getByRole('button', { name: '确认并查找相似作品' }).focus()
     await page.keyboard.press('Enter')
 
     const candidate = page.locator('article').filter({ has: page.locator('a[href="/project/project-papertopractice"]') })
@@ -72,7 +77,7 @@ test.describe('T55 键盘与焦点', () => {
   test('键盘进入发布表单，校验错误与控件建立关联', async ({ page, isMobile }) => {
     test.skip(isMobile, '响应式发布流程已在 T54 覆盖，这里验证键盘语义')
     await page.goto('/auth?from=%2Fsubmit')
-    const login = page.getByRole('button', { name: '使用米娅测试身份' })
+    const login = page.getByRole('button', { name: '使用米娅账号' })
     await login.focus()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/submit$/)
@@ -84,7 +89,7 @@ test.describe('T55 键盘与焦点', () => {
     await check.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByText('地址检查通过')).toBeVisible()
-    const continueButton = page.getByRole('button', { name: '继续自动预填' })
+    const continueButton = page.getByRole('button', { name: '继续补充作品信息' })
     await continueButton.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
@@ -104,6 +109,7 @@ test.describe('T55 键盘与焦点', () => {
   test('移动比较标签支持方向键和 roving tabindex', async ({ page, isMobile }) => {
     test.skip(!isMobile, '仅移动端显示作品标签')
     await page.goto('/compare/comparison-anonymous-pdf')
+    await page.getByRole('button', { name: '查看完整字段' }).click()
     const tabs = page.getByRole('tablist', { name: '移动端作品切换' })
     const first = tabs.getByRole('tab').first()
     const second = tabs.getByRole('tab').nth(1)

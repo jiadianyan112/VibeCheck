@@ -25,6 +25,17 @@ describe('deterministic intent parser', () => {
     expect(result.intent.originalQuery).toBe('做一个很特别的东西')
   })
 
+  it('uses portfolio-specific dimensions without leaking learning fields', () => {
+    const result = parseIntent('我想做一个极简开发者作品集，展示开源项目和源码')
+    expect(result.intent.categoryId).toBe('personal_site_portfolio')
+    expect(result.intent.siteTypes).toContain('portfolio')
+    expect(result.intent.creatorRoles).toContain('developer')
+    expect(result.intent.primaryGoals).toContain('showcase_projects')
+    expect(result.intent.visualStyles).toContain('minimal')
+    expect(result.intent.assetTypes).toContain('source_code')
+    expect(result.intent.useScenarios).toEqual([])
+  })
+
   it('supports the configured parse-failure scenario while retaining text', async () => {
     const result = await intentService.parse('原始想法不能丢', { scenario: 'parse_failure', delayMs: 0 })
     expect(result.ok && result.data.status).toBe('failed')

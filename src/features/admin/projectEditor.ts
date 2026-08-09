@@ -83,30 +83,33 @@ export function saveAdminProjectDraft(
   else if (draft.currentName.trim().length > 80) errors.currentName = '作品名称不能超过 80 个字符。'
   if (!draft.oneLineDefinition.trim()) errors.oneLineDefinition = '一句话定义不能为空。'
   else if (draft.oneLineDefinition.trim().length > 180) errors.oneLineDefinition = '一句话定义不能超过 180 个字符。'
-  if (!draft.coreProblem.trim()) errors.coreProblem = '核心问题不能为空。'
-  if (!draft.targetUsers.length) errors.targetUsers = '至少选择一个目标用户。'
-  if (!draft.useScenarios.length) errors.useScenarios = '至少选择一个使用场景。'
-  if (!draft.mainInputs.length) errors.mainInputs = '至少选择一种主要输入。'
-  if (!draft.mainOutputs.length) errors.mainOutputs = '至少选择一种主要输出。'
+  if (project.categoryId === 'ai_learning_quiz') {
+    if (!draft.coreProblem.trim()) errors.coreProblem = '核心问题不能为空。'
+    if (!draft.targetUsers.length) errors.targetUsers = '至少选择一个目标用户。'
+    if (!draft.useScenarios.length) errors.useScenarios = '至少选择一个使用场景。'
+    if (!draft.mainInputs.length) errors.mainInputs = '至少选择一种主要输入。'
+    if (!draft.mainOutputs.length) errors.mainOutputs = '至少选择一种主要输出。'
+  }
   if (Object.keys(errors).length) return { project: null, errors }
 
   const next: Project = {
     ...project,
     currentName: known(project.currentName, draft.currentName.trim()),
+    summary: known(project.summary, draft.oneLineDefinition.trim()),
     originalPlatform: isAdministrator
       ? known(project.originalPlatform, draft.originalPlatform.trim() || null)
       : project.originalPlatform,
     oneLineDefinition: known(project.oneLineDefinition, draft.oneLineDefinition.trim()),
-    coreProblem: known(project.coreProblem, draft.coreProblem.trim()),
-    targetUsers: known(project.targetUsers, draft.targetUsers),
-    useScenarios: known(project.useScenarios, draft.useScenarios),
-    mainInputs: known(project.mainInputs, draft.mainInputs),
-    mainOutputs: known(project.mainOutputs, draft.mainOutputs),
-    practiceFormats: known(project.practiceFormats, draft.practiceFormats),
-    feedbackMethods: known(project.feedbackMethods, draft.feedbackMethods),
-    differentiation: known(project.differentiation, draft.differentiation.trim()),
-    coreFeatures: known(project.coreFeatures, lines(draft.coreFeatures)),
-    secondaryFeatures: known(project.secondaryFeatures, lines(draft.secondaryFeatures)),
+    coreProblem: project.categoryId === 'ai_learning_quiz' ? known(project.coreProblem, draft.coreProblem.trim()) : project.coreProblem,
+    targetUsers: project.categoryId === 'ai_learning_quiz' ? known(project.targetUsers, draft.targetUsers) : project.targetUsers,
+    useScenarios: project.categoryId === 'ai_learning_quiz' ? known(project.useScenarios, draft.useScenarios) : project.useScenarios,
+    mainInputs: project.categoryId === 'ai_learning_quiz' ? known(project.mainInputs, draft.mainInputs) : project.mainInputs,
+    mainOutputs: project.categoryId === 'ai_learning_quiz' ? known(project.mainOutputs, draft.mainOutputs) : project.mainOutputs,
+    practiceFormats: project.categoryId === 'ai_learning_quiz' ? known(project.practiceFormats, draft.practiceFormats) : project.practiceFormats,
+    feedbackMethods: project.categoryId === 'ai_learning_quiz' ? known(project.feedbackMethods, draft.feedbackMethods) : project.feedbackMethods,
+    differentiation: project.categoryId === 'ai_learning_quiz' ? known(project.differentiation, draft.differentiation.trim()) : project.differentiation,
+    coreFeatures: project.categoryId === 'ai_learning_quiz' ? known(project.coreFeatures, lines(draft.coreFeatures)) : project.coreFeatures,
+    secondaryFeatures: project.categoryId === 'ai_learning_quiz' ? known(project.secondaryFeatures, lines(draft.secondaryFeatures)) : project.secondaryFeatures,
     techStack: known(project.techStack, lines(draft.techStack)),
     modelsUsed: known(project.modelsUsed, lines(draft.modelsUsed)),
     deploymentPlatform: known(project.deploymentPlatform, draft.deploymentPlatform.trim() || null),

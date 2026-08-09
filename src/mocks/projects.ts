@@ -21,6 +21,7 @@ import {
   type UseScenario,
 } from '../types'
 import { knownFact, unknownFact } from './factories'
+import { portfolioProjects } from './portfolioProjects'
 
 interface ProjectSeed {
   id: string
@@ -80,6 +81,11 @@ function makeProject(seed: ProjectSeed): Project {
         alt: `${seed.name} 作品截图占位`,
       },
     ],
+    categoryId: 'ai_learning_quiz',
+    categorySchemaVersion: 'learning.v1',
+    categoryData: null,
+    categoryGroup: 'AI 学习与题库',
+    summary: knownFact(seed.definition, factOptions),
     oneLineDefinition: knownFact(seed.definition, factOptions),
     targetUsers: knownFact(seed.targetUsers, factOptions),
     coreProblem: knownFact(seed.problem, factOptions),
@@ -146,7 +152,7 @@ function makeProject(seed: ProjectSeed): Project {
   }
 }
 
-export const projects: Project[] = [
+export const learningProjects: Project[] = [
   makeProject({
     id: 'project-quizforge',
     name: '题练工坊',
@@ -423,6 +429,8 @@ export const projects: Project[] = [
     eventKeys: ['event-learntrack-first'],
   }),
 ]
+
+export const projects: Project[] = [...learningProjects, ...portfolioProjects]
 
 export const projectById = new Map(projects.map((project) => [project.id, project]))
 

@@ -19,7 +19,7 @@ export function notificationTargetAccess(
     return { allowed: false, reason: '通知目标不是安全的站内路径。' }
   }
   if (target.startsWith('/admin') && !isStaffRole(user.role)) {
-    return { allowed: false, reason: '当前测试身份没有后台访问权限。' }
+    return { allowed: false, reason: '当前账号没有后台访问权限。' }
   }
   if (notification.projectId && !projectIds.has(notification.projectId)) {
     return { allowed: false, reason: '目标作品档案已不存在或当前不可访问。' }

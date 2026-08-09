@@ -11,7 +11,7 @@ function renderStaffRoute() {
       <MemoryRouter initialEntries={['/admin']}>
         <Routes>
           <Route path="/admin" element={<StaffRoute><h1>后台首页</h1></StaffRoute>} />
-          <Route path="/auth" element={<h1>选择原型身份</h1>} />
+          <Route path="/auth" element={<h1>登录／注册</h1>} />
         </Routes>
       </MemoryRouter>
     </AppStateProvider>,
@@ -23,7 +23,7 @@ describe('route permissions', () => {
 
   it('redirects guests to login with the original route', () => {
     renderStaffRoute()
-    expect(screen.getByRole('heading', { name: '选择原型身份' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
   })
 
   it('explains denial to a non-staff account', () => {

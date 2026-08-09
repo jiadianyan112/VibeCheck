@@ -4,12 +4,14 @@ import type {
   AssetType,
   InputType,
   Project,
+  ProjectCategoryId,
   TargetUser,
   UseScenario,
 } from '../types'
 import { runService, type ServiceOptions } from './runtime'
 
 export interface SearchFilters {
+  categoryIds?: ProjectCategoryId[]
   targetUsers?: TargetUser[]
   scenarios?: UseScenario[]
   inputs?: InputType[]
@@ -40,12 +42,26 @@ function scoreProject(project: Project, query: string) {
 
   const fields: Array<[string, string]> = [
     ['作品名称', knownValues(project.currentName) ?? ''],
-    ['一句话定义', knownValues(project.oneLineDefinition) ?? ''],
-    ['核心问题', knownValues(project.coreProblem) ?? ''],
-    ['使用场景', (knownValues(project.useScenarios) ?? []).join(' ')],
-    ['材料输入', (knownValues(project.mainInputs) ?? []).join(' ')],
-    ['练习形式', (knownValues(project.practiceFormats) ?? []).join(' ')],
+    ['作品简介', knownValues(project.summary) ?? ''],
+    ['品类', project.categoryId === 'personal_site_portfolio' ? '个人主页 作品集 portfolio personal website 简历 学术主页' : 'AI 学习 题库 learning quiz'],
   ]
+  if (project.categoryId === 'personal_site_portfolio' && project.categoryData) {
+    fields.push(
+      ['作者身份', (knownValues(project.categoryData.creatorRoles) ?? []).join(' ')],
+      ['建站目的', (knownValues(project.categoryData.primaryGoals) ?? []).join(' ')],
+      ['网站结构', [knownValues(project.categoryData.siteType), knownValues(project.categoryData.pageModel), ...(knownValues(project.categoryData.coreModules) ?? [])].join(' ')],
+      ['视觉方向', [...(knownValues(project.categoryData.visualStyles) ?? []), ...(knownValues(project.categoryData.layoutPatterns) ?? []), knownValues(project.categoryData.themeMode)].join(' ')],
+      ['项目展示', [knownValues(project.categoryData.projectShowcaseFormat), knownValues(project.categoryData.caseStudyDepth)].join(' ')],
+      ['技术实现', [...(knownValues(project.techStack) ?? []), ...(knownValues(project.aiCodingTools) ?? [])].join(' ')],
+    )
+  } else {
+    fields.push(
+      ['核心问题', knownValues(project.coreProblem) ?? ''],
+      ['使用场景', (knownValues(project.useScenarios) ?? []).join(' ')],
+      ['材料输入', (knownValues(project.mainInputs) ?? []).join(' ')],
+      ['练习形式', (knownValues(project.practiceFormats) ?? []).join(' ')],
+    )
+  }
   const aliases: Record<string, string> = {
     pdf: 'pdf',
     口语: 'speaking spoken audio',
@@ -54,6 +70,13 @@ function scoreProject(project: Project, query: string) {
     错题: 'mistake',
     模考: 'mock exam',
     出题: 'question generation',
+    作品集: 'portfolio showcase_projects projects',
+    个人主页: 'personal_homepage professional_presence',
+    开发者: 'developer',
+    设计师: 'designer',
+    极简: 'minimal monochrome',
+    简历: 'online_resume resume job_search',
+    学术: 'academic_homepage researcher_academic publications',
   }
   const expanded = `${normalized} ${Object.entries(aliases)
     .filter(([key]) => normalized.includes(key))
@@ -70,6 +93,7 @@ function matchesFilters(project: Project, filters: SearchFilters) {
   const overlaps = <T>(values: T[] | null, selected?: T[]) =>
     !selected?.length || Boolean(values?.some((value) => selected.includes(value)))
   return (
+    overlaps([project.categoryId], filters.categoryIds) &&
     overlaps(knownValues(project.targetUsers), filters.targetUsers) &&
     overlaps(knownValues(project.useScenarios), filters.scenarios) &&
     overlaps(knownValues(project.mainInputs), filters.inputs) &&

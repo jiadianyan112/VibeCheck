@@ -105,6 +105,6 @@ describe('typed prototype services', () => {
     const notifications = await notificationService.listForUser(userId('user-mia'))
     const queue = await adminService.listProjectQueue()
     expect(notifications.ok && notifications.data.length).toBeGreaterThanOrEqual(2)
-    expect(queue.ok && queue.data).toHaveLength(12)
+    expect(queue.ok && queue.data).toHaveLength(28)
   })
 })

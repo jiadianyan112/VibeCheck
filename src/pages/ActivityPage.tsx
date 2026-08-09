@@ -52,11 +52,11 @@ export function ActivityPage() {
   function setFilter(key: string, value: string) { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next, { replace: true }) }
 
   if (loading) return <main className="page-container"><LoadingState label="公开动态加载中" /></main>
-  if (error) return <main className="page-container"><ErrorPanel message={error.message} detail={error.code} /></main>
+  if (error) return <main className="page-container"><ErrorPanel message={error.message} /></main>
 
   return (
     <main className="page-container page-with-bottom-space stack">
-      <header className="page-intro stack stack--small"><p className="eyebrow">Public activity</p><h1>最新动态</h1><p>只展示发布、版本、状态、资产、迁移和复用等有事实意义的生命周期事件；普通宣传文案变化不会进入这里。</p></header>
+      <header className="page-intro stack stack--small"><h1>最新动态</h1><p>只看作品真正发生的变化：新发布、新版本、状态变化和可复用资源。</p></header>
       <section className="activity-filters" aria-label="动态筛选">
         <label className="field"><span className="field__label">事件类型</span><select className="input" value={params.get('type') ?? ''} onChange={(event) => setFilter('type', event.target.value)}><option value="">全部事件</option>{Object.entries(lifecycleEventLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span className="field__label">学习分类</span><select className="input" value={params.get('category') ?? ''} onChange={(event) => setFilter('category', event.target.value)}><option value="">全部分类</option>{categoryCatalog.map((category) => <option key={category.slug} value={category.slug}>{category.name}</option>)}</select></label>
@@ -67,8 +67,7 @@ export function ActivityPage() {
         if (!project) return null
         const sources = evidence.filter((item) => event.evidenceIds.includes(item.id))
         return <li key={event.id} id={event.id} className="activity-item"><div className="activity-item__rail"><time dateTime={event.happenedAt}>{new Date(event.happenedAt).toLocaleDateString('zh-CN')}</time><Tag tone={event.disputeStatus === 'none' ? 'default' : 'dashed'}>{lifecycleEventLabels[event.type]}</Tag></div><div className="stack stack--small"><ProjectCard project={project} variant="event" event={event} evidence={sources} /><Link className="event-anchor-link" to={`/project/${project.id}#${event.id}`}>在作品详情中定位此事件 →</Link></div></li>
-      })}</ol> : <EmptyState title="没有符合条件的公开事件" description="可能是筛选条件过窄，或当前模拟场景没有事件数据；不会用普通字段编辑填充动态。" action={<Link className="button button--secondary" to="/activity">清除筛选</Link>} />}
-      <aside className="wire-panel"><strong>状态文案边界</strong><p>“暂停”和“结束”仅在作者声明或可信来源支持时出现。技术检查异常不会自动推断作品暂停、结束或失败。</p></aside>
+      })}</ol> : <EmptyState title="没有符合条件的作品动态" description="可以清除筛选，查看其他更新。" action={<Link className="button button--secondary" to="/activity">清除筛选</Link>} />}
     </main>
   )
 }

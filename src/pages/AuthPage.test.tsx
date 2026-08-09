@@ -32,17 +32,17 @@ describe('AuthPage', () => {
   it('loads the selected account assets and returns to the from route', async () => {
     const user = userEvent.setup()
     renderAuth()
-    expect(screen.getByText('低保真原型不收集密码，也不会创建真实账户；选择身份后会回到 from 指定的页面。')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '使用米娅测试身份' }))
+    expect(screen.getByText('登录后可以保存比较、关注作品、参与讨论和发布作品。')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '使用米娅账号' }))
     expect(screen.getByRole('heading', { name: '发布入口' })).toBeInTheDocument()
     expect(screen.getByText('身份：米娅')).toBeInTheDocument()
-    expect(screen.getByText('收藏：3')).toBeInTheDocument()
+    expect(screen.getByText('收藏：4')).toBeInTheDocument()
   })
 
   it('offers an explicit guest path', async () => {
     const user = userEvent.setup()
     renderAuth('/auth?from=%2Fnotifications')
-    await user.click(screen.getByRole('button', { name: '以游客身份继续' }))
+    await user.click(screen.getByRole('button', { name: '先以游客身份浏览' }))
     expect(screen.getByRole('heading', { name: '作品广场' })).toBeInTheDocument()
   })
 

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 test('mobile user completes a comparison decision without losing the form', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'mobile comparison flow')
   await page.goto('/compare/comparison-anonymous-pdf')
+  await page.getByRole('button', { name: '查看完整字段' }).click()
 
   const switcher = page.getByRole('tablist', { name: '移动端作品切换' })
   await expect(switcher).toBeVisible()

@@ -104,15 +104,15 @@ describe('NotificationsPage', () => {
 
     await user.click(within(item).getByRole('button', { name: '查看并定位' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('当前测试身份没有后台访问权限')
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前账号没有后台访问权限')
     expect(router.state.location.pathname).toBe('/notifications')
     expect(within(item).getByText('已读')).toBeInTheDocument()
   })
 
   it('keeps private notifications invisible after logout or for a guest', async () => {
     renderNotifications()
-    expect(await screen.findByRole('heading', { name: '选择原型身份' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
     expect(screen.queryByText('口语回声发布 2.0')).not.toBeInTheDocument()
-    expect(screen.getByText('/notifications')).toBeInTheDocument()
+    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
   })
 })

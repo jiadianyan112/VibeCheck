@@ -41,17 +41,17 @@ test.describe('T55 axe 核心页面审计', () => {
 
   test('登录后的发布表单和身份材料页没有 WCAG A/AA 违规', async ({ page }) => {
     await page.goto('/auth?from=%2Fsubmit')
-    await page.getByRole('button', { name: '使用米娅测试身份' }).click()
+    await page.getByRole('button', { name: '使用米娅账号' }).click()
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('https://example.test/accessible-tool')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
-    await page.getByRole('button', { name: '继续自动预填' }).click()
+    await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
     await page.waitForLoadState('networkidle')
     expect(await axeViolations(page)).toEqual([])
 
     await page.goto('/project/project-pdfquizlab/verify-author')
-    await expect(page.getByRole('heading', { name: '申请作者管理权限' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '认领作品' })).toBeVisible()
     expect(await axeViolations(page)).toEqual([])
   })
 })

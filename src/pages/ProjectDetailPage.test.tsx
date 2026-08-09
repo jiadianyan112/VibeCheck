@@ -46,6 +46,18 @@ describe('ProjectDetailPage hero', () => {
     await user.click(screen.getByRole('button', { name: '分享' }))
     expect(screen.getByText('已准备分享：题练工坊 · VibeCheck')).toBeInTheDocument()
   })
+
+  it('toggles collection directly without opening follow settings', async () => {
+    const user = userEvent.setup(); renderProject('project-quizforge')
+    await user.click(await screen.findByRole('button', { name: '收藏' }))
+    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    const cancel = await screen.findByRole('button', { name: '取消收藏' })
+    expect(cancel).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('收藏设置')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '关注更新' })).not.toBeInTheDocument()
+    await user.click(cancel)
+    expect(screen.getByRole('button', { name: '收藏' })).toHaveAttribute('aria-pressed', 'false')
+  })
 })
 
 describe('ProjectDetailPage structured profile', () => {
@@ -60,9 +72,20 @@ describe('ProjectDetailPage structured profile', () => {
     expect(screen.getByText('内容处理')).toBeInTheDocument()
     expect(screen.getByText('完成练习')).toBeInTheDocument()
     expect(screen.getByText('反馈与记录')).toBeInTheDocument()
-    const similar = screen.getByRole('link', { name: '从这些字段查看同类' })
+    const similar = screen.getByRole('link', { name: '查找相似作品' })
     expect(similar).toHaveAttribute('href', expect.stringContaining('scenario=question_generation'))
     expect(similar).toHaveAttribute('href', expect.stringContaining('input=pdf'))
+  })
+
+  it('renders PortfolioSchema fields for a portfolio without showing learning structure', async () => {
+    renderProject('project-atlas-home')
+    expect(await screen.findByRole('heading', { name: 'Atlas Home' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '定位与内容结构' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '项目展示与 Case Study' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '视觉与交互' })).toBeInTheDocument()
+    expect(screen.getByText('个人主页', { selector: '.tag' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '产品结构' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查找相似作品' })).toHaveAttribute('href', expect.stringContaining('category=personal_site_portfolio'))
   })
 
   it('marks unknown development fields with their recorded reasons', async () => {
@@ -90,7 +113,7 @@ describe('ProjectDetailPage lifecycle, assets and relations', () => {
     expect(screen.getAllByText('已结束').length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: '复用资产' })).toBeInTheDocument()
     expect(screen.getByText('录音波形与回放组件')).toBeInTheDocument()
-    expect(screen.getByText(/作品结束不等于资产失效/)).toBeInTheDocument()
+    expect(screen.getByText(/作品停止维护后，公开的代码、模板或组件仍可能继续使用/)).toBeInTheDocument()
   })
 
   it('shows old and pending new addresses for a suspected migration', async () => {
@@ -102,7 +125,7 @@ describe('ProjectDetailPage lifecycle, assets and relations', () => {
 
   it('renders addressable timeline events with source and before-after changes', async () => {
     renderProject('project-quizforge')
-    expect(await screen.findByRole('heading', { name: '生命周期时间线' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '作品时间线' })).toBeInTheDocument()
     const event = document.getElementById('event-quizforge-v11')
     expect(event).not.toBeNull()
     expect(event).toHaveTextContent('已验证作者声明')
@@ -112,7 +135,7 @@ describe('ProjectDetailPage lifecycle, assets and relations', () => {
 
   it('shows relation type, direction and confirmation beside recommendations', async () => {
     renderProject('project-speakmirror')
-    expect(await screen.findByRole('heading', { name: '作品关系与相关推荐' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '相关作品' })).toBeInTheDocument()
     expect(screen.getByText('替代')).toBeInTheDocument()
     expect(screen.getByText('平台确认')).toBeInTheDocument()
     expect(screen.getAllByText('复用资产').length).toBeGreaterThan(1)
@@ -127,18 +150,18 @@ describe('ProjectDetailPage discussion interactions', () => {
 
   it('only renders comments bound to the current project and treats likes as weak signals', async () => {
     const user = userEvent.setup(); renderProject('project-quizforge')
-    expect(await screen.findByRole('heading', { name: '围绕此作品的讨论' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '作品讨论' })).toBeInTheDocument()
     expect(screen.getByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')).toBeInTheDocument()
     expect(screen.queryByText('分项评分在短录音场景下是否也使用相同权重？')).not.toBeInTheDocument()
-    expect(screen.getByText(/点赞只作为轻量社区信号/)).toBeInTheDocument()
+    expect(screen.getByLabelText('社区互动')).toHaveTextContent('点赞')
     await user.click(screen.getByRole('button', { name: '点赞' }))
     expect(screen.getByRole('button', { name: '已点赞' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('restores a guest comment body and category after login', async () => {
     const user = userEvent.setup(); renderProject('project-papertopractice')
-    await screen.findByRole('heading', { name: '围绕此作品的讨论' })
-    expect(screen.getByText('还没有围绕这个作品的讨论')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: '作品讨论' })
+    expect(screen.getByText('还没有人讨论这个作品')).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('评论类别'), 'development_question')
     await user.type(screen.getByLabelText('评论内容'), 'OCR 超时时是否会保留已经识别的段落？')
     await user.click(screen.getByRole('button', { name: '发布评论' }))
@@ -155,7 +178,7 @@ describe('ProjectDetailPage discussion interactions', () => {
     const body = await screen.findByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')
     const card = body.closest('.comment-card') as HTMLElement
     await user.click(within(card).getByRole('button', { name: '回复' }))
-    expect(screen.getByRole('heading', { name: '回复评论 comment-quizforge-usage' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '回复评论' })).toBeInTheDocument()
     await user.click(within(card).getByRole('button', { name: '举报' }))
     expect(screen.getByText('举报已记录，评论历史保留并进入审核。')).toBeInTheDocument()
     expect(screen.getByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')).toBeInTheDocument()
@@ -187,7 +210,7 @@ describe('ProjectDetailPage trust variants', () => {
   it('keeps an expired unknown project visible with reduced-trust language', async () => {
     renderProject('project-learntrack')
     expect(await screen.findByText('没有足够证据确认当前可用性')).toBeInTheDocument()
-    expect(screen.getByText('可继续查看，但请降低对当前字段的信任')).toBeInTheDocument()
+    expect(screen.getByText('未知不是异常或失败；历史记录仍可查看。')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '产品结构' })).toBeInTheDocument()
     expect(screen.queryByText(/作品失败/)).not.toBeInTheDocument()
   })
@@ -210,7 +233,7 @@ describe('ProjectDetailPage trust variants', () => {
 
   it('exposes supplement, report and evidence entry points', async () => {
     renderProject('project-quizforge')
-    expect(await screen.findByRole('link', { name: '补充字段信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
+    expect(await screen.findByRole('link', { name: '补充作品信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
     expect(screen.getByText('报告状态问题')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /展开本作品证据/ })).toBeInTheDocument()
   })

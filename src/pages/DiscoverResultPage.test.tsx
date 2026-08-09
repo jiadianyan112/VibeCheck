@@ -23,10 +23,10 @@ describe('DiscoverResultPage', () => {
 
   it('shows traceable structured analysis without a competition claim', async () => {
     renderPage('&view=analysis')
-    expect(await screen.findByRole('heading', { name: '同类作品分析' })).toBeInTheDocument()
-    expect(screen.getByText(/当前固定收录样本/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '方案分组' })).toBeInTheDocument()
-    expect(screen.getAllByText('查看统计来源').length).toBeGreaterThan(0)
+    expect(await screen.findByRole('heading', { name: '找到相似作品' })).toBeInTheDocument()
+    expect(screen.getByText(/结果来自社区目前收录的公开作品/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '常见做法' })).toBeInTheDocument()
+    expect(screen.getAllByText('查看包含的作品').length).toBeGreaterThan(0)
     expect(screen.getByText(/公开复用资产 1 项/)).toBeInTheDocument()
   })
 
@@ -37,17 +37,17 @@ describe('DiscoverResultPage', () => {
     expect(screen.getByText('Paper to Practice')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '相近作品' })).toBeInTheDocument()
     expect(screen.getByText('PDF 题库实验室')).toBeInTheDocument()
-    expect(screen.getByText(/不会计入上方精确数量/)).toBeInTheDocument()
+    expect(screen.getByText(/只符合部分条件，可以作为补充参考/)).toBeInTheDocument()
   })
 
   it('offers adjacent categories and saves a reproducible zero-result query', async () => {
     const user = userEvent.setup()
     render(<MemoryRouter initialEntries={['/discover/result?idea=%E6%95%99%E5%B8%88%E6%97%A5%E7%BB%83&target=teachers&scenario=daily_practice&input=video&practice=dictation&output=flashcards']}><AppStateProvider><ToastProvider><ComparisonProvider><Routes><Route path="/discover/result" element={<DiscoverResultPage />} /></Routes></ComparisonProvider></ToastProvider></AppStateProvider></MemoryRouter>)
-    expect(await screen.findByText(/不代表需求不存在/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '从相邻问题继续探索' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '进入相邻分类 →' })).toHaveAttribute('href', '/categories/daily-practice')
+    expect(await screen.findByText(/根据你的使用场景和输入内容/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '换个方向继续探索' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看相关专题 →' })).toHaveAttribute('href', '/categories/daily-practice')
     await user.click(screen.getByRole('button', { name: '保存查询' }))
-    expect(screen.getByText('已保存这次查询，可用相同 URL 恢复。')).toBeInTheDocument()
+    expect(screen.getByText('已保存这次搜索，下次可以从相同链接继续。')).toBeInTheDocument()
     expect(localStorage.getItem('vibecheck:saved-discovery-queries')).toContain('/discover/result?')
     expect(screen.getByRole('link', { name: '修改条件' })).toHaveAttribute('href', expect.stringContaining('/discover?idea='))
     expect(screen.getByRole('link', { name: '回到作品广场' })).toHaveAttribute('href', '/projects')
@@ -55,7 +55,7 @@ describe('DiscoverResultPage', () => {
 
   it('opens a statistic as a corresponding work filter', async () => {
     const user = userEvent.setup(); renderPage('&view=analysis')
-    await screen.findByRole('heading', { name: '状态分布' })
+    await screen.findByRole('heading', { name: '作品状态' })
     await user.click(screen.getByRole('button', { name: '部分异常 · 1' }))
     expect(screen.getByRole('tab', { name: '作品结果' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('页面状态')).toHaveTextContent('status=partial_abnormal')
@@ -73,5 +73,14 @@ describe('DiscoverResultPage', () => {
     expect(screen.getByLabelText('页面状态')).toHaveTextContent('asset=none')
     await user.click(screen.getByRole('tab', { name: '作品结果' }))
     expect(within(screen.getByText('Paper to Practice').closest('.project-card') as HTMLElement).getByRole('button', { name: '移出比较' })).toBeInTheDocument()
+  })
+
+  it('matches portfolio ideas against portfolio dimensions only', async () => {
+    render(<MemoryRouter initialEntries={['/discover/result?idea=%E5%BC%80%E5%8F%91%E8%80%85%E4%BD%9C%E5%93%81%E9%9B%86&category=personal_site_portfolio&siteType=portfolio&role=developer&goal=showcase_projects&view=works']}><AppStateProvider><ToastProvider><ComparisonProvider><Routes><Route path="/discover/result" element={<DiscoverResultPage />} /></Routes></ComparisonProvider></ToastProvider></AppStateProvider></MemoryRouter>)
+    expect(await screen.findByRole('heading', { name: '精确匹配作品' })).toBeInTheDocument()
+    expect(screen.getByText('Stackfolio')).toBeInTheDocument()
+    expect(screen.getByText('Terminal Craft')).toBeInTheDocument()
+    expect(screen.getAllByText('个人主页与作品集').length).toBeGreaterThan(0)
+    expect(screen.queryByText('题练工坊')).not.toBeInTheDocument()
   })
 })

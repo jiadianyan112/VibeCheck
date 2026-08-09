@@ -40,7 +40,7 @@ export function ScenarioPanel() {
   const groupedScenarios = useMemo(() => scenarioGroups.map((group) => [group, prototypeScenarios.filter((scenario) => scenario.group === group)] as const), [])
   const currentScenario = new URLSearchParams(location.search).get('prototypeScenario') ?? 'default'
 
-  if (!import.meta.env.DEV) return null
+  if (!import.meta.env.DEV || new URLSearchParams(location.search).get('debug') !== '1') return null
 
   function resetScenario() {
     clearAppStorage()
@@ -63,7 +63,7 @@ export function ScenarioPanel() {
       dispatch({ type: 'COMPARISON_CLEAR' })
       dispatch({ type: 'COMPARISON_ADD', projectId: projectId('project-quizforge'), sourcePath: '/projects' })
     }
-    navigate(scenario.path)
+    navigate(`${scenario.path}${scenario.path.includes('?') ? '&' : '?'}debug=1`)
   }
 
   return (

@@ -39,8 +39,8 @@ describe('submission entry and URL checks', () => {
   it('logs in with a fixed identity and returns to the protected publish entry', async () => {
     const user = userEvent.setup()
     renderRoute('/auth?from=%2Fsubmit')
-    expect(screen.getByText('/submit')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '使用米娅测试身份' }))
+    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '使用米娅账号' }))
     expect(await screen.findByRole('heading', { name: '先检查作品地址' })).toBeInTheDocument()
   })
 
@@ -64,7 +64,7 @@ describe('submission entry and URL checks', () => {
     await user.click(screen.getByRole('button', { name: '保存地址草稿' }))
     await user.click(screen.getByRole('button', { name: '草稿已保存' }))
     await waitFor(() => expect(persistedDrafts()).toHaveLength(1))
-    await user.click(screen.getByRole('button', { name: '继续自动预填' }))
+    await user.click(screen.getByRole('button', { name: '继续补充作品信息' }))
     expect(await screen.findByRole('heading', { name: '发布新作品' })).toBeInTheDocument()
   })
 
@@ -85,7 +85,7 @@ describe('submission entry and URL checks', () => {
     await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), 'example.test/network-draft')
     await user.click(screen.getByRole('button', { name: '检查地址' }))
     expect(await screen.findByText('网络连接不可用，已保留当前内容。')).toBeInTheDocument()
-    expect(screen.getByText('VC_NETWORK_UNAVAILABLE')).toBeInTheDocument()
+    expect(screen.queryByText('VC_NETWORK_UNAVAILABLE')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
     first.unmount()
 
@@ -122,7 +122,7 @@ describe('submission entry and URL checks', () => {
 
   it.each([
     ['/submit?scenario=external_link_risk', 'unsafe.example/tool', '检测到外链风险，已阻止继续。'],
-    ['/submit', 'example.test/out-of-category/store', '不属于首期学习与题库品类。'],
+    ['/submit', 'example.test/out-of-category/store', '暂不属于社区当前的收录范围。'],
     ['/submit?scenario=duplicate_project', 'example.test/copied-tool', '发现已有作品档案。'],
   ])('keeps the %s check scenario reproducible', async (path, value, message) => {
     loginInStorage()

@@ -44,10 +44,7 @@ export const appRoutes: RouteObject[] = [
     element: <StaffRoute><AdminLayout /></StaffRoute>,
     children: adminRoutes,
   },
-  {
-    path: '/__sandbox',
-    element: <StyleSandboxPage />,
-  },
+  ...(import.meta.env.DEV ? [{ path: '/__sandbox', element: <StyleSandboxPage /> }] : []),
 ]
 
 export const router = createBrowserRouter(appRoutes)

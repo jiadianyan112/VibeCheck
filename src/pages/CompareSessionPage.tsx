@@ -1,10 +1,10 @@
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, EmptyState, EvidenceDrawer, FreshnessLabel, Tag, UnknownFact, useToast } from '../components'
-import { buildComparisonMatrix, DecisionForm, type ComparisonCell } from '../features'
+import { buildComparisonMatrix, DecisionForm, type ComparisonCell, type ComparisonDimension } from '../features'
 import { evidenceById, projectById, projects, prototypeScenarioFromParams, reusableAssets } from '../mocks'
 import { useAppState } from '../state'
-import { comparisonSessionId, type ProjectId } from '../types'
+import { comparisonSessionId, type Project, type ProjectId, type ReusableAsset } from '../types'
 
 function projectName(projectId: ProjectId) {
   const project = projectById.get(projectId)
@@ -41,6 +41,26 @@ function ComparisonCellView({ cell }: { cell: ComparisonCell }) {
   )
 }
 
+function ComparisonDecisionSummary({ dimensions, selectedProjects, selectedAssets, onRevealDetails }: { dimensions: ComparisonDimension[]; selectedProjects: Project[]; selectedAssets: ReusableAsset[]; onRevealDetails: () => void }) {
+  const differences = dimensions.flatMap((dimension) => dimension.rows.filter((row) => !row.isSame).map((row) => ({ dimension: dimension.label, row })))
+  const unknownCount = dimensions.flatMap((dimension) => dimension.rows).flatMap((row) => row.cells).filter((cell) => cell.state === 'unknown').length
+  const riskProjects = selectedProjects.filter((project) => project.freshnessStatus === 'expired' || (project.accessStatus.state === 'known' && !['normal', 'recovered'].includes(project.accessStatus.value)))
+  const availableAssets = selectedAssets.filter((asset) => asset.availabilityStatus === 'available')
+
+  return (
+    <section className="comparison-decision-summary stack" aria-labelledby="decision-summary-heading">
+      <div className="section-heading cluster cluster--between"><div><p className="eyebrow">先看会改变方案的信息</p><h3 id="decision-summary-heading">关键差异摘要</h3><p>这里只整理事实、风险和公开资产，不替你选择继续、调整、复用或暂停。</p></div><button className="button" type="button" aria-controls="comparison-detail-matrix" onClick={onRevealDetails}>查看完整字段</button></div>
+      <ol className="comparison-key-differences">
+        {differences.slice(0, 3).map(({ dimension, row }) => <li key={`${dimension}-${row.id}`}><span>{dimension}</span><strong>{row.label}</strong><ul>{row.cells.map((cell) => <li key={cell.projectId}><b>{projectName(cell.projectId)}：</b>{cell.state === 'known' ? cell.lines.join('、') || '暂无' : `待确认，${cell.reason}`}</li>)}</ul></li>)}
+      </ol>
+      <div className="comparison-summary-signals">
+        <section aria-labelledby="comparison-risk-heading"><h4 id="comparison-risk-heading">需要核对</h4>{riskProjects.length || unknownCount ? <ul>{riskProjects.map((project) => <li key={project.id}>{projectName(project.id)}：当前状态或资料时效需要注意</li>)}{unknownCount ? <li>{unknownCount} 个比较字段尚未确认，不能据此推断作品缺少该能力。</li> : null}</ul> : <p>当前没有过期状态或未知字段提醒。</p>}</section>
+        <section aria-labelledby="comparison-reuse-heading"><h4 id="comparison-reuse-heading">可直接查看的资产</h4>{availableAssets.length ? <ul>{availableAssets.slice(0, 3).map((asset) => <li key={asset.id}><strong>{asset.name}</strong><span>{projectName(asset.projectId)} · {asset.license}</span></li>)}</ul> : <p>所选作品目前没有确认可获取的公开资产。</p>}<a href="#comparison-assets">查看全部资产</a></section>
+      </div>
+    </section>
+  )
+}
+
 export function CompareSessionPage() {
   const { sessionId = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -50,6 +70,8 @@ export function CompareSessionPage() {
   const [replacementFor, setReplacementFor] = useState<ProjectId | null>(null)
   const [comparisonView, setComparisonView] = useState<'differences' | 'all'>('differences')
   const [mobileProjectId, setMobileProjectId] = useState<ProjectId | null>(null)
+  const [selectionOpen, setSelectionOpen] = useState(false)
+  const detailMatrixRef = useRef<HTMLDetailsElement>(null)
   const isMobileComparison = useMobileComparison()
   const routeSessionId = comparisonSessionId(sessionId)
   const session = state.comparisonSessions.find(({ id }) => id === routeSessionId)
@@ -62,6 +84,15 @@ export function CompareSessionPage() {
   const comparisonCount = Math.max(selectedProjects.length, 2)
   const matrixStyle = { '--comparison-count': comparisonCount, '--comparison-min-width': `${10 + comparisonCount * 14}rem` } as CSSProperties
 
+  const revealDetailMatrix = () => {
+    const details = detailMatrixRef.current
+    if (!details) return
+    details.open = true
+    const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    details.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    details.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+  }
+
   useEffect(() => {
     if (session && state.activeComparisonSessionId !== session.id) {
       dispatch({ type: 'COMPARISON_SESSION_RESTORE', sessionId: session.id })
@@ -71,6 +102,10 @@ export function CompareSessionPage() {
   useEffect(() => {
     if (!mobileProjectId || !selectedProjects.some(({ id }) => id === mobileProjectId)) setMobileProjectId(selectedProjects[0]?.id ?? null)
   }, [mobileProjectId, selectedProjects])
+
+  useEffect(() => {
+    if (selectedProjects.length < 2) setSelectionOpen(true)
+  }, [selectedProjects.length])
 
   function addCandidate(value: string) {
     if (!value) return
@@ -111,30 +146,41 @@ export function CompareSessionPage() {
     )
   }
 
+  const activeSessionId = session.id
+
+  function saveComparison() {
+    if (!state.session.user) {
+      navigate(`/auth?from=${encodeURIComponent(`/compare/${activeSessionId}#structured-comparison-heading`)}`)
+      return
+    }
+    dispatch({ type: 'COMPARISON_SESSION_SAVE' })
+    pushToast('比较会话已保存。', 'success')
+  }
+
   return (
     <main className="page-container page-with-bottom-space stack">
       <nav aria-label="面包屑"><Link to={session.sourcePath}>来源页</Link> / 比较会话</nav>
       <header className="comparison-session-hero stack stack--small">
-        <p className="eyebrow">Comparison session</p>
         <div className="cluster cluster--between">
           <div>
             <h1>比较会话</h1>
-            <p>先整理 2–5 个作品；当前排序会成为正式比较的列顺序。</p>
+            <p>{selectedIds.length >= 2 ? `正在比较 ${selectedIds.length} 个作品，先查看差异，需要时再调整作品。` : '选择 2–5 个作品后即可查看结构化差异。'}</p>
           </div>
           <Tag tone={selectedIds.length >= 2 ? 'strong' : 'dashed'}>{selectedIds.length}/5 个作品</Tag>
         </div>
         <dl className="comparison-session-meta">
-          <div><dt>可分享路径</dt><dd><code>/compare/{session.id}</code></dd></div>
-          <div><dt>保存状态</dt><dd>{session.savedAt ? `已保存 · ${new Date(session.savedAt).toLocaleString('zh-CN')}` : '仅保存在当前浏览器'}</dd></div>
-          <div><dt>归属</dt><dd>{session.ownerUserId ? '登录账户' : '匿名本地会话'}</dd></div>
+          <div><dt>保存方式</dt><dd>{session.ownerUserId ? '当前链接可继续访问' : '仅在当前浏览器暂存'}</dd></div>
+          <div><dt>会话状态</dt><dd>{session.ownerUserId ? session.savedAt ? `已保存 · ${new Date(session.savedAt).toLocaleString('zh-CN')}` : '登录账户 · 尚未保存' : '临时会话 · 尚未保存'}</dd></div>
+          <div><dt>归属</dt><dd>{session.ownerUserId ? '登录账户' : '当前浏览器'}</dd></div>
         </dl>
       </header>
 
-      <section className="stack" aria-labelledby="session-projects-heading">
+      <details className="comparison-selection-panel" open={selectionOpen} onToggle={(event) => setSelectionOpen(event.currentTarget.open)}>
+        <summary><strong>管理比较作品</strong><span>{selectedIds.length}/5 个作品 · 调整顺序、替换或移除</span></summary>
+      <section className="stack comparison-selection-panel__body" aria-labelledby="session-projects-heading">
         <div className="section-heading">
-          <p className="eyebrow">Selection</p>
           <h2 id="session-projects-heading">管理比较作品</h2>
-          <p>{selectedProjects.length >= 2 ? '已满足正式比较数量规则。' : '至少选择两个仍有档案的作品，才能进入正式比较。'}</p>
+          <p>{selectedProjects.length >= 2 ? '作品已选好，可以开始比较。' : '至少选择两个可用作品后才能开始比较。'}</p>
         </div>
         <ol className="comparison-selection-list" aria-label="已选比较作品">
           {selectedIds.map((projectId, index) => (
@@ -167,22 +213,25 @@ export function CompareSessionPage() {
           <div className="comparison-picker wire-card stack stack--small">
             <label htmlFor="additional-project"><strong>添加一个作品</strong></label>
             <select id="additional-project" value="" onChange={(event) => addCandidate(event.target.value)}>
-              <option value="" disabled>从固定作品集中选择</option>
+              <option value="" disabled>选择一个作品</option>
               {candidates.map(({ id }) => <option key={id} value={id}>{projectName(id)}</option>)}
             </select>
           </div>
         ) : <p className="boundary-note">已达到 5 个作品上限；可先移除或替换一个作品。</p>}
         {missingProjectIds.length ? <aside className="boundary-note" role="note"><strong>有 {missingProjectIds.length} 个作品档案不可用</strong><p>它们不会参与字段比较，但不会从历史会话中自动消失。请在上方替换或移除。</p></aside> : null}
       </section>
+      </details>
 
       {selectedProjects.length >= 2 ? (
         <section className="comparison-workspace stack" aria-labelledby="structured-comparison-heading">
           <div className="section-heading">
-            <p className="eyebrow">Structured comparison</p>
             <h2 id="structured-comparison-heading">结构化比较</h2>
-            <p>按公开档案逐字段对照；“未知”与“过期”不会被空值替代，异常和结束状态也不会隐藏历史字段。</p>
+            <p>逐项查看作品之间的差异，暂未确认或已经过期的信息会明确标出。</p>
           </div>
-
+          <ComparisonDecisionSummary dimensions={dimensions} selectedProjects={selectedProjects} selectedAssets={selectedAssets} onRevealDetails={revealDetailMatrix} />
+          <details ref={detailMatrixRef} id="comparison-detail-matrix" className="comparison-detail-matrix">
+            <summary><strong>完整字段矩阵</strong><span>{dimensions.length} 个维度，按需展开</span></summary>
+            <div className="comparison-detail-matrix__body stack">
           <div className="comparison-toolbar cluster cluster--between">
             <nav className="comparison-dimension-nav" aria-label="比较维度">
               {dimensions.map((dimension) => <a key={dimension.id} href={`#dimension-${dimension.id}`}>{dimension.label}</a>)}
@@ -228,7 +277,7 @@ export function CompareSessionPage() {
               const rows = comparisonView === 'differences' ? dimension.rows.filter(({ isSame }) => !isSame) : dimension.rows
               return (
                 <section key={dimension.id} id={`dimension-${dimension.id}`} className="comparison-dimension stack stack--small" aria-labelledby={`dimension-${dimension.id}-heading`}>
-                  <div className="comparison-dimension-title"><p className="eyebrow">Dimension</p><h3 id={`dimension-${dimension.id}-heading`}>{dimension.label}</h3></div>
+                  <div className="comparison-dimension-title"><h3 id={`dimension-${dimension.id}-heading`}>{dimension.label}</h3></div>
                   {rows.length === 0 ? <p className="comparison-no-difference">本维度在所选作品中没有结构化差异；切换“查看全部”可展开相同项。</p> : rows.map((comparisonRow) => comparisonRow.isSame ? (
                     <details key={comparisonRow.id} className="comparison-same-row">
                       <summary>{comparisonRow.label} · 各作品相同，点击展开</summary>
@@ -247,18 +296,20 @@ export function CompareSessionPage() {
               )
             })}
           </div>}
+            </div>
+          </details>
 
           <section id="comparison-assets" className="stack" aria-labelledby="comparison-assets-heading">
-            <div className="section-heading"><p className="eyebrow">Reusable assets</p><h3 id="comparison-assets-heading">可复用资产快捷区</h3><p>资产状态、许可和价格独立于作品是否仍可访问。</p></div>
+            <div className="section-heading"><h3 id="comparison-assets-heading">可复用资产</h3><p>集中查看这些作品公开的代码、模板、组件和其他资源。</p></div>
             {selectedAssets.length ? <div className="card-grid">{selectedAssets.map((asset) => <AssetCard key={asset.id} asset={asset} projectName={projectName(asset.projectId)} />)}</div> : <EmptyState title="所选作品暂无公开资产" description="这不代表作品没有技术实现，只表示当前档案没有可获取资产。" />}
           </section>
           <DecisionForm session={session} assets={selectedAssets} />
         </section>
-      ) : selectedIds.length === 0 ? <EmptyState title="还没有选择比较作品" description="请从作品广场、搜索或查同类结果中加入 2–5 个作品。" action={<Link className="button button--primary" to="/projects">返回选择作品</Link>} /> : <EmptyState title="还不能开始正式比较" description={missingProjectIds.length ? '当前只有一个仍有档案的作品，请替换已删除作品或再添加一个。' : '当前只有一个作品，请再添加一个。'} action={<Link className="button button--primary" to="/projects">继续选择作品</Link>} />}
+      ) : selectedIds.length === 0 ? <EmptyState title="还没有选择比较作品" description="请从作品广场、搜索或想法分析结果中加入 2–5 个作品。" action={<Link className="button button--primary" to="/projects">返回选择作品</Link>} /> : <EmptyState title="还不能开始比较" description={missingProjectIds.length ? '当前只有一个可用作品，请替换已删除作品或再添加一个。' : '当前只有一个作品，请再添加一个。'} action={<Link className="button button--primary" to="/projects">继续选择作品</Link>} />}
 
       <footer className="comparison-session-footer cluster cluster--between">
         <div className="cluster">
-          <Button onClick={() => { dispatch({ type: 'COMPARISON_SESSION_SAVE' }); pushToast('比较会话已保存。', 'success') }}>保存比较</Button>
+          <Button onClick={saveComparison}>{state.session.user ? '保存比较' : '登录并保存比较'}</Button>
           <Button variant="quiet" onClick={() => navigate(session.sourcePath)}>返回来源页</Button>
           {selectedProjects.length >= 2 ? <a className="button button--primary" href="#comparison-decision">记录行动</a> : null}
         </div>

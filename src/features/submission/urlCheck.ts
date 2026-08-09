@@ -1,5 +1,5 @@
 import type { UrlCheckItem, UrlCheckResult } from '../../services'
-import { submissionDraftId, type SubmissionDraft, type UserId } from '../../types'
+import { submissionDraftId, type ProjectCategoryId, type SubmissionDraft, type UserId } from '../../types'
 
 export const urlCheckLabels: Record<UrlCheckItem['key'], string> = {
   format: '格式',
@@ -22,17 +22,18 @@ export function createUrlCheckDraft(
   result: UrlCheckResult,
   userId: UserId,
   now = '2026-07-31T10:00:00+08:00',
+  categoryId: ProjectCategoryId = 'ai_learning_quiz',
 ): SubmissionDraft {
   const accessTimedOut = result.checks.some(
     (check) => check.key === 'access' && check.status === 'warning',
   )
   return {
-    id: submissionDraftId(`draft-url-${userId}-${stableHash(result.normalizedUrl)}`),
+    id: submissionDraftId(`draft-url-${userId}-${stableHash(categoryId === 'ai_learning_quiz' ? result.normalizedUrl : `${categoryId}:${result.normalizedUrl}`)}`),
     userId,
     status: 'draft',
     step: 'url',
-    fields: { publicUrl: result.normalizedUrl },
-    originalExtraction: { publicUrl: result.normalizedUrl },
+    fields: { publicUrl: result.normalizedUrl, categoryId },
+    originalExtraction: { publicUrl: result.normalizedUrl, categoryId },
     assetIds: [],
     duplicateProjectId: result.duplicateProjectId,
     validationErrors: accessTimedOut

@@ -3,13 +3,14 @@ import type {
   AuthorLinkStatus,
   CompletenessLevel,
   Project,
+  ProjectCategoryId,
   ReviewStatus,
   UseScenario,
 } from '../../types'
 
 export interface AdminProjectFilters {
   query: string
-  category: UseScenario | ''
+  category: UseScenario | ProjectCategoryId | ''
   reviewStatus: ReviewStatus | ''
   accessStatus: AccessStatus | ''
   completeness: CompletenessLevel | ''
@@ -22,7 +23,7 @@ export interface AdminProjectQueueRow {
   project: Project
   name: string
   definition: string
-  categoryIds: UseScenario[]
+  categoryIds: Array<UseScenario | ProjectCategoryId>
   accessStatus: AccessStatus | null
   isPendingReview: boolean
   hasActiveException: boolean
@@ -99,8 +100,8 @@ export function buildAdminProjectQueue(projects: readonly Project[]) {
     return {
       project,
       name: knownValue(project.currentName, '名称未知'),
-      definition: knownValue(project.oneLineDefinition, '定义未知'),
-      categoryIds: knownValue<UseScenario[]>(project.useScenarios, []),
+      definition: knownValue(project.summary, '定义未知'),
+      categoryIds: [project.categoryId, ...knownValue<UseScenario[]>(project.useScenarios, [])],
       accessStatus,
       isPendingReview: pendingReviewStatuses.has(project.reviewStatus),
       hasActiveException: accessStatus ? activeExceptionStatuses.has(accessStatus) : false,

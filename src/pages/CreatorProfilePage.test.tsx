@@ -24,7 +24,7 @@ describe('CreatorProfilePage', () => {
     renderCreator('creator-zhou')
     expect(screen.getByRole('heading', { name: '周可' })).toBeInTheDocument()
     expect(screen.getByText('身份已验证')).toBeInTheDocument()
-    expect(screen.getByText('/creator/creator-zhou')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '复制分享链接' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '口语回声' })).toHaveAttribute('href', '/project/project-speakmirror')
     expect(screen.getByRole('link', { name: 'LexiDeck 背词卡' })).toHaveAttribute('href', '/project/project-lexideck')
     expect(screen.getByRole('heading', { name: '最近更新' })).toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('CreatorProfilePage', () => {
   it('does not attribute an unlinked platform record to an unverified creator', () => {
     renderCreator('creator-lab')
     expect(screen.getByText('身份未验证')).toBeInTheDocument()
-    expect(screen.getByText('暂无经验证关联作品')).toBeInTheDocument()
+    expect(screen.getByText('暂无已确认的作者作品')).toBeInTheDocument()
     expect(screen.queryByText('PDF 题库实验室')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '浏览作品广场' })).toHaveAttribute('href', '/projects')
   })

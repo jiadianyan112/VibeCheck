@@ -53,6 +53,20 @@ export const lifecycleEvents: LifecycleEvent[] = [
   makeEvent({ id: 'event-mocksprint-paused', projectKey: 'project-mocksprint', type: 'paused', happenedAt: '2026-07-15T12:00:00+08:00', summary: '作者声明暂时暂停新功能开发。', sourceType: 'verified_author_statement', evidenceKey: 'evidence-mocksprint-public', changes: [{ fieldKey: 'accessStatus', before: 'normal', after: 'paused' }] }),
   makeEvent({ id: 'event-dailydrill-abnormal', projectKey: 'project-dailydrill', type: 'link_abnormal', happenedAt: '2026-07-17T10:30:00+08:00', summary: '连续检查后公开地址仍无法解析。', sourceType: 'platform_verified_fact', evidenceKey: 'evidence-dailydrill-public', changes: [{ fieldKey: 'accessStatus', before: 'pending_recheck', after: 'link_unavailable' }] }),
   makeEvent({ id: 'event-learntrack-first', projectKey: 'project-learntrack', type: 'first_seen', happenedAt: '2026-03-10T09:00:00+08:00', summary: '外部发布页记录 LearnTrack 曾公开。', sourceType: 'trusted_external_source', evidenceKey: 'evidence-learntrack-public' }),
+  ...[
+    ['atlas-home', 'Atlas Home'], ['quiet-index', 'Quiet Index'], ['stackfolio', 'Stackfolio'], ['terminal-craft', 'Terminal Craft'],
+    ['form-field', 'Form & Field'], ['mono-studio', 'Mono Studio'], ['product-notes', 'Product Notes'], ['roadmap-self', 'Roadmap Self'],
+    ['field-notes', 'Field Notes'], ['independent-room', 'Independent Room'], ['first-launch', 'First Launch'], ['campus-canvas', 'Campus Canvas'],
+    ['one-page-cv', 'One Page CV'], ['brief-profile', 'Brief Profile'], ['lab-notebook', 'Lab Notebook'], ['scholar-site', 'Scholar Site'],
+  ].map(([key, name], index) => makeEvent({
+    id: `event-${key}-first`,
+    projectKey: `project-${key}`,
+    type: 'first_published',
+    happenedAt: `2026-07-${String(10 + (index % 16)).padStart(2, '0')}T09:00:00+08:00`,
+    summary: `${name} 首次公开发布。`,
+    sourceType: 'verified_author_statement',
+    evidenceKey: `evidence-${key}-public`,
+  })),
 ]
 
 export const eventById = new Map(lifecycleEvents.map((event) => [event.id, event]))

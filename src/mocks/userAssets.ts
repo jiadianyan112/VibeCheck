@@ -21,7 +21,7 @@ export const prototypeUsers: PrototypeUser[] = [
   { id: userId('user-mia'), displayName: '米娅', role: 'user', creatorId: null },
   { id: userId('user-zhou'), displayName: '周可', role: 'verified_author', creatorId: creatorId('creator-zhou') },
   { id: userId('user-editor'), displayName: '平台编辑', role: 'editor', creatorId: null },
-  { id: userId('user-admin'), displayName: '原型管理员', role: 'admin', creatorId: null },
+  { id: userId('user-admin'), displayName: '林舟', role: 'admin', creatorId: null },
 ]
 
 export const comparisonSessions: ComparisonSession[] = [

@@ -1,22 +1,22 @@
 # VibeCheck 低保真原型需求追踪矩阵
 
-本文件把产品页面、核心流程、状态与异常、运营后台、原型测试任务映射到任务编号和自动化验收。产品依据为 `docs/source/` 四份源文件及根目录 `设计文件/VibeCheck低保真原型Codex开发任务书.docx`。T57 最终核对已完成，最终证据见 `docs/acceptance/final-report.md`。
+本文件把产品页面、核心流程、状态与异常、运营后台、原型测试任务映射到任务编号和自动化验收。产品依据为 `docs/source/` 四份源文件及根目录 `设计文件/VibeCheck低保真原型Codex开发任务书.docx`。2026 年 8 月在不替换原 AI 学习与题库品类、不改页面 ID 和主路由的前提下，增量接入 `personal_site_portfolio / portfolio.v1`；跨品类只共享 `ProjectCore`，品类字段由各自 Schema 承载。T57 最终核对已完成，最终证据见 `docs/acceptance/final-report.md`。
 
 ## 前台页面
 
 | ID | 页面与路由 | 主要产品依据 | 实现任务 | 主要测试任务 |
 |---|---|---|---|---|
-| P01 | 作品广场 `/projects` | 结构设计 九.1、十四.2 | T11、T14、T17 | T52、T54、T55、T56 / U01、U03 |
-| P02 | 分类总览 `/categories` | 结构设计 九.2 | T11、T14、T18 | T52、T54、T56 / U01 |
-| P03 | 分类／专题 `/categories/:slug` | 结构设计 九.2 | T14、T18、T19 | T52、T54、T56 / U01 |
+| P01 | 作品广场 `/projects` | 结构设计 九.1、十四.2；双品类入口 | T11、T14、T17 | T52、T54、T55、T56 / U01、U03 |
+| P02 | 分类总览 `/categories` | 结构设计 九.2；学习专题与 Portfolio 一级品类并列 | T11、T14、T18 | T52、T54、T56 / U01 |
+| P03 | 分类／专题 `/categories/:slug` | 结构设计 九.2；按品类加载独立筛选 | T14、T18、T19 | T52、T54、T56 / U01 |
 | P04 | 最新动态 `/activity` | 结构设计 五、九.1 | T20 | T41、T46、T52、T56 / U06 |
 | P05 | 统一搜索 `/search` | 结构设计 九.3、十.2 | T22、T23、T26 | T52、T54、T56 / U01、U02 |
 | P06 | 意图确认 `/discover` | 结构设计 九.3、十四.3 | T23、T24、T26 | T52、T54、T56 / U02 |
 | P07 | 同类分析 `/discover/result` | 结构设计 九.3、十四.3 | T25、T26 | T52、T54、T56 / U02 |
-| P08 | 作品详情 `/project/:id` | 结构设计 九.4、十四.4 | T27—T31 | T52、T54—T56 / U01、U03、U05、U06 |
-| P09 | 作品比较 `/compare/:sessionId` | 结构设计 九.5、十四.5 | T16、T32—T35 | T52、T54—T56 / U02 |
-| P10 | 发布入口 `/submit` | 结构设计 九.6、十四.6 | T36、T37、T42 | T52、T54—T56 / U04、U05 |
-| P11 | 发布编辑 `/submit/new` | 结构设计 九.6、十四.6 | T38、T39、T42 | T52、T54—T56 / U04 |
+| P08 | 作品详情 `/project/:id` | 结构设计 九.4、十四.4；按 Schema 渲染学习或 Portfolio 详情 | T27—T31 | T52、T54—T56 / U01、U03、U05、U06 |
+| P09 | 作品比较 `/compare/:sessionId` | 结构设计 九.5、十四.5；同品类矩阵、跨品类 ProjectCore 回退 | T16、T32—T35 | T52、T54—T56 / U02 |
+| P10 | 发布入口 `/submit` | 结构设计 九.6、十四.6；先选品类再查重 | T36、T37、T42 | T52、T54—T56 / U04、U05 |
+| P11 | 发布编辑 `/submit/new` | 结构设计 九.6、十四.6；学习与 Portfolio 分步表单 | T38、T39、T42 | T52、T54—T56 / U04 |
 | P12 | 作者身份验证 `/project/:id/verify-author` | 结构设计 六.4、九.6 | T37、T40、T42 | T50、T52、T54—T56 / U05 |
 | P13 | 作品更新 `/project/:id/update` | 结构设计 六.5、九.6 | T41、T42 | T46、T50、T52、T54—T56 / U06 |
 | P14 | 作者主页 `/creator/:id` | 结构设计 九.7 | T44 | T52、T54—T56 |
@@ -31,7 +31,7 @@
 |---|---|---|---|---|
 | A01 | 后台看板 `/admin` | 结构设计 五.2 | T47 | T51、T56 |
 | A02 | 作品列表 `/admin/projects` | 结构设计 五.2、十四.8 | T47 | T51、T56 |
-| A03 | 作品编辑 `/admin/project/:id` | 结构设计 九.8、十四.8 | T48、T49 | T50、T51、T56 |
+| A03 | 作品编辑 `/admin/project/:id` | 结构设计 九.8、十四.8；ProjectCore 与 Category Schema 分区 | T48、T49 | T50、T51、T56 |
 | A04 | 重复与合并 `/admin/duplicates` | 结构设计 五.2、十一 | T50 | T51、T56 |
 | A05 | 发布审核 `/admin/reviews` | 结构设计 五.2、十.5 | T39、T50 | T51、T56 |
 | A06 | 作者身份审核 `/admin/author-verification` | 结构设计 六.4、十.5 | T40、T50 | T51、T56 |

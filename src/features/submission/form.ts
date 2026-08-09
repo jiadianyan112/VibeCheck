@@ -5,13 +5,13 @@ export const submissionFormSteps = ['prefill', 'definition', 'solution', 'develo
 export type SubmissionFormStep = (typeof submissionFormSteps)[number]
 
 export const submissionFormStepLabels: Record<SubmissionFormStep, string> = {
-  prefill: '2 自动预填',
-  definition: '3 产品定义',
-  solution: '4 方案与功能',
-  development: '5 开发与资产',
+  prefill: '1 基础信息',
+  definition: '2 产品定义',
+  solution: '3 方案与功能',
+  development: '4 开发与资产',
 }
 
-const requiredFields: Array<keyof SubmissionProjectFields> = [
+const learningRequiredFields: Array<keyof SubmissionProjectFields> = [
   'currentName',
   'publicUrl',
   'oneLineDefinition',
@@ -24,6 +24,10 @@ const requiredFields: Array<keyof SubmissionProjectFields> = [
   'coreFlow',
 ]
 
+const portfolioRequiredFields: Array<keyof SubmissionProjectFields> = [
+  'currentName', 'publicUrl', 'oneLineDefinition', 'creatorRoles', 'primaryGoals', 'coreModules',
+]
+
 function hasValue(value: unknown) {
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === 'string') return value.trim().length > 0
@@ -31,6 +35,7 @@ function hasValue(value: unknown) {
 }
 
 export function submissionCompleteness(draft: SubmissionDraft) {
+  const requiredFields = draft.fields.categoryId === 'personal_site_portfolio' ? portfolioRequiredFields : learningRequiredFields
   const completed = requiredFields.filter((field) => hasValue(draft.fields[field])).length
   return { completed, total: requiredFields.length, percent: Math.round((completed / requiredFields.length) * 100) }
 }
@@ -39,6 +44,13 @@ const stepRequiredFields: Record<SubmissionFormStep, Array<keyof SubmissionProje
   prefill: ['currentName', 'oneLineDefinition', 'accessStatus'],
   definition: ['targetUsers', 'coreProblem', 'useScenarios'],
   solution: ['mainInputs', 'mainOutputs', 'coreFlow'],
+  development: [],
+}
+
+const portfolioStepRequiredFields: Record<SubmissionFormStep, Array<keyof SubmissionProjectFields>> = {
+  prefill: ['currentName', 'oneLineDefinition'],
+  definition: ['creatorRoles', 'primaryGoals'],
+  solution: ['coreModules'],
   development: [],
 }
 
@@ -52,11 +64,13 @@ const fieldErrorLabels: Partial<Record<keyof SubmissionProjectFields, string>> =
   mainInputs: '至少选择一种主要输入。',
   mainOutputs: '至少选择一种主要输出。',
   coreFlow: '至少填写一个核心流程步骤。',
+  siteType: '请选择网站类型。', creatorRoles: '至少选择一种作者身份。', primaryGoals: '至少选择一个建站目的。', pageModel: '请选择页面结构。', navigationPattern: '请选择导航方式。', coreModules: '至少选择一个核心模块。', projectShowcaseFormat: '请选择项目展示形式。', caseStudyDepth: '请选择 Case Study 深度。', visualStyles: '至少选择一种视觉风格。', layoutPatterns: '至少选择一种布局方式。', colorCharacter: '请选择色彩特征。', themeMode: '请选择主题模式。', interactionLevel: '请选择交互等级。', interactionPatterns: '至少选择一种动画/交互方式。', responsiveSupport: '请选择响应式状态。', blogSupport: '请选择博客能力。',
 }
 
 export function validateSubmissionStep(draft: SubmissionDraft, step: SubmissionFormStep) {
+  const required = draft.fields.categoryId === 'personal_site_portfolio' ? portfolioStepRequiredFields : stepRequiredFields
   return Object.fromEntries(
-    stepRequiredFields[step]
+    required[step]
       .filter((field) => !hasValue(draft.fields[field]))
       .map((field) => [field, fieldErrorLabels[field] ?? '请完成此字段。']),
   )
@@ -67,7 +81,10 @@ export function applyExtraction(
   extraction: ExtractionResult,
   now = '2026-07-31T10:10:00+08:00',
 ): SubmissionDraft {
-  if (Object.keys(draft.originalExtraction).length > 1) return draft
+  const alreadyExtracted = Object.keys(draft.originalExtraction).some(
+    (field) => field !== 'publicUrl' && field !== 'categoryId',
+  )
+  if (alreadyExtracted) return draft
   return {
     ...draft,
     step: 'prefill',

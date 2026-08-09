@@ -1,15 +1,15 @@
-import { Form, Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ComparisonProvider, FloatingCompareBar } from '../features'
 import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
 import { RouteScrollManager } from './RouteScrollManager'
 import { ScenarioPanel } from './ScenarioPanel'
+import { UnifiedSearchForm } from './UnifiedSearchForm'
 
 const primaryNavigation = [
   { to: '/projects', label: '作品广场' },
   { to: '/categories', label: '分类' },
   { to: '/activity', label: '最新动态' },
-  { to: '/discover', label: '查同类' },
   { to: '/about', label: '关于' },
 ]
 
@@ -34,8 +34,14 @@ function FrontstageContent() {
     : 0
   const from = `${location.pathname}${location.search}${location.hash}`
   const comparisonPath = state.activeComparisonSessionId
-    ? `/compare/${state.activeComparisonSessionId}`
+    ? `/compare/${state.activeComparisonSessionId}${state.comparisonProjectIds.length >= 2 ? '#structured-comparison-heading' : ''}`
     : '/projects'
+  const headerQuery = new URLSearchParams(location.search).get(location.pathname.startsWith('/discover') ? 'idea' : 'q') ?? ''
+  const isFocusedFlow = location.pathname.startsWith('/compare/')
+    || location.pathname.startsWith('/submit')
+    || location.pathname === '/auth'
+    || location.pathname.endsWith('/verify-author')
+    || location.pathname.endsWith('/update')
 
   return (
     <div className="app-shell">
@@ -52,20 +58,14 @@ function FrontstageContent() {
               </NavLink>
             ))}
           </nav>
-          <Form className="global-search" action="/search" role="search">
-            <label className="sr-only" htmlFor="global-search-input">
-              搜索作品或输入完整想法
-            </label>
-            <input
-              className="global-search__input"
-              id="global-search-input"
-              name="q"
-              placeholder="搜索作品或想法"
-            />
-            <button className="global-search__submit" type="submit">
-              搜索
-            </button>
-          </Form>
+          <UnifiedSearchForm
+            key={`${location.pathname}:${headerQuery}`}
+            id="global-search-input"
+            className="global-search"
+            inputClassName="global-search__input"
+            submitClassName="global-search__submit"
+            defaultValue={headerQuery}
+          />
           <div className="header-actions" aria-label="账户与创作入口">
             {state.session.user?.creatorId ? (
               <Link className="header-action" to={`/creator/${state.session.user.creatorId}`}>作者主页</Link>
@@ -99,7 +99,7 @@ function FrontstageContent() {
           <details className="mobile-navigation">
             <summary>菜单</summary>
             <nav aria-label="移动导航">
-              <Link className="nav-link" to="/search">搜索作品</Link>
+              <Link className="nav-link" to="/search">搜索作品或想法</Link>
               {primaryNavigation.map((item) => (
                 <NavLink key={item.to} className={navClassName} to={item.to}>
                   {item.label}
@@ -133,7 +133,7 @@ function FrontstageContent() {
       <div className="app-shell__content">
         <Outlet />
       </div>
-      {location.pathname.startsWith('/compare/') ? null : <FloatingCompareBar />}
+      {isFocusedFlow ? null : <FloatingCompareBar />}
       {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
   )

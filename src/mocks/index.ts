@@ -1,6 +1,6 @@
 export { reusableAssets } from './assets'
 export { comments } from './community'
-export { creators } from './creators'
+export { creators, creatorsForProject } from './creators'
 export { evidenceById, evidences } from './evidence'
 export { eventById, lifecycleEvents } from './events'
 export { knownFact, unknownFact } from './factories'

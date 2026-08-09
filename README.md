@@ -1,6 +1,6 @@
 # VibeCheck 低保真原型
 
-VibeCheck 是面向 Vibe Coding 创作者的作品发现、比较、发布与生命周期资产平台。本仓库是任务书 T00–T57 的最终可点击低保真 Web 原型，首期品类限定为公开可访问的 AI 学习与题库 Web 工具。
+VibeCheck 是面向 Vibe Coding 创作者的作品发现、比较、发布与生命周期资产平台。本仓库是在既有 AI 学习与题库原型上扩展的多品类低保真 Web 原型：原品类完整保留，并新增公开可访问、由 AI 编程工具辅助开发的个人主页与作品集。
 
 ## 环境要求
 
@@ -47,7 +47,7 @@ npm run test:e2e
 npm run build
 ```
 
-- 单元／组件测试：57 个文件、258 项测试。
+- 单元／组件测试：60 个文件、273 项测试。
 - Playwright：四条核心流程、U01–U06、响应式、固定场景、axe 和键盘回归。
 - E2E 启动 preview 前会自动生产构建；失败时在 `test-results/` 保留截图和 trace，并生成 `playwright-report/`。
 - 单独运行六个原型任务：`npx playwright test e2e/prototype-tasks.spec.ts --project=desktop-chromium`。
@@ -85,7 +85,7 @@ npm run build
 
 也可直接使用 `docs/scenario-matrix.md` 中的固定 URL。旧版服务场景和错误 code 见 `docs/testing-scenarios.md`。
 
-- 业务数据全部来自 `src/mocks/`，使用固定 `projectId`、事件、证据、资产和时间。
+- 业务数据全部来自 `src/mocks/`，使用固定 `projectId`、品类 Schema、事件、证据、资产和时间。个人主页与作品集使用 16 个代表性模拟档案（8 个策展子群各 2 个），64 仅是后续冷启动目标。
 - 用户状态保存在浏览器 `localStorage` 的 `vibecheck-prototype-state-v1`。
 - 列表滚动位置保存在当前标签页的 `sessionStorage`。
 - “重置场景与原型数据”只清除上述原型状态，不访问远程服务。
@@ -102,7 +102,7 @@ npm run build
 
 ## 明确排除范围
 
-不实现真实后端、生产数据库、真实认证、网页抓取、模型调用、真实状态监测、消息推送、支付、私信、粉丝等级、排行榜、复杂推荐、跨品类网络、商业成功判断或品牌视觉定稿。所有请求、审核与异常均由前端固定数据模拟。
+不实现真实后端、生产数据库、真实认证、网页抓取、模型调用、真实状态监测、消息推送、支付、私信、粉丝等级、排行榜、复杂推荐、商业成功判断或品牌视觉定稿。跨品类只共享 ProjectCore 和通用入口，不伪造品类专属关系。所有请求、审核与异常均由前端固定数据模拟。
 
 ## 已知限制
 

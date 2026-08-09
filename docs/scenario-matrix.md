@@ -25,6 +25,17 @@
 - 自动提取使用固定草稿 `draft-scenario-extraction-partial`；重复发布和外链风险只执行检查，不写入草稿。
 - 面板仅在 `import.meta.env.DEV` 为真时挂载；`npm run build` 的页面不会出现面板。
 
+## 新增品类回归入口
+
+| 验收目标 | 固定地址 | 预期结果 |
+| --- | --- | --- |
+| Portfolio 品类页 | `/categories/personal-sites-portfolios` | 仅展示 16 个个人主页与作品集档案，并提供策展子群、网站类型、作者身份和视觉方向筛选 |
+| Portfolio 详情 | `/project/project-atlas-home` | 展示定位与内容结构、项目展示、视觉与交互等 `PortfolioSchemaV1` 信息，不出现学习专属字段 |
+| 跨品类搜索 | `/search?q=PDF` | 同时命中学习工具与支持 PDF 简历下载的 Portfolio；可用“作品品类”继续收窄 |
+| Portfolio 发布 | `/submit?category=personal_site_portfolio` | 登录后保留品类选择，创建与学习品类互不覆盖的草稿并进入 Portfolio 分步表单 |
+
+以上入口复用既有本地状态隔离规则；新增品类不会清空、迁移或改写原 AI 学习作品、比较会话与草稿。
+
 ## 历史服务场景
 
 网络中断、超时、审核结果和权限失效等更细的服务回归仍可使用 `scenario` 参数。完整别名见 [testing-scenarios.md](./testing-scenarios.md)，但 T53 的 11 个验收场景统一使用上表的 `prototypeScenario`。

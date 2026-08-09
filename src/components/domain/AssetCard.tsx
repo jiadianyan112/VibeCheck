@@ -3,8 +3,7 @@ import { Card, Tag } from '../ui'
 import { ExternalLinkGuard } from './ExternalLinkGuard'
 
 const assetTypeLabels: Record<AssetType, string> = {
-  source_code: '源代码', template: '模板', component: '组件', prompt: '提示词',
-  parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', other: '其他',
+  source_code: '源代码', starter: 'Starter', template: '模板', component: '组件', page_layout: '页面布局', ui_component: 'UI 组件', motion_interaction: '动画/交互', theme_design_system: '主题/设计系统', resume_module: '简历模块', blog_cms_module: '博客/CMS 模块', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', deployment_config: '部署配置', design_file: '设计稿', other: '其他',
 }
 const availabilityLabels: Record<AssetAvailabilityStatus, string> = {
   available: '可获取', login_required: '登录后获取', link_abnormal: '链接异常', removed: '已移除', unknown: '状态未知',

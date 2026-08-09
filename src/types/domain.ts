@@ -31,6 +31,14 @@ export const notificationId = (value: string) => value as NotificationId
 export const userId = (value: string) => value as UserId
 export const projectUpdateRecordId = (value: string) => value as ProjectUpdateRecordId
 
+export const projectCategoryIds = ['ai_learning_quiz', 'personal_site_portfolio'] as const
+export type ProjectCategoryId = (typeof projectCategoryIds)[number]
+export const learningCategoryId = 'ai_learning_quiz' as const
+export const portfolioCategoryId = 'personal_site_portfolio' as const
+export const learningSchemaVersion = 'learning.v1' as const
+export const portfolioSchemaVersion = 'portfolio.v1' as const
+export type CategorySchemaVersion = typeof learningSchemaVersion | typeof portfolioSchemaVersion
+
 export const accessStatuses = [
   'normal',
   'login_required',
@@ -68,6 +76,7 @@ export const lifecycleEventTypes = [
   'ended',
   'asset_added',
   'reused_by_project',
+  'relation_added',
 ] as const
 export type LifecycleEventType = (typeof lifecycleEventTypes)[number]
 
@@ -135,6 +144,71 @@ export interface FactMetadata {
 export type FieldFact<T> =
   | ({ state: 'known'; value: T } & FactMetadata)
   | ({ state: 'unknown'; reason: string } & FactMetadata)
+
+export const siteTypes = ['personal_homepage', 'portfolio', 'online_resume', 'academic_homepage', 'hybrid'] as const
+export type SiteType = (typeof siteTypes)[number]
+export const creatorRoles = ['developer', 'designer', 'product_manager', 'creator', 'freelancer', 'student_recruit', 'researcher_academic', 'multidisciplinary', 'other'] as const
+export type CreatorRole = (typeof creatorRoles)[number]
+export const primaryGoals = ['showcase_projects', 'professional_presence', 'job_search', 'client_acquisition', 'personal_brand', 'academic_profile', 'content_hub', 'other'] as const
+export type PrimaryGoal = (typeof primaryGoals)[number]
+export const pageModels = ['single_page', 'multi_page', 'hybrid'] as const
+export type PageModel = (typeof pageModels)[number]
+export const navigationPatterns = ['top_nav', 'side_nav', 'section_anchor', 'minimal_overlay', 'no_persistent_nav', 'other'] as const
+export type NavigationPattern = (typeof navigationPatterns)[number]
+export const coreModules = ['hero', 'about', 'projects', 'experience', 'skills', 'services', 'testimonials', 'contact', 'blog', 'resume', 'publications', 'speaking', 'now_page', 'other'] as const
+export type CoreModule = (typeof coreModules)[number]
+export const projectShowcaseFormats = ['card_grid', 'gallery', 'timeline', 'case_study_list', 'repository_list', 'full_bleed', 'mixed', 'none'] as const
+export type ProjectShowcaseFormat = (typeof projectShowcaseFormats)[number]
+export const caseStudyDepths = ['none', 'summary', 'overview', 'deep'] as const
+export type CaseStudyDepth = (typeof caseStudyDepths)[number]
+export const visualStyles = ['minimal', 'editorial', 'brutalist', 'playful', 'retro', 'corporate', 'experimental', 'illustrative', 'photographic', 'typographic', 'other'] as const
+export type VisualStyle = (typeof visualStyles)[number]
+export const layoutPatterns = ['editorial_grid', 'bento', 'split_screen', 'full_bleed', 'card_grid', 'timeline', 'immersive', 'freeform', 'other'] as const
+export type LayoutPattern = (typeof layoutPatterns)[number]
+export const colorCharacters = ['monochrome', 'neutral', 'brand_led', 'vivid', 'gradient_dominant', 'mixed'] as const
+export type ColorCharacter = (typeof colorCharacters)[number]
+export const themeModes = ['light_only', 'dark_only', 'switchable', 'system_adaptive'] as const
+export type ThemeMode = (typeof themeModes)[number]
+export const interactionLevels = ['static', 'light', 'moderate', 'high'] as const
+export type InteractionLevel = (typeof interactionLevels)[number]
+export const interactionPatterns = ['microinteraction', 'scroll_reveal', 'scroll_driven', 'page_transition', 'cursor_effect', '3d_webgl', 'motion_graphics', 'other', 'none'] as const
+export type InteractionPattern = (typeof interactionPatterns)[number]
+export const responsiveSupports = ['confirmed', 'partial', 'not_supported', 'unknown'] as const
+export type ResponsiveSupport = (typeof responsiveSupports)[number]
+export const blogSupports = ['none', 'static', 'content_managed', 'unknown'] as const
+export type BlogSupport = (typeof blogSupports)[number]
+export const cmsSupports = ['none', 'headless', 'built_in', 'unknown'] as const
+export type CmsSupport = (typeof cmsSupports)[number]
+export const multilingualSupports = ['none', 'manual', 'automatic', 'unknown'] as const
+export type MultilingualSupport = (typeof multilingualSupports)[number]
+export const resumeDownloadStatuses = ['available', 'not_available', 'unknown'] as const
+export type ResumeDownloadStatus = (typeof resumeDownloadStatuses)[number]
+
+export interface PortfolioSchemaV1 {
+  siteType: FieldFact<SiteType>
+  creatorRoles: FieldFact<CreatorRole[]>
+  primaryGoals: FieldFact<PrimaryGoal[]>
+  pageModel: FieldFact<PageModel>
+  navigationPattern: FieldFact<NavigationPattern>
+  homepageSequence: FieldFact<CoreModule[]>
+  coreModules: FieldFact<CoreModule[]>
+  projectShowcaseFormat: FieldFact<ProjectShowcaseFormat>
+  caseStudyDepth: FieldFact<CaseStudyDepth>
+  visualStyles: FieldFact<VisualStyle[]>
+  layoutPatterns: FieldFact<LayoutPattern[]>
+  colorCharacter: FieldFact<ColorCharacter>
+  themeMode: FieldFact<ThemeMode>
+  interactionLevel: FieldFact<InteractionLevel>
+  interactionPatterns: FieldFact<InteractionPattern[]>
+  responsiveSupport: FieldFact<ResponsiveSupport>
+  blogSupport: FieldFact<BlogSupport>
+  cmsSupport?: FieldFact<CmsSupport>
+  cmsPlatform?: FieldFact<string | null>
+  multilingualSupport?: FieldFact<MultilingualSupport>
+  contactMethods?: FieldFact<string[]>
+  resumeDownload?: FieldFact<ResumeDownloadStatus>
+  aiFeatures?: FieldFact<string[]>
+}
 
 export const targetUsers = [
   'primary_students',
@@ -275,12 +349,21 @@ export type MaintenanceSignal = (typeof maintenanceSignals)[number]
 
 export const assetTypes = [
   'source_code',
+  'starter',
   'template',
   'component',
+  'page_layout',
+  'ui_component',
+  'motion_interaction',
+  'theme_design_system',
+  'resume_module',
+  'blog_cms_module',
   'prompt',
   'parsing_solution',
   'open_api',
   'deployment_solution',
+  'deployment_config',
+  'design_file',
   'other',
 ] as const
 export type AssetType = (typeof assetTypes)[number]
@@ -307,6 +390,10 @@ export const relationTypes = [
   'migration',
   'derivative',
   'uses_asset',
+  'reference',
+  'based_on_template',
+  'uses_component',
+  'source_derivative',
 ] as const
 export type RelationType = (typeof relationTypes)[number]
 
@@ -360,9 +447,10 @@ export type CompletenessLevel = (typeof completenessLevels)[number]
 
 export interface MediaItem {
   id: string
-  kind: 'image' | 'video' | 'placeholder'
+  kind: 'image' | 'video' | 'placeholder' | 'wireframe'
   url: string | null
   alt: string
+  variant?: 'editorial' | 'bento' | 'split' | 'minimal' | 'resume' | 'academic'
 }
 
 export interface FlowNode {
@@ -510,7 +598,8 @@ export interface InteractionSummary {
   followerCount: number
 }
 
-export interface Project {
+/** Cross-category fields shared by every VibeCheck work. */
+export interface ProjectCore {
   id: ProjectId
   currentName: FieldFact<string>
   historicalNames: HistoricalName[]
@@ -521,6 +610,40 @@ export interface Project {
   firstSeenAt: string
   createdAt: string
   coverMedia: MediaItem[]
+  categoryId: ProjectCategoryId
+  categorySchemaVersion: CategorySchemaVersion
+  categoryData: PortfolioSchemaV1 | null
+  categoryGroup: string | null
+  summary: FieldFact<string>
+  aiCodingTools: FieldFact<AiCodingTool[]>
+  modelsUsed: FieldFact<string[]>
+  techStack: FieldFact<string[]>
+  deploymentPlatform: FieldFact<string | null>
+  developmentCycle: FieldFact<string | null>
+  keyDependencies: FieldFact<string[]>
+  accessStatus: FieldFact<AccessStatus>
+  httpCheckStatus: HttpCheckStatus
+  lastVerifiedAt: string
+  maintenanceSignal: MaintenanceSignal
+  statusNote: FieldFact<string | null>
+  versionIds: VersionId[]
+  eventIds: LifecycleEventId[]
+  assetIds: AssetId[]
+  relationIds: RelationId[]
+  creatorIds: CreatorId[]
+  recordSource: RecordSource
+  authorLinkStatus: AuthorLinkStatus
+  completenessLevel: CompletenessLevel
+  freshnessStatus: FreshnessStatus
+  interactionSummary: InteractionSummary
+  reviewStatus: ReviewStatus
+}
+
+/**
+ * Learning fields remain available for the original category. Portfolio works
+ * store their category facts only in categoryData and expose unknown legacy facts.
+ */
+export interface Project extends ProjectCore {
   oneLineDefinition: FieldFact<string>
   targetUsers: FieldFact<TargetUser[]>
   coreProblem: FieldFact<string>
@@ -537,30 +660,6 @@ export interface Project {
   secondaryFeatures: FieldFact<string[]>
   loginRequirement: FieldFact<LoginRequirement>
   sharingCapability: FieldFact<SharingCapability>
-  aiCodingTools: FieldFact<AiCodingTool[]>
-  modelsUsed: FieldFact<string[]>
-  techStack: FieldFact<string[]>
-  deploymentPlatform: FieldFact<string | null>
-  developmentCycle: FieldFact<string | null>
-  keyDependencies: FieldFact<string[]>
-  /** Current public state. This is not the technical HTTP check result. */
-  accessStatus: FieldFact<AccessStatus>
-  /** Technical observation only; it cannot express paused, ended, or failure. */
-  httpCheckStatus: HttpCheckStatus
-  lastVerifiedAt: string
-  maintenanceSignal: MaintenanceSignal
-  statusNote: FieldFact<string | null>
-  versionIds: VersionId[]
-  eventIds: LifecycleEventId[]
-  assetIds: AssetId[]
-  relationIds: RelationId[]
-  creatorIds: CreatorId[]
-  recordSource: RecordSource
-  authorLinkStatus: AuthorLinkStatus
-  completenessLevel: CompletenessLevel
-  freshnessStatus: FreshnessStatus
-  interactionSummary: InteractionSummary
-  reviewStatus: ReviewStatus
 }
 
 export interface CreatorContact {
@@ -613,11 +712,18 @@ export interface DecisionRecord {
 
 export interface ComparisonIntent {
   originalQuery: string
+  categoryId?: ProjectCategoryId
   targetUsers: TargetUser[]
   useScenarios: UseScenario[]
   inputs: InputType[]
   practiceFormats: PracticeFormat[]
   outputs: OutputType[]
+  siteTypes?: SiteType[]
+  creatorRoles?: CreatorRole[]
+  primaryGoals?: PrimaryGoal[]
+  pageModels?: PageModel[]
+  visualStyles?: VisualStyle[]
+  assetTypes?: AssetType[]
 }
 
 export interface ComparisonSession {
@@ -633,6 +739,7 @@ export interface ComparisonSession {
 }
 
 export interface SubmissionProjectFields {
+  categoryId?: ProjectCategoryId
   currentName: string
   publicUrl: string
   screenshotUrl: string | null
@@ -649,6 +756,22 @@ export interface SubmissionProjectFields {
   feedbackMethods: FeedbackMethod[]
   differentiation: string
   aiCodingTools: AiCodingTool[]
+  siteType?: SiteType
+  creatorRoles?: CreatorRole[]
+  primaryGoals?: PrimaryGoal[]
+  pageModel?: PageModel
+  navigationPattern?: NavigationPattern
+  coreModules?: CoreModule[]
+  projectShowcaseFormat?: ProjectShowcaseFormat
+  caseStudyDepth?: CaseStudyDepth
+  visualStyles?: VisualStyle[]
+  layoutPatterns?: LayoutPattern[]
+  colorCharacter?: ColorCharacter
+  themeMode?: ThemeMode
+  interactionLevel?: InteractionLevel
+  interactionPatterns?: InteractionPattern[]
+  responsiveSupport?: ResponsiveSupport
+  blogSupport?: BlogSupport
 }
 
 export interface SubmissionDraft {

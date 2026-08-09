@@ -28,17 +28,23 @@ describe('CompareSessionPage management', () => {
   it('restores a routed session and exposes its stable share path', async () => {
     renderPage('/compare/comparison-mia-speaking')
     expect(await screen.findByRole('heading', { name: '比较会话' })).toBeInTheDocument()
-    expect(screen.getByText('/compare/comparison-mia-speaking')).toBeInTheDocument()
+    expect(screen.getByText('当前链接可继续访问')).toBeInTheDocument()
     expect(screen.getByText('3/5 个作品')).toBeInTheDocument()
-    expect(screen.getByText('已满足正式比较数量规则。')).toBeInTheDocument()
+    expect(screen.getByText('作品已选好，可以开始比较。')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '结构化比较' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '关键差异摘要' })).toBeInTheDocument()
+    expect(screen.getByText(/这里只整理事实、风险和公开资产/)).toBeInTheDocument()
+    expect(screen.getByText('完整字段矩阵')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '查看完整字段' }))
+    expect(screen.getByText('完整字段矩阵').closest('details')).toHaveAttribute('open')
     expect(screen.getByRole('navigation', { name: '比较维度' })).toHaveTextContent('定位输入输出流程功能实现当前状态可复用资产')
     expect(screen.getByRole('group', { name: '比较显示范围' })).toBeInTheDocument()
   })
 
-  it('reorders, replaces, removes, adds and saves the current session', async () => {
+  it('reorders, replaces, removes, adds and preserves the guest selection through login', async () => {
     const user = userEvent.setup()
     renderPage()
+    await user.click(screen.getByText('管理比较作品', { selector: 'summary strong' }))
     const list = await screen.findByRole('list', { name: '已选比较作品' })
     expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('题练工坊')
     await user.click(screen.getByRole('button', { name: '下移题练工坊' }))
@@ -50,13 +56,15 @@ describe('CompareSessionPage management', () => {
 
     await user.click(within(list).getAllByRole('button', { name: '移除' })[0]!)
     expect(screen.getByText('1/5 个作品')).toBeInTheDocument()
-    expect(screen.getByText('至少选择两个仍有档案的作品，才能进入正式比较。')).toBeInTheDocument()
+    expect(screen.getByText('至少选择两个可用作品后才能开始比较。')).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('添加一个作品'), 'project-speakmirror')
     expect(screen.getByText('2/5 个作品')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '保存比较' }))
-    expect(screen.getByText('比较会话已保存。')).toBeInTheDocument()
-    expect(screen.getByText(/^已保存 ·/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '登录并保存比较' }))
+    expect(screen.getByText('登录后将保存当前 2 个比较作品，不会自动合并账号中的历史比较。')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '使用米娅账号' }))
+    expect(await screen.findByText(/^已保存 ·/)).toBeInTheDocument()
+    expect(screen.getByText('登录账户')).toBeInTheDocument()
   })
 
   it('offers a recovery path for an unknown session', async () => {
@@ -72,7 +80,7 @@ describe('CompareSessionPage management', () => {
     expect(screen.getByRole('button', { name: '仅看差异' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: '查看全部' }))
     expect(screen.getAllByText(/各作品相同，点击展开/).length).toBeGreaterThan(0)
-    expect(screen.getByRole('heading', { name: '可复用资产快捷区' })).toBeInTheDocument()
+    expect(document.getElementById('comparison-assets-heading')).toHaveTextContent('可复用资产')
     expect(screen.getAllByRole('link', { name: /项资产/ }).length).toBeGreaterThan(0)
   })
 
@@ -128,7 +136,7 @@ describe('CompareSessionPage management', () => {
     localStorage.clear()
     const oneId = seedSession('comparison-one', [projectId('project-quizforge')])
     renderPage(`/compare/${oneId}`)
-    expect(await screen.findByText('还不能开始正式比较')).toBeInTheDocument()
+    expect(await screen.findByText('还不能开始比较')).toBeInTheDocument()
     expect(screen.getByText('当前只有一个作品，请再添加一个。')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '结构化比较' })).not.toBeInTheDocument()
   })
@@ -139,7 +147,7 @@ describe('CompareSessionPage management', () => {
     expect(await screen.findByText('已删除作品')).toBeInTheDocument()
     expect(screen.getByText(/原作品档案已删除或不可用/)).toBeInTheDocument()
     expect(screen.getByText('有 1 个作品档案不可用')).toBeInTheDocument()
-    expect(screen.getByText('还不能开始正式比较')).toBeInTheDocument()
+    expect(screen.getByText('还不能开始比较')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: '替换' })).toHaveLength(2)
   })
 

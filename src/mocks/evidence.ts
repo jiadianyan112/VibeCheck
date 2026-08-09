@@ -50,6 +50,18 @@ export const evidences: Evidence[] = [
   makeEvidence({ id: 'evidence-mocksprint-public', projectKey: 'project-mocksprint', type: 'verified_author_statement', summary: '作者声明暂停新功能，现有演示仍保留。', verifiedAt: '2026-07-19T12:00:00+08:00' }),
   makeEvidence({ id: 'evidence-dailydrill-public', projectKey: 'project-dailydrill', type: 'platform_verified_fact', summary: '连续两次公开地址 DNS 检查异常。', verifiedAt: '2026-07-17T10:30:00+08:00' }),
   makeEvidence({ id: 'evidence-learntrack-public', projectKey: 'project-learntrack', type: 'trusted_external_source', summary: '历史发布页证明作品曾存在，当前公开入口未知。', verifiedAt: '2026-06-10T09:00:00+08:00' }),
+  ...[
+    ['atlas-home', 'Atlas Home'], ['quiet-index', 'Quiet Index'], ['stackfolio', 'Stackfolio'], ['terminal-craft', 'Terminal Craft'],
+    ['form-field', 'Form & Field'], ['mono-studio', 'Mono Studio'], ['product-notes', 'Product Notes'], ['roadmap-self', 'Roadmap Self'],
+    ['field-notes', 'Field Notes'], ['independent-room', 'Independent Room'], ['first-launch', 'First Launch'], ['campus-canvas', 'Campus Canvas'],
+    ['one-page-cv', 'One Page CV'], ['brief-profile', 'Brief Profile'], ['lab-notebook', 'Lab Notebook'], ['scholar-site', 'Scholar Site'],
+  ].map(([key, name]) => makeEvidence({
+    id: `evidence-${key}-public`,
+    projectKey: `project-${key}`,
+    type: 'verified_author_statement',
+    summary: `${name} 的公开站点、个人身份与 AI 辅助开发声明已核验。`,
+    verifiedAt: '2026-08-08T10:00:00+08:00',
+  })),
 ]
 
 export const evidenceById = new Map(evidences.map((evidence) => [evidence.id, evidence]))

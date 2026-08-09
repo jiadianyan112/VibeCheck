@@ -28,7 +28,7 @@ function persistedRequest(): AuthorVerificationRequest {
 async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, privateReference: string) {
   await user.click(await screen.findByRole('radio', { name: '代码仓库' }))
   await user.type(screen.getByRole('textbox', { name: '材料摘要' }), '仓库公开页面包含作品域名与维护者资料。')
-  await user.type(screen.getByRole('textbox', { name: '私有材料引用' }), privateReference)
+  await user.type(screen.getByRole('textbox', { name: '验证材料' }), privateReference)
   await user.click(screen.getByRole('button', { name: '提交人工审核' }))
 }
 
@@ -76,13 +76,13 @@ describe('author verification page', () => {
     const user = userEvent.setup()
     const first = renderVerification('service_error')
     await fillAndSubmit(user, 'private://secret-service-retry')
-    expect(await screen.findByText('模拟服务暂时不可用，请稍后重试。')).toBeInTheDocument()
-    expect(screen.getByText('VC_SERVICE_UNAVAILABLE')).toBeInTheDocument()
+    expect(await screen.findByText('服务暂时不可用，请稍后重试。')).toBeInTheDocument()
+    expect(screen.queryByText('VC_SERVICE_UNAVAILABLE')).not.toBeInTheDocument()
     await waitFor(() => expect(persistedRequest()).toMatchObject({ status: 'draft', privateMaterialReference: 'private://secret-service-retry' }))
     first.unmount()
 
     renderVerification()
-    const restoredReference = await screen.findByRole('textbox', { name: '私有材料引用' })
+    const restoredReference = await screen.findByRole('textbox', { name: '验证材料' })
     await waitFor(() => expect(restoredReference).toHaveValue('private://secret-service-retry'))
     expect(screen.getByRole('textbox', { name: '材料摘要' })).toHaveValue('仓库公开页面包含作品域名与维护者资料。')
   })

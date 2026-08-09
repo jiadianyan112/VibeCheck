@@ -63,4 +63,28 @@ describe('submission review lifecycle', () => {
     const resumed = resumeSubmission(withdrawn)
     expect(resumed).toMatchObject({ status: 'draft', step: 'preview', submittedFields: null, submittedAt: null })
   })
+
+  it('keeps unsubmitted portfolio classifications unknown instead of inventing defaults', () => {
+    const portfolioDraft: SubmissionDraft = {
+      ...draft,
+      id: submissionDraftId('draft-review-portfolio'),
+      fields: {
+        currentName: '最小作品集',
+        publicUrl: 'https://example.test/portfolio',
+        oneLineDefinition: '展示开发项目与公开联系方式。',
+        categoryId: 'personal_site_portfolio',
+        creatorRoles: ['developer'],
+        primaryGoals: ['showcase_projects'],
+        coreModules: ['hero', 'projects', 'contact'],
+        accessStatus: 'normal',
+      },
+      assetIds: [],
+    }
+    const published = publishedProjectFromSubmission(applySubmissionReview(portfolioDraft, 'approved', '2026-08-01T09:00:00+08:00'))
+    expect(published?.categoryData?.creatorRoles).toMatchObject({ state: 'known', value: ['developer'] })
+    expect(published?.categoryData?.coreModules).toMatchObject({ state: 'known', value: ['hero', 'projects', 'contact'] })
+    expect(published?.categoryData?.siteType.state).toBe('unknown')
+    expect(published?.categoryData?.visualStyles.state).toBe('unknown')
+    expect(published?.assetIds).toEqual([])
+  })
 })

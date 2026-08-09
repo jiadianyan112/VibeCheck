@@ -10,15 +10,15 @@ import { submissionDraftId, type SubmissionDraft } from '../types'
 
 const draftId = submissionDraftId('draft-t38-form')
 
-function seedDraft() {
+function seedDraft(categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 'ai_learning_quiz') {
   let state = appReducer(createInitialAppState(), { type: 'LOGIN_COMPLETED', user: prototypeUsers[0]! })
   const draft: SubmissionDraft = {
     id: draftId,
     userId: prototypeUsers[0]!.id,
     status: 'draft',
     step: 'prefill',
-    fields: { publicUrl: 'https://example.test/t38-tool' },
-    originalExtraction: { publicUrl: 'https://example.test/t38-tool' },
+    fields: { publicUrl: 'https://example.test/t38-tool', categoryId },
+    originalExtraction: { publicUrl: 'https://example.test/t38-tool', categoryId },
     assetIds: [],
     duplicateProjectId: null,
     validationErrors: {},
@@ -59,7 +59,7 @@ describe('new project multi-step submission form', () => {
     renderForm()
     const name = await screen.findByRole('textbox', { name: '作品名称' })
     expect(name).toHaveValue('自动提取的作品名称')
-    expect(screen.getByText(/名称原始提取：/).closest('p')).toHaveTextContent('自动提取的作品名称')
+    expect(screen.getByText(/页面中识别到的名称：/).closest('p')).toHaveTextContent('自动提取的作品名称')
     await user.clear(name)
     await user.type(name, '五分钟发布测试')
     await user.clear(screen.getByRole('textbox', { name: '截图地址（可跳过）' }))
@@ -118,6 +118,37 @@ describe('new project multi-step submission form', () => {
 
     renderForm()
     expect(await screen.findByRole('textbox', { name: '作品名称' })).toHaveValue('刷新后仍保留')
-    expect(screen.getByText(/名称原始提取：/).closest('p')).toHaveTextContent('自动提取的作品名称')
+    expect(screen.getByText(/页面中识别到的名称：/).closest('p')).toHaveTextContent('自动提取的作品名称')
   })
+
+  it('publishes a portfolio with six essential facts and no borrowed asset ownership', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const user = userEvent.setup()
+    renderForm()
+    await screen.findByRole('textbox', { name: '作品名称' })
+    expect(screen.queryByRole('combobox', { name: '基础访问状态（必填）' })).not.toBeInTheDocument()
+    expect(screen.getByText('个人主页与作品集')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    expect(await screen.findByRole('heading', { name: '定位与用途' })).toBeInTheDocument()
+    expect(screen.queryByText('网站类型（必填）')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '开发者' }))
+    await user.click(screen.getByRole('checkbox', { name: '展示项目' }))
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    expect(await screen.findByRole('heading', { name: '核心内容' })).toBeInTheDocument()
+    expect(screen.queryByText('视觉风格（必填）')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '首屏' }))
+    await user.click(screen.getByRole('checkbox', { name: '项目' }))
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    expect(await screen.findByRole('heading', { name: '开发与资产' })).toBeInTheDocument()
+    expect(screen.getByText('资产归属会单独确认')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Atlas/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '保存并预览' }))
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    expect(persistedDraft().assetIds).toEqual([])
+    expect(persistedDraft().fields).toMatchObject({ categoryId: 'personal_site_portfolio', creatorRoles: ['developer'], primaryGoals: ['showcase_projects'], coreModules: ['hero', 'projects'] })
+  }, 10_000)
 })

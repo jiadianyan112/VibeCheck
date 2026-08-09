@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function loginAs(page: Page, displayName: '米娅' | '周可', returnPath: string) {
   await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
-  await page.getByRole('button', { name: `使用${displayName}测试身份` }).click()
+  await page.getByRole('button', { name: `使用${displayName}账号` }).click()
   await expect(page).toHaveURL(new RegExp(`${returnPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
@@ -39,12 +39,13 @@ test.describe('T56 六个原型测试任务', () => {
     await result.getByRole('button', { name: '收藏' }).click()
     const dialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
     await dialog.getByRole('button', { name: /周可/ }).click()
-    await expect(result.getByRole('button', { name: '已收藏' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(result.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('U02 比较三个口语模考作品并记录反馈方式', async ({ page }) => {
     await page.goto('/compare/comparison-mia-speaking')
-    await expect(page.getByRole('list', { name: '已选比较作品' }).getByRole('listitem')).toHaveCount(3)
+    await expect(page.getByText('3/5 个作品', { exact: true })).toBeVisible()
+    await expect(page.getByText('管理比较作品', { exact: true }).first()).toBeVisible()
     const matrix = page.getByLabel('3 个作品的横向比较表')
     await expect(matrix).toContainText('反馈方式')
     await expect(matrix).toContainText('有差异')
@@ -66,7 +67,7 @@ test.describe('T56 六个原型测试任务', () => {
     await expect(page.getByText('已结束').first()).toBeVisible()
     await expect(page.getByRole('heading', { name: '复用资产' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '录音波形与回放组件' })).toBeVisible()
-    await expect(page.getByText(/作品结束不等于资产失效/)).toBeVisible()
+    await expect(page.getByText(/作品停止维护后，公开的代码、模板或组件仍可能继续使用/)).toBeVisible()
   })
 
   test('U04 发布一个新作品并查看首次发布记录', async ({ page }) => {
@@ -74,7 +75,7 @@ test.describe('T56 六个原型测试任务', () => {
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('https://example.test/u04-published-tool')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
-    await page.getByRole('button', { name: '继续自动预填' }).click()
+    await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await completeRequiredSubmissionFields(page)
 
     const approvedUrl = new URL(page.url())
@@ -99,10 +100,10 @@ test.describe('T56 六个原型测试任务', () => {
     await expect(page.getByText('发现已有作品档案。')).toBeVisible()
     await page.getByRole('checkbox', { name: /我是该作品作者/ }).check()
     await page.getByRole('link', { name: '继续验证作者身份' }).click()
-    await expect(page.getByRole('heading', { name: '申请作者管理权限' })).toBeVisible()
-    await expect(page.getByText(/不会进入作品详情、动态或作者公开主页/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: '认领作品' })).toBeVisible()
+    await expect(page.getByText(/不会显示在作品详情、最新动态或作者主页中/)).toBeVisible()
     await page.getByLabel('材料摘要').fill('公开主页展示了本人身份与该作品名称。')
-    await page.getByLabel('私有材料引用').fill('https://example.test/private/u05-proof')
+    await page.getByLabel('验证材料').fill('https://example.test/private/u05-proof')
     await page.getByRole('button', { name: '提交人工审核' }).click()
     await expect(page.getByRole('heading', { name: '待人工审核' })).toBeVisible()
     await expect(page.getByText(/没有可靠预计时间/)).toBeVisible()
@@ -115,7 +116,7 @@ test.describe('T56 六个原型测试任务', () => {
     await page.getByRole('textbox', { name: '影响范围' }).fill('作品详情、公开动态与关注者通知')
     await page.getByRole('button', { name: '预览确认并提交更新' }).click()
     await page.getByRole('button', { name: '确认提交更新' }).click()
-    await expect(page.getByText('更新已追加写入')).toBeVisible()
+    await expect(page.getByText('更新已同步到作品详情、作品时间线和最新动态。')).toBeVisible()
 
     const detailHref = await page.getByRole('link', { name: '在详情中查看' }).getAttribute('href')
     const activityHref = await page.getByRole('link', { name: '在动态中查看' }).getAttribute('href')

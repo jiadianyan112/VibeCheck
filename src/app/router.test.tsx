@@ -20,12 +20,12 @@ describe('application route skeleton', () => {
 
   it.each([
     ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
-    ['/discover', '先确认你要解决的问题'],
-    ['/discover/result', '同类作品分析'],
+    ['/discover', '搜索作品、功能或完整想法'],
+    ['/discover/result', '找到相似作品'],
     ['/project/project-quizforge', '题练工坊'],
     ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/submit', '发布作品'],
-    ['/auth?from=%2Fsubmit', '选择原型身份'],
+    ['/auth?from=%2Fsubmit', '登录／注册'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
@@ -75,7 +75,7 @@ describe('application route skeleton', () => {
 
   it('redirects a guest admin request to the identity simulator', async () => {
     renderRoute('/admin/projects')
-    expect(await screen.findByRole('heading', { name: '选择原型身份' })).toBeInTheDocument()
-    expect(screen.getByText('/admin/projects')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
+    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
   })
 })

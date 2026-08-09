@@ -2,22 +2,35 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, Tabs, Tag, useToast } from '../components'
 import { buildDiscoveryAnalysis, categoryCatalog, useComparison } from '../features'
+import { creatorsForProject } from '../mocks'
 import { projectService, type ServiceError } from '../services'
 import { useAppState } from '../state'
-import type { AccessStatus, AssetType, ComparisonIntent, InputType, OutputType, PracticeFormat, Project, ReusableAsset, TargetUser, UseScenario } from '../types'
+import type { AccessStatus, AssetType, ComparisonIntent, CreatorRole, InputType, OutputType, PageModel, PracticeFormat, PrimaryGoal, Project, ProjectCategoryId, ReusableAsset, SiteType, TargetUser, UseScenario, VisualStyle } from '../types'
 import { accessStatusText, inputTypeLabels, practiceFormatLabels, scenarioLabels, targetUserLabels } from '../utils'
 
 type ResultView = 'works' | 'analysis'
-const assetLabels: Record<AssetType | 'none', string> = { source_code: '源代码', template: '模板', component: '组件', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', other: '其他资产', none: '暂无公开资产' }
+const assetLabels: Record<AssetType | 'none', string> = { source_code: '源代码', starter: 'Starter', template: '模板', component: '组件', page_layout: '页面布局', ui_component: 'UI 组件', motion_interaction: '动画/交互', theme_design_system: '主题/设计系统', resume_module: '简历模块', blog_cms_module: '博客/CMS 模块', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', deployment_config: '部署配置', design_file: '设计稿', other: '其他资产', none: '暂无公开资产' }
+const siteTypeLabels: Record<SiteType, string> = { personal_homepage: '个人主页', portfolio: '作品集', online_resume: '在线简历', academic_homepage: '学术主页', hybrid: '混合站点' }
+const creatorRoleLabels: Record<CreatorRole, string> = { developer: '开发者', designer: '设计师', product_manager: '产品经理', creator: '创作者', freelancer: '自由职业者', student_recruit: '学生/应届生', researcher_academic: '研究者/学者', multidisciplinary: '跨领域创作者', other: '其他' }
+const primaryGoalLabels: Record<PrimaryGoal, string> = { showcase_projects: '展示项目', professional_presence: '职业形象', job_search: '求职', client_acquisition: '获取客户', personal_brand: '个人品牌', academic_profile: '学术档案', content_hub: '内容枢纽', other: '其他' }
+const pageModelLabels: Record<PageModel, string> = { single_page: '单页', multi_page: '多页', hybrid: '混合结构' }
+const visualStyleLabels: Record<VisualStyle, string> = { minimal: '极简', editorial: '编辑感', brutalist: '粗野主义', playful: '趣味', retro: '复古', corporate: '专业商务', experimental: '实验性', illustrative: '插画主导', photographic: '摄影主导', typographic: '字体主导', other: '其他' }
 
 function intentFromParams(params: URLSearchParams): ComparisonIntent {
   return {
     originalQuery: params.get('idea') ?? '',
+    categoryId: (params.get('category') || undefined) as ProjectCategoryId | undefined,
     targetUsers: params.getAll('target') as TargetUser[],
     useScenarios: params.getAll('scenario') as UseScenario[],
     inputs: params.getAll('input') as InputType[],
     practiceFormats: params.getAll('practice') as PracticeFormat[],
     outputs: params.getAll('output') as OutputType[],
+    siteTypes: params.getAll('siteType') as SiteType[],
+    creatorRoles: params.getAll('role') as CreatorRole[],
+    primaryGoals: params.getAll('goal') as PrimaryGoal[],
+    pageModels: params.getAll('pageModel') as PageModel[],
+    visualStyles: params.getAll('visual') as VisualStyle[],
+    assetTypes: params.getAll('assetType') as AssetType[],
   }
 }
 
@@ -60,8 +73,8 @@ export function DiscoverResultPage() {
   const view = (params.get('view') as ResultView | null) ?? (analysis.exactProjects.length < 3 ? 'works' : 'analysis')
   const adjacentCategories = useMemo(() => categoryCatalog.map((category) => ({
     category,
-    score: (intent.useScenarios.includes(category.scenario) ? 3 : 0) + (category.requirePdf && intent.inputs.includes('pdf') ? 1 : 0),
-  })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score || a.category.slug.localeCompare(b.category.slug)).slice(0, 3), [intent.inputs, intent.useScenarios])
+    score: (intent.categoryId === category.projectCategoryId ? 5 : 0) + (category.scenario && intent.useScenarios.includes(category.scenario) ? 3 : 0) + (category.requirePdf && intent.inputs.includes('pdf') ? 1 : 0),
+  })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score || a.category.slug.localeCompare(b.category.slug)).slice(0, 3), [intent.categoryId, intent.inputs, intent.useScenarios])
   const assetsByProject = useMemo(() => new Map(analysis.exactProjects.map((project) => [project.id, assets.filter((asset) => asset.projectId === project.id)])), [analysis.exactProjects, assets])
   const filteredProjects = useMemo(() => {
     const status = params.get('status') as AccessStatus | null
@@ -104,29 +117,35 @@ export function DiscoverResultPage() {
     try {
       const stored = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown
       if (Array.isArray(stored) && stored.every((item) => typeof item === 'string')) saved = stored
-    } catch { /* discard a malformed prototype-only saved-query value */ }
+    } catch { /* discard a malformed saved-query value */ }
     const path = `/discover/result?${params}`
     localStorage.setItem(key, JSON.stringify([...new Set([...saved, path])]))
-    pushToast('已保存这次查询，可用相同 URL 恢复。', 'success')
+    pushToast('已保存这次搜索，下次可以从相同链接继续。', 'success')
   }
 
-  if (loading) return <main className="page-container"><LoadingState label="同类作品与资产统计中" /></main>
-  if (error) return <main className="page-container"><ErrorPanel message={error.message} detail={error.code} /></main>
+  if (loading) return <main className="page-container"><LoadingState label="正在寻找匹配作品" /></main>
+  if (error) return <main className="page-container"><ErrorPanel message={error.message} /></main>
 
   return (
     <main className="page-container page-with-bottom-space stack">
-      <nav aria-label="面包屑"><Link to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>意图确认</Link> / 同类分析</nav>
+      <nav aria-label="面包屑"><Link to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>确认想法</Link> / 匹配结果</nav>
       <header className="analysis-hero stack stack--small">
-        <p className="eyebrow">Similar solutions</p>
-        <h1>同类作品分析</h1>
-        <p>“{intent.originalQuery || '未命名查询'}”在当前固定数据集中有 <strong>{analysis.exactProjects.length}</strong> 个精确匹配作品。</p>
+        <h1>找到相似作品</h1>
+        <p>围绕“{intent.originalQuery || '你的想法'}”，找到 <strong>{analysis.exactProjects.length}</strong> 个高度匹配的作品。</p>
         <div className="cluster" aria-label="已确认意图">
+          <Tag tone="strong">{intent.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag>
           {intent.targetUsers.map((value) => <Tag key={`target-${value}`}>{targetUserLabels[value]}</Tag>)}
           {intent.useScenarios.map((value) => <Tag key={`scenario-${value}`}>{scenarioLabels[value]}</Tag>)}
           {intent.inputs.map((value) => <Tag key={`input-${value}`}>{inputTypeLabels[value]}</Tag>)}
           {intent.practiceFormats.map((value) => <Tag key={`practice-${value}`}>{practiceFormatLabels[value]}</Tag>)}
+          {intent.siteTypes?.map((value) => <Tag key={`site-${value}`}>{siteTypeLabels[value]}</Tag>)}
+          {intent.creatorRoles?.map((value) => <Tag key={`role-${value}`}>{creatorRoleLabels[value]}</Tag>)}
+          {intent.primaryGoals?.map((value) => <Tag key={`goal-${value}`}>{primaryGoalLabels[value]}</Tag>)}
+          {intent.pageModels?.map((value) => <Tag key={`page-${value}`}>{pageModelLabels[value]}</Tag>)}
+          {intent.visualStyles?.map((value) => <Tag key={`visual-${value}`}>{visualStyleLabels[value]}</Tag>)}
+          {intent.assetTypes?.map((value) => <Tag key={`asset-intent-${value}`}>希望复用：{assetLabels[value]}</Tag>)}
         </div>
-        <aside className="boundary-note"><strong>判断边界</strong><p>下列数量只表示 VibeCheck 当前固定收录样本，不代表市场规模、竞争强度或真实需求大小；每项统计均可回溯到具体作品。</p></aside>
+        <aside className="boundary-note"><strong>关于这些结果</strong><p>结果来自社区目前收录的公开作品，用于发现和比较，不代表市场需求或商业机会。</p></aside>
       </header>
 
       <div className="cluster cluster--between">
@@ -141,26 +160,26 @@ export function DiscoverResultPage() {
       {view === 'works' ? (
         <section className="analysis-works stack">
           <div className="result-tier result-tier--exact stack"><div className="cluster cluster--between"><div><Tag tone="strong">精确匹配</Tag><h2>精确匹配作品</h2></div><strong aria-live="polite">{filteredProjects.length} 个结果</strong></div>
-            {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : analysis.exactProjects.length ? <EmptyState title="当前筛选下没有精确作品" description="精确结果仍在，只是被状态或资产筛选隐藏。" action={<Button onClick={clearResultFilters}>清除筛选</Button>} /> : <EmptyState title="当前固定数据中没有精确匹配" description="这只说明当前收录样本未命中，不代表需求不存在。" />}
+            {filteredProjects.length ? <div className="compact-list">{filteredProjects.map((project) => <ProjectCard key={project.id} project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} />)}</div> : analysis.exactProjects.length ? <EmptyState title="当前筛选下没有精确作品" description="匹配作品仍在，可以清除筛选后查看。" action={<Button onClick={clearResultFilters}>清除筛选</Button>} /> : <EmptyState title="暂未找到完全匹配的作品" description="可以调整想法标签，或从相近作品继续探索。" />}
           </div>
 
-          {analysis.exactProjects.length > 0 && analysis.exactProjects.length < 3 ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">放宽匹配</Tag><h2>相近作品</h2><p>精确结果少于 3 个，因此补充只命中部分维度的作品；它们不会计入上方精确数量。</p></div>{analysis.relaxedProjects.length ? <div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>放宽原因：</strong>{reason}</p><ProjectCard project={project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div> : <EmptyState title="没有可解释的放宽结果" description="原型不会为了凑足数量补造作品。" />}</div> : null}
+          {analysis.exactProjects.length > 0 && analysis.exactProjects.length < 3 ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">相近推荐</Tag><h2>相近作品</h2><p>这些作品只符合部分条件，可以作为补充参考。</p></div>{analysis.relaxedProjects.length ? <div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>推荐原因：</strong>{reason}</p><ProjectCard project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div> : <EmptyState title="暂时没有合适的相近作品" />}</div> : null}
 
-          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相邻分类</Tag><h2>从相邻问题继续探索</h2><p>这些入口依据已确认场景与输入映射到分类，不属于精确结果。</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>进入相邻分类 →</Link></article>)}</div> : <EmptyState title="暂无可映射的相邻分类" description="可返回意图确认页手工调整标签。" />}
+          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相关问题</Tag><h2>换个方向继续探索</h2><p>根据你的使用场景和输入内容，我们找到了这些相关专题。</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>查看相关专题 →</Link></article>)}</div> : <EmptyState title="暂时没有相关专题" description="可以返回上一步调整想法。" />}
             <div className="cluster"><Link className="button" to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>修改条件</Link><Button onClick={clearResultFilters}>清除筛选</Button><Button variant="primary" onClick={saveQuery}>保存查询</Button><Link className="button button--quiet" to="/projects">回到作品广场</Link></div>
           </div> : null}
         </section>
       ) : (
         <div className="stack">
-          {analysis.representative ? <section className="stack"><div className="section-heading"><p className="eyebrow">Representative</p><h2>代表作品</h2><p>{analysis.representative.reason}</p></div><ProjectCard project={analysis.representative.project} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(analysis.representative.project.id)} onToggleCompare={toggleCompare} /></section> : null}
+          {analysis.representative ? <section className="stack"><div className="section-heading"><h2>代表作品</h2><p>{analysis.representative.reason}</p></div><ProjectCard project={analysis.representative.project} creators={creatorsForProject(analysis.representative.project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(analysis.representative.project.id)} onToggleCompare={toggleCompare} /></section> : null}
 
-          <section className="stack"><div className="section-heading"><p className="eyebrow">Solution groups</p><h2>方案分组</h2><p>按每个作品结构化字段中的首个场景、输入和练习形式归组。</p></div>
-            {analysis.solutionGroups.length ? <div className="analysis-group-grid">{analysis.solutionGroups.map((group) => <article key={group.id} className="wire-card stack stack--small"><div className="cluster"><Tag>{scenarioLabels[group.scenario as UseScenario] ?? group.scenario}</Tag><Tag>{inputTypeLabels[group.input as InputType] ?? group.input}</Tag><Tag>{practiceFormatLabels[group.practice as PracticeFormat] ?? group.practice}</Tag></div><strong>{group.projectIds.length} 个作品</strong><ul>{group.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></article>)}</div> : <EmptyState title="暂无可分组的精确作品" />}
+          <section className="stack"><div className="section-heading"><h2>常见做法</h2><p>{intent.categoryId === 'personal_site_portfolio' ? '看看这些作品采用了哪些网站类型、作者身份与建站目的。' : '看看这些作品采用了哪些场景、输入和练习方式。'}</p></div>
+            {analysis.solutionGroups.length ? <div className="analysis-group-grid">{analysis.solutionGroups.map((group) => <article key={group.id} className="wire-card stack stack--small"><div className="cluster">{intent.categoryId === 'personal_site_portfolio' ? <><Tag>{siteTypeLabels[group.scenario as SiteType] ?? group.scenario}</Tag><Tag>{creatorRoleLabels[group.input as CreatorRole] ?? group.input}</Tag><Tag>{primaryGoalLabels[group.practice as PrimaryGoal] ?? group.practice}</Tag></> : <><Tag>{scenarioLabels[group.scenario as UseScenario] ?? group.scenario}</Tag><Tag>{inputTypeLabels[group.input as InputType] ?? group.input}</Tag><Tag>{practiceFormatLabels[group.practice as PracticeFormat] ?? group.practice}</Tag></>}</div><strong>{group.projectIds.length} 个作品</strong><ul>{group.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></article>)}</div> : <EmptyState title="暂无可分组的精确作品" />}
           </section>
 
           <section className="distribution-grid">
-            <div className="stack"><div className="section-heading"><p className="eyebrow">Current status</p><h2>状态分布</h2></div>{analysis.statusDistribution.map((row) => <article key={row.key} className="stat-trace"><Button onClick={() => openStatistic('status', row.key)}>{accessStatusText[row.key as AccessStatus]} · {row.count}</Button><details><summary>查看统计来源</summary><ul>{row.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></details></article>)}</div>
-            <div className="stack"><div className="section-heading"><p className="eyebrow">Reusable assets</p><h2>资产分布</h2></div>{analysis.assetDistribution.map((row) => <article key={row.key} className="stat-trace"><Button onClick={() => openStatistic('asset', row.key)}>{assetLabels[row.key]} · {row.count}</Button><details><summary>查看统计来源</summary><ul>{row.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></details></article>)}</div>
+            <div className="stack"><div className="section-heading"><h2>作品状态</h2></div>{analysis.statusDistribution.map((row) => <article key={row.key} className="stat-trace"><Button onClick={() => openStatistic('status', row.key)}>{accessStatusText[row.key as AccessStatus]} · {row.count}</Button><details><summary>查看包含的作品</summary><ul>{row.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></details></article>)}</div>
+            <div className="stack"><div className="section-heading"><h2>可复用内容</h2></div>{analysis.assetDistribution.map((row) => <article key={row.key} className="stat-trace"><Button onClick={() => openStatistic('asset', row.key)}>{assetLabels[row.key]} · {row.count}</Button><details><summary>查看包含的作品</summary><ul>{row.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></details></article>)}</div>
           </section>
         </div>
       )}

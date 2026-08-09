@@ -92,9 +92,16 @@ export function hydrateAppState(
       publishedEventId: draft.publishedEventId ?? null,
       withdrawnAt: draft.withdrawnAt ?? null,
     }))
+    const followedProjectIds = persisted.followedProjectIds ?? fallback.followedProjectIds
+    const favoriteProjectIds = [...new Set([
+      ...(persisted.favoriteProjectIds ?? fallback.favoriteProjectIds),
+      ...followedProjectIds,
+    ])]
     const hydrated: AppState = {
       ...fallback,
       ...persisted,
+      favoriteProjectIds,
+      followedProjectIds,
       submissionDrafts,
       verificationRequests: (persisted.verificationRequests ?? fallback.verificationRequests).map((request) => ({
         ...request,

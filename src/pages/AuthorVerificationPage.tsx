@@ -85,30 +85,30 @@ export function AuthorVerificationPage() {
 
   if (!state.session.user) {
     const from = encodeURIComponent(`${location.pathname}${location.search}`)
-    return <PageFrame title="作者身份验证" description="这是低频的管理权限申请，不影响浏览作品。"><section className="submit-login-callout stack"><h2>请先登录后提交身份材料</h2><p>登录后会回到当前作品，材料不会公开展示。</p><Link className="button button--primary" to={`/auth?from=${from}`}>登录并继续</Link><Link to={`/project/${id}`}>先查看作品详情</Link></section></PageFrame>
+    return <PageFrame title="作者身份验证" description="验证完成后，你可以管理和更新自己的作品信息。"><section className="submit-login-callout stack"><h2>请先登录后提交身份材料</h2><p>登录后会回到当前作品，材料不会公开展示。</p><Link className="button button--primary" to={`/auth?from=${from}`}>登录并继续</Link><Link to={`/project/${id}`}>先查看作品详情</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="身份验证页面加载中" /></main>
-  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} detail={loadError?.code} /><Link to="/projects">返回作品广场</Link></main>
+  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
 
   const projectName = project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'
   const canSubmit = !request || request.status === 'draft' || request.status === 'changes_requested' || request.status === 'failed'
   return (
-    <PageFrame title="申请作者管理权限" description={`目标作品：${projectName}。身份验证只改变作者关联和编辑权限，不会创建或复制作品。`}>
+    <PageFrame title="认领作品" description={`验证你与“${projectName}”的关系，完成后即可管理作品信息。`}>
       <div className="verification-layout">
         <section className="stack">
-          <aside className="submission-guidance stack stack--small"><strong>人工审核与隐私边界</strong><p>这里不做自动身份验证。材料只保存在申请人与审核人员可见的审核区，不会进入作品详情、动态或作者公开主页。</p></aside>
+          <aside className="submission-guidance stack stack--small"><strong>材料如何使用</strong><p>材料只供审核人员确认作品归属，不会显示在作品详情、最新动态或作者主页中。</p></aside>
 
           {canSubmit ? <section className="wire-panel stack" aria-labelledby="verification-material-heading">
-            <div><p className="eyebrow">Private evidence</p><h2 id="verification-material-heading">选择一种主要证明方式</h2></div>
+            <div><h2 id="verification-material-heading">选择一种主要证明方式</h2></div>
             <fieldset className="submission-choice-field"><legend>证明方式</legend><div className="verification-method-grid">{verificationMethods.map((value) => <label key={value} className="choice-card"><input type="radio" name="verification-method" value={value} checked={method === value} onChange={() => setMethod(value)} /><span><strong>{verificationMethodLabels[value]}</strong></span></label>)}</div></fieldset>
             <label className="field" htmlFor="verification-summary"><span className="field__label">材料摘要</span><textarea id="verification-summary" className="input textarea" rows={4} value={summary} aria-invalid={Boolean(validation && !summary.trim())} aria-describedby={validation ? 'verification-error' : undefined} onChange={(event) => { setSummary(event.target.value); setValidation(null) }} placeholder="说明材料如何连接你的身份与该作品" /></label>
-            <label className="field" htmlFor="verification-private-reference"><span className="field__label">私有材料引用</span><textarea id="verification-private-reference" className="input textarea" rows={3} value={privateReference} aria-invalid={Boolean(validation && !privateReference.trim())} aria-describedby={validation ? 'verification-error' : undefined} onChange={(event) => { setPrivateReference(event.target.value); setValidation(null) }} placeholder="审核专用链接、仓库校验位置或材料编号" /></label>
+            <label className="field" htmlFor="verification-private-reference"><span className="field__label">验证材料</span><textarea id="verification-private-reference" className="input textarea" rows={3} value={privateReference} aria-invalid={Boolean(validation && !privateReference.trim())} aria-describedby={validation ? 'verification-error' : undefined} onChange={(event) => { setPrivateReference(event.target.value); setValidation(null) }} placeholder="填写审核可访问的链接、仓库位置或材料编号" /></label>
             {validation ? <p id="verification-error" className="field-error" role="alert">{validation}</p> : null}
             <Button variant="primary" disabled={busy} onClick={submit}>{request ? '更新材料并重新提交' : '提交人工审核'}</Button>
           </section> : null}
 
           {request ? <section className={`verification-status verification-status--${request.status} stack`} aria-live="polite">
-            <div className="cluster cluster--between"><div><p className="eyebrow">Review status</p><h2>{verificationStatusLabels[request.status]}</h2></div><Tag tone={request.status === 'verified' ? 'strong' : 'dashed'}>{request.id}</Tag></div>
+            <div className="cluster cluster--between"><div><h2>{verificationStatusLabels[request.status]}</h2></div><Tag tone={request.status === 'verified' ? 'strong' : 'dashed'}>申请编号 {request.id}</Tag></div>
             {request.status === 'pending' ? <p>材料正在等待人工审核；没有可靠预计时间，因此不展示倒计时。</p> : null}
             {request.reviewMessage ? <p>{request.reviewMessage}</p> : null}
             {request.status === 'changes_requested' ? <p>上次提交的材料和审核意见均已保留，可在上方直接补充。</p> : null}
@@ -118,7 +118,7 @@ export function AuthorVerificationPage() {
           </section> : null}
 
           {request ? <details className="wire-panel verification-history"><summary>查看申请状态历史</summary><ol>{request.statusHistory.map((item, index) => <li key={`${item.status}-${index}`}><Tag>{verificationStatusLabels[item.status]}</Tag><time dateTime={item.happenedAt}>{new Date(item.happenedAt).toLocaleString('zh-CN')}</time>{item.message ? <p>{item.message}</p> : null}</li>)}</ol></details> : null}
-          {operationError ? <ErrorPanel title="身份材料提交未完成" message={operationError.message} detail={operationError.code} onRetry={operationError.retryable ? (request?.status === 'pending' || request?.status === 'changes_requested' ? refresh : submit) : undefined} /> : null}
+          {operationError ? <ErrorPanel title="身份材料提交未完成" message={operationError.message} onRetry={operationError.retryable ? (request?.status === 'pending' || request?.status === 'changes_requested' ? refresh : submit) : undefined} /> : null}
         </section>
         <aside className="wire-panel stack verification-boundary"><h2>权限影响</h2><dl className="definition-list"><div><dt>作者关联</dt><dd>{management.linked ? '已关联' : '未关联'}</dd></div><div><dt>编辑权限</dt><dd>{management.canEdit ? '已开放' : '未开放'}</dd></div><div><dt>高风险编辑</dt><dd>{management.highRiskEditingFrozen ? '因争议冻结' : management.canEdit ? '按更新流程提交' : '不可用'}</dd></div><div><dt>作品数量</dt><dd>保持不变</dd></div></dl><Link to={`/project/${project.id}`}>返回作品详情</Link></aside>
       </div>

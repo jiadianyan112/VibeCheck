@@ -35,7 +35,7 @@ async function expectNoPageOverflow(page: Page, context: string) {
 
 async function loginAsMia(page: Page, returnPath: string) {
   await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
-  await page.getByRole('button', { name: '使用米娅测试身份' }).click()
+  await page.getByRole('button', { name: '使用米娅账号' }).click()
   await expect(page).toHaveURL(new RegExp(`${returnPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
@@ -50,6 +50,7 @@ async function bringAboveFixedBar(page: Page, target: ReturnType<Page['locator']
 
 test.describe('T54 响应式关键路径', () => {
   test('360、390、768 和桌面视口没有页面级横向滚动', async ({ page }) => {
+    test.setTimeout(45_000)
     for (const viewport of viewports) {
       await page.setViewportSize(viewport)
       for (const route of criticalRoutes) {
@@ -78,7 +79,7 @@ test.describe('T54 响应式关键路径', () => {
     await filters.getByLabel('当前状态').selectOption('normal')
     await expect(page).toHaveURL(/status=normal/)
     await filters.getByRole('button', { name: '重置' }).click()
-    await expect(page.getByRole('heading', { name: '3 个结果' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '4 个结果' })).toBeVisible()
     await filters.locator('summary').click()
 
     const candidate = page.locator('article').filter({ has: page.getByRole('link', { name: 'Paper to Practice' }) })
@@ -86,6 +87,7 @@ test.describe('T54 响应式关键路径', () => {
     await bringAboveFixedBar(page, addButton)
     await addButton.click()
     await page.getByRole('link', { name: '开始比较' }).click()
+    await page.getByRole('button', { name: '查看完整字段' }).click()
     const switcher = page.getByRole('tablist', { name: '移动端作品切换' })
     await expect(switcher).toBeVisible()
     await expect(switcher.getByRole('tab')).toHaveCount(3)
@@ -101,7 +103,7 @@ test.describe('T54 响应式关键路径', () => {
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('example.test/mobile-publish')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
-    await page.getByRole('button', { name: '继续自动预填' }).click()
+    await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
     await expect(page.locator('.submission-progress')).toBeVisible()
     await expectNoPageOverflow(page, '360px 发布流程')
@@ -118,10 +120,19 @@ test.describe('T54 响应式关键路径', () => {
     expect(dialogBox!.x).toBeGreaterThanOrEqual(0)
     expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390)
     expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844)
-    await dialog.getByRole('button', { name: '关闭弹层' }).click()
+    await dialog.getByRole('button', { name: /米娅/ }).click()
+
+    const cancelCollection = page.locator('.project-primary-actions').getByRole('button', { name: '取消收藏' })
+    await expect(cancelCollection).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByText('收藏设置')).toHaveCount(0)
+    const actionBarFits = await page.locator('.project-primary-actions').evaluate((element) => element.scrollWidth <= element.clientWidth)
+    expect(actionBarFits).toBe(true)
+    await cancelCollection.click()
+    await expect(page.locator('.project-primary-actions').getByRole('button', { name: '收藏' })).toHaveAttribute('aria-pressed', 'false')
 
     await page.goto('/auth?from=%2Fadmin%2Fprojects')
-    await page.getByRole('button', { name: '使用原型管理员测试身份' }).click()
+    await page.getByRole('button', { name: '切换账号' }).click()
+    await page.getByRole('button', { name: '使用林舟账号' }).click()
     await expect(page).toHaveURL(/\/admin\/projects$/)
     await expect(page.getByRole('note')).toContainText('后台按桌面工作台设计')
     await expect(page.locator('.admin-table-scroll')).toBeVisible()

@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from '../app/providers'
 import { appRoutes } from '../app/router'
@@ -22,18 +23,30 @@ describe('PersonalCenterPage', () => {
 
   it('returns a guest to role simulation and keeps the original route', async () => {
     renderMe()
-    expect(await screen.findByRole('heading', { name: '选择原型身份' })).toBeInTheDocument()
-    expect(screen.getByText('/me')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
+    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
   })
 
   it('returns all registered-user history to shared source records', async () => {
+    const user = userEvent.setup()
     loginAs(0)
     renderMe()
     expect(await screen.findByRole('heading', { name: '米娅的个人中心' })).toBeInTheDocument()
     const favorites = screen.getByRole('region', { name: '收藏' })
-    expect(within(favorites).getByRole('link', { name: '题练工坊' })).toHaveAttribute('href', '/project/project-quizforge')
-    expect(screen.getByRole('link', { name: '继续比较' })).toHaveAttribute('href', '/compare/comparison-mia-speaking')
-    expect(screen.getByRole('link', { name: '恢复草稿' })).toHaveAttribute('href', expect.stringContaining('/submit/new?draft=draft-mia-study-review'))
+    const quizLink = within(favorites).getByRole('link', { name: '题练工坊' })
+    expect(quizLink).toHaveAttribute('href', '/project/project-quizforge')
+    expect(within(favorites).getAllByRole('button', { name: '关注更新' })).toHaveLength(2)
+    expect(within(favorites).getAllByRole('button', { name: '取消关注更新' })).toHaveLength(2)
+    const quizItem = quizLink.closest('li') as HTMLElement
+    await user.click(within(quizItem).getByRole('button', { name: '关注更新' }))
+    expect(within(quizItem).getByRole('button', { name: '取消关注更新' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('region', { name: '关注的作品更新' })).not.toBeInTheDocument()
+    const comparisonLinks = screen.getAllByRole('link', { name: '继续比较' }).map((link) => link.getAttribute('href'))
+    expect(comparisonLinks).toEqual(expect.arrayContaining([
+      '/compare/comparison-anonymous-pdf#structured-comparison-heading',
+      '/compare/comparison-mia-speaking#structured-comparison-heading',
+    ]))
+    expect(screen.getByRole('link', { name: '继续编辑' })).toHaveAttribute('href', expect.stringContaining('/submit/new?draft=draft-mia-study-review'))
     expect(screen.getByText('待人工审核')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回比较' })).toHaveAttribute('href', '/compare/comparison-mia-speaking#comparison-decision')
     expect(screen.queryByRole('heading', { name: '平台管理入口' })).not.toBeInTheDocument()

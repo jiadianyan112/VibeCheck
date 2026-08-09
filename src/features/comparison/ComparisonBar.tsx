@@ -71,18 +71,19 @@ export function FloatingCompareBar() {
   const { state, dispatch } = useAppState()
   const { removeProject } = useComparison()
   const [confirmClear, setConfirmClear] = useState(false)
+  const [itemsExpanded, setItemsExpanded] = useState(false)
   const ids = state.comparisonProjectIds
   if (ids.length === 0) return null
 
   return (
     <aside className="compare-bar" aria-label="当前比较栏">
-      <div className="compare-bar__summary"><strong>比较栏 · {ids.length}/5</strong><span>{ids.length === 1 ? '再选 1 个即可开始' : `已选择 ${ids.length} 个作品`}</span></div>
-      <div className="compare-bar__items">
+      <div className="compare-bar__summary"><strong><span className="compare-bar__desktop-title">比较栏 · {ids.length}/5</span><span className="compare-bar__mobile-title">已选 {ids.length} 个</span></strong><span>{ids.length === 1 ? '再选 1 个即可开始' : `已选择 ${ids.length} 个作品`}</span><button className="compare-bar__toggle" type="button" aria-expanded={itemsExpanded} aria-controls="compare-bar-items" onClick={() => setItemsExpanded((current) => !current)}>{itemsExpanded ? '收起作品' : '查看作品'}</button></div>
+      <div id="compare-bar-items" className={`compare-bar__items${itemsExpanded ? ' compare-bar__items--expanded' : ''}`}>
         {ids.map((id) => <span key={id} className="compare-chip"><Tag>{projectName(id)}</Tag><button type="button" aria-label={`移出${projectName(id)}`} onClick={() => removeProject(id)}>×</button></span>)}
       </div>
       <div className="cluster">
         <Button variant="quiet" onClick={() => setConfirmClear(true)}>清空</Button>
-        {ids.length >= 2 && state.activeComparisonSessionId ? <Link className="button button--primary" to={`/compare/${state.activeComparisonSessionId}`}>开始比较</Link> : <Button variant="primary" disabled>开始比较</Button>}
+        {ids.length >= 2 && state.activeComparisonSessionId ? <Link className="button button--primary" to={`/compare/${state.activeComparisonSessionId}#structured-comparison-heading`}>开始比较</Link> : <Button variant="primary" disabled>开始比较</Button>}
       </div>
       <ConfirmDialog open={confirmClear} title="清空比较栏？" description="已选择的作品将从本次比较中移除。" confirmLabel="确认清空" onCancel={() => setConfirmClear(false)} onConfirm={() => { dispatch({ type: 'COMPARISON_CLEAR' }); setConfirmClear(false) }} />
     </aside>

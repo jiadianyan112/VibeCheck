@@ -24,7 +24,7 @@ import {
 import { accessStatusText } from '../utils'
 
 const assetTypeLabels: Record<AssetType, string> = {
-  source_code: '源代码', template: '模板', component: '组件', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', other: '其他',
+  source_code: '源代码', starter: 'Starter', template: '模板', component: '组件', page_layout: '页面布局', ui_component: 'UI 组件', motion_interaction: '动画/交互', theme_design_system: '主题/设计系统', resume_module: '简历模块', blog_cms_module: '博客/CMS 模块', prompt: '提示词', parsing_solution: '解析方案', open_api: '开放 API', deployment_solution: '部署方案', deployment_config: '部署配置', design_file: '设计稿', other: '其他',
 }
 const authorStatusOptions: AccessStatus[] = ['normal', 'recovered', 'paused', 'ended']
 
@@ -142,22 +142,22 @@ export function ProjectUpdatePage() {
     dispatch({ type: 'PROJECT_UPDATE_APPLY', ...response.data, notifications })
     setProject(response.data.project)
     setCompletedEventId(response.data.event.id)
-    pushToast('更新已写入作品详情、生命周期时间线和公开动态。', 'success')
+    pushToast('更新已同步到作品详情、作品时间线和最新动态。', 'success')
   }
 
   if (!state.session.user) {
     return <PageFrame title="作品更新" description="更新作品需要已验证的作者管理权限。"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?from=${encodeURIComponent(`${location.pathname}${location.search}`)}`}>登录并继续</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="作品更新权限加载中" /></main>
-  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} detail={loadError?.code} /><Link to="/projects">返回作品广场</Link></main>
+  if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
   if (!permission.allowed) return <PageFrame title="没有此作品的更新权限" description={permission.disputed ? '作者归属存在争议，高风险编辑已冻结。' : '身份验证只用于取得管理权限；普通纠错不要求声明作者身份。'}><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}/verify-author`}>{permission.disputed ? '查看归属争议状态' : '申请作者身份验证'}</Link><Link className="button" to="/about#corrections">提交公开纠错</Link><Link to={`/project/${project.id}`}>返回作品详情</Link></div></PageFrame>
 
   const projectName = project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'
   const afterPreview = type === 'asset' ? `${assetName || '未命名资产'} · ${value || '未填写地址'}` : type === 'status' && value ? accessStatusText[value as AccessStatus] : value || '尚未填写'
   return (
-    <PageFrame title={`更新 ${projectName}`} description="关键事实使用追加式生命周期事件；旧值与迁移、异常和公开历史不会被作者直接删除。">
+    <PageFrame title={`更新 ${projectName}`} description="提交后会同步到作品详情和最新动态，之前的信息仍可在时间线中查看。">
       <div className="project-update-layout">
-        <aside className="project-update-menu stack stack--small"><p className="eyebrow">Update type</p>{projectUpdateTypes.map((item) => <Button key={item} variant={item === type ? 'primary' : 'quiet'} aria-pressed={item === type} onClick={() => selectType(item)}>{projectUpdateTypeLabels[item]}</Button>)}</aside>
+        <aside className="project-update-menu stack stack--small"><strong>选择更新内容</strong>{projectUpdateTypes.map((item) => <Button key={item} variant={item === type ? 'primary' : 'quiet'} aria-pressed={item === type} onClick={() => selectType(item)}>{projectUpdateTypeLabels[item]}</Button>)}</aside>
         <section className="stack">
           <div className="wire-panel stack"><div className="cluster cluster--between"><h2>{projectUpdateTypeLabels[type]}</h2><Tag>已验证作者</Tag></div>
             {type === 'version' ? <label className="field"><span className="field__label">新版本名称或编号</span><input className="input" value={value} onChange={(event) => setValue(event.target.value)} placeholder="例如 2.1 · 练习报告更新" /></label> : null}
@@ -167,16 +167,16 @@ export function ProjectUpdatePage() {
             {type === 'asset' ? <div className="stack"><label className="field"><span className="field__label">资产名称</span><input className="input" value={assetName} onChange={(event) => setAssetName(event.target.value)} /></label><label className="field"><span className="field__label">资产类型</span><select className="input" value={assetType} onChange={(event) => setAssetType(event.target.value as AssetType)}>{assetTypes.map((item) => <option key={item} value={item}>{assetTypeLabels[item]}</option>)}</select></label><label className="field"><span className="field__label">资产公开地址</span><input className="input" value={value} onChange={(event) => setValue(event.target.value)} placeholder="https://" /></label><label className="field"><span className="field__label">许可证（可选）</span><input className="input" value={assetLicense} onChange={(event) => setAssetLicense(event.target.value)} /></label></div> : null}
           </div>
 
-          <section className="update-diff-preview stack"><div><p className="eyebrow">Before / after</p><h2>提交前值与后值预览</h2></div><div className="update-diff-grid"><article><strong>更新前</strong><p>{displayValue(beforeValue)}</p></article><article><strong>更新后</strong><p>{afterPreview}</p></article></div><p>影响字段：<code>{type}</code>。提交后旧值保留在事件 changes 中。</p></section>
+          <section className="update-diff-preview stack"><div><h2>确认更新内容</h2></div><div className="update-diff-grid"><article><strong>更新前</strong><p>{displayValue(beforeValue)}</p></article><article><strong>更新后</strong><p>{afterPreview}</p></article></div><p>提交后仍可在作品时间线中查看更新前的内容。</p></section>
 
           <section className="wire-panel stack"><h2>来源与影响范围</h2><label className="field"><span className="field__label">来源类型</span><select className="input" value={sourceType} onChange={(event) => setSourceType(event.target.value as ProjectUpdateInput['sourceType'])}>{projectUpdateSourceTypes.map((item) => <option key={item} value={item}>{projectUpdateSourceLabels[item]}</option>)}</select></label><label className="field"><span className="field__label">来源说明</span><textarea className="input textarea" rows={3} value={sourceSummary} onChange={(event) => setSourceSummary(event.target.value)} placeholder="说明公开页面、仓库或作者声明中的依据" /></label><label className="field"><span className="field__label">影响范围</span><textarea className="input textarea" rows={3} value={impactScope} onChange={(event) => setImpactScope(event.target.value)} placeholder="说明详情、访问入口、使用者或复用方会受到什么影响" /></label></section>
           {validation ? <p className="field-error" role="alert">{validation}</p> : null}
-          {operationError ? <div className="stack"><ErrorPanel title="更新提交未完成" message={operationError.message} detail={operationError.code} onRetry={operationError.retryable ? submit : undefined} />{operationError.code === 'VC_UPDATE_PERMISSION_EXPIRED' ? <Link className="button" to={`/project/${project.id}/verify-author`}>重新验证作者权限</Link> : null}</div> : null}
-          {completedEventId ? <section className="feedback stack stack--small" role="status"><strong>更新已追加写入</strong><p>详情时间线和公开动态使用同一事件 ID；关注者通知已按关注关系生成。</p><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}#${completedEventId}`}>在详情中查看</Link><Link className="button" to={`/activity#${completedEventId}`}>在动态中查看</Link></div></section> : null}
+          {operationError ? <div className="stack"><ErrorPanel title="更新提交未完成" message={operationError.message} onRetry={operationError.retryable ? submit : undefined} />{operationError.code === 'VC_UPDATE_PERMISSION_EXPIRED' ? <Link className="button" to={`/project/${project.id}/verify-author`}>重新验证作者权限</Link> : null}</div> : null}
+          {completedEventId ? <section className="feedback stack stack--small" role="status"><strong>更新已发布</strong><p>内容已同步到作品详情和最新动态，关注者也会收到通知。</p><div className="cluster"><Link className="button button--primary" to={`/project/${project.id}#${completedEventId}`}>在详情中查看</Link><Link className="button" to={`/activity#${completedEventId}`}>在动态中查看</Link></div></section> : null}
           <Button variant="primary" disabled={busy || Boolean(completedEventId)} onClick={requestSubmit}>{busy ? '提交中…' : completedEventId ? '本次更新已提交' : '预览确认并提交更新'}</Button>
         </section>
       </div>
-      <ConfirmDialog open={confirming} title={`确认提交${projectUpdateTypeLabels[type]}？`} description="更新会追加一条不可直接删除的公开生命周期事件，并同步详情、动态和关注者通知。" confirmLabel="确认提交更新" onConfirm={() => void submit()} onCancel={() => setConfirming(false)} />
+      <ConfirmDialog open={confirming} title={`确认提交${projectUpdateTypeLabels[type]}？`} description="提交后会更新作品详情、最新动态，并通知关注者。" confirmLabel="确认提交更新" onConfirm={() => void submit()} onCancel={() => setConfirming(false)} />
     </PageFrame>
   )
 }

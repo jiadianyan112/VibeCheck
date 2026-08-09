@@ -84,8 +84,8 @@ describe('submission preview and review status', () => {
     const submittedName = persistedDraft().submittedFields?.currentName
     await act(async () => { await router.navigate(`/submit/new?draft=${draftId}&step=preview&scenario=service_error`) })
     await user.click(screen.getByRole('button', { name: '刷新审核状态' }))
-    expect(await screen.findByText('模拟服务暂时不可用，请稍后重试。')).toBeInTheDocument()
-    expect(screen.getByText('VC_SERVICE_UNAVAILABLE')).toBeInTheDocument()
+    expect(await screen.findByText('服务暂时不可用，请稍后重试。')).toBeInTheDocument()
+    expect(screen.queryByText('VC_SERVICE_UNAVAILABLE')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
     expect(persistedDraft()).toMatchObject({ status: 'pending_review', submittedAt, submittedFields: { currentName: submittedName } })
   })

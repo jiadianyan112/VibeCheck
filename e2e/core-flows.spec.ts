@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function loginAs(page: Page, displayName: '米娅' | '周可', returnPath: string) {
   await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
-  await page.getByRole('button', { name: `使用${displayName}测试身份` }).click()
+  await page.getByRole('button', { name: `使用${displayName}账号` }).click()
   await expect(page).toHaveURL(new RegExp(`${returnPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
@@ -19,7 +19,7 @@ test.describe('T52 四条核心用户流程', () => {
     const loginDialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
     await expect(loginDialog).toBeVisible()
     await loginDialog.getByRole('button', { name: /周可/ }).click()
-    await expect(card.getByRole('button', { name: '已收藏' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(card.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
 
     await card.getByRole('button', { name: '加入比较' }).click()
     await expect(card.getByRole('button', { name: '移出比较' })).toHaveAttribute('aria-pressed', 'true')
@@ -32,18 +32,20 @@ test.describe('T52 四条核心用户流程', () => {
     await page.goBack()
     await expect(page).toHaveURL(/\/projects$/)
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(scrollBeforeDetail)
-    await expect(card.getByRole('button', { name: '已收藏' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(card.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('搜索、意图、分析、比较和行动使用同一来源路径', async ({ page, isMobile }) => {
     test.skip(isMobile, 'T52 桌面集成流程；移动端在 T54 单独覆盖')
     const idea = '我想把大学 PDF 讲义生成选择题'
-    await page.goto(`/search?q=${encodeURIComponent(idea)}&mode=similar`)
-    await expect(page.getByRole('heading', { name: `“${idea}”的搜索结果` })).toBeVisible()
-    await page.getByRole('link', { name: /确认完整意图/ }).click()
-    await expect(page.getByRole('heading', { name: '先确认你要解决的问题' })).toBeVisible()
-    await page.getByRole('button', { name: '确认并查看同类分析' }).click()
-    await expect(page.getByRole('heading', { name: '同类作品分析' })).toBeVisible()
+    await page.goto('/projects')
+    const search = page.getByRole('banner').getByRole('search')
+    await search.getByRole('textbox', { name: '搜索作品或输入完整想法' }).fill(idea)
+    await search.getByRole('button', { name: '搜索' }).click()
+    await expect(page).toHaveURL(/\/discover\?idea=/)
+    await expect(page.getByRole('heading', { name: '一起把想法说清楚' })).toBeVisible()
+    await page.getByRole('button', { name: '确认并查找相似作品' }).click()
+    await expect(page.getByRole('heading', { name: '找到相似作品' })).toBeVisible()
 
     const resultPath = new URL(page.url()).pathname + new URL(page.url()).search
     const candidate = page.locator('article').filter({ has: page.locator('a[href="/project/project-papertopractice"]') })
@@ -71,7 +73,7 @@ test.describe('T52 四条核心用户流程', () => {
     await urlInput.fill('example.test/new-learning-tool')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
-    await page.getByRole('button', { name: '继续自动预填' }).click()
+    await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
 
     await page.goto('/submit?scenario=duplicate_project')
@@ -90,7 +92,7 @@ test.describe('T52 四条核心用户流程', () => {
     const verificationLink = page.getByRole('link', { name: '继续验证作者身份' })
     await expect(verificationLink).toHaveAttribute('href', /submissionScenario=duplicate_project/)
     await verificationLink.click()
-    await expect(page.getByRole('heading', { name: '申请作者管理权限' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '认领作品' })).toBeVisible()
   })
 
   test('个人中心更新只生成一个事件并同步详情和动态', async ({ page, isMobile }) => {
@@ -105,7 +107,7 @@ test.describe('T52 四条核心用户流程', () => {
     await page.getByRole('textbox', { name: '影响范围' }).fill('详情时间线、公开动态与关注者通知')
     await page.getByRole('button', { name: '预览确认并提交更新' }).click()
     await page.getByRole('button', { name: '确认提交更新' }).click()
-    await expect(page.getByText('更新已追加写入')).toBeVisible()
+    await expect(page.getByText('更新已同步到作品详情、作品时间线和最新动态。')).toBeVisible()
     await expect(page.getByRole('button', { name: '本次更新已提交' })).toBeDisabled()
 
     const detailHref = await page.getByRole('link', { name: '在详情中查看' }).getAttribute('href')
@@ -128,4 +130,3 @@ test.describe('T52 四条核心用户流程', () => {
     await expect(speakMirrorTask).not.toContainText('已有未完成更新')
   })
 })
-

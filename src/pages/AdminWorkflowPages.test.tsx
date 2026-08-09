@@ -56,7 +56,7 @@ describe('T50 admin workflow pages', () => {
     expect(state.projectOverrides.find((project) => project.id === 'project-pdfquizlab')).toMatchObject({ reviewStatus: 'archived' })
     expect(state.projectOverrides.find((project) => project.id === 'project-quizforge')?.historicalUrls).toEqual(expect.arrayContaining([expect.objectContaining({ url: 'https://example.test/products/project-pdfquizlab' })]))
     await act(async () => { await router.navigate('/project/project-pdfquizlab') })
-    expect(await screen.findByText('此旧作品 ID 已合并')).toBeInTheDocument()
+    expect(await screen.findByText('作品页面已合并')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '题练工坊', level: 1 })).toBeInTheDocument()
   })
 

@@ -1,4 +1,4 @@
-import { creatorId, projectId, type Creator } from '../types'
+import { creatorId, projectId, type Creator, type Project } from '../types'
 
 export const creators: Creator[] = [
   {
@@ -61,4 +61,27 @@ export const creators: Creator[] = [
     publishedProjectIds: [],
     linkedProjectIds: [],
   },
+  ...[
+    ['general', '林屿', '跨学科独立创作者。', ['project-atlas-home', 'project-quiet-index']],
+    ['developer', '陈栈', '分享开源项目与开发实验。', ['project-stackfolio', 'project-terminal-craft']],
+    ['designer', '许墨', '数字产品与视觉设计师。', ['project-form-field', 'project-mono-studio']],
+    ['product', '周策', '记录产品案例与公开表达。', ['project-product-notes', 'project-roadmap-self']],
+    ['independent', '叶田', '自由创作者与独立工作者。', ['project-field-notes', 'project-independent-room']],
+    ['student', '顾新', '正在整理项目经历的应届创作者。', ['project-first-launch', 'project-campus-canvas']],
+    ['resume', '简宁', '关注清晰履历呈现与求职体验。', ['project-one-page-cv', 'project-brief-profile']],
+    ['academic', '沈研', '研究者与开放知识写作者。', ['project-lab-notebook', 'project-scholar-site']],
+  ].map(([key, displayName, bio, projectKeys]) => ({
+    id: creatorId(`creator-portfolio-${key}`),
+    displayName: displayName as string,
+    avatarUrl: null,
+    bio: bio as string,
+    contacts: [{ type: 'website' as const, label: '个人主页', url: `https://portfolio.example.test/${key}` }],
+    verificationStatus: 'verified' as const,
+    publishedProjectIds: (projectKeys as string[]).map(projectId),
+    linkedProjectIds: [],
+  })),
 ]
+
+export function creatorsForProject(project: Pick<Project, 'creatorIds'>) {
+  return creators.filter((creator) => project.creatorIds.includes(creator.id))
+}

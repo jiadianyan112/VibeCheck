@@ -12,10 +12,11 @@ interface AuthGateContextValue {
 
 const AuthGateContext = createContext<AuthGateContextValue | null>(null)
 
-export function AuthModal({ open, onClose, onLogin }: { open: boolean; onClose: () => void; onLogin: (user: PrototypeUser) => void }) {
+export function AuthModal({ open, onClose, onLogin, comparisonCount = 0 }: { open: boolean; onClose: () => void; onLogin: (user: PrototypeUser) => void; comparisonCount?: number }) {
   return (
     <Modal open={open} title="登录后继续刚才的操作" onClose={onClose}>
-      <p>低保真原型不收集密码。请选择一个固定测试身份：</p>
+      <p>登录后可以保存这次操作，并继续使用收藏、关注和发布功能。</p>
+      {comparisonCount ? <p className="boundary-note" role="note">登录后将保存当前 {comparisonCount} 个比较作品，不会自动合并账号中的历史比较。</p> : null}
       <div className="auth-choice-list">
         {prototypeUsers.map((user) => <Button key={user.id} onClick={() => onLogin(user)}>{user.displayName} · {roleLabels[user.role]}</Button>)}
       </div>
@@ -49,7 +50,7 @@ export function AuthGateProvider({ children }: PropsWithChildren) {
   return (
     <AuthGateContext.Provider value={value}>
       {children}
-      <AuthModal open={open} onClose={closeLogin} onLogin={handleLogin} />
+      <AuthModal open={open} onClose={closeLogin} onLogin={handleLogin} comparisonCount={state.comparisonProjectIds.length} />
     </AuthGateContext.Provider>
   )
 }

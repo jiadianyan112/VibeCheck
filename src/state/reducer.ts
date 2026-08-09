@@ -1,5 +1,5 @@
 import { createPrototypeEvent } from './eventLogger'
-import { addComparisonProject, createComparisonSession, mergeComparisonProjects, removeComparisonProject, reorderComparisonProject, replaceComparisonProject, saveComparisonSession, updateComparisonProjects } from '../features/comparison/session'
+import { addComparisonProject, createComparisonSession, removeComparisonProject, reorderComparisonProject, replaceComparisonProject, saveComparisonSession, updateComparisonProjects } from '../features/comparison/session'
 import { completeDecisionDraft, deserializeDecisionDraft } from '../features/comparison/decision'
 import { comparisonSessionId } from '../types'
 import type { AppAction, AppState, PrototypeEvent } from './types'
@@ -85,6 +85,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         favoriteProjectIds: toggle(state.favoriteProjectIds, action.projectId),
+        followedProjectIds: willAdd
+          ? state.followedProjectIds
+          : state.followedProjectIds.filter((projectId) => projectId !== action.projectId),
         eventLog: willAdd
           ? appendEvent(
               state,
@@ -109,6 +112,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const willAdd = !state.followedProjectIds.includes(action.projectId)
       return {
         ...state,
+        favoriteProjectIds: willAdd && !state.favoriteProjectIds.includes(action.projectId)
+          ? [...state.favoriteProjectIds, action.projectId]
+          : state.favoriteProjectIds,
         followedProjectIds: toggle(state.followedProjectIds, action.projectId),
         eventLog: willAdd
           ? appendEvent(
@@ -130,22 +136,40 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
     case 'LOGIN_COMPLETED': {
       const loginSessions = action.assets?.comparisonSessions ?? []
-      const comparisonSessions = [
-        ...state.comparisonSessions.filter((session) => !loginSessions.some(({ id }) => id === session.id)),
-        ...loginSessions,
-      ]
-      const preferredSessionId = loginSessions[0]?.id ?? comparisonSessionId(`comparison-${action.user.id}-current`)
-      const loginBase = {
-        ...state,
-        comparisonSessions,
-        activeComparisonSessionId: preferredSessionId,
-      }
-      const userProjectIds = action.userComparisonProjectIds ?? loginSessions.flatMap((session) => session.projectIds)
+      const sessionsWithAccountHistory = upsertRecords(state.comparisonSessions, loginSessions)
+      const activeSession = state.comparisonSessions.find((session) => session.id === state.activeComparisonSessionId)
+      const currentSessionId = activeSession?.ownerUserId && activeSession.ownerUserId !== action.user.id
+        ? comparisonSessionId(`comparison-${action.user.id}-current`)
+        : activeSession?.id ?? comparisonSessionId(`comparison-${action.user.id}-current`)
+      const currentSessionBase = activeSession
+        ? {
+            ...updateComparisonProjects(activeSession, state.comparisonProjectIds),
+            id: currentSessionId,
+            ownerUserId: action.user.id,
+            decisionId: null,
+          }
+        : createComparisonSession({
+            id: currentSessionId,
+            projectIds: state.comparisonProjectIds,
+            sourcePath: '/projects',
+            ownerUserId: action.user.id,
+          })
+      const currentSession = state.comparisonProjectIds.length >= 2
+        ? saveComparisonSession(currentSessionBase, action.user.id)
+        : currentSessionBase
+      const accountFollowedProjectIds = action.assets?.followedProjectIds ?? state.followedProjectIds
+      const accountFavoriteProjectIds = [...new Set([
+        ...(action.assets?.favoriteProjectIds ?? state.favoriteProjectIds),
+        ...accountFollowedProjectIds,
+      ])]
       return {
-        ...updateActiveComparison(loginBase, (session) => mergeComparisonProjects(session, userProjectIds, action.user.id)),
+        ...state,
         session: { user: action.user, role: action.user.role },
-        favoriteProjectIds: action.assets?.favoriteProjectIds ?? state.favoriteProjectIds,
-        followedProjectIds: action.assets?.followedProjectIds ?? state.followedProjectIds,
+        comparisonProjectIds: currentSession.projectIds,
+        activeComparisonSessionId: currentSession.id,
+        comparisonSessions: upsertRecords(sessionsWithAccountHistory, [currentSession]),
+        favoriteProjectIds: accountFavoriteProjectIds,
+        followedProjectIds: accountFollowedProjectIds,
         recentProjectIds: action.assets?.recentProjectIds ?? state.recentProjectIds,
         decisionRecords: action.assets?.decisionRecords ?? state.decisionRecords,
         submissionDrafts: upsertRecords(action.assets?.submissionDrafts ?? [], state.submissionDrafts),

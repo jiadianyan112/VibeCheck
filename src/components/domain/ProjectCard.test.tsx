@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { evidences, lifecycleEvents, projects } from '../../mocks'
+import { creatorsForProject, evidences, lifecycleEvents, projects } from '../../mocks'
 import { ProjectCard } from './ProjectCard'
 
 const project = projects[0]!
@@ -11,11 +11,14 @@ function renderCard(node: React.ReactNode) {
 }
 
 describe('ProjectCard', () => {
-  it('renders a standard card from props with source metadata', () => {
-    renderCard(<ProjectCard project={project} evidence={[evidences[0]!]} />)
+  it('renders creator and Vibe Coding tools without archive metadata', () => {
+    renderCard(<ProjectCard project={project} creators={creatorsForProject(project)} evidence={[evidences[0]!]} />)
     expect(screen.getByRole('link', { name: '题练工坊' })).toHaveAttribute('href', `/project/${project.id}`)
-    expect(screen.getByText(/核验于/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '查看来源（1）' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '林序，已验证' })).toHaveAttribute('href', '/creator/creator-lin')
+    expect(screen.getByText('Cursor')).toBeInTheDocument()
+    expect(screen.getByText('Claude Code')).toBeInTheDocument()
+    expect(screen.queryByText(/核验于/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /查看来源/ })).not.toBeInTheDocument()
   })
 
   it('renders compact variant without media', () => {
@@ -33,20 +36,18 @@ describe('ProjectCard', () => {
 
   it('reports all interaction intents to parent callbacks', async () => {
     const user = userEvent.setup()
-    const onFavorite = vi.fn(), onFollow = vi.fn(), onCompare = vi.fn()
-    renderCard(<ProjectCard project={project} onToggleFavorite={onFavorite} onToggleFollow={onFollow} onToggleCompare={onCompare} />)
+    const onFavorite = vi.fn(), onCompare = vi.fn()
+    renderCard(<ProjectCard project={project} onToggleFavorite={onFavorite} onToggleCompare={onCompare} />)
     await user.click(screen.getByRole('button', { name: '收藏' }))
-    await user.click(screen.getByRole('button', { name: '关注更新' }))
     await user.click(screen.getByRole('button', { name: '加入比较' }))
     expect(onFavorite).toHaveBeenCalledWith(project)
-    expect(onFollow).toHaveBeenCalledWith(project)
     expect(onCompare).toHaveBeenCalledWith(project)
   })
 
-  it('renders selected interaction states explicitly', () => {
-    renderCard(<ProjectCard project={project} favorited followed selectedForCompare onToggleFavorite={() => undefined} onToggleFollow={() => undefined} onToggleCompare={() => undefined} />)
-    expect(screen.getByRole('button', { name: '已收藏' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: '已关注更新' })).toBeInTheDocument()
+  it('switches a saved card directly to the cancel action without follow controls', () => {
+    renderCard(<ProjectCard project={project} favorited selectedForCompare onToggleFavorite={() => undefined} onToggleCompare={() => undefined} />)
+    expect(screen.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText('关注更新')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '移出比较' })).toBeInTheDocument()
   })
 })

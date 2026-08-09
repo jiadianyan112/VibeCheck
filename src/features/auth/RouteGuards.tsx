@@ -25,11 +25,11 @@ export function StaffRoute({ children }: { children: ReactNode }) {
   }
   if (!isStaffRole(state.session.role)) {
     return (
-      <PageFrame title="无后台访问权限" description="此原型入口只向平台编辑和管理员测试身份开放。">
+      <PageFrame title="无后台访问权限" description="管理后台只向平台编辑和管理员开放。">
         <section className="wire-panel stack">
           <p>当前身份：{state.session.user.displayName}。你仍可使用前台浏览、比较和发布功能。</p>
           <div className="cluster">
-            <Link className="button button--primary" to="/auth?from=%2Fadmin">切换测试身份</Link>
+            <Link className="button button--primary" to="/auth?from=%2Fadmin">切换账号</Link>
             <Link className="button button--secondary" to="/projects">返回作品广场</Link>
           </div>
         </section>

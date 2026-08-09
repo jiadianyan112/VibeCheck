@@ -107,11 +107,18 @@ function unknown<T>(reason: string, at: string): FieldFact<T> {
   return { state: 'unknown', reason, evidenceIds: [], freshness: 'valid', lastVerifiedAt: at, disputeStatus: 'none', confidence: null }
 }
 
+function submittedFact<T>(value: T | undefined, label: string, at: string): FieldFact<T> {
+  if (value === undefined || (Array.isArray(value) && value.length === 0)) return unknown(`${label}尚未由公开页面或作者确认，可在发布后补充。`, at)
+  return known(value, at)
+}
+
 export function publishedProjectFromSubmission(draft: SubmissionDraft): Project | null {
   if (draft.status !== 'approved' || !draft.publishedProjectId || !draft.publishedEventId || !draft.submittedFields || !draft.submittedAt) return null
   const fields = draft.submittedFields
   const at = draft.submittedAt
   const screenshot = fields.screenshotUrl
+  const isPortfolio = fields.categoryId === 'personal_site_portfolio'
+  const legacyReason = '该字段属于 AI 学习与题库 Schema，不适用于个人主页与作品集。'
   return {
     id: draft.publishedProjectId,
     currentName: known(fields.currentName ?? '名称待补充', at),
@@ -123,13 +130,36 @@ export function publishedProjectFromSubmission(draft: SubmissionDraft): Project 
     firstSeenAt: at,
     createdAt: at,
     coverMedia: [{ id: `${draft.publishedProjectId}-cover`, kind: screenshot ? 'image' : 'placeholder', url: screenshot ?? null, alt: `${fields.currentName ?? '已发布作品'}封面` }],
+    categoryId: isPortfolio ? 'personal_site_portfolio' : 'ai_learning_quiz',
+    categorySchemaVersion: isPortfolio ? 'portfolio.v1' : 'learning.v1',
+    categoryGroup: isPortfolio ? '用户发布' : 'AI 学习与题库',
+    summary: known(fields.oneLineDefinition ?? '', at),
+    categoryData: isPortfolio ? {
+      siteType: submittedFact(fields.siteType, '网站类型', at),
+      creatorRoles: submittedFact(fields.creatorRoles, '作者身份', at),
+      primaryGoals: submittedFact(fields.primaryGoals, '建站目的', at),
+      pageModel: submittedFact(fields.pageModel, '页面结构', at),
+      navigationPattern: submittedFact(fields.navigationPattern, '导航方式', at),
+      homepageSequence: submittedFact(fields.coreModules, '首页顺序', at),
+      coreModules: submittedFact(fields.coreModules, '核心模块', at),
+      projectShowcaseFormat: submittedFact(fields.projectShowcaseFormat, '项目展示形式', at),
+      caseStudyDepth: submittedFact(fields.caseStudyDepth, 'Case Study 深度', at),
+      visualStyles: submittedFact(fields.visualStyles, '视觉风格', at),
+      layoutPatterns: submittedFact(fields.layoutPatterns, '布局方式', at),
+      colorCharacter: submittedFact(fields.colorCharacter, '色彩特征', at),
+      themeMode: submittedFact(fields.themeMode, '主题模式', at),
+      interactionLevel: submittedFact(fields.interactionLevel, '交互等级', at),
+      interactionPatterns: submittedFact(fields.interactionPatterns, '动画方式', at),
+      responsiveSupport: submittedFact(fields.responsiveSupport, '响应式状态', at),
+      blogSupport: submittedFact(fields.blogSupport, '博客能力', at),
+    } : null,
     oneLineDefinition: known(fields.oneLineDefinition ?? '', at),
-    targetUsers: known(fields.targetUsers ?? [], at),
-    coreProblem: known(fields.coreProblem ?? '', at),
-    useScenarios: known(fields.useScenarios ?? [], at),
-    mainInputs: known(fields.mainInputs ?? [], at),
-    mainOutputs: known(fields.mainOutputs ?? [], at),
-    coreFlow: known(fields.coreFlow ?? [], at),
+    targetUsers: isPortfolio ? unknown(legacyReason, at) : known(fields.targetUsers ?? [], at),
+    coreProblem: isPortfolio ? unknown(legacyReason, at) : known(fields.coreProblem ?? '', at),
+    useScenarios: isPortfolio ? unknown(legacyReason, at) : known(fields.useScenarios ?? [], at),
+    mainInputs: isPortfolio ? unknown(legacyReason, at) : known(fields.mainInputs ?? [], at),
+    mainOutputs: isPortfolio ? unknown(legacyReason, at) : known(fields.mainOutputs ?? [], at),
+    coreFlow: isPortfolio ? unknown(legacyReason, at) : known(fields.coreFlow ?? [], at),
     contentProcessing: unknown('提交版本未提供内容处理方式', at),
     practiceFormats: known(fields.practiceFormats ?? [], at),
     feedbackMethods: known(fields.feedbackMethods ?? [], at),

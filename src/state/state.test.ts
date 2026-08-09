@@ -44,9 +44,11 @@ describe('global state and persistence', () => {
     )
   })
 
-  it('merges anonymous and account comparison without exceeding five', () => {
+  it('keeps the anonymous selection intact and does not merge account history on login', () => {
     const user = prototypeUsers.find(({ id }) => id === userId('user-mia'))!
-    const state = appReducer(createInitialAppState(), {
+    const initial = createInitialAppState()
+    const guestSelection = initial.comparisonProjectIds
+    const state = appReducer(initial, {
       type: 'LOGIN_COMPLETED',
       user,
       userComparisonProjectIds: [
@@ -57,11 +59,12 @@ describe('global state and persistence', () => {
       ],
     })
     expect(state.session.user?.id).toBe(user.id)
-    expect(state.comparisonProjectIds.length).toBeLessThanOrEqual(5)
-    expect(new Set(state.comparisonProjectIds).size).toBe(
-      state.comparisonProjectIds.length,
-    )
-    expect(state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)?.ownerUserId).toBe(user.id)
+    expect(state.comparisonProjectIds).toEqual(guestSelection)
+    const activeSession = state.comparisonSessions.find(({ id }) => id === state.activeComparisonSessionId)
+    expect(activeSession?.projectIds).toEqual(guestSelection)
+    expect(activeSession?.ownerUserId).toBe(user.id)
+    expect(activeSession?.savedAt).toBeTruthy()
+    expect(state.comparisonSessions.find(({ id }) => id === comparisonSessionId('comparison-mia-speaking'))?.projectIds).not.toEqual(guestSelection)
   })
 
   it('replays a queued login action exactly once', () => {
@@ -141,10 +144,22 @@ describe('global state and persistence', () => {
     expect(hydrateAppState(createInitialAppState()).likedProjectIds).toEqual([id])
   })
 
+  it('treats update following as a setting of a saved project', () => {
+    const id = projectId('project-quizforge')
+    const followed = appReducer(createInitialAppState(), { type: 'FOLLOW_TOGGLE', projectId: id })
+    expect(followed.favoriteProjectIds).toEqual([id])
+    expect(followed.followedProjectIds).toEqual([id])
+
+    const unfavorited = appReducer(followed, { type: 'FAVORITE_TOGGLE', projectId: id })
+    expect(unfavorited.favoriteProjectIds).toEqual([])
+    expect(unfavorited.followedProjectIds).toEqual([])
+  })
+
   it('loads user assets on login and clears private state on logout', () => {
     const user = prototypeUsers[0]!
     const loggedIn = appReducer(createInitialAppState(), createLoginAction(user))
-    expect(loggedIn.favoriteProjectIds).toHaveLength(3)
+    expect(loggedIn.favoriteProjectIds).toHaveLength(4)
+    expect(loggedIn.followedProjectIds.every((id) => loggedIn.favoriteProjectIds.includes(id))).toBe(true)
     expect(loggedIn.submissionDrafts).toHaveLength(1)
     expect(loggedIn.notifications.every((notification) => notification.userId === user.id)).toBe(true)
     expect(loggedIn.comparisonSessions.some((session) => session.ownerUserId === user.id)).toBe(true)
@@ -155,6 +170,6 @@ describe('global state and persistence', () => {
     expect(loggedOut.submissionDrafts).toEqual([])
     expect(loggedOut.notifications).toEqual([])
     expect(loggedOut.comparisonSessions.some((session) => session.ownerUserId === user.id)).toBe(true)
-    expect(loggedOut.comparisonProjectIds).toHaveLength(2)
+    expect(loggedOut.comparisonProjectIds).toEqual([])
   })
 })

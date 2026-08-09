@@ -1,4 +1,4 @@
-import type { AssetType, ComparisonIntent, Project, ProjectId, ReusableAsset } from '../../types'
+import type { AssetType, ComparisonIntent, FieldFact, Project, ProjectId, ReusableAsset } from '../../types'
 
 function values<T>(fact: { state: 'known'; value: T[] } | { state: 'unknown' }) {
   return fact.state === 'known' ? fact.value : []
@@ -8,7 +8,26 @@ function dimensionMatches<T>(actual: T[], expected: T[]) {
   return expected.length === 0 || expected.some((value) => actual.includes(value))
 }
 
-export function projectMatchesIntent(project: Project, intent: ComparisonIntent) {
+function scalar<T>(fact: FieldFact<T> | undefined) {
+  return fact?.state === 'known' ? [fact.value] : []
+}
+
+function projectAssetTypes(project: Project, assets: readonly ReusableAsset[]) {
+  return assets.filter((asset) => asset.projectId === project.id).map((asset) => asset.type)
+}
+
+export function projectMatchesIntent(project: Project, intent: ComparisonIntent, assets: readonly ReusableAsset[] = []) {
+  if (intent.categoryId && project.categoryId !== intent.categoryId) return false
+  if (intent.categoryId === 'personal_site_portfolio') {
+    const data = project.categoryData
+    if (!data) return false
+    return dimensionMatches(scalar(data.siteType), intent.siteTypes ?? [])
+      && dimensionMatches(values(data.creatorRoles), intent.creatorRoles ?? [])
+      && dimensionMatches(values(data.primaryGoals), intent.primaryGoals ?? [])
+      && dimensionMatches(scalar(data.pageModel), intent.pageModels ?? [])
+      && dimensionMatches(values(data.visualStyles), intent.visualStyles ?? [])
+      && dimensionMatches(projectAssetTypes(project, assets), intent.assetTypes ?? [])
+  }
   return dimensionMatches(values(project.targetUsers), intent.targetUsers)
     && dimensionMatches(values(project.useScenarios), intent.useScenarios)
     && dimensionMatches(values(project.mainInputs), intent.inputs)
@@ -44,11 +63,19 @@ export function buildDiscoveryAnalysis(
   assets: readonly ReusableAsset[],
   intent: ComparisonIntent,
 ): DiscoveryAnalysis {
-  const exactProjects = projects.filter((project) => projectMatchesIntent(project, intent))
+  const exactProjects = projects.filter((project) => projectMatchesIntent(project, intent, assets))
   const relaxedProjects = projects
-    .filter((project) => !exactProjects.includes(project))
+    .filter((project) => !exactProjects.includes(project) && (!intent.categoryId || project.categoryId === intent.categoryId))
     .map((project) => {
-      const dimensions = [
+      const data = project.categoryData
+      const dimensions = intent.categoryId === 'personal_site_portfolio' && data ? [
+        ['网站类型', scalar(data.siteType), intent.siteTypes ?? []],
+        ['作者身份', values(data.creatorRoles), intent.creatorRoles ?? []],
+        ['建站目的', values(data.primaryGoals), intent.primaryGoals ?? []],
+        ['页面结构', scalar(data.pageModel), intent.pageModels ?? []],
+        ['视觉方向', values(data.visualStyles), intent.visualStyles ?? []],
+        ['复用资产', projectAssetTypes(project, assets), intent.assetTypes ?? []],
+      ] as Array<[string, string[], string[]]> : [
         ['目标用户', values(project.targetUsers), intent.targetUsers],
         ['使用场景', values(project.useScenarios), intent.useScenarios],
         ['材料输入', values(project.mainInputs), intent.inputs],
@@ -69,9 +96,10 @@ export function buildDiscoveryAnalysis(
 
   const groupMap = new Map<string, SolutionGroup>()
   exactProjects.forEach((project) => {
-    const scenario = values(project.useScenarios)[0] ?? 'unknown'
-    const input = values(project.mainInputs)[0] ?? 'unknown'
-    const practice = values(project.practiceFormats)[0] ?? 'unknown'
+    const portfolio = project.categoryData
+    const scenario = intent.categoryId === 'personal_site_portfolio' && portfolio ? scalar(portfolio.siteType)[0] ?? 'unknown' : values(project.useScenarios)[0] ?? 'unknown'
+    const input = intent.categoryId === 'personal_site_portfolio' && portfolio ? values(portfolio.creatorRoles)[0] ?? 'unknown' : values(project.mainInputs)[0] ?? 'unknown'
+    const practice = intent.categoryId === 'personal_site_portfolio' && portfolio ? values(portfolio.primaryGoals)[0] ?? 'unknown' : values(project.practiceFormats)[0] ?? 'unknown'
     const id = `${scenario}:${input}:${practice}`
     const group = groupMap.get(id) ?? { id, scenario, input, practice, projectIds: [] }
     group.projectIds.push(project.id)

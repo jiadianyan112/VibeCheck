@@ -21,19 +21,18 @@ export function AuthPage() {
   if (state.session.user) {
     const logout = () => {
       dispatch({ type: 'LOGOUT' })
-      pushToast('已退出测试身份；账户私有数据已从当前会话移除。', 'success')
+      pushToast('已退出当前身份。', 'success')
     }
     return (
-      <PageFrame title="当前测试身份" description="这是低保真原型的权限模拟，不代表真实账户认证。">
+      <PageFrame title="当前账号" description="你已登录，可以继续使用收藏、比较和发布功能。">
         <section className="auth-page-panel stack">
           <div className="stack stack--small">
-            <p className="eyebrow">P17 · 登录／注册模拟</p>
             <h2>{state.session.user.displayName} · {roleLabels[state.session.role]}</h2>
-            <p>返回目标：<code>{returnPath}</code></p>
+            <p>你可以继续刚才的操作，或切换其他账号。</p>
           </div>
           <div className="cluster">
             <Link className="button button--primary" to={returnPath}>继续返回原页面</Link>
-            <Button variant="secondary" onClick={logout}>退出并切换身份</Button>
+            <Button variant="secondary" onClick={logout}>切换账号</Button>
           </div>
         </section>
       </PageFrame>
@@ -49,28 +48,27 @@ export function AuthPage() {
 
   return (
     <PageFrame
-      title="选择原型身份"
-      description="低保真原型不收集密码，也不会创建真实账户；选择身份后会回到 from 指定的页面。"
+      title="登录／注册"
+      description="登录后可以保存比较、关注作品、参与讨论和发布作品。"
     >
       <section className="auth-page-panel stack" aria-labelledby="auth-choice-heading">
         <div className="stack stack--small">
-          <p className="eyebrow">P17 · 登录／注册模拟</p>
-          <h2 id="auth-choice-heading">固定测试身份</h2>
-          <p>本次完成后返回：<code>{returnPath}</code></p>
+          <h2 id="auth-choice-heading">选择账号继续</h2>
+          {state.comparisonProjectIds.length ? <p className="boundary-note" role="note">登录后将保存当前 {state.comparisonProjectIds.length} 个比较作品，不会自动合并账号中的历史比较。</p> : null}
         </div>
         <div className="auth-page-choices">
           {prototypeUsers.map((user) => (
             <div className="wire-panel stack stack--small" key={user.id}>
               <strong>{user.displayName} · {roleLabels[user.role]}</strong>
               <p>{roleDescriptions[user.role]}</p>
-              <Button aria-label={`使用${user.displayName}测试身份`} onClick={() => login(user)}>使用此测试身份</Button>
+              <Button aria-label={`使用${user.displayName}账号`} onClick={() => login(user)}>使用此账号</Button>
             </div>
           ))}
         </div>
         <div className="wire-panel stack stack--small">
           <strong>游客</strong>
-          <p>仅验证公开浏览、搜索和匿名比较；受保护页面仍会要求选择测试身份。</p>
-          <Button variant="secondary" onClick={() => navigate('/projects', { replace: true })}>以游客身份继续</Button>
+          <p>可以浏览、搜索和临时比较作品，需要保存或发布时再选择身份。</p>
+          <Button variant="secondary" onClick={() => navigate('/projects', { replace: true })}>先以游客身份浏览</Button>
         </div>
       </section>
     </PageFrame>

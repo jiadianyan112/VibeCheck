@@ -85,8 +85,8 @@ export const submissionService = {
           key: 'category',
           status: outOfCategory ? 'failed' : 'passed',
           message: outOfCategory
-            ? '不属于首期学习与题库品类。'
-            : '符合首期学习与题库品类。',
+            ? '暂不属于社区当前的收录范围。'
+            : '符合社区当前的收录范围。',
         },
       ]
       return {

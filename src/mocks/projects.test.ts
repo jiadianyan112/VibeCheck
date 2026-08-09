@@ -4,10 +4,25 @@ import { projects } from './projects'
 
 describe('stable project and creator fixtures', () => {
   it('contains the minimum stable dataset with unique ids', () => {
-    expect(projects).toHaveLength(12)
-    expect(creators).toHaveLength(6)
+    expect(projects).toHaveLength(28)
+    expect(creators).toHaveLength(14)
     expect(new Set(projects.map(({ id }) => id)).size).toBe(projects.length)
     expect(new Set(creators.map(({ id }) => id)).size).toBe(creators.length)
+  })
+
+  it('adds 16 portfolio fixtures without changing the 12 learning fixtures', () => {
+    const learning = projects.filter((project) => project.categoryId === 'ai_learning_quiz')
+    const portfolios = projects.filter((project) => project.categoryId === 'personal_site_portfolio')
+    expect(learning).toHaveLength(12)
+    expect(portfolios).toHaveLength(16)
+    expect(new Set(portfolios.map((project) => project.categoryGroup)).size).toBe(8)
+    for (const group of new Set(portfolios.map((project) => project.categoryGroup))) expect(portfolios.filter((project) => project.categoryGroup === group)).toHaveLength(2)
+    expect(portfolios.every((project) => project.categorySchemaVersion === 'portfolio.v1' && project.categoryData)).toBe(true)
+    expect(portfolios.every((project) => project.accessStatus.state !== 'known' || project.accessStatus.value !== 'login_required')).toBe(true)
+    expect(portfolios.filter((project) => project.repositoryUrl.state === 'known' && project.repositoryUrl.value).length).toBeGreaterThanOrEqual(6)
+    expect(portfolios.filter((project) => project.assetIds.length > 0).length).toBeGreaterThanOrEqual(8)
+    const tools = portfolios.flatMap((project) => project.aiCodingTools.state === 'known' ? project.aiCodingTools.value : [])
+    expect(Math.max(...[...new Set(tools)].map((tool) => tools.filter((value) => value === tool).length))).toBeLessThanOrEqual(6)
   })
 
   it('covers all eight initial learning scenarios', () => {

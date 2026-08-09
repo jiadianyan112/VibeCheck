@@ -44,4 +44,12 @@ describe('submission URL check draft', () => {
     expect(draft.validationErrors.publicUrl).toContain('超时')
     expect(canContinueAfterUrlCheck(timeoutResult)).toBe(false)
   })
+
+  it('keeps category choice in a distinct portfolio draft', () => {
+    const learning = createUrlCheckDraft(passingResult, userId('user-mia'))
+    const portfolio = createUrlCheckDraft(passingResult, userId('user-mia'), undefined, 'personal_site_portfolio')
+    expect(portfolio.id).not.toBe(learning.id)
+    expect(portfolio.fields.categoryId).toBe('personal_site_portfolio')
+    expect(portfolio.originalExtraction.categoryId).toBe('personal_site_portfolio')
+  })
 })

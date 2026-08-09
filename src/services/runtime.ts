@@ -87,7 +87,7 @@ export async function runService<T>(
       return failure({
         code: 'VC_SERVICE_UNAVAILABLE',
         kind: 'server',
-        message: '模拟服务暂时不可用，请稍后重试。',
+        message: '服务暂时不可用，请稍后重试。',
         retryable: true,
       })
     }
@@ -114,7 +114,7 @@ export async function runService<T>(
     return failure({
       code: 'VC_UNEXPECTED_SERVICE_ERROR',
       kind: 'server',
-      message: error instanceof Error ? error.message : '未知模拟服务错误。',
+      message: error instanceof Error ? error.message : '服务出现未知错误，请稍后重试。',
       retryable: true,
     })
   }

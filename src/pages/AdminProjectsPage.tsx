@@ -23,6 +23,7 @@ import { accessStatusText, scenarioLabels } from '../utils'
 const completenessFilterLabels = {
   complete: '资料完整', partial: '部分完整', limited: '资料有限', pending_verification: '等待核验', disputed: '资料争议',
 } as const
+const categoryLabels = { ai_learning_quiz: 'AI 学习与题库', personal_site_portfolio: '个人主页与作品集', ...scenarioLabels }
 
 function filtersFromParams(params: URLSearchParams): AdminProjectFilters {
   return {
@@ -37,7 +38,6 @@ function filtersFromParams(params: URLSearchParams): AdminProjectFilters {
     exceptionOnly: params.get('exception') === '1',
   }
 }
-
 export function AdminProjectsPage() {
   const { state } = useAppState()
   const [params, setParams] = useSearchParams()
@@ -62,7 +62,7 @@ export function AdminProjectsPage() {
       <section className="admin-filter-panel stack" aria-label="作品工作队列筛选">
         <div className="admin-filter-grid">
           <label className="field"><span className="field__label">搜索作品</span><input className="input" type="search" value={filters.query} onChange={(event) => setFilter('q', event.target.value)} placeholder="名称、定义、ID 或地址" /></label>
-          <label className="field"><span className="field__label">品类</span><select className="input" value={filters.category} onChange={(event) => setFilter('category', event.target.value)}><option value="">全部品类</option>{useScenarios.map((value) => <option key={value} value={value}>{scenarioLabels[value]}</option>)}</select></label>
+          <label className="field"><span className="field__label">品类</span><select className="input" value={filters.category} onChange={(event) => setFilter('category', event.target.value)}><option value="">全部品类</option><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option><optgroup label="AI 学习子场景">{useScenarios.map((value) => <option key={value} value={value}>{scenarioLabels[value]}</option>)}</optgroup></select></label>
           <label className="field"><span className="field__label">发布状态</span><select className="input" value={filters.reviewStatus} onChange={(event) => setFilter('review', event.target.value)}><option value="">全部发布状态</option>{reviewStatuses.map((value) => <option key={value} value={value}>{reviewStatusLabels[value]}</option>)}</select></label>
           <label className="field"><span className="field__label">访问状态</span><select className="input" value={filters.accessStatus} onChange={(event) => setFilter('access', event.target.value)}><option value="">全部访问状态</option>{accessStatuses.map((value) => <option key={value} value={value}>{accessStatusText[value]}</option>)}</select></label>
           <label className="field"><span className="field__label">完整度</span><select className="input" value={filters.completeness} onChange={(event) => setFilter('completeness', event.target.value)}><option value="">全部完整度</option>{completenessLevels.map((value) => <option key={value} value={value}>{completenessFilterLabels[value]}</option>)}</select></label>
@@ -75,7 +75,7 @@ export function AdminProjectsPage() {
       </section>
 
       <p className="admin-narrow-note" role="note">后台按桌面工作台设计；窄屏可横向查看完整字段。</p>
-      {filtered.length ? <div className="admin-table-scroll"><table className="admin-project-table"><caption className="sr-only">筛选后的作品工作队列</caption><thead><tr><th>作品</th><th>品类</th><th>发布状态</th><th>访问状态</th><th>完整度</th><th>作者关联</th><th>核验时间</th><th>操作</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.project.id}><th scope="row"><strong>{row.name}</strong><code>{row.project.id}</code>{row.hasActiveException ? <Tag tone="strong">异常待复核</Tag> : null}</th><td>{row.categoryIds.map((id) => scenarioLabels[id]).join('、') || '未知'}</td><td><Tag tone={row.isPendingReview ? 'strong' : 'dashed'}>{reviewStatusLabels[row.project.reviewStatus]}</Tag></td><td>{row.accessStatus ? <AccessStatusBadge status={row.accessStatus} /> : <span className="unknown-value">未知</span>}</td><td><CompletenessLabel level={row.project.completenessLevel} /></td><td>{authorLinkStatusLabels[row.project.authorLinkStatus]}</td><td><time dateTime={row.project.lastVerifiedAt}>{new Date(row.project.lastVerifiedAt).toLocaleDateString('zh-CN')}</time></td><td><Link className="button button--primary" to={`/admin/project/${row.project.id}`}>进入编辑</Link></td></tr>)}</tbody></table></div> : <EmptyState title="没有符合条件的作品" description="当前筛选组合没有命中同源作品档案。可调整条件或清空筛选。" action={<Button onClick={() => setParams(new URLSearchParams(), { replace: true })}>清空筛选</Button>} />}
+      {filtered.length ? <div className="admin-table-scroll"><table className="admin-project-table"><caption className="sr-only">筛选后的作品工作队列</caption><thead><tr><th>作品</th><th>品类</th><th>发布状态</th><th>访问状态</th><th>完整度</th><th>作者关联</th><th>核验时间</th><th>操作</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.project.id}><th scope="row"><strong>{row.name}</strong><code>{row.project.id}</code>{row.hasActiveException ? <Tag tone="strong">异常待复核</Tag> : null}</th><td>{row.categoryIds.map((id) => categoryLabels[id]).join('、') || '未知'}</td><td><Tag tone={row.isPendingReview ? 'strong' : 'dashed'}>{reviewStatusLabels[row.project.reviewStatus]}</Tag></td><td>{row.accessStatus ? <AccessStatusBadge status={row.accessStatus} /> : <span className="unknown-value">未知</span>}</td><td><CompletenessLabel level={row.project.completenessLevel} /></td><td>{authorLinkStatusLabels[row.project.authorLinkStatus]}</td><td><time dateTime={row.project.lastVerifiedAt}>{new Date(row.project.lastVerifiedAt).toLocaleDateString('zh-CN')}</time></td><td><Link className="button button--primary" to={`/admin/project/${row.project.id}`}>进入编辑</Link></td></tr>)}</tbody></table></div> : <EmptyState title="没有符合条件的作品" description="当前筛选组合没有命中同源作品档案。可调整条件或清空筛选。" action={<Button onClick={() => setParams(new URLSearchParams(), { replace: true })}>清空筛选</Button>} />}
     </div>
   )
 }

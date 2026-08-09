@@ -15,7 +15,7 @@ function ScenarioProbe() {
 }
 
 function renderPanel() {
-  return render(<MemoryRouter initialEntries={['/projects']}><AppStateProvider><ScenarioPanel /><ScenarioProbe /></AppStateProvider></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={['/projects?debug=1']}><AppStateProvider><ScenarioPanel /><ScenarioProbe /></AppStateProvider></MemoryRouter>)
 }
 
 describe('ScenarioPanel', () => {

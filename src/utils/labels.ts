@@ -25,5 +25,5 @@ export const accessStatusText: Record<AccessStatus, string> = {
   normal: '正常可访问', login_required: '需要登录', pending_recheck: '等待复检', partial_abnormal: '部分异常', link_unavailable: '链接不可用', suspected_migration: '疑似迁移', paused: '已暂停', ended: '已结束', recovered: '已恢复', unknown: '未知',
 }
 export const lifecycleEventLabels: Record<LifecycleEventType, string> = {
-  first_seen: '首次发现', first_published: '首次发布', version_updated: '版本更新', domain_migrated: '地址迁移', product_pivoted: '方向调整', link_abnormal: '链接异常', recovered: '恢复访问', paused: '作者声明暂停', ended: '作者声明结束', asset_added: '新增资产', reused_by_project: '被其他作品复用',
+  first_seen: '首次发现', first_published: '首次发布', version_updated: '版本更新', domain_migrated: '地址迁移', product_pivoted: '方向调整', link_abnormal: '链接异常', recovered: '恢复访问', paused: '作者声明暂停', ended: '作者声明结束', asset_added: '新增资产', reused_by_project: '被其他作品复用', relation_added: '新增关系',
 }
