@@ -71,7 +71,7 @@ export function ProjectsHomePage() {
           <p>发现 Vibe Coding 作品、创作者和构建工具，找到可以借鉴的实现。</p>
           <UnifiedSearchForm id="home-search" className="hero-search" inputClassName="input" submitClassName="button button--primary" placeholder="搜索作品、功能，或描述完整想法" />
           <div className="cluster" aria-label="快捷问题">{['PDF 出题', '口语模拟评分', '开发者作品集', '极简个人主页'].map((query) => <Link key={query} className="tag" to={`/search?q=${encodeURIComponent(query)}`}>{query}</Link>)}</div>
-          <div className="cluster"><Link className="button button--primary" to="#editor-picks">探索作品</Link><Link className="button button--secondary" to={state.session.user ? '/submit' : '/auth?from=%2Fsubmit'}>发布作品</Link></div>
+          <div className="cluster"><Link className="button button--primary" to="#editor-picks">探索作品</Link><Link className="button button--secondary" to={state.session.user ? '/submit' : '/auth?return_to=%2Fsubmit'}>发布作品</Link></div>
         </div>
         <aside className="home-hero__aside stack"><strong>这里可以查什么？</strong><p>作品当前是否可访问、谁制作、用了哪些 Vibe Coding 工具，以及有哪些资产可复用。</p><strong>这里不判断什么？</strong><p>不根据作品数量判断需求强弱，也不推断项目商业成败。</p></aside>
       </section>

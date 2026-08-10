@@ -5,31 +5,10 @@ previews:
 services:
   - type: web
     name: vibecheck-web
-    runtime: static
-    buildCommand: npm ci && npm run build:web
-    staticPublishPath: ./dist
-    autoDeployTrigger: checksPass
-    envVars:
-      - key: VITE_API_BASE_URL
-        sync: false
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
-  - type: web
-    name: vibecheck-api
     runtime: node
     region: singapore
     plan: starter
-    buildCommand: npm ci && npm run build:libraries && npm run build -w @vibecheck/api
+    buildCommand: npm ci && npm run build
     preDeployCommand: npm run db:migrate
     startCommand: npm run start -w @vibecheck/api
     healthCheckPath: /health/ready
@@ -44,8 +23,28 @@ services:
           property: connectionString
       - key: DATABASE_SSL
         value: "false"
-      - key: WEB_ORIGINS
+      - key: VITE_AUTH_ENABLED
+        value: "true"
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_ENCRYPTION_KEY
+        sync: false
+      - key: EMAIL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: EMAIL_HASH_PEPPER
+        generateValue: true
+      - key: OTP_PEPPER
+        generateValue: true
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
 
   - type: worker
     name: vibecheck-worker

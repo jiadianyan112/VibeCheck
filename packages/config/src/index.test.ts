@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { loadServiceConfig } from './index.js'
+import { loadIdentityConfig, loadServiceConfig } from './index.js'
 
 describe('loadServiceConfig', () => {
   it('loads deterministic defaults for local services', () => {
@@ -50,5 +50,42 @@ describe('loadServiceConfig', () => {
       },
     )
     assert.equal(config.gitCommit, 'render-commit')
+  })
+
+  it('keeps identity dependencies optional when authentication is disabled', () => {
+    const config = loadIdentityConfig({ NODE_ENV: 'development', AUTH_ENABLED: 'false' })
+    assert.equal(config.enabled, false)
+    assert.equal(config.resendApiKey, '')
+  })
+
+  it('rejects insecure production authentication cookies', () => {
+    assert.throws(
+      () => loadIdentityConfig({
+        NODE_ENV: 'production',
+        AUTH_ENABLED: 'true',
+        AUTH_COOKIE_SECURE: 'false',
+      }),
+      /CONFIG_AUTH_COOKIE_INSECURE/,
+    )
+  })
+
+  it('loads a complete enabled email OTP configuration without storing production secrets', () => {
+    const config = loadIdentityConfig({
+      NODE_ENV: 'test',
+      AUTH_ENABLED: 'true',
+      AUTH_COOKIE_SECURE: 'false',
+      EMAIL_PROVIDER: 'resend',
+      EMAIL_FROM: 'VibeCheck <login@example.com>',
+      RESEND_API_KEY: 'resend-key-at-least-thirty-two-characters',
+      EMAIL_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString('base64'),
+      EMAIL_ENCRYPTION_KEY_VERSION: 'test-v1',
+      EMAIL_HASH_PEPPER: 'email-hash-pepper-at-least-thirty-two-characters',
+      OTP_PEPPER: 'otp-pepper-at-least-thirty-two-characters',
+      AUTH_TOKEN_SECRET: 'auth-token-secret-at-least-thirty-two-characters',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.emailProvider, 'resend')
+    assert.equal(config.otpTtlSeconds, 600)
+    assert.equal(config.otpResendSeconds, 60)
   })
 })

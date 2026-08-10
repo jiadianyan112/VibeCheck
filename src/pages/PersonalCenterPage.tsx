@@ -37,7 +37,7 @@ export function PersonalCenterPage() {
     <main className="page-container page-with-bottom-space stack">
       <header className="personal-summary">
         <div className="stack stack--small"><h1>{user.displayName}的个人中心</h1><div className="cluster"><Tag tone="strong">{roleLabels[state.session.role]}</Tag><span>{summaryCount} 项收藏、草稿和创作记录</span></div></div>
-        <div className="cluster"><Link className="button button--secondary" to="/auth?from=%2Fme">切换账号</Link>{user.creatorId ? <Link className="button button--primary" to={`/creator/${user.creatorId}`}>查看我的作者主页</Link> : null}{isStaffRole(state.session.role) ? <Link className="button button--primary" to="/admin">进入管理后台</Link> : null}</div>
+        <div className="cluster"><Link className="button button--secondary" to="/auth?return_to=%2Fme">切换账号</Link>{user.creatorId ? <Link className="button button--primary" to={`/creator/${user.creatorId}`}>查看我的作者主页</Link> : null}{isStaffRole(state.session.role) ? <Link className="button button--primary" to="/admin">进入管理后台</Link> : null}</div>
       </header>
 
       <nav className="personal-section-nav" aria-label="个人资产导航">

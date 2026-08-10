@@ -4,26 +4,34 @@ export const errorResponseSchema = {
   $id: 'https://vibecheck.app/schemas/common/error-response.v1.json',
   type: 'object',
   additionalProperties: false,
-  required: ['error_code', 'message_key', 'request_id', 'retryable'],
+  required: ['error'],
   properties: {
-    error_code: { type: 'string', minLength: 1, maxLength: 64 },
-    message_key: { type: 'string', minLength: 1, maxLength: 128 },
-    request_id: { type: 'string', minLength: 1, maxLength: 64 },
-    retryable: { type: 'boolean' },
-    field_errors: {
-      type: 'array',
-      maxItems: 50,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['field_path', 'error_code'],
-        properties: {
-          field_path: { type: 'string', minLength: 1, maxLength: 256 },
-          error_code: { type: 'string', minLength: 1, maxLength: 64 },
+    error: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['code', 'message_key', 'request_id', 'retryable', 'retry_after_ms'],
+      properties: {
+        code: { type: 'string', minLength: 1, maxLength: 64 },
+        message_key: { type: 'string', minLength: 1, maxLength: 128 },
+        request_id: { type: 'string', minLength: 1, maxLength: 64 },
+        retryable: { type: 'boolean' },
+        retry_after_ms: { type: ['integer', 'null'], minimum: 0 },
+        field_errors: {
+          type: 'array',
+          maxItems: 50,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['path', 'code'],
+            properties: {
+              path: { type: 'string', minLength: 1, maxLength: 256 },
+              code: { type: 'string', minLength: 1, maxLength: 64 },
+            },
+          },
         },
+        conflict: { type: ['object', 'null'], additionalProperties: true },
       },
     },
-    conflict: { type: 'object', additionalProperties: true },
   },
 } as const
 
@@ -46,15 +54,18 @@ export const serviceHealthSchema = {
 } as const
 
 export interface ErrorResponse {
-  readonly error_code: string
-  readonly message_key: string
-  readonly request_id: string
-  readonly retryable: boolean
-  readonly field_errors?: readonly {
-    readonly field_path: string
-    readonly error_code: string
-  }[]
-  readonly conflict?: Readonly<Record<string, unknown>>
+  readonly error: {
+    readonly code: string
+    readonly message_key: string
+    readonly request_id: string
+    readonly retryable: boolean
+    readonly retry_after_ms: number | null
+    readonly field_errors?: readonly {
+      readonly path: string
+      readonly code: string
+    }[]
+    readonly conflict?: Readonly<Record<string, unknown>> | null
+  }
 }
 
 export interface ServiceHealth {
@@ -65,3 +76,38 @@ export interface ServiceHealth {
   readonly checked_at: string
   readonly checks?: Readonly<Record<string, 'ok' | 'failed'>>
 }
+
+export interface AuthChallengeAccepted {
+  readonly auth_flow_id: string
+  readonly challenge_id: string
+  readonly expires_at: string
+  readonly resend_after: string
+  readonly masked_email: string
+}
+
+export interface AuthSessionProjection {
+  readonly authenticated: true
+  readonly user_id: string
+  readonly display_name: string
+  readonly account_status: 'active' | 'restricted'
+  readonly roles: readonly ('user' | 'verified_author' | 'editor' | 'admin')[]
+  readonly primary_role: 'user' | 'verified_author' | 'editor' | 'admin'
+  readonly permissions: readonly string[]
+  readonly session_version: number
+  readonly csrf_token: string
+  readonly recent_auth_at: string
+  readonly expires_at: string
+}
+
+export type AuthVerificationResponse =
+  | {
+      readonly purpose: 'login'
+      readonly session: AuthSessionProjection
+      readonly return_to: string
+    }
+  | {
+      readonly purpose: 'admin_confirm'
+      readonly reauth_grant_id: string
+      readonly recent_auth_at: string
+      readonly return_to: string
+    }

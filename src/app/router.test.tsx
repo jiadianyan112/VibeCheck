@@ -25,7 +25,7 @@ describe('application route skeleton', () => {
     ['/project/project-quizforge', '题练工坊'],
     ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/submit', '发布作品'],
-    ['/auth?from=%2Fsubmit', '登录／注册'],
+    ['/auth?return_to=%2Fsubmit', '登录／注册'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('application route skeleton', () => {
     expect(screen.getByRole('search')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '发布' })).toHaveAttribute(
       'href',
-      '/auth?from=%2Fsubmit',
+      '/auth?return_to=%2Fsubmit',
     )
   })
 
@@ -73,9 +73,9 @@ describe('application route skeleton', () => {
     expect(await screen.findByRole('heading', { name: '编辑 题练工坊' })).toBeInTheDocument()
   })
 
-  it('redirects a guest admin request to the identity simulator', async () => {
+  it('redirects a guest admin request to email OTP login', async () => {
     renderRoute('/admin/projects')
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
   })
 })

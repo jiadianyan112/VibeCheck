@@ -6,8 +6,15 @@ import { validateContractDocument, validateContractFile } from './contract-check
 describe('OpenAPI contract', () => {
   it('has unique operation IDs and explicit responses', async () => {
     const result = await validateContractFile(resolve('openapi/v1.yaml'))
-    assert.deepEqual(result.operationIds, ['OP-PLATFORM-LIVE', 'OP-PLATFORM-READY'])
-    assert.equal(result.pathCount, 2)
+    assert.deepEqual(result.operationIds, [
+      'OP-PLATFORM-LIVE',
+      'OP-PLATFORM-READY',
+      'OP-AUTH-START',
+      'OP-AUTH-CALLBACK',
+      'OP-AUTH-SESSION-GET',
+      'OP-AUTH-SESSION-DELETE',
+    ])
+    assert.equal(result.pathCount, 5)
   })
 
   it('rejects a dangling local schema reference', () => {

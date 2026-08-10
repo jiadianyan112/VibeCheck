@@ -41,9 +41,9 @@ describe('CompareSessionPage management', () => {
     expect(screen.getByRole('group', { name: '比较显示范围' })).toBeInTheDocument()
   })
 
-  it('reorders, replaces, removes, adds and preserves the guest selection through login', async () => {
+  it('reorders, replaces, removes, adds and carries the guest selection into email login', async () => {
     const user = userEvent.setup()
-    renderPage()
+    const { router } = renderPage()
     await user.click(screen.getByText('管理比较作品', { selector: 'summary strong' }))
     const list = await screen.findByRole('list', { name: '已选比较作品' })
     expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('题练工坊')
@@ -61,10 +61,9 @@ describe('CompareSessionPage management', () => {
     await user.selectOptions(screen.getByLabelText('添加一个作品'), 'project-speakmirror')
     expect(screen.getByText('2/5 个作品')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '登录并保存比较' }))
-    expect(screen.getByText('登录后将保存当前 2 个比较作品，不会自动合并账号中的历史比较。')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '使用米娅账号' }))
-    expect(await screen.findByText(/^已保存 ·/)).toBeInTheDocument()
-    expect(screen.getByText('登录账户')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
+    expect(screen.getByText(/当前 2 个临时比较作品会在本设备保留/)).toBeInTheDocument()
+    expect(router.state.location.search).toContain('return_to=')
   })
 
   it('offers a recovery path for an unknown session', async () => {

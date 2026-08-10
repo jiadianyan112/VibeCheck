@@ -78,20 +78,22 @@ npm run dev
 5. 原型测试 `npm test`；
 6. 基础包测试 `npm run test:foundation`；
 7. `npm run build`；
-8. 在 PostgreSQL 18 + pgvector 上连续执行两次迁移并验证 migration head 为 2。
+8. 在 PostgreSQL 18 + pgvector 上连续执行两次迁移；WP-01 基线验证 migration head 为 2，WP-02 引入身份访问迁移后当前 head 为 3。
 
 任何一步失败均阻断 Render 的 `checksPass` 自动部署。
 
 ## 6. Render 首次部署
 
-`render.yaml` 一次创建静态 Web、API、Worker 和 PostgreSQL，区域为 Singapore。首次 Blueprint 创建时输入：
+WP-01 最初以静态 Web、API、Worker 和 PostgreSQL 四组件作为部署拓扑。为满足邮箱 OTP 的同源 Cookie、CSRF 与登录回跳安全边界，ADR-0002 和 WP-02 已将当前 `render.yaml` 收敛为同源 Node Web/API、Worker 和 PostgreSQL；本节表格仅保留为 WP-01 历史基线，当前部署输入以 `WP-02-identity-access.md` 为准。
+
+WP-01 首次 Blueprint 原始输入为：
 
 | 变量 | 服务 | 输入规则 |
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | Web | API 实际 HTTPS 公网 URL，不带尾部 `/` |
 | `WEB_ORIGINS` | API | Web 实际 HTTPS origin；多个值用英文逗号分隔 |
 
-Blueprint 使用 PostgreSQL 18 `basic-256mb`、API/Worker `starter`。这是当前最快形成完整可部署拓扑的默认配置；正式容量、备份、恢复目标和费用批准仍按上线门执行，不能把首部署成功等同于生产放量批准。
+当前 Blueprint 使用 PostgreSQL 18 `basic-256mb`、同源 Web/API 与 Worker `starter`。这是当前最快形成完整可部署拓扑的默认配置；正式容量、备份、恢复目标和费用批准仍按上线门执行，不能把首部署成功等同于生产放量批准。
 
 ## 7. 安全与失败边界
 
@@ -103,7 +105,7 @@ Blueprint 使用 PostgreSQL 18 `basic-256mb`、API/Worker `starter`。这是当�
 
 ## 8. WP-01 完成判据
 
-- 六个 workspace 均能独立构建并通过类型检查；
+- WP-01 的六个 workspace 均能独立构建并通过类型检查；WP-02 新增 `identity` 后当前合计七个 workspace；
 - 平台 OpenAPI 无重复 Operation ID，所有 Operation 有响应定义；
 - API 三类测试覆盖 live/ready、数据库失败和 404 标准错误；
 - Worker 测试覆盖成功发布、失败重试和空 handler 安全行为；

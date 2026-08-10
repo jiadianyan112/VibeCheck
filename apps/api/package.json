@@ -16,6 +16,7 @@
     "@vibecheck/config": "*",
     "@vibecheck/contracts": "*",
     "@vibecheck/database": "*",
+    "@vibecheck/identity": "*",
     "@vibecheck/observability": "*"
   }
 }
