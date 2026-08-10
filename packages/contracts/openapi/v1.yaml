@@ -1,0 +1,382 @@
+openapi: 3.1.0
+info:
+  title: VibeCheck API
+  version: 0.1.0
+  description: >-
+    WP-02 platform and identity contract. Product operations are added only when
+    their module enters implementation and must preserve the v1.10 PRD Operation IDs.
+servers:
+  - url: /
+    description: Platform paths are root-relative; product paths use the /api/v1 prefix.
+tags:
+  - name: Platform
+  - name: Identity
+paths:
+  /health/live:
+    get:
+      tags: [Platform]
+      operationId: OP-PLATFORM-LIVE
+      summary: Process liveness
+      responses:
+        '200':
+          description: Process is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+  /health/ready:
+    get:
+      tags: [Platform]
+      operationId: OP-PLATFORM-READY
+      summary: Dependency readiness
+      responses:
+        '200':
+          description: Required dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+        '503':
+          description: At least one required dependency is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+  /api/v1/auth/email-challenges:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-START
+      summary: Start an email OTP login or administrator reauthentication flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthChallengeRequest'
+      responses:
+        '202':
+          description: Challenge accepted without revealing account existence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthChallengeAccepted'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/auth/email-challenges/{challenge_id}/verify:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-CALLBACK
+      summary: Verify one email OTP and atomically establish or elevate a session
+      parameters:
+        - in: path
+          name: challenge_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyRequest'
+      responses:
+        '200':
+          description: OTP consumed exactly once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerificationResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/auth/session:
+    get:
+      tags: [Identity]
+      operationId: OP-AUTH-SESSION-GET
+      summary: Read the current server session and permission summary
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current active session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Identity]
+      operationId: OP-AUTH-SESSION-DELETE
+      summary: Revoke the current session
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [session_version]
+              properties:
+                session_version:
+                  type: integer
+                  minimum: 1
+      responses:
+        '204':
+          description: Session revoked and cookies cleared.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: vc_session
+  parameters:
+    CsrfToken:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 128
+  responses:
+    Error:
+      description: Stable error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ServiceHealth:
+      type: object
+      additionalProperties: false
+      required: [status, service, version, commit, checked_at]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+          minLength: 1
+          maxLength: 64
+        version:
+          type: string
+          minLength: 1
+          maxLength: 32
+        commit:
+          type: string
+          minLength: 1
+          maxLength: 64
+        checked_at:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, failed]
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message_key, request_id, retryable, retry_after_ms]
+          properties:
+            code:
+              type: string
+              minLength: 1
+              maxLength: 64
+            message_key:
+              type: string
+              minLength: 1
+              maxLength: 128
+            request_id:
+              type: string
+              minLength: 1
+              maxLength: 64
+            retryable:
+              type: boolean
+            retry_after_ms:
+              type: [integer, 'null']
+              minimum: 0
+    AuthChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [email, purpose, return_to, client_request_id]
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+        purpose:
+          type: string
+          enum: [login, admin_confirm]
+        return_to:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        client_request_id:
+          type: string
+          format: uuid
+        preview_token:
+          type: string
+          minLength: 32
+          maxLength: 512
+    AuthChallengeAccepted:
+      type: object
+      additionalProperties: false
+      required: [auth_flow_id, challenge_id, expires_at, resend_after, masked_email]
+      properties:
+        auth_flow_id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        resend_after:
+          type: string
+          format: date-time
+        masked_email:
+          type: string
+          minLength: 3
+          maxLength: 320
+    AuthVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [auth_flow_id, otp, client_request_id]
+      properties:
+        auth_flow_id:
+          type: string
+          format: uuid
+        otp:
+          type: string
+          pattern: '^[0-9]{6}$'
+        client_request_id:
+          type: string
+          format: uuid
+    AuthVerificationResponse:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [purpose, session, return_to]
+          properties:
+            purpose:
+              const: login
+            session:
+              $ref: '#/components/schemas/AuthSession'
+            return_to:
+              type: string
+              minLength: 1
+              maxLength: 2048
+        - type: object
+          additionalProperties: false
+          required: [purpose, reauth_grant_id, recent_auth_at, return_to]
+          properties:
+            purpose:
+              const: admin_confirm
+            reauth_grant_id:
+              type: string
+              format: uuid
+            recent_auth_at:
+              type: string
+              format: date-time
+            return_to:
+              type: string
+              minLength: 1
+              maxLength: 2048
+    AuthSession:
+      type: object
+      additionalProperties: false
+      required:
+        - authenticated
+        - user_id
+        - display_name
+        - account_status
+        - roles
+        - primary_role
+        - permissions
+        - session_version
+        - csrf_token
+        - recent_auth_at
+        - expires_at
+      properties:
+        authenticated:
+          const: true
+        user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 320
+        account_status:
+          type: string
+          enum: [active, restricted]
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [user, verified_author, editor, admin]
+        primary_role:
+          type: string
+          enum: [user, verified_author, editor, admin]
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        session_version:
+          type: integer
+          minimum: 1
+        csrf_token:
+          type: string
+          minLength: 32
+          maxLength: 128
+        recent_auth_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time

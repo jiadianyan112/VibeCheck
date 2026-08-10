@@ -36,19 +36,17 @@ describe('submission entry and URL checks', () => {
     configureServiceRuntime({ defaultDelayMs: 0 })
   })
 
-  it('logs in with a fixed identity and returns to the protected publish entry', async () => {
-    const user = userEvent.setup()
-    renderRoute('/auth?from=%2Fsubmit')
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '使用米娅账号' }))
-    expect(await screen.findByRole('heading', { name: '先检查作品地址' })).toBeInTheDocument()
+  it('routes a guest publish request to email OTP login with a return target', () => {
+    renderRoute('/auth?return_to=%2Fsubmit')
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /^邮箱地址/ })).toBeInTheDocument()
   })
 
   it('keeps the complete publication scenario through the login return', () => {
     renderRoute('/submit?scenario=duplicate_project&resumeUrl=https%3A%2F%2Fexample.test%2Ftool')
     expect(screen.getByRole('link', { name: '登录后发布' })).toHaveAttribute(
       'href',
-      '/auth?from=%2Fsubmit%3Fscenario%3Dduplicate_project%26resumeUrl%3Dhttps%253A%252F%252Fexample.test%252Ftool',
+      '/auth?return_to=%2Fsubmit%3Fscenario%3Dduplicate_project%26resumeUrl%3Dhttps%253A%252F%252Fexample.test%252Ftool',
     )
   })
 

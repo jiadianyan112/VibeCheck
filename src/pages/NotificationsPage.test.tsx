@@ -113,6 +113,6 @@ describe('NotificationsPage', () => {
     renderNotifications()
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
     expect(screen.queryByText('口语回声发布 2.0')).not.toBeInTheDocument()
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
   })
 })

@@ -207,7 +207,7 @@ export function SubmitFormPage() {
 
   if (!state.session.user) {
     const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
-    return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?from=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
+    return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?return_to=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
   }
   if (!draft) return <PageFrame title="未找到发布草稿" description="草稿可能不存在、属于其他身份或已经删除。"><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
   const requestedStep = searchParams.get('step')

@@ -1,17 +1,39 @@
 {
-  "name": "vibecheck-prototype",
+  "name": "vibecheck",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
+  "workspaces": [
+    "packages/config",
+    "packages/contracts",
+    "packages/database",
+    "packages/identity",
+    "packages/observability",
+    "apps/api",
+    "apps/worker"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev:api": "npm run dev -w @vibecheck/api",
+    "dev:worker": "npm run dev -w @vibecheck/worker",
+    "build": "npm run build:foundation && npm run build:web",
+    "build:web": "tsc -b && vite build",
+    "build:libraries": "npm run build -w @vibecheck/config && npm run build -w @vibecheck/contracts && npm run build -w @vibecheck/database && npm run build -w @vibecheck/observability && npm run build -w @vibecheck/identity",
+    "build:foundation": "npm run build:libraries && npm run build -w @vibecheck/api && npm run build -w @vibecheck/worker",
     "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && npm run typecheck:foundation",
+    "typecheck:foundation": "npm run build:libraries && npm run typecheck -w @vibecheck/config && npm run typecheck -w @vibecheck/contracts && npm run typecheck -w @vibecheck/database && npm run typecheck -w @vibecheck/observability && npm run typecheck -w @vibecheck/identity && npm run typecheck -w @vibecheck/api && npm run typecheck -w @vibecheck/worker",
     "test": "vitest run",
+    "test:foundation": "npm run build:libraries && npm run test -w @vibecheck/config && npm run test -w @vibecheck/contracts && npm run test -w @vibecheck/database && npm run test -w @vibecheck/observability && npm run test -w @vibecheck/identity && npm run test -w @vibecheck/api && npm run test -w @vibecheck/worker",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "contracts:check": "npm run check -w @vibecheck/contracts",
+    "deployment:check": "npm run check:deployment -w @vibecheck/contracts",
+    "db:migrate": "npm run migrate -w @vibecheck/database"
   },
   "dependencies": {
     "react": "^19.1.1",
@@ -36,6 +58,7 @@
     "jsdom": "^26.1.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.41.0",
+    "tsx": "^4.20.6",
     "vite": "^7.1.4",
     "vitest": "^3.2.4"
   }

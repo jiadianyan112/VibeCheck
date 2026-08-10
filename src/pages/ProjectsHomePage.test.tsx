@@ -26,7 +26,7 @@ describe('ProjectsHomePage', () => {
     const section = picks.closest('section')!
     expect(within(section).getAllByRole('link')[0]).toHaveAttribute('href', expect.stringMatching(/^\/project\//))
     expect(screen.getByRole('link', { name: 'PDF 出题' })).toHaveAttribute('href', '/search?q=PDF%20%E5%87%BA%E9%A2%98')
-    expect(screen.getAllByRole('link', { name: '发布作品' }).some((link) => link.getAttribute('href') === '/auth?from=%2Fsubmit')).toBe(true)
+    expect(screen.getAllByRole('link', { name: '发布作品' }).some((link) => link.getAttribute('href') === '/auth?return_to=%2Fsubmit')).toBe(true)
     expect(screen.getByRole('link', { name: /把 PDF 变成题库/ })).toHaveAttribute('href', '/categories/pdf-to-quiz')
   })
 

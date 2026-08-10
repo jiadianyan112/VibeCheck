@@ -3,11 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from '../components'
 import { AuthGateProvider, ComparisonProvider } from '../features'
-import { AppStateProvider } from '../state'
+import { prototypeUsers } from '../mocks'
+import { AppStateProvider, useAppState } from '../state'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
+function SessionSyncProbe() {
+  const { dispatch } = useAppState()
+  return <button onClick={() => { dispatch({ type: 'SESSION_SYNCED', user: prototypeUsers[0]! }); dispatch({ type: 'PENDING_ACTION_REPLAY' }) }}>模拟服务端登录</button>
+}
+
 function renderProject(id: string) {
-  return render(<MemoryRouter initialEntries={[`/project/${id}`]}><AppStateProvider><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={[`/project/${id}`]}><AppStateProvider><SessionSyncProbe /><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
 }
 
 describe('ProjectDetailPage hero', () => {
@@ -50,7 +56,7 @@ describe('ProjectDetailPage hero', () => {
   it('toggles collection directly without opening follow settings', async () => {
     const user = userEvent.setup(); renderProject('project-quizforge')
     await user.click(await screen.findByRole('button', { name: '收藏' }))
-    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    await user.click(screen.getByRole('button', { name: '模拟服务端登录' }))
     const cancel = await screen.findByRole('button', { name: '取消收藏' })
     expect(cancel).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByText('收藏设置')).not.toBeInTheDocument()
@@ -174,7 +180,7 @@ describe('ProjectDetailPage discussion interactions', () => {
     await user.click(screen.getByRole('button', { name: '发布评论' }))
     expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
     expect(screen.getByLabelText('评论内容')).toHaveValue('OCR 超时时是否会保留已经识别的段落？')
-    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    await user.click(screen.getByRole('button', { name: '模拟服务端登录' }))
     const posted = await screen.findByText('OCR 超时时是否会保留已经识别的段落？')
     expect(within(posted.closest('.comment-card') as HTMLElement).getByText('开发问题')).toBeInTheDocument()
     expect(screen.getByLabelText('评论内容')).toHaveValue('')

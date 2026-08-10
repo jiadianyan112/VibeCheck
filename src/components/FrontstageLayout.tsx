@@ -17,8 +17,8 @@ function navClassName({ isActive }: { isActive: boolean }) {
   return isActive ? 'nav-link nav-link--active' : 'nav-link'
 }
 
-function restrictedPath(path: string, isLoggedIn: boolean, from: string) {
-  return isLoggedIn ? path : `/auth?from=${encodeURIComponent(from)}`
+function restrictedPath(path: string, isLoggedIn: boolean, returnTo: string) {
+  return isLoggedIn ? path : `/auth?return_to=${encodeURIComponent(returnTo)}`
 }
 
 function FrontstageContent() {

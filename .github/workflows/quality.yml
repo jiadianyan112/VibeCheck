@@ -1,0 +1,57 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: vibecheck
+          POSTGRES_USER: vibecheck
+          POSTGRES_PASSWORD: vibecheck_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibecheck -d vibecheck"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://vibecheck:vibecheck_ci_only@127.0.0.1:5432/vibecheck
+      DATABASE_SSL: "false"
+      WEB_ORIGINS: http://localhost:5173
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run contracts:check
+      - run: npm run deployment:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:foundation
+      - run: npm run build
+      - name: Verify migrations are repeatable
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 3) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"

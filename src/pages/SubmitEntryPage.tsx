@@ -150,7 +150,7 @@ export function SubmitEntryPage() {
         <section className="submit-login-callout stack stack--small">
           <h2>先登录，再检查作品地址</h2>
           <p>登录后会回到这里，刚才的作品地址不会丢失。</p>
-          <Link className="button button--primary" to={`/auth?from=${returnPath}`}>
+          <Link className="button button--primary" to={`/auth?return_to=${returnPath}`}>
             登录后发布
           </Link>
         </section>

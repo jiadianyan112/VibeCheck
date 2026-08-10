@@ -1,10 +1,15 @@
 node_modules/
 dist/
+apps/*/dist/
+packages/*/dist/
 coverage/
 playwright-report/
 test-results/
 .vite/
 *.local
+.env
+.env.*
+!.env.example
 .vibecheck-dev.log
 
 # Original research and design inputs remain outside the app repository.
