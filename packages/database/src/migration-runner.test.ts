@@ -12,6 +12,7 @@ describe('discoverMigrations', () => {
         '000001_extensions_and_schemas.sql',
         '000002_platform_foundation.sql',
         '000003_identity_access.sql',
+        '000004_catalog_public_read.sql',
       ],
     )
     for (const migration of migrations) {

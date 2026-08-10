@@ -1,4 +1,5 @@
-import { loadIdentityConfig, loadServiceConfig } from '@vibecheck/config'
+import { CatalogService, PostgresCatalogStore } from '@vibecheck/catalog'
+import { loadCatalogConfig, loadIdentityConfig, loadServiceConfig } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import { IdentityService, PostgresIdentityStore, ResendEmailSender } from '@vibecheck/identity'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +8,7 @@ import { close, createApiServer, listen } from './server.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-api' })
 const identityConfig = loadIdentityConfig()
+const catalogConfig = loadCatalogConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -17,6 +19,16 @@ const pool = createDatabasePool({
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
+  ...(catalogConfig.enabled
+    ? {
+        catalog: new CatalogService({
+          store: new PostgresCatalogStore(pool),
+          cursorSecret: catalogConfig.cursorSecret,
+        }),
+        catalogDefaultPageSize: catalogConfig.defaultPageSize,
+        catalogMaximumPageSize: catalogConfig.maximumPageSize,
+      }
+    : {}),
   ...(identityConfig.enabled
     ? {
         identity: new IdentityService({

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { loadIdentityConfig, loadServiceConfig } from './index.js'
+import { loadCatalogConfig, loadIdentityConfig, loadServiceConfig } from './index.js'
 
 describe('loadServiceConfig', () => {
   it('loads deterministic defaults for local services', () => {
@@ -87,5 +87,20 @@ describe('loadServiceConfig', () => {
     assert.equal(config.emailProvider, 'resend')
     assert.equal(config.otpTtlSeconds, 600)
     assert.equal(config.otpResendSeconds, 60)
+  })
+
+  it('keeps the catalog optional locally and validates signed cursor configuration when enabled', () => {
+    assert.equal(loadCatalogConfig({ CATALOG_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadCatalogConfig({ CATALOG_ENABLED: 'true', CATALOG_CURSOR_SECRET: 'short' }),
+      /CONFIG_CATALOG_CURSOR_SECRET_REQUIRED/,
+    )
+    const config = loadCatalogConfig({
+      CATALOG_ENABLED: 'true',
+      CATALOG_CURSOR_SECRET: 'catalog-cursor-secret-at-least-thirty-two-characters',
+      CATALOG_DEFAULT_PAGE_SIZE: '20',
+    })
+    assert.equal(config.defaultPageSize, 20)
+    assert.equal(config.maximumPageSize, 50)
   })
 })

@@ -11,6 +11,7 @@ servers:
 tags:
   - name: Platform
   - name: Identity
+  - name: Catalog
 paths:
   /health/live:
     get:
@@ -156,6 +157,103 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/v1/projects:
+    get:
+      tags: [Catalog]
+      operationId: OP-PROJ-LIST
+      summary: List a stable page of public projects across one or both P0 categories
+      parameters:
+        - in: query
+          name: category_id
+          required: false
+          schema:
+            $ref: '#/components/schemas/CategoryId'
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 24
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+      responses:
+        '200':
+          description: Public project cards at one immutable listing snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListProjection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/v1/projects/{project_id}:
+    get:
+      tags: [Catalog]
+      operationId: OP-PROJ-GET
+      summary: Read one canonical public project at its current immutable version
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Public project projection; private author-relation states are excluded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectProjection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/v1/creators/{creator_id}:
+    get:
+      tags: [Catalog]
+      operationId: OP-CREATOR-GET
+      summary: Read the canonical public creator profile and published project ids
+      parameters:
+        - in: path
+          name: creator_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Public canonical creator projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorProjection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
 components:
   securitySchemes:
     sessionCookie:
@@ -179,6 +277,433 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    CategoryId:
+      type: string
+      enum: [ai_learning_quiz, personal_site_portfolio]
+    CategorySchemaVersion:
+      type: string
+      enum: [learning.v1, portfolio.v1]
+    KnowledgeStateStringArray:
+      type: object
+      additionalProperties: false
+      required: [knowledge_state, values, source_type, observed_at]
+      properties:
+        knowledge_state:
+          type: string
+          enum: [known_values, known_empty, unknown]
+        values:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+        source_type:
+          type: string
+          enum: [platform_verified_fact, verified_author_statement, trusted_external_source, system_inference]
+        observed_at:
+          type: string
+          format: date-time
+    ProjectCoreSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - current_name
+        - public_url
+        - repository_url
+        - original_platform
+        - cover_media_reference_ids
+        - one_line_definition
+        - ai_coding_tools
+        - tech_stack
+        - deployment_platform
+        - maintenance_signal
+        - status_note
+      properties:
+        current_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        public_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        repository_url:
+          type: [string, 'null']
+          maxLength: 2048
+        original_platform:
+          type: [string, 'null']
+          maxLength: 120
+        cover_media_reference_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        one_line_definition:
+          type: string
+          minLength: 1
+          maxLength: 80
+        ai_coding_tools:
+          $ref: '#/components/schemas/KnowledgeStateStringArray'
+        tech_stack:
+          type: array
+          maxItems: 30
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+        deployment_platform:
+          type: [string, 'null']
+          maxLength: 120
+        maintenance_signal:
+          type: string
+          enum: [repository_updated, page_updated, author_updated, no_public_change, unknown]
+        status_note:
+          type: [string, 'null']
+          maxLength: 500
+    LearningSchemaV1:
+      type: object
+      additionalProperties: false
+      required:
+        - target_users
+        - core_problem
+        - use_scenarios
+        - main_inputs
+        - main_outputs
+        - core_flow
+        - content_processing
+        - practice_formats
+        - feedback_methods
+        - learning_records
+        - differentiation
+        - core_features
+        - secondary_features
+        - login_requirement
+        - sharing_capability
+      properties:
+        target_users:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        core_problem: { type: string, minLength: 1, maxLength: 500 }
+        use_scenarios:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        main_inputs:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        main_outputs:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        core_flow:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [order, name]
+            properties:
+              order: { type: integer, minimum: 1, maximum: 10 }
+              name: { type: string, minLength: 1, maxLength: 80 }
+        content_processing:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        practice_formats:
+          type: array
+          maxItems: 9
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        feedback_methods:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        learning_records:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        differentiation: { type: [string, 'null'], maxLength: 1000 }
+        core_features:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 80 }
+        secondary_features:
+          type: array
+          maxItems: 30
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 80 }
+        login_requirement:
+          type: string
+          enum: [none, partial, required, unknown]
+        sharing_capability:
+          type: string
+          enum: [none, link, result, question_bank, collaboration, unknown]
+    PortfolioSchemaV1:
+      type: object
+      additionalProperties: false
+      required:
+        - site_type
+        - creator_roles
+        - primary_goals
+        - page_model
+        - navigation_pattern
+        - homepage_sequence
+        - core_modules
+        - project_showcase_format
+        - case_study_depth
+        - visual_styles
+        - layout_patterns
+        - color_character
+        - theme_mode
+        - interaction_level
+        - interaction_patterns
+        - responsive_support
+        - blog_support
+      properties:
+        site_type:
+          type: string
+          enum: [personal_homepage, portfolio, online_resume, academic_homepage, hybrid]
+        creator_roles:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        primary_goals:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        page_model:
+          type: string
+          enum: [single_page, multi_page, hybrid]
+        navigation_pattern:
+          type: [string, 'null']
+          enum: [top_nav, side_nav, section_anchor, minimal_overlay, no_persistent_nav, other, null]
+        homepage_sequence:
+          type: array
+          maxItems: 30
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        core_modules:
+          type: array
+          minItems: 2
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        project_showcase_format:
+          type: string
+          enum: [card_grid, gallery, timeline, case_study_list, repository_list, full_bleed, mixed, none]
+        case_study_depth:
+          type: string
+          enum: [none, summary, overview, deep]
+        visual_styles:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        layout_patterns:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        color_character:
+          type: string
+          enum: [monochrome, neutral, brand_led, vivid, gradient_dominant, mixed]
+        theme_mode:
+          type: string
+          enum: [light_only, dark_only, switchable, system_adaptive]
+        interaction_level:
+          type: string
+          enum: [static, light, moderate, high]
+        interaction_patterns:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        responsive_support:
+          type: string
+          enum: [confirmed, partial, not_supported, unknown]
+        blog_support:
+          type: string
+          enum: [none, static, content_managed, unknown]
+    CreatorSummary:
+      type: object
+      additionalProperties: false
+      required: [creator_id, display_name, avatar_url, verification_status]
+      properties:
+        creator_id: { type: string, format: uuid }
+        display_name: { type: string, minLength: 1, maxLength: 80 }
+        avatar_url: { type: [string, 'null'], maxLength: 2048 }
+        verification_status:
+          type: string
+          enum: [unverified, verified, disputed]
+    InteractionSummary:
+      type: object
+      additionalProperties: false
+      required: [favorite_count, like_count, follower_count, visible_comment_count]
+      properties:
+        favorite_count: { type: integer, minimum: 0 }
+        like_count: { type: integer, minimum: 0 }
+        follower_count: { type: integer, minimum: 0 }
+        visible_comment_count: { type: integer, minimum: 0 }
+    LatestEventSummary:
+      type: [object, 'null']
+      additionalProperties: false
+      required: [event_id, event_type, event_time, time_precision, event_summary]
+      properties:
+        event_id: { type: string, format: uuid }
+        event_type: { type: string, minLength: 1, maxLength: 64 }
+        event_time: { type: string, format: date-time }
+        time_precision:
+          type: string
+          enum: [exact, day, month, year, estimated]
+        event_summary: { type: string, minLength: 1, maxLength: 500 }
+    ProjectCardProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - project_id
+        - version_id
+        - current_name
+        - category_id
+        - category_schema_version
+        - one_line_definition
+        - cover_media_reference_ids
+        - access_status
+        - review_status
+        - last_verified_at
+        - creator_summaries
+        - ai_coding_tools
+        - interaction_summary
+        - latest_event_summary
+        - read_version
+      properties:
+        project_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        current_name: { type: string, minLength: 1, maxLength: 80 }
+        category_id: { $ref: '#/components/schemas/CategoryId' }
+        category_schema_version: { $ref: '#/components/schemas/CategorySchemaVersion' }
+        one_line_definition: { type: string, minLength: 1, maxLength: 80 }
+        cover_media_reference_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        access_status:
+          type: string
+          enum: [normal, login_required, partial_abnormal, link_unavailable, suspected_migration, paused, ended, unknown]
+        review_status:
+          type: string
+          enum: [published_platform, published_author]
+        last_verified_at: { type: string, format: date-time }
+        creator_summaries:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CreatorSummary' }
+        ai_coding_tools: { $ref: '#/components/schemas/KnowledgeStateStringArray' }
+        interaction_summary: { $ref: '#/components/schemas/InteractionSummary' }
+        latest_event_summary: { $ref: '#/components/schemas/LatestEventSummary' }
+        read_version: { type: integer, minimum: 1 }
+    ProjectListProjection:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, result_version]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ProjectCardProjection' }
+        next_cursor: { type: [string, 'null'], maxLength: 1024 }
+        result_version: { type: string, pattern: '^[a-f0-9]{64}$' }
+    ProjectProjection:
+      type: object
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/ProjectCardProjection'
+        - type: object
+          required:
+            - viewer_schema
+            - visibility
+            - project_core
+            - category_data
+            - first_seen_at
+            - created_at
+            - author_link_status
+            - completeness_level
+            - freshness_status
+            - record_source
+          properties:
+            viewer_schema: { const: public }
+            visibility: { const: public }
+            project_core: { $ref: '#/components/schemas/ProjectCoreSnapshot' }
+            category_data:
+              oneOf:
+                - $ref: '#/components/schemas/LearningSchemaV1'
+                - $ref: '#/components/schemas/PortfolioSchemaV1'
+            first_seen_at: { type: string, format: date-time }
+            created_at: { type: string, format: date-time }
+            author_link_status:
+              type: string
+              enum: [unlinked, pending, linked, failed, disputed]
+            completeness_level:
+              type: string
+              enum: [complete, partial, limited, pending_verification, disputed]
+            freshness_status:
+              type: string
+              enum: [valid, expiring, expired]
+            record_source:
+              type: string
+              enum: [platform_editor, public_discovery, author_submission, user_submission]
+    CreatorProjection:
+      type: object
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/CreatorSummary'
+        - type: object
+          required: [viewer_schema, bio, contacts, published_project_ids, read_version]
+          properties:
+            viewer_schema: { const: public }
+            bio: { type: string, maxLength: 1000 }
+            contacts:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                additionalProperties: { type: string }
+            published_project_ids:
+              type: array
+              maxItems: 1000
+              uniqueItems: true
+              items: { type: string, format: uuid }
+            read_version: { type: integer, minimum: 1 }
     ServiceHealth:
       type: object
       additionalProperties: false

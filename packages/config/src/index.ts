@@ -39,6 +39,13 @@ export interface IdentityConfig {
   readonly authTokenSecret: string
 }
 
+export interface CatalogConfig {
+  readonly enabled: boolean
+  readonly cursorSecret: string
+  readonly defaultPageSize: number
+  readonly maximumPageSize: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -239,5 +246,31 @@ export function loadIdentityConfig(
     emailHashPepper: requiredSecret('EMAIL_HASH_PEPPER', env.EMAIL_HASH_PEPPER),
     otpPepper: requiredSecret('OTP_PEPPER', env.OTP_PEPPER),
     authTokenSecret: requiredSecret('AUTH_TOKEN_SECRET', env.AUTH_TOKEN_SECRET),
+  })
+}
+
+export function loadCatalogConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): CatalogConfig {
+  const enabled = parseBoolean('CATALOG_ENABLED', env.CATALOG_ENABLED, false)
+  if (!enabled) {
+    return Object.freeze({
+      enabled: false,
+      cursorSecret: '',
+      defaultPageSize: 24,
+      maximumPageSize: 50,
+    })
+  }
+  const maximumPageSize = parseInteger(
+    'CATALOG_MAXIMUM_PAGE_SIZE', env.CATALOG_MAXIMUM_PAGE_SIZE, 50, 1, 100,
+  )
+  const defaultPageSize = parseInteger(
+    'CATALOG_DEFAULT_PAGE_SIZE', env.CATALOG_DEFAULT_PAGE_SIZE, 24, 1, maximumPageSize,
+  )
+  return Object.freeze({
+    enabled: true,
+    cursorSecret: requiredSecret('CATALOG_CURSOR_SECRET', env.CATALOG_CURSOR_SECRET),
+    defaultPageSize,
+    maximumPageSize,
   })
 }

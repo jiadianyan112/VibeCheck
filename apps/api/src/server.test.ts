@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import type {
+  CreatorProjection,
+  ProjectListProjection,
+  ProjectProjection,
+} from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import type {
   SessionProjection,
@@ -12,7 +17,12 @@ import type {
   VerifyChallengeCommand,
 } from '@vibecheck/identity'
 
-import { close, createApiServer, type ApiIdentityService } from './server.js'
+import {
+  close,
+  createApiServer,
+  type ApiCatalogService,
+  type ApiIdentityService,
+} from './server.js'
 
 const config: ServiceConfig = Object.freeze({
   serviceName: 'vibecheck-api',
@@ -32,6 +42,7 @@ async function start(
   checkReadiness: () => Promise<void>,
   identity?: ApiIdentityService,
   staticDirectory?: string,
+  catalog?: ApiCatalogService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -46,6 +57,13 @@ async function start(
         }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
+    ...(catalog
+      ? {
+          catalog,
+          catalogDefaultPageSize: 24,
+          catalogMaximumPageSize: 50,
+        }
+      : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -315,5 +333,148 @@ test('same-origin web hosting serves assets and falls back to the SPA entry docu
   } finally {
     await runtime.stop()
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+const projectCard = Object.freeze({
+  project_id: '11111111-1111-4111-8111-111111111111',
+  version_id: '22222222-2222-4222-8222-222222222222',
+  current_name: 'Fixture Project',
+  category_id: 'ai_learning_quiz',
+  category_schema_version: 'learning.v1',
+  one_line_definition: '把资料转换为练习内容',
+  cover_media_reference_ids: Object.freeze(['cover-reference']),
+  access_status: 'normal',
+  review_status: 'published_platform',
+  last_verified_at: '2026-08-10T00:00:00.000Z',
+  creator_summaries: Object.freeze([]),
+  ai_coding_tools: Object.freeze({
+    knowledge_state: 'unknown',
+    values: Object.freeze([]),
+    source_type: 'system_inference',
+    observed_at: '2026-08-10T00:00:00.000Z',
+  }),
+  interaction_summary: Object.freeze({
+    favorite_count: 0,
+    like_count: 0,
+    follower_count: 0,
+    visible_comment_count: 0,
+  }),
+  latest_event_summary: null,
+  read_version: 1,
+} as const)
+
+class FakeCatalogService implements ApiCatalogService {
+  listInput: Parameters<ApiCatalogService['listProjects']>[0] | null = null
+
+  async listProjects(input: Parameters<ApiCatalogService['listProjects']>[0]): Promise<ProjectListProjection> {
+    this.listInput = input
+    return Object.freeze({
+      items: Object.freeze([projectCard]),
+      next_cursor: null,
+      result_version: 'a'.repeat(64),
+    })
+  }
+
+  async getProject(): Promise<ProjectProjection> {
+    return Object.freeze({
+      ...projectCard,
+      viewer_schema: 'public',
+      visibility: 'public',
+      project_core: Object.freeze({
+        current_name: 'Fixture Project',
+        public_url: 'https://fixture.example.com',
+        repository_url: null,
+        original_platform: null,
+        cover_media_reference_ids: Object.freeze(['cover-reference']),
+        one_line_definition: '把资料转换为练习内容',
+        ai_coding_tools: projectCard.ai_coding_tools,
+        tech_stack: Object.freeze([]),
+        deployment_platform: null,
+        maintenance_signal: 'unknown',
+        status_note: null,
+      }),
+      category_data: Object.freeze({
+        target_users: Object.freeze(['university_students']),
+        core_problem: '资料难以直接练习',
+        use_scenarios: Object.freeze(['daily_practice']),
+        main_inputs: Object.freeze(['pdf']),
+        main_outputs: Object.freeze(['questions']),
+        core_flow: Object.freeze([Object.freeze({ order: 1, name: '上传资料' })]),
+        content_processing: Object.freeze([]),
+        practice_formats: Object.freeze([]),
+        feedback_methods: Object.freeze([]),
+        learning_records: Object.freeze([]),
+        differentiation: null,
+        core_features: Object.freeze([]),
+        secondary_features: Object.freeze([]),
+        login_requirement: 'unknown',
+        sharing_capability: 'unknown',
+      }),
+      first_seen_at: '2026-08-01T00:00:00.000Z',
+      created_at: '2026-08-01T00:00:00.000Z',
+      author_link_status: 'unlinked',
+      completeness_level: 'complete',
+      freshness_status: 'valid',
+      record_source: 'platform_editor',
+    })
+  }
+
+  async getCreator(): Promise<CreatorProjection> {
+    return Object.freeze({
+      creator_id: '33333333-3333-4333-8333-333333333333',
+      display_name: 'Fixture Creator',
+      avatar_url: null,
+      verification_status: 'verified',
+      viewer_schema: 'public',
+      bio: '',
+      contacts: Object.freeze([]),
+      published_project_ids: Object.freeze([projectCard.project_id]),
+      read_version: 1,
+    })
+  }
+}
+
+test('public catalog routes preserve list query state and emit versioned cache validators', async () => {
+  const catalog = new FakeCatalogService()
+  const runtime = await start(async () => undefined, undefined, undefined, catalog)
+  try {
+    const list = await fetch(`${runtime.baseUrl}/api/v1/projects?category_id=ai_learning_quiz&limit=12`)
+    assert.equal(list.status, 200)
+    assert.equal(list.headers.get('cache-control'), 'public, max-age=30, stale-while-revalidate=60')
+    assert.deepEqual(catalog.listInput, {
+      categoryId: 'ai_learning_quiz',
+      limit: 12,
+      cursor: null,
+    })
+    assert.equal((await list.json() as { items: unknown[] }).items.length, 1)
+
+    const detail = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectCard.project_id}`)
+    assert.equal(detail.status, 200)
+    assert.equal(detail.headers.get('etag'), `W/"project-${projectCard.project_id}-1"`)
+    assert.equal((await detail.json() as { viewer_schema: string }).viewer_schema, 'public')
+
+    const creator = await fetch(`${runtime.baseUrl}/api/v1/creators/33333333-3333-4333-8333-333333333333`)
+    assert.equal(creator.status, 200)
+    assert.equal(creator.headers.get('etag'), 'W/"creator-33333333-3333-4333-8333-333333333333-1"')
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('public catalog routes reject duplicate, unknown and oversized pagination input', async () => {
+  const runtime = await start(async () => undefined, undefined, undefined, new FakeCatalogService())
+  try {
+    for (const path of [
+      '/api/v1/projects?limit=12&limit=13',
+      '/api/v1/projects?unknown=true',
+      '/api/v1/projects?limit=51',
+    ]) {
+      const response = await fetch(`${runtime.baseUrl}${path}`)
+      assert.equal(response.status, 400)
+      assert.match((await response.json() as { error: { code: string } }).error.code, /QUERY_PARAMETER_INVALID|LIMIT_INVALID/)
+    }
+  } finally {
+    await runtime.stop()
   }
 })

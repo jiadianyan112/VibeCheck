@@ -45,6 +45,10 @@ services:
         generateValue: true
       - key: AUTH_TOKEN_SECRET
         generateValue: true
+      - key: CATALOG_ENABLED
+        value: "true"
+      - key: CATALOG_CURSOR_SECRET
+        generateValue: true
 
   - type: worker
     name: vibecheck-worker

@@ -3,6 +3,13 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
 
+import {
+  CatalogError,
+  type CategoryId,
+  type CreatorProjection,
+  type ProjectListProjection,
+  type ProjectProjection,
+} from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import type { ServiceHealth } from '@vibecheck/contracts'
 import {
@@ -36,8 +43,21 @@ export interface ApiIdentityService {
   ): Promise<void>
 }
 
+export interface ApiCatalogService {
+  listProjects(input: {
+    readonly categoryId: CategoryId | null
+    readonly limit: number
+    readonly cursor: string | null
+  }): Promise<ProjectListProjection>
+  getProject(projectId: string): Promise<ProjectProjection>
+  getCreator(creatorId: string): Promise<CreatorProjection>
+}
+
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
+  readonly catalog?: ApiCatalogService
+  readonly catalogDefaultPageSize?: number
+  readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
@@ -57,16 +77,26 @@ function writeJson(
   statusCode: number,
   body: unknown,
   requestId: string,
+  cacheControl = 'no-store',
 ): void {
   const encoded = JSON.stringify(body)
   response.writeHead(statusCode, {
-    'cache-control': 'no-store',
+    'cache-control': cacheControl,
     'content-length': Buffer.byteLength(encoded),
     'content-type': 'application/json; charset=utf-8',
     'x-content-type-options': 'nosniff',
     'x-request-id': requestId,
   })
   response.end(encoded)
+}
+
+function exactQueryKeys(searchParams: URLSearchParams, allowed: readonly string[]): void {
+  const allowedSet = new Set(allowed)
+  for (const key of searchParams.keys()) {
+    if (!allowedSet.has(key) || searchParams.getAll(key).length !== 1) {
+      throw new CatalogError('QUERY_PARAMETER_INVALID', 400)
+    }
+  }
 }
 
 function errorEnvelope(
@@ -510,6 +540,62 @@ async function handleAuthRequest(
   return null
 }
 
+function requireCatalog(dependencies: ApiServerDependencies): ApiCatalogService {
+  if (!dependencies.catalog) throw new CatalogError('CATALOG_SERVICE_UNAVAILABLE', 503, true)
+  return dependencies.catalog
+}
+
+async function handleCatalogRequest(
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const projectsPath = '/api/v1/projects'
+  const projectMatch = path.match(/^\/api\/v1\/projects\/([^/]+)$/)
+  const creatorMatch = path.match(/^\/api\/v1\/creators\/([^/]+)$/)
+  if (path !== projectsPath && projectMatch === null && creatorMatch === null) return null
+  if (method !== 'GET') return null
+  const catalog = requireCatalog(dependencies)
+
+  if (path === projectsPath) {
+    exactQueryKeys(url.searchParams, ['category_id', 'limit', 'cursor'])
+    const categoryValue = url.searchParams.get('category_id')
+    const limitValue = url.searchParams.get('limit')
+    const defaultPageSize = dependencies.catalogDefaultPageSize ?? 24
+    const maximumPageSize = dependencies.catalogMaximumPageSize ?? 50
+    let limit = defaultPageSize
+    if (limitValue !== null) {
+      if (!/^\d{1,3}$/.test(limitValue)) throw new CatalogError('LIMIT_INVALID', 400)
+      limit = Number(limitValue)
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > maximumPageSize) {
+      throw new CatalogError('LIMIT_INVALID', 400)
+    }
+    const result = await catalog.listProjects({
+      categoryId: categoryValue as CategoryId | null,
+      limit,
+      cursor: url.searchParams.get('cursor'),
+    })
+    writeJson(response, 200, result, requestId, 'public, max-age=30, stale-while-revalidate=60')
+    return 200
+  }
+
+  exactQueryKeys(url.searchParams, [])
+  if (projectMatch !== null) {
+    const result = await catalog.getProject(projectMatch[1]!)
+    response.setHeader('etag', `W/"project-${result.project_id}-${result.read_version}"`)
+    writeJson(response, 200, result, requestId, 'public, max-age=60, stale-while-revalidate=120')
+    return 200
+  }
+  const result = await catalog.getCreator(creatorMatch![1]!)
+  response.setHeader('etag', `W/"creator-${result.creator_id}-${result.read_version}"`)
+  writeJson(response, 200, result, requestId, 'public, max-age=60, stale-while-revalidate=120')
+  return 200
+}
+
 export function createApiServer(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
@@ -520,9 +606,11 @@ export function createApiServer(
     const requestId = requestIdFor(request)
     const startedAt = performance.now()
     const method = request.method ?? 'GET'
+    let url = new URL('http://localhost/')
     let path = '/'
     try {
-      path = new URL(request.url ?? '/', 'http://localhost').pathname
+      url = new URL(request.url ?? '/', 'http://localhost')
+      path = url.pathname
     } catch {
       path = '/'
     }
@@ -583,44 +671,54 @@ export function createApiServer(
             if (authStatus !== null) {
               statusCode = authStatus
             } else {
-              const staticStatus = await handleStaticRequest(
-                request,
-                response,
-                path,
-                method,
-                requestId,
-                dependencies.staticDirectory,
+              const catalogStatus = await handleCatalogRequest(
+                response, url, path, method, requestId, dependencies,
               )
-              if (staticStatus !== null) {
-                statusCode = staticStatus
+              if (catalogStatus !== null) {
+                statusCode = catalogStatus
               } else {
-                statusCode = 404
-                writeJson(
+                const staticStatus = await handleStaticRequest(
+                  request,
                   response,
-                  statusCode,
-                  errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                  path,
+                  method,
                   requestId,
+                  dependencies.staticDirectory,
                 )
+                if (staticStatus !== null) {
+                  statusCode = staticStatus
+                } else {
+                  statusCode = 404
+                  writeJson(
+                    response,
+                    statusCode,
+                    errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                    requestId,
+                  )
+                }
               }
             }
           }
         } catch (error) {
-          const identityError = error instanceof IdentityError
+          const apiError = error instanceof IdentityError || error instanceof CatalogError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
-          statusCode = identityError.httpStatus
-          if (identityError.retryAfterSeconds !== undefined) {
-            response.setHeader('retry-after', String(identityError.retryAfterSeconds))
+          statusCode = apiError.httpStatus
+          const retryAfterSeconds = apiError instanceof IdentityError
+            ? apiError.retryAfterSeconds
+            : undefined
+          if (retryAfterSeconds !== undefined) {
+            response.setHeader('retry-after', String(retryAfterSeconds))
           }
           if (!response.headersSent) {
             writeJson(
               response,
               statusCode,
-              errorEnvelope(identityError.code, requestId, {
-                retryable: identityError.retryable,
-                ...(identityError.retryAfterSeconds === undefined
+              errorEnvelope(apiError.code, requestId, {
+                retryable: apiError.retryable,
+                ...(retryAfterSeconds === undefined
                   ? {}
-                  : { retryAfterSeconds: identityError.retryAfterSeconds }),
+                  : { retryAfterSeconds }),
               }),
               requestId,
             )
