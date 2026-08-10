@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: VibeCheck API
+  version: 0.1.0
+  description: >-
+    WP-01 platform contract. Product operations are added only when their module
+    enters implementation and must preserve the v1.10 PRD Operation IDs.
+servers:
+  - url: /
+    description: Platform paths are root-relative; product paths use the /api/v1 prefix.
+tags:
+  - name: Platform
+paths:
+  /health/live:
+    get:
+      tags: [Platform]
+      operationId: OP-PLATFORM-LIVE
+      summary: Process liveness
+      responses:
+        '200':
+          description: Process is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+  /health/ready:
+    get:
+      tags: [Platform]
+      operationId: OP-PLATFORM-READY
+      summary: Dependency readiness
+      responses:
+        '200':
+          description: Required dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+        '503':
+          description: At least one required dependency is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceHealth'
+components:
+  schemas:
+    ServiceHealth:
+      type: object
+      additionalProperties: false
+      required: [status, service, version, commit, checked_at]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+          minLength: 1
+          maxLength: 64
+        version:
+          type: string
+          minLength: 1
+          maxLength: 32
+        commit:
+          type: string
+          minLength: 1
+          maxLength: 64
+        checked_at:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, failed]
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error_code, message_key, request_id, retryable]
+      properties:
+        error_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        message_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        retryable:
+          type: boolean

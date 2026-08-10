@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+previews:
+  generation: manual
+
+services:
+  - type: web
+    name: vibecheck-web
+    runtime: static
+    buildCommand: npm ci && npm run build:web
+    staticPublishPath: ./dist
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: web
+    name: vibecheck-api
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build:libraries && npm run build -w @vibecheck/api
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run start -w @vibecheck/api
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 30
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibecheck-postgres
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"
+      - key: WEB_ORIGINS
+        sync: false
+
+  - type: worker
+    name: vibecheck-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build:libraries && npm run build -w @vibecheck/worker
+    startCommand: npm run start -w @vibecheck/worker
+    maxShutdownDelaySeconds: 60
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibecheck-postgres
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "1000"
+      - key: WORKER_BATCH_SIZE
+        value: "25"
+
+databases:
+  - name: vibecheck-postgres
+    region: singapore
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+    databaseName: vibecheck
+    user: vibecheck
+    ipAllowList: []
+    storageAutoscalingEnabled: true
