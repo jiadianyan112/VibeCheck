@@ -349,7 +349,7 @@ async function insertProjects(client: PoolClient): Promise<void> {
          canonical_public_url,canonical_url_hash,review_status,access_status,http_check_status,
          author_link_status,completeness_level,freshness_status,record_source,first_seen_at,
          last_verified_at,created_at,updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,digest($6,'sha256'),'published_platform','normal','normal',
+       ) VALUES ($1,$2,$3,$4,$5,$6::text,digest($6::text,'sha256'),'published_platform','normal','normal',
          'linked','complete','valid','platform_editor',$7,$7,$7,$7)
        ON CONFLICT (project_id) DO NOTHING`,
       [
@@ -444,7 +444,7 @@ async function insertEventsAndAssets(client: PoolClient): Promise<void> {
       `INSERT INTO catalog.events (
          event_id,project_id,version_id,event_type,event_time,time_precision,event_sort_at,
          event_summary,source_actor,source_object_type,source_object_id,created_at
-       ) VALUES ($1,$2,$3,$4,$5,'day',($5::date::timestamp AT TIME ZONE 'UTC'),$6,'platform_editor',
+       ) VALUES ($1,$2,$3,$4,$5::text,'day',(($5::text)::date::timestamp AT TIME ZONE 'UTC'),$6,'platform_editor',
          'admin_operation',$7,$8)
        ON CONFLICT (event_id) DO NOTHING`,
       [event.eventId, event.projectId, event.versionId, event.eventType, event.eventTime, event.summary, event.sourceObjectId, fixtureTimestamp],
@@ -455,7 +455,7 @@ async function insertEventsAndAssets(client: PoolClient): Promise<void> {
       `INSERT INTO catalog.assets (
          asset_id,project_id,asset_type,name,description,safe_web_url,target_hash,license_type,
          price_type,acquisition_method,availability_status,visibility,last_verified_at,created_at,updated_at
-       ) VALUES ($1,$2,'source_code',$3,$4,$5,digest($5,'sha256'),'MIT','free','fork',
+       ) VALUES ($1,$2,'source_code',$3,$4,$5::text,digest($5::text,'sha256'),'MIT','free','fork',
          'available','public',$6,$6,$6)
        ON CONFLICT (asset_id) DO NOTHING`,
       [asset.assetId, asset.projectId, asset.name, asset.description, asset.safeWebUrl, fixtureTimestamp],
