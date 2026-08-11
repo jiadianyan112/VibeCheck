@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type {
+  AssetPage,
   CreatorProjection,
+  EventPage,
   ProjectListProjection,
   ProjectProjection,
 } from '@vibecheck/catalog'
@@ -366,6 +368,8 @@ const projectCard = Object.freeze({
 
 class FakeCatalogService implements ApiCatalogService {
   listInput: Parameters<ApiCatalogService['listProjects']>[0] | null = null
+  eventInput: Parameters<ApiCatalogService['listProjectEvents']>[0] | null = null
+  assetInput: Parameters<ApiCatalogService['listProjectAssets']>[0] | null = null
 
   async listProjects(input: Parameters<ApiCatalogService['listProjects']>[0]): Promise<ProjectListProjection> {
     this.listInput = input
@@ -417,6 +421,62 @@ class FakeCatalogService implements ApiCatalogService {
       completeness_level: 'complete',
       freshness_status: 'valid',
       record_source: 'platform_editor',
+      evidence_summaries: Object.freeze([]),
+      relations: Object.freeze([]),
+    })
+  }
+
+  async listProjectEvents(input: Parameters<ApiCatalogService['listProjectEvents']>[0]): Promise<EventPage> {
+    this.eventInput = input
+    return Object.freeze({
+      items: Object.freeze([Object.freeze({
+        event_id: '55555555-5555-4555-8555-555555555555',
+        project_id: projectCard.project_id,
+        version_id: projectCard.version_id,
+        event_type: 'version_updated',
+        category_change_type: null,
+        event_time: '2026-08',
+        time_precision: 'month',
+        event_sort_at: '2026-08-01T00:00:00.000Z',
+        event_sort_rule_version: 'event_sort.v1',
+        event_summary: '更新练习流程',
+        source_actor: 'verified_author',
+        lifecycle_status: 'published',
+        supersedes_event_id: null,
+        evidence_summaries: Object.freeze([]),
+        evidence_dispute_summary: 'none',
+        project_summary: Object.freeze({
+          project_id: projectCard.project_id,
+          current_name: projectCard.current_name,
+          category_id: projectCard.category_id,
+          access_status: projectCard.access_status,
+        }),
+      })]),
+      next_cursor: null,
+    })
+  }
+
+  async listProjectAssets(input: Parameters<ApiCatalogService['listProjectAssets']>[0]): Promise<AssetPage> {
+    this.assetInput = input
+    return Object.freeze({
+      items: Object.freeze([Object.freeze({
+        asset_id: '66666666-6666-4666-8666-666666666666',
+        project_id: projectCard.project_id,
+        asset_type: 'source_code',
+        component_role: null,
+        name: '源码仓库',
+        description: '公开源码',
+        availability_status: 'available',
+        license_type: 'MIT',
+        price_type: 'free',
+        acquisition_method: 'fork',
+        target_kind: 'safe_web_url',
+        target_status: 'requires_resolve',
+        evidence_summaries: Object.freeze([]),
+        last_verified_at: '2026-08-10T00:00:00.000Z',
+        read_version: 1,
+      })]),
+      next_cursor: null,
     })
   }
 
@@ -457,6 +517,21 @@ test('public catalog routes preserve list query state and emit versioned cache v
     const creator = await fetch(`${runtime.baseUrl}/api/v1/creators/33333333-3333-4333-8333-333333333333`)
     assert.equal(creator.status, 200)
     assert.equal(creator.headers.get('etag'), 'W/"creator-33333333-3333-4333-8333-333333333333-1"')
+
+    const events = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectCard.project_id}/events?event_types=version_updated&include_superseded=true`)
+    assert.equal(events.status, 200)
+    assert.deepEqual(catalog.eventInput, {
+      projectId: projectCard.project_id,
+      eventTypes: ['version_updated'],
+      includeSuperseded: true,
+      cursor: null,
+    })
+    assert.equal((await events.json() as { items: unknown[] }).items.length, 1)
+
+    const assets = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectCard.project_id}/assets`)
+    assert.equal(assets.status, 200)
+    assert.deepEqual(catalog.assetInput, { projectId: projectCard.project_id, cursor: null })
+    assert.equal((await assets.json() as { items: unknown[] }).items.length, 1)
   } finally {
     await runtime.stop()
   }
@@ -473,6 +548,26 @@ test('public catalog routes reject duplicate, unknown and oversized pagination i
       const response = await fetch(`${runtime.baseUrl}${path}`)
       assert.equal(response.status, 400)
       assert.match((await response.json() as { error: { code: string } }).error.code, /QUERY_PARAMETER_INVALID|LIMIT_INVALID/)
+    }
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('public event and asset routes reject malformed or duplicate query state', async () => {
+  const runtime = await start(async () => undefined, undefined, undefined, new FakeCatalogService())
+  const projectPath = `/api/v1/projects/${projectCard.project_id}`
+  try {
+    for (const path of [
+      `${projectPath}/events?event_types=unknown`,
+      `${projectPath}/events?event_types=version_updated,version_updated`,
+      `${projectPath}/events?event_types=`,
+      `${projectPath}/events?include_superseded=1`,
+      `${projectPath}/events?cursor=a&cursor=b`,
+      `${projectPath}/assets?unknown=true`,
+    ]) {
+      const response = await fetch(`${runtime.baseUrl}${path}`)
+      assert.equal(response.status, 400)
     }
   } finally {
     await runtime.stop()

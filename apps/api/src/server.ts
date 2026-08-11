@@ -5,8 +5,12 @@ import { extname, resolve, sep } from 'node:path'
 
 import {
   CatalogError,
+  eventTypes,
+  type AssetPage,
   type CategoryId,
   type CreatorProjection,
+  type EventPage,
+  type EventType,
   type ProjectListProjection,
   type ProjectProjection,
 } from '@vibecheck/catalog'
@@ -51,6 +55,16 @@ export interface ApiCatalogService {
   }): Promise<ProjectListProjection>
   getProject(projectId: string): Promise<ProjectProjection>
   getCreator(creatorId: string): Promise<CreatorProjection>
+  listProjectEvents(input: {
+    readonly projectId: string
+    readonly eventTypes: readonly EventType[]
+    readonly includeSuperseded: boolean
+    readonly cursor: string | null
+  }): Promise<EventPage>
+  listProjectAssets(input: {
+    readonly projectId: string
+    readonly cursor: string | null
+  }): Promise<AssetPage>
 }
 
 export interface ApiServerDependencies {
@@ -555,8 +569,13 @@ async function handleCatalogRequest(
 ): Promise<number | null> {
   const projectsPath = '/api/v1/projects'
   const projectMatch = path.match(/^\/api\/v1\/projects\/([^/]+)$/)
+  const projectEventsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/events$/)
+  const projectAssetsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/assets$/)
   const creatorMatch = path.match(/^\/api\/v1\/creators\/([^/]+)$/)
-  if (path !== projectsPath && projectMatch === null && creatorMatch === null) return null
+  if (
+    path !== projectsPath && projectMatch === null && projectEventsMatch === null &&
+    projectAssetsMatch === null && creatorMatch === null
+  ) return null
   if (method !== 'GET') return null
   const catalog = requireCatalog(dependencies)
 
@@ -583,13 +602,46 @@ async function handleCatalogRequest(
     return 200
   }
 
-  exactQueryKeys(url.searchParams, [])
+  if (projectEventsMatch !== null) {
+    exactQueryKeys(url.searchParams, ['event_types', 'include_superseded', 'cursor'])
+    const rawTypes = url.searchParams.get('event_types')
+    const parsedTypes = rawTypes === null
+      ? []
+      : rawTypes.split(',')
+    if (
+      parsedTypes.some((value) => !eventTypes.includes(value as EventType)) ||
+      new Set(parsedTypes).size !== parsedTypes.length
+    ) throw new CatalogError('EVENT_TYPES_INVALID', 400)
+    const rawIncludeSuperseded = url.searchParams.get('include_superseded')
+    if (rawIncludeSuperseded !== null && rawIncludeSuperseded !== 'true' && rawIncludeSuperseded !== 'false') {
+      throw new CatalogError('INCLUDE_SUPERSEDED_INVALID', 400)
+    }
+    const result = await catalog.listProjectEvents({
+      projectId: projectEventsMatch[1]!,
+      eventTypes: parsedTypes as EventType[],
+      includeSuperseded: rawIncludeSuperseded === 'true',
+      cursor: url.searchParams.get('cursor'),
+    })
+    writeJson(response, 200, result, requestId, 'public, max-age=30, stale-while-revalidate=60')
+    return 200
+  }
+  if (projectAssetsMatch !== null) {
+    exactQueryKeys(url.searchParams, ['cursor'])
+    const result = await catalog.listProjectAssets({
+      projectId: projectAssetsMatch[1]!,
+      cursor: url.searchParams.get('cursor'),
+    })
+    writeJson(response, 200, result, requestId, 'public, max-age=30, stale-while-revalidate=60')
+    return 200
+  }
   if (projectMatch !== null) {
+    exactQueryKeys(url.searchParams, [])
     const result = await catalog.getProject(projectMatch[1]!)
     response.setHeader('etag', `W/"project-${result.project_id}-${result.read_version}"`)
     writeJson(response, 200, result, requestId, 'public, max-age=60, stale-while-revalidate=120')
     return 200
   }
+  exactQueryKeys(url.searchParams, [])
   const result = await catalog.getCreator(creatorMatch![1]!)
   response.setHeader('etag', `W/"creator-${result.creator_id}-${result.read_version}"`)
   writeJson(response, 200, result, requestId, 'public, max-age=60, stale-while-revalidate=120')

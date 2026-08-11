@@ -3,7 +3,16 @@ import { describe, it } from 'node:test'
 
 import { CatalogError } from './errors.js'
 import { CatalogService } from './service.js'
-import type { CatalogStore, ListStoredProjectsInput, StoredCreator, StoredProject } from './store.js'
+import type {
+  CatalogStore,
+  ListStoredAssetsInput,
+  ListStoredEventsInput,
+  ListStoredProjectsInput,
+  StoredAsset,
+  StoredCreator,
+  StoredEvent,
+  StoredProject,
+} from './store.js'
 
 const projectIds = [
   '11111111-1111-4111-8111-111111111111',
@@ -83,11 +92,63 @@ function storedProject(index: number, name = `Project${index + 1}`): StoredProje
   }
 }
 
+function storedEvent(index: number): StoredEvent {
+  return {
+    event_id: `${index + 7}${String(index + 7).repeat(7)}-${String(index + 7).repeat(4)}-4${String(index + 7).repeat(3)}-8${String(index + 7).repeat(3)}-${String(index + 7).repeat(12)}`,
+    project_id: projectIds[0],
+    version_id: storedProject(0).current_version_id,
+    event_type: index === 0 ? 'version_updated' : 'first_published',
+    category_change_type: null,
+    event_time: index === 0 ? '2026-08' : '2026-07-20',
+    time_precision: index === 0 ? 'month' : 'day',
+    event_sort_at: new Date(index === 0 ? '2026-08-01T00:00:00.000Z' : '2026-07-20T00:00:00.000Z'),
+    event_sort_rule_version: 'event_sort.v1',
+    event_summary: index === 0 ? '更新练习流程' : '首次发布',
+    source_actor: 'verified_author',
+    lifecycle_status: 'published',
+    supersedes_event_id: null,
+    evidence_summaries: [],
+    evidence_dispute_summary: 'none',
+    project_summary: {
+      project_id: projectIds[0],
+      current_name: 'Project1',
+      category_id: 'ai_learning_quiz',
+      access_status: 'normal',
+    },
+  }
+}
+
+function storedAsset(index: number): StoredAsset {
+  const digit = String((index % 8) + 1)
+  return {
+    asset_id: `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`,
+    project_id: projectIds[0],
+    asset_type: 'source_code',
+    component_role: null,
+    name: `Source ${index + 1}`,
+    description: '公开源码仓库',
+    availability_status: 'available',
+    license_type: 'MIT',
+    price_type: 'free',
+    acquisition_method: 'fork',
+    has_safe_web_url: true,
+    has_contact_uri: false,
+    evidence_summaries: [],
+    last_verified_at: new Date('2026-08-10T00:00:00.000Z'),
+    version: '1',
+    updated_at: new Date(Date.UTC(2026, 7, 10, 0, 0, 2 - index)),
+  }
+}
+
 class MemoryCatalogStore implements CatalogStore {
   readonly calls: ListStoredProjectsInput[] = []
+  readonly eventCalls: ListStoredEventsInput[] = []
+  readonly assetCalls: ListStoredAssetsInput[] = []
   constructor(
     private readonly projects: StoredProject[],
     private readonly creator: StoredCreator | null = null,
+    private readonly events: StoredEvent[] = [],
+    private readonly assets: StoredAsset[] = [],
   ) {}
 
   async listPublicProjects(input: ListStoredProjectsInput): Promise<readonly StoredProject[]> {
@@ -104,6 +165,22 @@ class MemoryCatalogStore implements CatalogStore {
 
   async getCreator(): Promise<StoredCreator | null> {
     return this.creator
+  }
+
+  async listProjectEvents(input: ListStoredEventsInput): Promise<readonly StoredEvent[]> {
+    this.eventCalls.push(input)
+    const afterIndex = input.afterEventId === null
+      ? 0
+      : this.events.findIndex(({ event_id }) => event_id === input.afterEventId) + 1
+    return this.events.slice(afterIndex, afterIndex + input.limit)
+  }
+
+  async listProjectAssets(input: ListStoredAssetsInput): Promise<readonly StoredAsset[]> {
+    this.assetCalls.push(input)
+    const afterIndex = input.afterAssetId === null
+      ? 0
+      : this.assets.findIndex(({ asset_id }) => asset_id === input.afterAssetId) + 1
+    return this.assets.slice(afterIndex, afterIndex + input.limit)
   }
 }
 
@@ -168,6 +245,98 @@ describe('CatalogService public projections', () => {
     await assert.rejects(
       service.getProject(deleted.project_id),
       (error: unknown) => error instanceof CatalogError && error.code === 'PROJECT_DELETED',
+    )
+  })
+
+  it('returns canonical event and asset projections without exposing asset targets', async () => {
+    const store = new MemoryCatalogStore(
+      [storedProject(0)],
+      null,
+      [storedEvent(0), storedEvent(1)],
+      [storedAsset(0), storedAsset(1)],
+    )
+    const service = new CatalogService({
+      store,
+      cursorSecret: 'catalog-test-secret-at-least-thirty-two-characters',
+    })
+    const events = await service.listProjectEvents({
+      projectId: projectIds[0],
+      eventTypes: ['version_updated'],
+      includeSuperseded: false,
+      cursor: null,
+    })
+    assert.equal(events.items[0]!.event_time, '2026-08')
+    assert.equal(events.items[0]!.event_sort_rule_version, 'event_sort.v1')
+    assert.deepEqual(store.eventCalls[0]!.eventTypes, ['version_updated'])
+
+    const assets = await service.listProjectAssets({ projectId: projectIds[0], cursor: null })
+    assert.equal(assets.items[0]!.target_kind, 'safe_web_url')
+    assert.equal(assets.items[0]!.target_status, 'requires_resolve')
+    assert.equal('safe_web_url' in assets.items[0]!, false)
+  })
+
+  it('rejects event filter duplication and cross-project subresource cursors', async () => {
+    const store = new MemoryCatalogStore(
+      [storedProject(0), storedProject(1)],
+      null,
+      Array.from({ length: 31 }, (_, index) => ({
+        ...storedEvent(index % 2),
+        event_id: `${String((index % 8) + 1).repeat(8)}-${String((index % 8) + 1).repeat(4)}-4${String((index % 8) + 1).repeat(3)}-8${String((index % 8) + 1).repeat(3)}-${index.toString().padStart(12, '0')}`,
+      })),
+      Array.from({ length: 31 }, (_, index) => ({
+        ...storedAsset(index % 2),
+        asset_id: `${String((index % 8) + 1).repeat(8)}-${String((index % 8) + 1).repeat(4)}-4${String((index % 8) + 1).repeat(3)}-8${String((index % 8) + 1).repeat(3)}-${index.toString().padStart(12, '0')}`,
+      })),
+    )
+    const service = new CatalogService({
+      store,
+      cursorSecret: 'catalog-test-secret-at-least-thirty-two-characters',
+    })
+    await assert.rejects(
+      service.listProjectEvents({
+        projectId: projectIds[0],
+        eventTypes: ['version_updated', 'version_updated'],
+        includeSuperseded: false,
+        cursor: null,
+      }),
+      (error: unknown) => error instanceof CatalogError && error.code === 'EVENT_TYPES_INVALID',
+    )
+    const assetPage = await service.listProjectAssets({ projectId: projectIds[0], cursor: null })
+    assert.ok(assetPage.next_cursor)
+    await assert.rejects(
+      service.listProjectAssets({ projectId: projectIds[1], cursor: assetPage.next_cursor }),
+      (error: unknown) => error instanceof CatalogError && error.code === 'CURSOR_QUERY_MISMATCH',
+    )
+  })
+
+  it('rejects invalid partial dates and frozen asset enum drift from the store', async () => {
+    const invalidEventService = new CatalogService({
+      store: new MemoryCatalogStore(
+        [storedProject(0)],
+        null,
+        [{ ...storedEvent(0), event_time: '2026-13', category_change_type: 'unknown_change' }],
+      ),
+      cursorSecret: 'catalog-test-secret-at-least-thirty-two-characters',
+    })
+    await assert.rejects(
+      invalidEventService.listProjectEvents({
+        projectId: projectIds[0], eventTypes: [], includeSuperseded: false, cursor: null,
+      }),
+      (error: unknown) => error instanceof CatalogError && error.code === 'CATALOG_EVENT_PROJECTION_INVALID',
+    )
+
+    const invalidAssetService = new CatalogService({
+      store: new MemoryCatalogStore(
+        [storedProject(0)],
+        null,
+        [],
+        [{ ...storedAsset(0), acquisition_method: 'unsafe_redirect' }],
+      ),
+      cursorSecret: 'catalog-test-secret-at-least-thirty-two-characters',
+    })
+    await assert.rejects(
+      invalidAssetService.listProjectAssets({ projectId: projectIds[0], cursor: null }),
+      (error: unknown) => error instanceof CatalogError && error.code === 'CATALOG_ASSET_PROJECTION_INVALID',
     )
   })
 })

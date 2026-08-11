@@ -334,30 +334,43 @@ CREATE INDEX IF NOT EXISTS author_relations_creator_idx
 
 CREATE TABLE IF NOT EXISTS catalog.evidence (
   evidence_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  object_type varchar(32) NOT NULL CHECK (object_type IN ('project', 'project_version', 'event', 'asset', 'relation', 'creator')),
+  source_evidence_draft_id uuid UNIQUE,
+  object_type varchar(32) NOT NULL
+    CHECK (object_type IN ('project', 'version', 'event', 'asset', 'relation', 'creator', 'author_relation')),
   object_id uuid NOT NULL,
   project_id uuid REFERENCES catalog.projects(project_id),
   version_id uuid REFERENCES catalog.project_versions(version_id),
   event_id uuid,
-  field_path varchar(512) NOT NULL,
+  field_path varchar(240),
   evidence_type varchar(64) NOT NULL
     CHECK (evidence_type IN ('platform_verified_fact', 'verified_author_statement', 'trusted_external_source', 'system_inference')),
-  source_channel varchar(64) NOT NULL,
+  source_channel varchar(64) NOT NULL
+    CHECK (source_channel IN ('official_site', 'repository', 'release_note', 'media_report', 'author_statement', 'platform_check')),
   source_url varchar(2048),
-  source_summary varchar(500) NOT NULL,
+  internal_record_ref varchar(240),
+  source_summary varchar(2000) NOT NULL,
   captured_at timestamptz NOT NULL,
-  collected_by varchar(64) NOT NULL,
-  confidence varchar(16) NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+  verified_at timestamptz,
+  collected_by varchar(64) NOT NULL
+    CHECK (collected_by IN ('system', 'platform_editor', 'verified_author', 'user')),
+  confidence varchar(16) NOT NULL CHECK (confidence IN ('high', 'medium', 'low', 'unknown')),
   visibility varchar(16) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private', 'reviewer_only')),
-  validity_status varchar(16) NOT NULL DEFAULT 'valid' CHECK (validity_status IN ('valid', 'invalid', 'superseded')),
+  validity_status varchar(24) NOT NULL DEFAULT 'pending_review'
+    CHECK (validity_status IN ('pending_review', 'valid', 'suspended', 'invalid', 'revoked')),
   freshness_status varchar(16) NOT NULL DEFAULT 'valid' CHECK (freshness_status IN ('valid', 'expiring', 'expired')),
   dispute_status varchar(32) NOT NULL DEFAULT 'none'
     CHECK (dispute_status IN ('none', 'in_review', 'resolved', 'insufficient_evidence')),
-  validity_decision_type varchar(32),
+  validity_decision_type varchar(32)
+    CHECK (validity_decision_type IN ('review_decision', 'admin_fact_decision')),
   validity_decision_id uuid,
-  source_evidence_draft_id uuid UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((validity_decision_type IS NULL) = (validity_decision_id IS NULL))
+  CHECK ((validity_decision_type IS NULL) = (validity_decision_id IS NULL)),
+  CHECK (
+    (validity_status = 'pending_review' AND validity_decision_id IS NULL)
+    OR (validity_status <> 'pending_review' AND validity_decision_id IS NOT NULL)
+  ),
+  CHECK (source_url IS NULL OR source_url ~* '^https?://'),
+  CHECK (verified_at IS NULL OR verified_at >= captured_at)
 );
 
 CREATE INDEX IF NOT EXISTS evidence_target_idx
@@ -367,15 +380,41 @@ CREATE TABLE IF NOT EXISTS catalog.events (
   event_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES catalog.projects(project_id),
   version_id uuid REFERENCES catalog.project_versions(version_id),
-  event_type varchar(64) NOT NULL,
-  event_time timestamptz NOT NULL,
-  time_precision varchar(16) NOT NULL CHECK (time_precision IN ('exact', 'day', 'month', 'year', 'estimated')),
-  event_summary varchar(500) NOT NULL,
-  source_type varchar(64) NOT NULL,
-  source_id uuid NOT NULL,
-  evidence_id uuid REFERENCES catalog.evidence(evidence_id),
+  event_type varchar(64) NOT NULL
+    CHECK (event_type IN ('first_seen', 'first_published', 'version_updated', 'domain_migrated', 'product_pivoted', 'link_abnormal', 'recovered', 'paused', 'ended', 'asset_added', 'reused_by_project', 'relation_added')),
+  category_change_type varchar(64)
+    CHECK (category_change_type IN ('project_added', 'case_study_added', 'blog_added', 'resume_updated', 'visual_redesign', 'theme_changed', 'tech_stack_changed', 'source_opened', 'site_repositioned')),
+  event_time varchar(10) NOT NULL,
+  time_precision varchar(16) NOT NULL CHECK (time_precision IN ('day', 'month', 'year', 'estimated')),
+  event_sort_at timestamptz NOT NULL,
+  event_sort_rule_version varchar(40) NOT NULL DEFAULT 'event_sort.v1'
+    CHECK (event_sort_rule_version = 'event_sort.v1'),
+  event_summary varchar(1000) NOT NULL,
+  before_after jsonb NOT NULL DEFAULT '[]'::jsonb,
+  source_actor varchar(32) NOT NULL
+    CHECK (source_actor IN ('system', 'platform_editor', 'verified_author', 'public_observation')),
+  source_object_type varchar(32) NOT NULL
+    CHECK (source_object_type IN ('submission', 'project_update', 'admin_operation', 'system_check')),
+  source_object_id uuid NOT NULL,
+  supersedes_event_id uuid REFERENCES catalog.events(event_id) DEFERRABLE INITIALLY DEFERRED,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (source_type, source_id)
+  UNIQUE (source_object_type, source_object_id),
+  CHECK (category_change_type IS NULL OR event_type = 'version_updated'),
+  CHECK (jsonb_typeof(before_after) = 'array' AND jsonb_array_length(before_after) <= 100),
+  CHECK (
+    (time_precision IN ('day', 'estimated') AND event_time ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+    OR (time_precision = 'month' AND event_time ~ '^[0-9]{4}-[0-9]{2}$')
+    OR (time_precision = 'year' AND event_time ~ '^[0-9]{4}$')
+  ),
+  CHECK (
+    event_sort_at = CASE time_precision
+      WHEN 'day' THEN make_timestamptz(substring(event_time, 1, 4)::int, substring(event_time, 6, 2)::int, substring(event_time, 9, 2)::int, 0, 0, 0, 'UTC')
+      WHEN 'estimated' THEN make_timestamptz(substring(event_time, 1, 4)::int, substring(event_time, 6, 2)::int, substring(event_time, 9, 2)::int, 0, 0, 0, 'UTC')
+      WHEN 'month' THEN make_timestamptz(substring(event_time, 1, 4)::int, substring(event_time, 6, 2)::int, 1, 0, 0, 0, 'UTC')
+      WHEN 'year' THEN make_timestamptz(substring(event_time, 1, 4)::int, 1, 1, 0, 0, 0, 'UTC')
+    END
+  ),
+  CHECK (supersedes_event_id IS NULL OR supersedes_event_id <> event_id)
 );
 
 ALTER TABLE catalog.evidence
@@ -384,62 +423,214 @@ ALTER TABLE catalog.evidence
   DEFERRABLE INITIALLY DEFERRED;
 
 CREATE INDEX IF NOT EXISTS events_project_time_idx
-  ON catalog.events (project_id, event_time DESC, event_id DESC);
+  ON catalog.events (project_id, event_sort_at DESC, event_id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS events_single_replacement_idx
+  ON catalog.events (supersedes_event_id)
+  WHERE supersedes_event_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION catalog.validate_event_links()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.version_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM catalog.project_versions version
+      WHERE version.version_id = NEW.version_id AND version.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'EVENT_VERSION_PROJECT_MISMATCH' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.supersedes_event_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM catalog.events previous
+      WHERE previous.event_id = NEW.supersedes_event_id AND previous.project_id = NEW.project_id
+  ) THEN
+    RAISE EXCEPTION 'EVENT_SUPERSEDES_PROJECT_MISMATCH' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS event_links_valid ON catalog.events;
+CREATE TRIGGER event_links_valid
+  BEFORE INSERT ON catalog.events
+  FOR EACH ROW EXECUTE FUNCTION catalog.validate_event_links();
 
 DROP TRIGGER IF EXISTS events_immutable ON catalog.events;
 CREATE TRIGGER events_immutable
   BEFORE UPDATE OR DELETE ON catalog.events
   FOR EACH ROW EXECUTE FUNCTION catalog.reject_immutable_mutation();
 
+CREATE TABLE IF NOT EXISTS catalog.evidence_attachments (
+  attachment_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  evidence_id uuid NOT NULL REFERENCES catalog.evidence(evidence_id),
+  media_resource_id uuid NOT NULL,
+  role varchar(64) NOT NULL,
+  visibility varchar(16) NOT NULL CHECK (visibility IN ('public', 'reviewer_only', 'private')),
+  source_attachment_draft_id uuid NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS evidence_attachments_evidence_idx
+  ON catalog.evidence_attachments (evidence_id, attachment_id);
+
+DROP TRIGGER IF EXISTS evidence_attachments_immutable ON catalog.evidence_attachments;
+CREATE TRIGGER evidence_attachments_immutable
+  BEFORE UPDATE OR DELETE ON catalog.evidence_attachments
+  FOR EACH ROW EXECUTE FUNCTION catalog.reject_immutable_mutation();
+
 CREATE TABLE IF NOT EXISTS catalog.assets (
   asset_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES catalog.projects(project_id),
-  asset_type varchar(64) NOT NULL,
+  asset_type varchar(64) NOT NULL
+    CHECK (asset_type IN ('source_code', 'starter', 'template', 'page_layout', 'ui_component', 'motion_interaction', 'theme_design_system', 'resume_module', 'blog_cms_module', 'deployment_config', 'prompt', 'design_file')),
+  component_role varchar(64)
+    CHECK (component_role IN ('hero', 'navigation', 'project_showcase', 'case_study', 'contact', 'footer', 'resume', 'blog', 'theme', 'motion', 'other')),
   name varchar(120) NOT NULL,
-  description varchar(500) NOT NULL DEFAULT '',
-  canonical_url varchar(2048) NOT NULL,
-  canonical_url_hash bytea NOT NULL,
+  description varchar(1000) NOT NULL,
+  safe_web_url varchar(2048),
+  contact_uri varchar(512),
+  target_hash bytea NOT NULL,
+  license_type varchar(120) NOT NULL DEFAULT 'unknown',
+  price_type varchar(24) NOT NULL DEFAULT 'unknown'
+    CHECK (price_type IN ('free', 'paid', 'contact', 'unknown')),
+  acquisition_method varchar(32) NOT NULL
+    CHECK (acquisition_method IN ('repository', 'clone', 'fork', 'use_template', 'direct_download', 'purchase', 'contact')),
   availability_status varchar(32) NOT NULL
-    CHECK (availability_status IN ('available', 'login_required', 'link_abnormal', 'removed', 'unknown')),
+    CHECK (availability_status IN ('available', 'login_required', 'paid', 'contact_required', 'link_abnormal', 'removed', 'unknown')),
   visibility varchar(16) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private', 'reviewer_only')),
-  license varchar(120),
-  price_json jsonb NOT NULL DEFAULT '{"type":"unknown"}'::jsonb,
-  evidence_id uuid REFERENCES catalog.evidence(evidence_id),
-  last_verified_at timestamptz,
+  last_verified_at timestamptz NOT NULL,
   version bigint NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (jsonb_typeof(price_json) = 'object')
+  CHECK (safe_web_url IS NOT NULL OR contact_uri IS NOT NULL),
+  CHECK (safe_web_url IS NULL OR safe_web_url ~* '^https?://'),
+  CHECK (contact_uri IS NULL OR contact_uri ~* '^(mailto:|tel:)'),
+  CHECK (last_verified_at <= updated_at + interval '5 minutes')
 );
 
 CREATE INDEX IF NOT EXISTS assets_project_status_idx
   ON catalog.assets (project_id, availability_status, asset_type);
 
 CREATE INDEX IF NOT EXISTS assets_url_idx
-  ON catalog.assets (canonical_url_hash);
+  ON catalog.assets (target_hash);
 
 CREATE TABLE IF NOT EXISTS catalog.relations (
   relation_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  subject_type varchar(32) NOT NULL CHECK (subject_type IN ('project', 'creator', 'asset')),
-  subject_id uuid NOT NULL,
-  object_type varchar(32) NOT NULL CHECK (object_type IN ('project', 'creator', 'asset')),
-  object_id uuid NOT NULL,
-  relation_type varchar(64) NOT NULL,
-  direction varchar(16) NOT NULL CHECK (direction IN ('one_way', 'two_way')),
-  status varchar(32) NOT NULL CHECK (status IN ('pending', 'one_party_confirmed', 'both_parties_confirmed', 'platform_confirmed', 'disputed')),
+  subject_project_id uuid NOT NULL REFERENCES catalog.projects(project_id),
+  object_project_id uuid NOT NULL REFERENCES catalog.projects(project_id),
+  relation_type varchar(64) NOT NULL
+    CHECK (relation_type IN ('inspired_by', 'reference', 'fork', 'remix', 'based_on_template', 'uses_component', 'source_derivative')),
+  asset_id uuid REFERENCES catalog.assets(asset_id),
+  statement_by varchar(32) NOT NULL
+    CHECK (statement_by IN ('subject_author', 'object_author', 'platform', 'system')),
+  statement_summary varchar(1000) NOT NULL,
+  confirmation_status varchar(32) NOT NULL DEFAULT 'pending'
+    CHECK (confirmation_status IN ('pending', 'unilateral_confirmed', 'bilateral_confirmed', 'platform_verified', 'disputed', 'rejected')),
   source_decision_id uuid NOT NULL,
   version bigint NOT NULL DEFAULT 1 CHECK (version >= 1),
+  last_verified_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (subject_type, subject_id, object_type, object_id, relation_type),
-  CHECK (subject_type <> object_type OR subject_id <> object_id)
+  UNIQUE (subject_project_id, object_project_id, relation_type),
+  CHECK (subject_project_id <> object_project_id),
+  CHECK (last_verified_at <= updated_at + interval '5 minutes')
 );
 
 CREATE INDEX IF NOT EXISTS relations_subject_idx
-  ON catalog.relations (subject_type, subject_id, status);
+  ON catalog.relations (subject_project_id, confirmation_status, relation_type);
 
 CREATE INDEX IF NOT EXISTS relations_object_idx
-  ON catalog.relations (object_type, object_id, status);
+  ON catalog.relations (object_project_id, confirmation_status, relation_type);
+
+CREATE OR REPLACE FUNCTION catalog.validate_relation_asset_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.asset_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM catalog.assets asset
+      WHERE asset.asset_id = NEW.asset_id AND asset.project_id = NEW.object_project_id
+  ) THEN
+    RAISE EXCEPTION 'RELATION_ASSET_OWNER_MISMATCH' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS relation_asset_owner_valid ON catalog.relations;
+CREATE TRIGGER relation_asset_owner_valid
+  BEFORE INSERT OR UPDATE OF asset_id, object_project_id
+  ON catalog.relations
+  FOR EACH ROW EXECUTE FUNCTION catalog.validate_relation_asset_owner();
+
+CREATE OR REPLACE FUNCTION catalog.validate_evidence_target()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  CASE NEW.object_type
+    WHEN 'project' THEN
+      IF NEW.project_id IS DISTINCT FROM NEW.object_id
+         OR NEW.version_id IS NOT NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (SELECT 1 FROM catalog.projects project WHERE project.project_id = NEW.object_id) THEN
+        RAISE EXCEPTION 'EVIDENCE_PROJECT_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'version' THEN
+      IF NEW.version_id IS DISTINCT FROM NEW.object_id OR NEW.project_id IS NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM catalog.project_versions version
+             WHERE version.version_id = NEW.object_id AND version.project_id = NEW.project_id
+         ) THEN
+        RAISE EXCEPTION 'EVIDENCE_VERSION_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'event' THEN
+      IF NEW.event_id IS DISTINCT FROM NEW.object_id OR NEW.project_id IS NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM catalog.events event
+             WHERE event.event_id = NEW.object_id AND event.project_id = NEW.project_id
+         ) THEN
+        RAISE EXCEPTION 'EVIDENCE_EVENT_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'asset' THEN
+      IF NEW.project_id IS NULL OR NEW.version_id IS NOT NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM catalog.assets asset
+             WHERE asset.asset_id = NEW.object_id AND asset.project_id = NEW.project_id
+         ) THEN
+        RAISE EXCEPTION 'EVIDENCE_ASSET_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'relation' THEN
+      IF NEW.project_id IS NULL OR NEW.version_id IS NOT NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM catalog.relations relation
+             WHERE relation.relation_id = NEW.object_id
+               AND NEW.project_id IN (relation.subject_project_id, relation.object_project_id)
+         ) THEN
+        RAISE EXCEPTION 'EVIDENCE_RELATION_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'creator' THEN
+      IF NEW.project_id IS NOT NULL OR NEW.version_id IS NOT NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (SELECT 1 FROM catalog.creators creator WHERE creator.creator_id = NEW.object_id) THEN
+        RAISE EXCEPTION 'EVIDENCE_CREATOR_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+    WHEN 'author_relation' THEN
+      IF NEW.project_id IS NULL OR NEW.version_id IS NOT NULL OR NEW.event_id IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM catalog.author_relations relation
+             WHERE relation.author_relation_id = NEW.object_id AND relation.project_id = NEW.project_id
+         ) THEN
+        RAISE EXCEPTION 'EVIDENCE_AUTHOR_RELATION_TARGET_MISMATCH' USING ERRCODE = '23514';
+      END IF;
+  END CASE;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS evidence_target_valid ON catalog.evidence;
+CREATE TRIGGER evidence_target_valid
+  BEFORE INSERT OR UPDATE OF object_type, object_id, project_id, version_id, event_id
+  ON catalog.evidence
+  FOR EACH ROW EXECUTE FUNCTION catalog.validate_evidence_target();
 
 CREATE TABLE IF NOT EXISTS catalog.project_interaction_counters (
   project_id uuid PRIMARY KEY REFERENCES catalog.projects(project_id),
