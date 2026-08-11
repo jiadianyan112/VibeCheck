@@ -33,6 +33,8 @@
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "contracts:check": "npm run check -w @vibecheck/contracts",
+    "catalog:fixture:load": "npm run fixture:load -w @vibecheck/catalog",
+    "catalog:fixture:verify": "npm run fixture:verify -w @vibecheck/catalog",
     "deployment:check": "npm run check:deployment -w @vibecheck/contracts",
     "db:migrate": "npm run migrate -w @vibecheck/database"
   },

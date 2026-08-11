@@ -11,6 +11,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "fixture:load": "tsx src/testing/load-synthetic-fixture.ts",
+    "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },
