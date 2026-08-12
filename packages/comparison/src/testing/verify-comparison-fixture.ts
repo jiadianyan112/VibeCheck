@@ -59,7 +59,7 @@ async function createPortfolioProjects(count: number): Promise<readonly string[]
            canonical_public_url,canonical_url_hash,review_status,access_status,http_check_status,
            author_link_status,completeness_level,freshness_status,record_source,first_seen_at,
            last_verified_at,created_at,updated_at
-         ) VALUES ($1,NULL,$2,'personal_site_portfolio','portfolio.v1',$3,
+         ) VALUES ($1,NULL,$2,'personal_site_portfolio','portfolio.v1',$3::text,
            digest($3::text,'sha256'),'published_platform','normal','normal','unlinked',
            'complete','valid','platform_editor',$4,$4,$4,$4)`,
         [projectId, `Merge fixture ${index + 1}`, url, clock],
