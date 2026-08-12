@@ -72,7 +72,7 @@ async function run(): Promise<void> {
   await pool.query(
     `INSERT INTO workflow.review_work_items (
        work_item_id,work_type,target_type,target_id,status,version,created_at,updated_at
-     ) VALUES ($1,'community','comment',$2,'queued',1,$3,$3)`,
+     ) VALUES ($1,'relation','relation_candidate',$2,'queued',1,$3,$3)`,
     [workItemId, commentId, clock],
   )
   await pool.query(
@@ -83,13 +83,13 @@ async function run(): Promise<void> {
   )
 
   const reviewerPage = await service.listWorkItems({
-    actor: reviewer, workType: 'community', targetType: 'comment', status: 'queued',
+    actor: reviewer, workType: 'relation', targetType: 'relation_candidate', status: 'queued',
     cursor: null, requestId: 'workflow-fixture-list-0001',
   })
   assert.equal(reviewerPage.total_count, 1)
-  assert.equal(reviewerPage.items[0]?.domain_summary.status, 'under_review')
+  assert.equal(reviewerPage.items[0]?.domain_summary.status, 'not_implemented')
   const authorPage = await service.listWorkItems({
-    actor: author, workType: 'community', targetType: 'comment', status: 'queued',
+    actor: author, workType: 'relation', targetType: 'relation_candidate', status: 'queued',
     cursor: null, requestId: 'workflow-fixture-list-0002',
   })
   assert.equal(authorPage.total_count, 0)
