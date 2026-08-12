@@ -211,8 +211,8 @@ try {
         WHERE event.target_type='query_snapshot'
           AND event.target_id_hash=digest($1::text,'sha256')) AS audit_count
      FROM search.query_snapshots snapshot
-     JOIN iam.identity_links link ON link.identity_link_id=$2
-     WHERE snapshot.query_id=$1`,
+     JOIN iam.identity_links link ON link.identity_link_id=$2::uuid
+     WHERE snapshot.query_id=$1::uuid`,
     [created.query_id, identityLinkId],
   )
   assert.equal(lifecycle.rows[0]!.status, 'invalidated')
