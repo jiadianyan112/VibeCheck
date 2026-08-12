@@ -95,7 +95,7 @@
 
 ## 6. 下一批顺序
 
-1. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，完成后再开放 `start_submission` 回放，不允许目录 importer 绕过审核直接发布；
+1. WP-04A 已进入实现：URL 安全检查、查重和服务端 SubmissionDraft 已落地；后续按 `WP-04-submission-workflow.md` 实现提交冻结快照与 ReviewWorkItem，完成入口语义前不开放 `start_submission` 回放；
 2. 与 WorkBuddy 的 P01/P08/P09/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
 3. 扩展剩余 client/service Analytics 注册表与身份桥，不在合规策略确认前打开生产收集。
 

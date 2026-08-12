@@ -8,6 +8,7 @@ import {
   loadIdentityConfig,
   loadSearchConfig,
   loadServiceConfig,
+  loadSubmissionConfig,
 } from './index.js'
 
 describe('loadServiceConfig', () => {
@@ -183,5 +184,21 @@ describe('loadServiceConfig', () => {
     assert.equal(config.enabled, true)
     assert.equal(config.sessionTtlSeconds, 3_600)
     assert.equal(config.consentState, 'not_required')
+  })
+
+  it('keeps submission disabled by default and freezes the PRD URL-check TTL', () => {
+    assert.equal(loadSubmissionConfig({}).enabled, false)
+    const config = loadSubmissionConfig({
+      SUBMISSION_ENABLED: 'true',
+      SUBMISSION_URL_CHECK_TTL_SECONDS: '1800',
+      SUBMISSION_DRAFT_TTL_SECONDS: '2592000',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.urlCheckTtlSeconds, 1_800)
+    assert.equal(config.draftTtlSeconds, 2_592_000)
+    assert.throws(
+      () => loadSubmissionConfig({ SUBMISSION_URL_CHECK_TTL_SECONDS: '7200' }),
+      /CONFIG_SUBMISSION_URL_CHECK_TTL_SECONDS_INVALID/,
+    )
   })
 })

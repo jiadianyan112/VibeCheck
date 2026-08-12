@@ -84,6 +84,12 @@ export interface AnalyticsConfig {
   readonly consentState: 'granted' | 'not_required'
 }
 
+export interface SubmissionConfig {
+  readonly enabled: boolean
+  readonly urlCheckTtlSeconds: number
+  readonly draftTtlSeconds: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -452,5 +458,22 @@ export function loadAnalyticsConfig(
       86_400, 300, 604_800,
     ),
     consentState,
+  })
+}
+
+export function loadSubmissionConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): SubmissionConfig {
+  const enabled = parseBoolean('SUBMISSION_ENABLED', env.SUBMISSION_ENABLED, false)
+  return Object.freeze({
+    enabled,
+    urlCheckTtlSeconds: parseInteger(
+      'SUBMISSION_URL_CHECK_TTL_SECONDS', env.SUBMISSION_URL_CHECK_TTL_SECONDS,
+      1_800, 60, 3_600,
+    ),
+    draftTtlSeconds: parseInteger(
+      'SUBMISSION_DRAFT_TTL_SECONDS', env.SUBMISSION_DRAFT_TTL_SECONDS,
+      2_592_000, 86_400, 7_776_000,
+    ),
   })
 }

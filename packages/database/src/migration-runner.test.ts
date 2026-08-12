@@ -24,6 +24,7 @@ describe('discoverMigrations', () => {
         '000013_community_interactions.sql',
         '000014_community_comments.sql',
         '000015_analytics_client_ingest.sql',
+        '000016_submission_entry_and_drafts.sql',
       ],
     )
     for (const migration of migrations) {

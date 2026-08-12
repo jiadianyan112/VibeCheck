@@ -153,7 +153,7 @@ try {
     `SELECT
        (SELECT count(*)::int FROM analytics.events WHERE event_id=ANY($1::uuid[])) AS event_count,
        (SELECT count(*)::int FROM ops.outbox_events
-        WHERE aggregate_id=$2 AND event_type='comparison_completed') AS completion_count,
+        WHERE aggregate_id=$2 AND event_name='comparison_completed') AS completion_count,
        (SELECT count(*)::int FROM analytics.ingest_receipts
         WHERE receipt_id=ANY($3::uuid[])) AS receipt_count`,
     [

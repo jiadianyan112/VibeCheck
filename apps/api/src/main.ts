@@ -22,6 +22,7 @@ import {
   loadIdentityConfig,
   loadSearchConfig,
   loadServiceConfig,
+  loadSubmissionConfig,
 } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import {
@@ -32,6 +33,7 @@ import {
   ResendEmailSender,
 } from '@vibecheck/identity'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
+import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submission'
 import { fileURLToPath } from 'node:url'
 
 import { close, createApiServer, listen } from './server.js'
@@ -44,6 +46,7 @@ const comparisonConfig = loadComparisonConfig()
 const searchConfig = loadSearchConfig()
 const communityConfig = loadCommunityConfig()
 const analyticsConfig = loadAnalyticsConfig()
+const submissionConfig = loadSubmissionConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -82,10 +85,25 @@ const analytics = analyticsConfig.enabled && comparison
       },
     })
   : undefined
+if (submissionConfig.enabled && !identityConfig.enabled) {
+  throw new Error('CONFIG_SUBMISSION_REQUIRES_IDENTITY')
+}
+const submissionWebResolver = new AssetWebSafetyResolver(
+  new DefaultAssetDnsResolver(),
+  new NodePinnedAssetHttpProbe(),
+)
+const submission = submissionConfig.enabled
+  ? new SubmissionService({
+      store: new PostgresSubmissionStore(pool),
+      urlSafetyResolver: submissionWebResolver,
+      config: submissionConfig,
+    })
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
   ...(analytics ? { analytics } : {}),
+  ...(submission ? { submission } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {
@@ -95,10 +113,7 @@ const server = createApiServer(config, {
         }),
         assetResolver: new AssetResolutionService({
           store: new PostgresAssetResolutionStore(pool),
-          webResolver: new AssetWebSafetyResolver(
-            new DefaultAssetDnsResolver(),
-            new NodePinnedAssetHttpProbe(),
-          ),
+          webResolver: submissionWebResolver,
         }),
         catalogDefaultPageSize: catalogConfig.defaultPageSize,
         catalogMaximumPageSize: catalogConfig.maximumPageSize,

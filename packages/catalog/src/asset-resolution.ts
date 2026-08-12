@@ -92,6 +92,8 @@ export interface AssetWebResolutionResult {
   readonly targetDomain: string | null
   readonly reasonCode: string | null
   readonly redirectCount: number
+  readonly redirectChain: readonly string[]
+  readonly httpStatusCode: number | null
 }
 
 function ipv4Bytes(address: string): number[] | null {
@@ -309,9 +311,21 @@ export class AssetWebSafetyResolver {
 
   async resolve(rawUrl: string): Promise<AssetWebResolutionResult> {
     let current = rawUrl
+    const redirectChain: string[] = []
+    const finish = (
+      result: AssetWebResolutionResult['result'],
+      safeWebUrl: string | null,
+      targetDomain: string | null,
+      reasonCode: string | null,
+      redirectCount: number,
+      httpStatusCode: number | null = null,
+    ) => this.result(
+      result, safeWebUrl, targetDomain, reasonCode, redirectCount, redirectChain, httpStatusCode,
+    )
     for (let redirectCount = 0; redirectCount <= this.options.maximumRedirects; redirectCount += 1) {
       const normalized = normalizeWebTarget(current)
-      if (!normalized) return this.result('blocked', null, null, 'ASSET_URL_BLOCKED', redirectCount)
+      if (!normalized) return finish('blocked', null, null, 'ASSET_URL_BLOCKED', redirectCount)
+      redirectChain.push(normalized.url)
       let addresses: readonly ResolvedAddress[]
       if (normalized.literalAddress) {
         addresses = Object.freeze([normalized.literalAddress])
@@ -319,18 +333,18 @@ export class AssetWebSafetyResolver {
         try {
           addresses = await this.dns.resolve(normalized.hostname)
         } catch {
-          return this.result(
+          return finish(
             'uncertain', normalized.url, normalized.hostname, 'ASSET_DNS_UNAVAILABLE', redirectCount,
           )
         }
       }
       if (addresses.length === 0) {
-        return this.result(
+        return finish(
           'uncertain', normalized.url, normalized.hostname, 'ASSET_DNS_UNAVAILABLE', redirectCount,
         )
       }
       if (addresses.some(({ address }) => !isPublicAssetAddress(address))) {
-        return this.result('blocked', null, null, 'ASSET_ADDRESS_BLOCKED', redirectCount)
+        return finish('blocked', null, null, 'ASSET_ADDRESS_BLOCKED', redirectCount)
       }
 
       let probe: { readonly statusCode: number; readonly location: string | null }
@@ -350,29 +364,31 @@ export class AssetWebSafetyResolver {
           })
         }
       } catch {
-        return this.result(
+        return finish(
           'uncertain', normalized.url, normalized.hostname, 'ASSET_PROBE_UNAVAILABLE', redirectCount,
         )
       }
       if ([301, 302, 303, 307, 308].includes(probe.statusCode)) {
         if (!probe.location || redirectCount >= this.options.maximumRedirects) {
-          return this.result('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', redirectCount)
+          return finish('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', redirectCount)
         }
         try {
           current = new URL(probe.location, normalized.url).toString()
         } catch {
-          return this.result('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', redirectCount)
+          return finish('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', redirectCount)
         }
         continue
       }
       if (probe.statusCode < 100 || probe.statusCode >= 500) {
-        return this.result(
+        return finish(
           'uncertain', normalized.url, normalized.hostname, 'ASSET_UPSTREAM_UNAVAILABLE', redirectCount,
         )
       }
-      return this.result('allowed', normalized.url, normalized.hostname, null, redirectCount)
+      return finish(
+        'allowed', normalized.url, normalized.hostname, null, redirectCount, probe.statusCode,
+      )
     }
-    return this.result('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', this.options.maximumRedirects)
+    return finish('blocked', null, null, 'ASSET_REDIRECT_BLOCKED', this.options.maximumRedirects)
   }
 
   private result(
@@ -381,8 +397,18 @@ export class AssetWebSafetyResolver {
     targetDomain: string | null,
     reasonCode: string | null,
     redirectCount: number,
+    redirectChain: readonly string[],
+    httpStatusCode: number | null,
   ): AssetWebResolutionResult {
-    return Object.freeze({ result, safeWebUrl, targetDomain, reasonCode, redirectCount })
+    return Object.freeze({
+      result,
+      safeWebUrl,
+      targetDomain,
+      reasonCode,
+      redirectCount,
+      redirectChain: Object.freeze([...redirectChain]),
+      httpStatusCode,
+    })
   }
 }
 

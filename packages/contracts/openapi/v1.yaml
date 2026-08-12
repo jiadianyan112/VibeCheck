@@ -3,7 +3,7 @@ info:
   title: VibeCheck API
   version: 0.1.0
   description: >-
-    WP-03 platform, identity, public catalog, keyword-search and comparison contract. Product operations are added only when
+    WP-04 platform, identity, discovery, interaction and submission-entry contract. Product operations are added only when
     their module enters implementation and must preserve the v1.10 PRD Operation IDs.
 servers:
   - url: /
@@ -16,6 +16,7 @@ tags:
   - name: Comparison
   - name: Community
   - name: Analytics
+  - name: Submission
 paths:
   /health/live:
     get:
@@ -862,6 +863,132 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '410':
+          $ref: '#/components/responses/Error'
+  /api/v1/submission-url-checks:
+    post:
+      tags: [Submission]
+      operationId: OP-URL-CHECK
+      summary: Perform an owner-bound, SSRF-safe and duplicate-aware public URL check
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionUrlCheckRequest'
+      responses:
+        '201':
+          description: A new or idempotently replayed 30-minute check projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionUrlCheck'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/submission-drafts:
+    post:
+      tags: [Submission]
+      operationId: OP-DRAFT-CREATE
+      summary: Create one incomplete editing draft from an eligible URL check
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionDraftCreateRequest'
+      responses:
+        '201':
+          description: New or idempotently replayed owner draft; no Project is created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionDraft'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+  /api/v1/submission-drafts/{draft_id}:
+    parameters:
+      - in: path
+        name: draft_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Submission]
+      operationId: OP-DRAFT-GET
+      summary: Read one owner-bound draft without changing its expiry or state
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current draft projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionDraft'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Submission]
+      operationId: OP-DRAFT-PATCH
+      summary: Apply one idempotent recursive object patch to an editing draft
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionDraftPatchRequest'
+      responses:
+        '200':
+          description: Saved draft with incremented version, or the original operation receipt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionDraft'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '422':
           $ref: '#/components/responses/Error'
   /api/v1/projects:
     get:
@@ -3085,6 +3212,219 @@ components:
         purpose:
           type: string
           enum: [pending_action_replay, query_continuation, comparison_merge]
+        expires_at:
+          type: string
+          format: date-time
+    SubmissionUrlCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [raw_url, category_hint, client_request_id]
+      properties:
+        raw_url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        category_hint:
+          $ref: '#/components/schemas/CategoryId'
+        client_request_id:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{8,128}$'
+    SubmissionDuplicateCandidate:
+      type: object
+      additionalProperties: false
+      required: [project_id, current_name, category_id, reason]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        current_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        reason:
+          const: canonical_url_exact
+    SubmissionUrlCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - check_id
+        - category_id
+        - category_schema_version
+        - input_hash
+        - canonical_url
+        - redirect_chain
+        - risk_result
+        - access_result
+        - category_result
+        - duplicate_result
+        - duplicate_candidates
+        - risk_reasons
+        - can_create_draft
+        - checked_at
+        - expires_at
+      properties:
+        check_id:
+          type: string
+          format: uuid
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        category_schema_version:
+          type: string
+          enum: [learning.v1, portfolio.v1]
+        input_hash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        canonical_url:
+          type: [string, 'null']
+          maxLength: 2048
+        redirect_chain:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+            maxLength: 2048
+        risk_result:
+          type: string
+          enum: [allowed, blocked, uncertain]
+        access_result:
+          type: string
+          enum: [accessible, unavailable, uncertain, not_checked]
+        category_result:
+          type: string
+          enum: [matched, mismatched, unconfirmed]
+        duplicate_result:
+          type: string
+          enum: [none, exact, candidate]
+        duplicate_candidates:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/SubmissionDuplicateCandidate'
+        risk_reasons:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 128
+        can_create_draft:
+          type: boolean
+        checked_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    SubmissionDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [check_id, category_id, client_request_id]
+      properties:
+        check_id:
+          type: string
+          format: uuid
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        client_request_id:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{8,128}$'
+    SubmissionDraftPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, patch, operation_id]
+      properties:
+        expected_version:
+          type: integer
+          minimum: 1
+        patch:
+          type: object
+          maxProperties: 100
+        operation_id:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{8,128}$'
+    SubmissionDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - draft_id
+        - submission_chain_id
+        - category_id
+        - category_schema_version
+        - check_id
+        - draft_revision
+        - supersedes_draft_id
+        - base_submission_id
+        - payload_snapshot
+        - media_reference_ids
+        - evidence_draft_ids
+        - asset_drafts
+        - status
+        - version
+        - created_at
+        - updated_at
+        - saved_at
+        - expires_at
+      properties:
+        draft_id:
+          type: string
+          format: uuid
+        submission_chain_id:
+          type: string
+          format: uuid
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        category_schema_version:
+          type: string
+          enum: [learning.v1, portfolio.v1]
+        check_id:
+          type: string
+          format: uuid
+        draft_revision:
+          type: integer
+          minimum: 1
+        supersedes_draft_id:
+          type: [string, 'null']
+          format: uuid
+        base_submission_id:
+          type: [string, 'null']
+          format: uuid
+        payload_snapshot:
+          type: object
+        media_reference_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        evidence_draft_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        asset_drafts:
+          type: array
+          items:
+            type: object
+        status:
+          type: string
+          enum: [editing, submitted, closed, expired]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        saved_at:
+          type: string
+          format: date-time
         expires_at:
           type: string
           format: date-time

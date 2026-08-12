@@ -58,6 +58,14 @@ import {
   type VerifyChallengeCommand,
 } from '@vibecheck/identity'
 import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
+import type {
+  CheckSubmissionUrlCommand,
+  CreateSubmissionDraftCommand,
+  GetSubmissionDraftCommand,
+  PatchSubmissionDraftCommand,
+  SubmissionDraftProjection,
+  SubmissionUrlCheckProjection,
+} from '@vibecheck/submission'
 
 import {
   close,
@@ -71,6 +79,7 @@ import {
   type ApiPendingActionService,
   type ApiPendingActionExecutor,
   type ApiSearchService,
+  type ApiSubmissionService,
 } from './server.js'
 
 const config: ServiceConfig = Object.freeze({
@@ -99,6 +108,7 @@ async function start(
   community?: ApiCommunityService,
   pendingActionExecutor?: ApiPendingActionExecutor,
   analytics?: ApiAnalyticsService,
+  submission?: ApiSubmissionService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -111,7 +121,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -129,6 +139,7 @@ async function start(
     ...(community ? { community } : {}),
     ...(pendingActionExecutor ? { pendingActionExecutor } : {}),
     ...(analytics ? { analytics } : {}),
+    ...(submission ? { submission } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -889,6 +900,171 @@ class RestrictedIdentityService extends FakeIdentityService {
     return Object.freeze({ ...session, accountStatus: 'restricted' as const })
   }
 }
+
+class FakeSubmissionService implements ApiSubmissionService {
+  checkCommand: CheckSubmissionUrlCommand | null = null
+  createCommand: CreateSubmissionDraftCommand | null = null
+  getCommand: GetSubmissionDraftCommand | null = null
+  patchCommand: PatchSubmissionDraftCommand | null = null
+
+  getCheckCommand(): CheckSubmissionUrlCommand | null { return this.checkCommand }
+  getCreateCommand(): CreateSubmissionDraftCommand | null { return this.createCommand }
+  getPatchCommand(): PatchSubmissionDraftCommand | null { return this.patchCommand }
+
+  readonly check: SubmissionUrlCheckProjection = Object.freeze({
+    check_id: '84000000-0000-4000-8000-000000000001',
+    category_id: 'personal_site_portfolio',
+    category_schema_version: 'portfolio.v1',
+    input_hash: 'a'.repeat(64),
+    canonical_url: 'https://portfolio.example',
+    redirect_chain: Object.freeze(['https://portfolio.example']),
+    risk_result: 'allowed',
+    access_result: 'accessible',
+    category_result: 'unconfirmed',
+    duplicate_result: 'none',
+    duplicate_candidates: Object.freeze([]),
+    risk_reasons: Object.freeze([]),
+    can_create_draft: true,
+    checked_at: '2026-08-10T00:00:00.000Z',
+    expires_at: '2026-08-10T00:30:00.000Z',
+  })
+
+  readonly draft: SubmissionDraftProjection = Object.freeze({
+    draft_id: '84000000-0000-4000-8000-000000000002',
+    submission_chain_id: '84000000-0000-4000-8000-000000000003',
+    category_id: 'personal_site_portfolio',
+    category_schema_version: 'portfolio.v1',
+    check_id: this.check.check_id,
+    draft_revision: 1,
+    supersedes_draft_id: null,
+    base_submission_id: null,
+    payload_snapshot: Object.freeze({
+      project_core: Object.freeze({ public_url: 'https://portfolio.example' }),
+      category_id: 'personal_site_portfolio',
+      category_schema_version: 'portfolio.v1',
+      category_data: Object.freeze({}),
+    }),
+    media_reference_ids: Object.freeze([]),
+    evidence_draft_ids: Object.freeze([]),
+    asset_drafts: Object.freeze([]),
+    status: 'editing',
+    version: 1,
+    created_at: '2026-08-10T00:00:00.000Z',
+    updated_at: '2026-08-10T00:00:00.000Z',
+    saved_at: '2026-08-10T00:00:00.000Z',
+    expires_at: '2026-09-09T00:00:00.000Z',
+  })
+
+  async checkUrl(command: CheckSubmissionUrlCommand) {
+    this.checkCommand = command
+    return this.check
+  }
+
+  async createDraft(command: CreateSubmissionDraftCommand) {
+    this.createCommand = command
+    return this.draft
+  }
+
+  async getDraft(command: GetSubmissionDraftCommand) {
+    this.getCommand = command
+    return this.draft
+  }
+
+  async patchDraft(command: PatchSubmissionDraftCommand) {
+    this.patchCommand = command
+    return Object.freeze({ ...this.draft, version: 2 })
+  }
+}
+
+test('submission entry routes require the authenticated owner, same-origin CSRF and optimistic versions', async () => {
+  const submission = new FakeSubmissionService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    submission,
+  )
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+  }
+  try {
+    const noCsrf = await fetch(`${runtime.baseUrl}/api/v1/submission-url-checks`, {
+      method: 'POST',
+      headers: { ...headers, 'x-csrf-token': '' },
+      body: JSON.stringify({
+        raw_url: 'https://portfolio.example',
+        category_hint: 'personal_site_portfolio',
+        client_request_id: 'submission-check-request-0001',
+      }),
+    })
+    assert.equal(noCsrf.status, 403)
+    assert.equal(submission.checkCommand, null)
+
+    const checked = await fetch(`${runtime.baseUrl}/api/v1/submission-url-checks`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        raw_url: 'https://portfolio.example',
+        category_hint: 'personal_site_portfolio',
+        client_request_id: 'submission-check-request-0001',
+      }),
+    })
+    assert.equal(checked.status, 201)
+    assert.equal(submission.getCheckCommand()?.userId, session.userId)
+    assert.equal(submission.getCheckCommand()?.categoryHint, 'personal_site_portfolio')
+
+    const created = await fetch(`${runtime.baseUrl}/api/v1/submission-drafts`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        check_id: submission.check.check_id,
+        category_id: 'personal_site_portfolio',
+        client_request_id: 'submission-draft-request-0001',
+      }),
+    })
+    assert.equal(created.status, 201)
+    assert.equal(submission.getCreateCommand()?.checkId, submission.check.check_id)
+
+    const loaded = await fetch(
+      `${runtime.baseUrl}/api/v1/submission-drafts/${submission.draft.draft_id}`,
+      { headers: { cookie: headers.cookie } },
+    )
+    assert.equal(loaded.status, 200)
+    assert.equal(submission.getCommand?.userId, session.userId)
+
+    const patched = await fetch(
+      `${runtime.baseUrl}/api/v1/submission-drafts/${submission.draft.draft_id}`,
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          expected_version: 1,
+          patch: { project_core: { current_name: 'Portfolio' } },
+          operation_id: 'submission-patch-request-0001',
+        }),
+      },
+    )
+    assert.equal(patched.status, 200)
+    assert.equal((await patched.json() as { version: number }).version, 2)
+    assert.equal(submission.getPatchCommand()?.expectedVersion, 1)
+    assert.deepEqual(submission.getPatchCommand()?.patch, {
+      project_core: { current_name: 'Portfolio' },
+    })
+  } finally {
+    await runtime.stop()
+  }
+})
 
 class FakePendingActionService implements ApiPendingActionService {
   status: 'pending' | 'consumed' | 'cancelled' = 'pending'

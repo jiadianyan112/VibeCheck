@@ -22,6 +22,7 @@
     "@vibecheck/database": "*",
     "@vibecheck/identity": "*",
     "@vibecheck/observability": "*",
-    "@vibecheck/search": "*"
+    "@vibecheck/search": "*",
+    "@vibecheck/submission": "*"
   }
 }

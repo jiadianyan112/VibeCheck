@@ -69,6 +69,12 @@ services:
         generateValue: true
       - key: ANALYTICS_ENABLED
         value: "false"
+      - key: SUBMISSION_ENABLED
+        value: "true"
+      - key: SUBMISSION_URL_CHECK_TTL_SECONDS
+        value: "1800"
+      - key: SUBMISSION_DRAFT_TTL_SECONDS
+        value: "2592000"
 
   - type: worker
     name: vibecheck-worker
