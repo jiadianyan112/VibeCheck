@@ -8,6 +8,7 @@ import {
   PostgresCatalogStore,
 } from '@vibecheck/catalog'
 import { ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
+import { CommunityService, PostgresCommunityStore } from '@vibecheck/community'
 import {
   loadCatalogConfig,
   loadComparisonConfig,
@@ -42,6 +43,7 @@ const pool = createDatabasePool({
 })
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
+  community: new CommunityService({ store: new PostgresCommunityStore(pool) }),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

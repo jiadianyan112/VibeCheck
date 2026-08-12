@@ -21,6 +21,7 @@ describe('discoverMigrations', () => {
         '000010_comparison_core.sql',
         '000011_comparison_merge_conflicts.sql',
         '000012_pending_actions.sql',
+        '000013_community_interactions.sql',
       ],
     )
     for (const migration of migrations) {

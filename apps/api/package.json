@@ -16,6 +16,7 @@
     "@vibecheck/catalog": "*",
     "@vibecheck/config": "*",
     "@vibecheck/comparison": "*",
+    "@vibecheck/community": "*",
     "@vibecheck/contracts": "*",
     "@vibecheck/database": "*",
     "@vibecheck/identity": "*",

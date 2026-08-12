@@ -26,16 +26,21 @@ import {
   type ResolveComparisonMergeConflictCommand,
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
-import type { ServiceConfig } from '@vibecheck/config'
 import type {
-  CancelPendingActionCommand,
-  ConsumePendingActionCommand,
-  CreatePendingActionCommand,
-  GetPendingActionCommand,
-  PendingActionProjection,
-  SessionProjection,
-  StartChallengeCommand,
-  VerifyChallengeCommand,
+  ProjectInteractionProjection,
+  SetProjectInteractionCommand,
+} from '@vibecheck/community'
+import type { ServiceConfig } from '@vibecheck/config'
+import {
+  IdentityError,
+  type CancelPendingActionCommand,
+  type ConsumePendingActionCommand,
+  type CreatePendingActionCommand,
+  type GetPendingActionCommand,
+  type PendingActionProjection,
+  type SessionProjection,
+  type StartChallengeCommand,
+  type VerifyChallengeCommand,
 } from '@vibecheck/identity'
 import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
 
@@ -45,6 +50,7 @@ import {
   type ApiCatalogService,
   type ApiAssetResolutionService,
   type ApiComparisonService,
+  type ApiCommunityService,
   type ApiIdentityService,
   type ApiPendingActionService,
   type ApiSearchService,
@@ -73,6 +79,7 @@ async function start(
   assetResolver?: ApiAssetResolutionService,
   comparison?: ApiComparisonService,
   pendingActions?: ApiPendingActionService,
+  community?: ApiCommunityService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -85,7 +92,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions)
+    ...((identity || search || assetResolver || comparison || pendingActions || community)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -100,6 +107,7 @@ async function start(
     ...(assetResolver ? { assetResolver } : {}),
     ...(comparison ? { comparison } : {}),
     ...(pendingActions ? { pendingActions } : {}),
+    ...(community ? { community } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -243,6 +251,27 @@ class FakeComparisonService implements ApiComparisonService {
       conflict_version: command.expectedConflictVersion + 1,
       cancelled_at: '2026-08-10T00:00:00.000Z',
       pending_action_status: null,
+    })
+  }
+}
+
+class FakeCommunityService implements ApiCommunityService {
+  command: SetProjectInteractionCommand | null = null
+
+  async setProjectInteraction(
+    command: SetProjectInteractionCommand,
+  ): Promise<ProjectInteractionProjection> {
+    this.command = command
+    return Object.freeze({
+      project_id: command.projectId,
+      result: 'changed',
+      states: Object.freeze({ favorite: true, like: false, follow: true }),
+      counts: Object.freeze({ favorite_count: 2, like_count: 1, follower_count: 1 }),
+      count_deltas: Object.freeze({ favorite_count: 1, like_count: 0, follower_count: 1 }),
+      change_sources: Object.freeze({
+        favorite: 'follow_cascade', like: null, follow: 'explicit',
+      }),
+      updated_at: '2026-08-10T00:00:00.000Z',
     })
   }
 }
@@ -666,6 +695,18 @@ class FakeIdentityService implements ApiIdentityService {
   }
 }
 
+class RejectingIdentityService extends FakeIdentityService {
+  override async getSession(): Promise<SessionProjection> {
+    throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
+  }
+}
+
+class RestrictedIdentityService extends FakeIdentityService {
+  override async getSession(): Promise<SessionProjection> {
+    return Object.freeze({ ...session, accountStatus: 'restricted' as const })
+  }
+}
+
 class FakePendingActionService implements ApiPendingActionService {
   createCommand: CreatePendingActionCommand | null = null
   getCommand: GetPendingActionCommand | null = null
@@ -891,6 +932,117 @@ test('comparison save requires an authenticated session and matching CSRF token'
     assert.deepEqual(savedCommand.subject, { kind: 'user', id: session.userId })
     assert.equal(savedCommand.comparisonVersion, 1)
     assert.equal(savedCommand.state, true)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('project interaction requires login, writable account and matching CSRF before one final-state write', async () => {
+  const projectId = '10000000-0000-4000-8000-000000000001'
+  const path = `/api/v1/interactions/follow/project/${projectId}`
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const body = JSON.stringify({ state: true, client_request_id: 'interaction_request_0001' })
+
+  const anonymousCommunity = new FakeCommunityService()
+  const anonymousRuntime = await start(
+    async () => undefined,
+    new RejectingIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    anonymousCommunity,
+  )
+  try {
+    const rejected = await fetch(`${anonymousRuntime.baseUrl}${path}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body,
+    })
+    assert.equal(rejected.status, 401)
+    assert.equal(anonymousCommunity.command, null)
+  } finally {
+    await anonymousRuntime.stop()
+  }
+
+  const restrictedCommunity = new FakeCommunityService()
+  const restrictedRuntime = await start(
+    async () => undefined,
+    new RestrictedIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    restrictedCommunity,
+  )
+  try {
+    const rejected = await fetch(`${restrictedRuntime.baseUrl}${path}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+      },
+      body,
+    })
+    assert.equal(rejected.status, 403)
+    assert.equal(restrictedCommunity.command, null)
+  } finally {
+    await restrictedRuntime.stop()
+  }
+
+  const community = new FakeCommunityService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    community,
+  )
+  try {
+    const missingCsrf = await fetch(`${runtime.baseUrl}${path}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+      },
+      body,
+    })
+    assert.equal(missingCsrf.status, 403)
+    assert.equal(community.command, null)
+
+    const written = await fetch(`${runtime.baseUrl}${path}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+      },
+      body,
+    })
+    assert.equal(written.status, 200)
+    assert.deepEqual(community.command, {
+      userId: session.userId,
+      projectId,
+      targetType: 'project',
+      interactionType: 'follow',
+      state: true,
+      clientRequestId: 'interaction_request_0001',
+    })
+    assert.deepEqual((await written.json() as ProjectInteractionProjection).states, {
+      favorite: true, like: false, follow: true,
+    })
   } finally {
     await runtime.stop()
   }

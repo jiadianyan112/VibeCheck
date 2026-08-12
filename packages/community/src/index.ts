@@ -1,0 +1,18 @@
+export { CommunityError, communityError } from './errors.js'
+export { PostgresCommunityStore } from './postgres-store.js'
+export { CommunityService, type CommunityServiceDependencies } from './service.js'
+export type {
+  ProjectInteractionFactChange,
+  ProjectInteractionStore,
+  SetStoredProjectInteractionInput,
+} from './store-port.js'
+export {
+  projectInteractionTypes,
+  type InteractionChangeSource,
+  type InteractionChangeSources,
+  type InteractionCounts,
+  type InteractionStates,
+  type ProjectInteractionProjection,
+  type ProjectInteractionType,
+  type SetProjectInteractionCommand,
+} from './types.js'

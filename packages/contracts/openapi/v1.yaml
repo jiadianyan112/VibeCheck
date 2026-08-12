@@ -14,6 +14,7 @@ tags:
   - name: Catalog
   - name: Search
   - name: Comparison
+  - name: Community
 paths:
   /health/live:
     get:
@@ -421,6 +422,53 @@ paths:
           $ref: '#/components/responses/Error'
         '503':
           $ref: '#/components/responses/Error'
+  /api/v1/interactions/{interaction_type}/{target_type}/{project_id}:
+    put:
+      tags: [Community]
+      operationId: OP-INTERACT-SET
+      summary: Set one authenticated user's final interaction state for a public project
+      description: >-
+        The operation is idempotent by user_id plus client_request_id. Setting follow=true
+        atomically ensures favorite=true; setting favorite=false atomically ensures follow=false.
+        The response always contains all three final states, counters, deltas and change sources.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: interaction_type
+          required: true
+          schema: { type: string, enum: [favorite, like, follow] }
+        - in: path
+          name: target_type
+          required: true
+          schema: { type: string, const: project }
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InteractionSetRequest'
+      responses:
+        '200':
+          description: Changed or idempotently unchanged final state and atomically derived counters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectInteractionProjection'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/auth/comparison-merge-conflicts/{conflict_id}:
     get:
       tags: [Auth, Comparison]
@@ -1059,6 +1107,74 @@ components:
       properties:
         state: { type: boolean }
         comparison_version: { type: integer, minimum: 1 }
+    InteractionSetRequest:
+      type: object
+      additionalProperties: false
+      required: [state, client_request_id]
+      properties:
+        state: { type: boolean }
+        client_request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+    InteractionStates:
+      type: object
+      additionalProperties: false
+      required: [favorite, like, follow]
+      properties:
+        favorite: { type: boolean }
+        like: { type: boolean }
+        follow: { type: boolean }
+    InteractionCounts:
+      type: object
+      additionalProperties: false
+      required: [favorite_count, like_count, follower_count]
+      properties:
+        favorite_count: { type: integer, minimum: 0 }
+        like_count: { type: integer, minimum: 0 }
+        follower_count: { type: integer, minimum: 0 }
+    InteractionCountDeltas:
+      type: object
+      additionalProperties: false
+      required: [favorite_count, like_count, follower_count]
+      properties:
+        favorite_count: { type: integer, minimum: -1, maximum: 1 }
+        like_count: { type: integer, minimum: -1, maximum: 1 }
+        follower_count: { type: integer, minimum: -1, maximum: 1 }
+    InteractionChangeSources:
+      type: object
+      additionalProperties: false
+      required: [favorite, like, follow]
+      properties:
+        favorite:
+          type: [string, 'null']
+          enum: [explicit, follow_cascade, null]
+        like:
+          type: [string, 'null']
+          enum: [explicit, null]
+        follow:
+          type: [string, 'null']
+          enum: [explicit, favorite_cascade, null]
+    ProjectInteractionProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - project_id
+        - result
+        - states
+        - counts
+        - count_deltas
+        - change_sources
+        - updated_at
+      properties:
+        project_id: { type: string, format: uuid }
+        result: { type: string, enum: [changed, no_change] }
+        states: { $ref: '#/components/schemas/InteractionStates' }
+        counts: { $ref: '#/components/schemas/InteractionCounts' }
+        count_deltas: { $ref: '#/components/schemas/InteractionCountDeltas' }
+        change_sources: { $ref: '#/components/schemas/InteractionChangeSources' }
+        updated_at: { type: string, format: date-time }
     ComparisonProjectSummary:
       type: object
       additionalProperties: false
