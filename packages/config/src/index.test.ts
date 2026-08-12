@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   loadCatalogConfig,
   loadComparisonConfig,
+  loadCommunityConfig,
   loadIdentityConfig,
   loadSearchConfig,
   loadServiceConfig,
@@ -144,5 +145,24 @@ describe('loadServiceConfig', () => {
     })
     assert.equal(config.enabled, true)
     assert.equal(config.anonymousTtlSeconds, 604_800)
+  })
+
+  it('keeps community comments optional and validates isolated cursor/encryption secrets', () => {
+    assert.equal(loadCommunityConfig({ COMMUNITY_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadCommunityConfig({ COMMUNITY_ENABLED: 'true' }),
+      /CONFIG_COMMUNITY_CURSOR_SECRET_REQUIRED/,
+    )
+    const key = Buffer.alloc(32, 7).toString('base64')
+    const config = loadCommunityConfig({
+      COMMUNITY_ENABLED: 'true',
+      COMMUNITY_CURSOR_SECRET: 'community-cursor-secret-at-least-thirty-two-characters',
+      COMMUNITY_REPORT_ENCRYPTION_KEY: key,
+      COMMUNITY_REPORT_ENCRYPTION_KEY_VERSION: 'community-v1',
+      COMMUNITY_COMMENT_PAGE_SIZE: '15',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.reportEncryptionKey, key)
+    assert.equal(config.commentPageSize, 15)
   })
 })

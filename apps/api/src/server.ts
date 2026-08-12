@@ -35,8 +35,15 @@ import {
 } from '@vibecheck/comparison'
 import {
   CommunityError,
+  type CommentPage,
+  type CommentProjection,
+  type CommentReportProjection,
+  type CreateCommentCommand,
+  type ListCommentsCommand,
   type ProjectInteractionProjection,
+  type ReportCommentCommand,
   type SetProjectInteractionCommand,
+  type WithdrawCommentCommand,
 } from '@vibecheck/community'
 import type { ServiceHealth } from '@vibecheck/contracts'
 import {
@@ -166,6 +173,10 @@ export interface ApiCommunityService {
   setProjectInteraction(
     command: SetProjectInteractionCommand,
   ): Promise<ProjectInteractionProjection>
+  createComment(command: CreateCommentCommand): Promise<CommentProjection>
+  listComments(command: ListCommentsCommand): Promise<CommentPage>
+  withdrawComment(command: WithdrawCommentCommand): Promise<CommentProjection>
+  reportComment(command: ReportCommentCommand): Promise<CommentReportProjection>
 }
 
 export interface ApiServerDependencies {
@@ -1363,31 +1374,102 @@ async function handleCommunityRequest(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
-  const match = path.match(/^\/api\/v1\/interactions\/([^/]+)\/([^/]+)\/([^/]+)$/)
-  if (match === null) return null
-  if (method !== 'PUT') return null
+  const interactionMatch = path.match(/^\/api\/v1\/interactions\/([^/]+)\/([^/]+)\/([^/]+)$/)
+  const projectCommentsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/comments$/)
+  const reportMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/reports$/)
+  const withdrawMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/withdraw$/)
+  if (
+    interactionMatch === null && projectCommentsMatch === null &&
+    reportMatch === null && withdrawMatch === null
+  ) return null
+  if (
+    (interactionMatch !== null && method !== 'PUT') ||
+    (projectCommentsMatch !== null && method !== 'GET' && method !== 'POST') ||
+    (reportMatch !== null && method !== 'POST') ||
+    (withdrawMatch !== null && method !== 'POST')
+  ) return null
   if (!dependencies.community) {
     throw new CommunityError('COMMUNITY_SERVICE_UNAVAILABLE', 503, true)
   }
-  if (!requestOriginAllowed(request, config)) throw new CommunityError('ORIGIN_INVALID', 403)
-  exactQueryKeys(url.searchParams, [])
-  const body = await readJsonBody(request)
-  exactKeys(body, ['state', 'client_request_id'])
-  const session = await resolveAuthenticatedSession(request, dependencies)
-  if (session.accountStatus === 'restricted') {
-    throw new CommunityError('ACCOUNT_WRITE_RESTRICTED', 403)
+
+  if (projectCommentsMatch !== null && method === 'GET') {
+    exactQueryKeys(url.searchParams, ['cursor', 'sort'])
+    const projection = await dependencies.community.listComments({
+      projectId: projectCommentsMatch[1]!,
+      cursor: url.searchParams.get('cursor'),
+      sort: url.searchParams.get('sort'),
+    })
+    writeJson(response, 200, projection, requestId, 'public, max-age=15')
+    return 200
   }
+
+  exactQueryKeys(url.searchParams, [])
+  if (!requestOriginAllowed(request, config)) throw new CommunityError('ORIGIN_INVALID', 403)
+  const body = await readJsonBody(request)
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  if (session.accountStatus === 'restricted') throw new CommunityError('ACCOUNT_WRITE_RESTRICTED', 403)
   requireCommunityMutationCsrf(request)
-  const projection = await dependencies.community.setProjectInteraction({
-    userId: session.userId,
-    projectId: match[3]!,
-    targetType: match[2]!,
-    interactionType: match[1]!,
-    state: booleanField(body, 'state'),
-    clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
-  })
-  writeJson(response, 200, projection, requestId)
-  return 200
+
+  if (interactionMatch !== null && method === 'PUT') {
+    exactKeys(body, ['state', 'client_request_id'])
+    const projection = await dependencies.community.setProjectInteraction({
+      userId: session.userId,
+      projectId: interactionMatch[3]!,
+      targetType: interactionMatch[2]!,
+      interactionType: interactionMatch[1]!,
+      state: booleanField(body, 'state'),
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (projectCommentsMatch !== null && method === 'POST') {
+    exactKeys(body, ['body', 'parent_comment_id', 'client_request_id'])
+    const rawParent = body.parent_comment_id
+    if (rawParent !== undefined && rawParent !== null && typeof rawParent !== 'string') {
+      throw new CommunityError('PARENT_COMMENT_ID_INVALID', 422)
+    }
+    const projection = await dependencies.community.createComment({
+      userId: session.userId,
+      projectId: projectCommentsMatch[1]!,
+      body: stringField(body, 'body', { maximum: 8_000 })!,
+      parentCommentId: typeof rawParent === 'string' ? rawParent : null,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, projection.result === 'created' ? 201 : 200, projection, requestId)
+    return projection.result === 'created' ? 201 : 200
+  }
+  if (reportMatch !== null && method === 'POST') {
+    exactKeys(body, ['reason_code', 'note', 'client_request_id'])
+    const rawNote = body.note
+    if (rawNote !== undefined && rawNote !== null && typeof rawNote !== 'string') {
+      throw new CommunityError('REPORT_NOTE_INVALID', 422)
+    }
+    if (typeof rawNote === 'string' && rawNote.length > 4_000) {
+      throw new CommunityError('REPORT_NOTE_INVALID', 422)
+    }
+    const projection = await dependencies.community.reportComment({
+      userId: session.userId,
+      commentId: reportMatch[1]!,
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      note: typeof rawNote === 'string' ? rawNote : null,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, projection.result === 'created' ? 201 : 200, projection, requestId)
+    return projection.result === 'created' ? 201 : 200
+  }
+  if (withdrawMatch !== null && method === 'POST') {
+    exactKeys(body, ['expected_version', 'operation_id'])
+    const projection = await dependencies.community.withdrawComment({
+      userId: session.userId,
+      commentId: withdrawMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  return null
 }
 
 export function createApiServer(

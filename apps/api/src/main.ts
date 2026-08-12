@@ -11,6 +11,7 @@ import { ComparisonService, PostgresComparisonStore } from '@vibecheck/compariso
 import { CommunityService, PostgresCommunityStore } from '@vibecheck/community'
 import {
   loadCatalogConfig,
+  loadCommunityConfig,
   loadComparisonConfig,
   loadIdentityConfig,
   loadSearchConfig,
@@ -34,6 +35,7 @@ const identityConfig = loadIdentityConfig()
 const catalogConfig = loadCatalogConfig()
 const comparisonConfig = loadComparisonConfig()
 const searchConfig = loadSearchConfig()
+const communityConfig = loadCommunityConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -43,7 +45,14 @@ const pool = createDatabasePool({
 })
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
-  community: new CommunityService({ store: new PostgresCommunityStore(pool) }),
+  ...(communityConfig.enabled
+    ? {
+        community: new CommunityService({
+          store: new PostgresCommunityStore(pool),
+          config: communityConfig,
+        }),
+      }
+    : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

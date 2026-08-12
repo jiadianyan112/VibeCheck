@@ -469,6 +469,144 @@ paths:
         '415': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/projects/{project_id}/comments:
+    get:
+      tags: [Community]
+      operationId: OP-COMMENT-LIST
+      summary: List only public visible or collapsed comments for one public project
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+        - in: query
+          name: sort
+          required: false
+          schema: { type: string, const: latest, default: latest }
+      responses:
+        '200':
+          description: Stable public page; non-public moderation states are not returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Community]
+      operationId: OP-COMMENT-CREATE
+      summary: Create one owner-bound comment in pending moderation state
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentCreateRequest' }
+      responses:
+        '201':
+          description: New pending comment; public list and count remain unchanged.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '200':
+          description: Idempotently recovered existing comment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/comments/{comment_id}/reports:
+    post:
+      tags: [Community]
+      operationId: OP-COMMENT-REPORT
+      summary: Report one currently public comment without exposing report content publicly
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: comment_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentReportRequest' }
+      responses:
+        '201':
+          description: Report created, comment moved under review, and one review work item ensured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentReportProjection' }
+        '200':
+          description: Existing active report returned idempotently.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentReportProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/comments/{comment_id}/withdraw:
+    post:
+      tags: [Community]
+      operationId: OP-COMMENT-WITHDRAW
+      summary: Irreversibly withdraw the authenticated author's comment
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: comment_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentWithdrawRequest' }
+      responses:
+        '200':
+          description: Author-withdrawn final state, including idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/auth/comparison-merge-conflicts/{conflict_id}:
     get:
       tags: [Auth, Comparison]
@@ -1175,6 +1313,161 @@ components:
         count_deltas: { $ref: '#/components/schemas/InteractionCountDeltas' }
         change_sources: { $ref: '#/components/schemas/InteractionChangeSources' }
         updated_at: { type: string, format: date-time }
+    CommentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [body, client_request_id]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        parent_comment_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        client_request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+    CommentProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - comment_id
+        - project_id
+        - parent_comment_id
+        - body
+        - moderation_state
+        - version
+        - result
+        - created_at
+        - updated_at
+        - author_withdrawn_at
+      properties:
+        comment_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        parent_comment_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        moderation_state:
+          enum: [pending, under_review, visible, collapsed, hidden, rejected, author_withdrawn]
+        version: { type: integer, minimum: 1 }
+        result: { enum: [created, deduplicated, changed, no_change] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        author_withdrawn_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    PublicCommentProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - comment_id
+        - project_id
+        - parent_comment_id
+        - body
+        - moderation_state
+        - default_collapsed
+        - version
+        - created_at
+        - updated_at
+      properties:
+        comment_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        parent_comment_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        moderation_state: { enum: [visible, collapsed] }
+        default_collapsed: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CommentPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicCommentProjection' }
+        next_cursor:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 1024
+            - type: 'null'
+    CommentReportRequest:
+      type: object
+      additionalProperties: false
+      required: [reason_code, client_request_id]
+      properties:
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        note:
+          oneOf:
+            - type: string
+              maxLength: 1000
+            - type: 'null'
+        client_request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+    CommentReportProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - report_id
+        - project_id
+        - comment_id
+        - reason_code
+        - status
+        - review_work_item_id
+        - note_provided
+        - version
+        - result
+        - created_at
+        - updated_at
+        - resolved_at
+      properties:
+        report_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        comment_id: { type: string, format: uuid }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        status: { enum: [open, resolved_actioned, resolved_no_action, withdrawn] }
+        review_work_item_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: 'null'
+        note_provided: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        result: { enum: [created, deduplicated] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        resolved_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    CommentWithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        operation_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
     ComparisonProjectSummary:
       type: object
       additionalProperties: false

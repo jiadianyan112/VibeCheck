@@ -68,6 +68,14 @@ export interface ComparisonConfig {
   readonly maximumVisibleMsPerEvent: number
 }
 
+export interface CommunityConfig {
+  readonly enabled: boolean
+  readonly cursorSecret: string
+  readonly reportEncryptionKey: string
+  readonly reportEncryptionKeyVersion: string
+  readonly commentPageSize: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -376,6 +384,34 @@ export function loadComparisonConfig(
     maximumVisibleMsPerEvent: parseInteger(
       'COMPARISON_MAXIMUM_VISIBLE_MS_PER_EVENT', env.COMPARISON_MAXIMUM_VISIBLE_MS_PER_EVENT,
       60_000, 1_000, 300_000,
+    ),
+  })
+}
+
+export function loadCommunityConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): CommunityConfig {
+  const enabled = parseBoolean('COMMUNITY_ENABLED', env.COMMUNITY_ENABLED, false)
+  if (!enabled) {
+    return Object.freeze({
+      enabled: false,
+      cursorSecret: '',
+      reportEncryptionKey: '',
+      reportEncryptionKeyVersion: '',
+      commentPageSize: 20,
+    })
+  }
+  return Object.freeze({
+    enabled: true,
+    cursorSecret: requiredSecret('COMMUNITY_CURSOR_SECRET', env.COMMUNITY_CURSOR_SECRET),
+    reportEncryptionKey: base64Key(
+      'COMMUNITY_REPORT_ENCRYPTION_KEY', env.COMMUNITY_REPORT_ENCRYPTION_KEY,
+    ),
+    reportEncryptionKeyVersion: requiredName(
+      env.COMMUNITY_REPORT_ENCRYPTION_KEY_VERSION ?? '',
+    ),
+    commentPageSize: parseInteger(
+      'COMMUNITY_COMMENT_PAGE_SIZE', env.COMMUNITY_COMMENT_PAGE_SIZE, 20, 1, 50,
     ),
   })
 }

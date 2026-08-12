@@ -27,8 +27,15 @@ import {
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
 import type {
+  CommentPage,
+  CommentProjection,
+  CommentReportProjection,
+  CreateCommentCommand,
+  ListCommentsCommand,
   ProjectInteractionProjection,
+  ReportCommentCommand,
   SetProjectInteractionCommand,
+  WithdrawCommentCommand,
 } from '@vibecheck/community'
 import type { ServiceConfig } from '@vibecheck/config'
 import {
@@ -257,6 +264,10 @@ class FakeComparisonService implements ApiComparisonService {
 
 class FakeCommunityService implements ApiCommunityService {
   command: SetProjectInteractionCommand | null = null
+  createCommand: CreateCommentCommand | null = null
+  listCommand: ListCommentsCommand | null = null
+  reportCommand: ReportCommentCommand | null = null
+  withdrawCommand: WithdrawCommentCommand | null = null
 
   async setProjectInteraction(
     command: SetProjectInteractionCommand,
@@ -272,6 +283,61 @@ class FakeCommunityService implements ApiCommunityService {
         favorite: 'follow_cascade', like: null, follow: 'explicit',
       }),
       updated_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async createComment(command: CreateCommentCommand): Promise<CommentProjection> {
+    this.createCommand = command
+    return Object.freeze({
+      comment_id: '71000000-0000-4000-8000-000000000001',
+      project_id: command.projectId,
+      parent_comment_id: command.parentCommentId,
+      body: command.body.trim(),
+      moderation_state: 'pending',
+      version: 1,
+      result: 'created',
+      created_at: '2026-08-10T00:00:00.000Z',
+      updated_at: '2026-08-10T00:00:00.000Z',
+      author_withdrawn_at: null,
+    })
+  }
+
+  async listComments(command: ListCommentsCommand): Promise<CommentPage> {
+    this.listCommand = command
+    return Object.freeze({ items: Object.freeze([]), next_cursor: null })
+  }
+
+  async reportComment(command: ReportCommentCommand): Promise<CommentReportProjection> {
+    this.reportCommand = command
+    return Object.freeze({
+      report_id: '72000000-0000-4000-8000-000000000001',
+      project_id: '10000000-0000-4000-8000-000000000001',
+      comment_id: command.commentId,
+      reason_code: command.reasonCode,
+      status: 'open',
+      review_work_item_id: '73000000-0000-4000-8000-000000000001',
+      note_provided: command.note !== null,
+      version: 1,
+      result: 'created',
+      created_at: '2026-08-10T00:00:00.000Z',
+      updated_at: '2026-08-10T00:00:00.000Z',
+      resolved_at: null,
+    })
+  }
+
+  async withdrawComment(command: WithdrawCommentCommand): Promise<CommentProjection> {
+    this.withdrawCommand = command
+    return Object.freeze({
+      comment_id: command.commentId,
+      project_id: '10000000-0000-4000-8000-000000000001',
+      parent_comment_id: null,
+      body: 'comment body',
+      moderation_state: 'author_withdrawn',
+      version: command.expectedVersion + 1,
+      result: 'changed',
+      created_at: '2026-08-10T00:00:00.000Z',
+      updated_at: '2026-08-10T00:00:00.000Z',
+      author_withdrawn_at: '2026-08-10T00:00:00.000Z',
     })
   }
 }
@@ -1042,6 +1108,87 @@ test('project interaction requires login, writable account and matching CSRF bef
     })
     assert.deepEqual((await written.json() as ProjectInteractionProjection).states, {
       favorite: true, like: false, follow: true,
+    })
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('comment list is public while create, report and withdraw bind the authenticated actor', async () => {
+  const community = new FakeCommunityService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    community,
+  )
+  const projectId = '10000000-0000-4000-8000-000000000001'
+  const commentId = '71000000-0000-4000-8000-000000000001'
+  const sessionHeaders = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+  }
+  try {
+    const list = await fetch(
+      `${runtime.baseUrl}/api/v1/projects/${projectId}/comments?sort=latest`,
+    )
+    assert.equal(list.status, 200)
+    assert.deepEqual(community.listCommand, { projectId, cursor: null, sort: 'latest' })
+
+    const created = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectId}/comments`, {
+      method: 'POST',
+      headers: sessionHeaders,
+      body: JSON.stringify({
+        body: '  new comment  ',
+        parent_comment_id: null,
+        client_request_id: 'comment_request_0001',
+      }),
+    })
+    assert.equal(created.status, 201)
+    assert.deepEqual(community.createCommand, {
+      userId: session.userId,
+      projectId,
+      body: '  new comment  ',
+      parentCommentId: null,
+      clientRequestId: 'comment_request_0001',
+    })
+
+    const reported = await fetch(`${runtime.baseUrl}/api/v1/comments/${commentId}/reports`, {
+      method: 'POST',
+      headers: sessionHeaders,
+      body: JSON.stringify({
+        reason_code: 'spam',
+        note: 'private note',
+        client_request_id: 'report_request_0001',
+      }),
+    })
+    assert.equal(reported.status, 201)
+    assert.deepEqual(community.reportCommand, {
+      userId: session.userId,
+      commentId,
+      reasonCode: 'spam',
+      note: 'private note',
+      clientRequestId: 'report_request_0001',
+    })
+
+    const withdrawn = await fetch(`${runtime.baseUrl}/api/v1/comments/${commentId}/withdraw`, {
+      method: 'POST',
+      headers: sessionHeaders,
+      body: JSON.stringify({ expected_version: 1, operation_id: 'withdraw_request_0001' }),
+    })
+    assert.equal(withdrawn.status, 200)
+    assert.deepEqual(community.withdrawCommand, {
+      userId: session.userId,
+      commentId,
+      expectedVersion: 1,
+      operationId: 'withdraw_request_0001',
     })
   } finally {
     await runtime.stop()

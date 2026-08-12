@@ -13,6 +13,13 @@ if (!databaseUrl) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 const pool = new Pool({ connectionString: databaseUrl })
 const service = new CommunityService({
   store: new PostgresCommunityStore(pool),
+  config: Object.freeze({
+    enabled: true,
+    cursorSecret: 'community-fixture-cursor-secret-at-least-thirty-two-characters',
+    reportEncryptionKey: Buffer.alloc(32, 7).toString('base64'),
+    reportEncryptionKeyVersion: 'fixture-v1',
+    commentPageSize: 20,
+  }),
   now: () => new Date('2026-08-13T08:00:00.000Z'),
 })
 const userId = '71000000-0000-4000-8000-000000000001'
@@ -25,16 +32,65 @@ async function run(): Promise<void> {
     [userId],
   )
   await pool.query(
-    `DELETE FROM community.interaction_operation_receipts WHERE user_id=$1;
-     DELETE FROM community.project_interactions WHERE user_id=$1 AND project_id=$2;
-     UPDATE catalog.project_interaction_counters
-     SET favorite_count=0,like_count=0,follower_count=0,source_watermark='community-fixture-reset'
-     WHERE project_id=$2;
-     DELETE FROM ops.outbox_events
-     WHERE aggregate_type='project' AND aggregate_id=$2::text
-       AND event_name IN ('project_favorited','project_liked','project_followed')`,
+    `DELETE FROM community.report_operation_receipts WHERE reporter_user_id=$1`,
+    [userId],
+  )
+  await pool.query(
+    `DELETE FROM community.comment_operation_receipts
+     WHERE comment_id IN (SELECT comment_id FROM community.comments WHERE author_user_id=$1)`,
+    [userId],
+  )
+  await pool.query(
+    `DELETE FROM community.comment_reports
+     WHERE reporter_user_id=$1 OR comment_id IN (
+       SELECT comment_id FROM community.comments WHERE author_user_id=$1
+     )`,
+    [userId],
+  )
+  await pool.query(
+    `DELETE FROM workflow.review_work_items
+     WHERE work_type='community' AND target_type='comment' AND target_id IN (
+       SELECT comment_id FROM community.comments WHERE author_user_id=$1
+     )`,
+    [userId],
+  )
+  await pool.query(`DELETE FROM community.comments WHERE author_user_id=$1`, [userId])
+  await pool.query(`DELETE FROM community.rate_limit_buckets WHERE user_id=$1`, [userId])
+  await pool.query(
+    `DELETE FROM community.interaction_operation_receipts WHERE user_id=$1`,
+    [userId],
+  )
+  await pool.query(
+    `DELETE FROM community.project_interactions WHERE user_id=$1 AND project_id=$2`,
     [userId, projectId],
   )
+  await pool.query(
+    `UPDATE catalog.project_interaction_counters
+     SET favorite_count=0,like_count=0,follower_count=0,visible_comment_count=0,
+       source_watermark='community-fixture-reset'
+     WHERE project_id=$1`,
+    [projectId],
+  )
+  await pool.query(
+    `DELETE FROM ops.outbox_events
+     WHERE (aggregate_type='project' AND aggregate_id=$1::text
+       AND event_name IN ('project_favorited','project_liked','project_followed'))
+       OR (aggregate_type='comment' AND payload_json->>'project_id'=$1::text)`,
+    [projectId],
+  )
+  for (const [key, value] of [
+    ['community.comment_create_rate_limit', { limit: 3, window_seconds: 60 }],
+    ['community.comment_report_rate_limit', { limit: 2, window_seconds: 60 }],
+  ] as const) {
+    await pool.query(
+      `INSERT INTO ops.config_versions (
+         config_key,version,status,value_json,schema_version,content_hash,published_at
+       ) VALUES ($1,1,'published',$2::jsonb,'community.rate_limit.v1',
+         encode(digest($2::text,'sha256'),'hex'),$3)
+       ON CONFLICT (config_key,version) DO NOTHING`,
+      [key, JSON.stringify(value), '2026-08-13T07:59:00.000Z'],
+    )
+  }
 
   const follow = await service.setProjectInteraction({
     userId,
@@ -154,6 +210,152 @@ async function run(): Promise<void> {
     natural_actor_leak_count: 0,
   })
 
+  const firstComment = await service.createComment({
+    userId,
+    projectId,
+    body: '  fixture first comment  ',
+    parentCommentId: null,
+    clientRequestId: 'community_comment_0001',
+  })
+  assert.equal(firstComment.result, 'created')
+  assert.equal(firstComment.body, 'fixture first comment')
+  assert.equal(firstComment.moderation_state, 'pending')
+  const firstRetry = await service.createComment({
+    userId,
+    projectId,
+    body: 'fixture first comment',
+    parentCommentId: null,
+    clientRequestId: 'community_comment_0001',
+  })
+  assert.equal(firstRetry.result, 'deduplicated')
+  assert.equal(firstRetry.comment_id, firstComment.comment_id)
+
+  const visibleFirst = await service.moderateComment({
+    commentId: firstComment.comment_id,
+    expectedVersion: 1,
+    resultingState: 'visible',
+    decisionId: '72000000-0000-4000-8000-000000000001',
+    actorType: 'system',
+    reasonCode: 'automatic_pass',
+    ruleVersion: 'fixture-rules.v1',
+  })
+  assert.equal(visibleFirst.moderation_state, 'visible')
+  assert.equal(visibleFirst.version, 2)
+  const listed = await service.listComments({ projectId, cursor: null, sort: 'latest' })
+  assert.deepEqual(listed.items.map(({ comment_id }) => comment_id), [firstComment.comment_id])
+
+  const report = await service.reportComment({
+    userId,
+    commentId: firstComment.comment_id,
+    reasonCode: 'spam',
+    note: 'fixture private report note',
+    clientRequestId: 'community_report_0001',
+  })
+  assert.equal(report.result, 'created')
+  assert.equal(report.status, 'open')
+  assert.ok(report.review_work_item_id)
+  const reportRetry = await service.reportComment({
+    userId,
+    commentId: firstComment.comment_id,
+    reasonCode: 'spam',
+    note: 'fixture private report note',
+    clientRequestId: 'community_report_0001',
+  })
+  assert.equal(reportRetry.result, 'deduplicated')
+  assert.equal(reportRetry.report_id, report.report_id)
+
+  const secondComment = await service.createComment({
+    userId,
+    projectId,
+    body: 'fixture second comment',
+    parentCommentId: null,
+    clientRequestId: 'community_comment_0002',
+  })
+  await service.moderateComment({
+    commentId: secondComment.comment_id,
+    expectedVersion: 1,
+    resultingState: 'visible',
+    decisionId: '72000000-0000-4000-8000-000000000002',
+    actorType: 'system',
+    reasonCode: 'automatic_pass',
+    ruleVersion: 'fixture-rules.v1',
+  })
+  const withdrawn = await service.withdrawComment({
+    userId,
+    commentId: secondComment.comment_id,
+    expectedVersion: 2,
+    operationId: 'community_withdraw_0001',
+  })
+  assert.equal(withdrawn.moderation_state, 'author_withdrawn')
+  assert.equal(withdrawn.result, 'changed')
+  const withdrawRetry = await service.withdrawComment({
+    userId,
+    commentId: secondComment.comment_id,
+    expectedVersion: 2,
+    operationId: 'community_withdraw_0001',
+  })
+  assert.deepEqual(withdrawRetry, withdrawn)
+
+  await service.createComment({
+    userId,
+    projectId,
+    body: 'fixture third comment',
+    parentCommentId: null,
+    clientRequestId: 'community_comment_0003',
+  })
+  await assert.rejects(
+    () => service.createComment({
+      userId,
+      projectId,
+      body: 'fixture rate limited comment',
+      parentCommentId: null,
+      clientRequestId: 'community_comment_0004',
+    }),
+    (error: unknown) => error instanceof CommunityError &&
+      error.code === 'RATE_LIMITED' && error.httpStatus === 429 &&
+      error.retryAfterSeconds === 60,
+  )
+
+  const commentState = await pool.query<{
+    comment_count: number
+    visible_comment_count: string
+    work_item_count: number
+    report_count: number
+    report_note_plaintext_count: number
+    comment_event_count: number
+    natural_actor_leak_count: number
+  }>(
+    `SELECT
+       (SELECT count(*)::int FROM community.comments WHERE author_user_id=$1) AS comment_count,
+       (SELECT visible_comment_count::text FROM catalog.project_interaction_counters
+        WHERE project_id=$2) AS visible_comment_count,
+       (SELECT count(*)::int FROM workflow.review_work_items
+        WHERE work_type='community' AND target_type='comment' AND target_id=$3
+          AND status='queued') AS work_item_count,
+       (SELECT count(*)::int FROM community.comment_reports
+        WHERE reporter_user_id=$1 AND comment_id=$3) AS report_count,
+       (SELECT count(*)::int FROM community.comment_reports
+        WHERE reporter_user_id=$1 AND
+          position(convert_to('fixture private report note','UTF8') in note_ciphertext)>0
+       ) AS report_note_plaintext_count,
+       (SELECT count(*)::int FROM ops.outbox_events
+        WHERE aggregate_type='comment' AND payload_json->>'project_id'=$2::text) AS comment_event_count,
+       (SELECT count(*)::int FROM ops.outbox_events
+        WHERE aggregate_type='comment' AND payload_json->>'project_id'=$2::text
+          AND (payload_json ? 'user_id' OR payload_json ? 'author_user_id'
+            OR payload_json ? 'reporter_user_id')) AS natural_actor_leak_count`,
+    [userId, projectId, firstComment.comment_id],
+  )
+  assert.deepEqual(commentState.rows[0], {
+    comment_count: 3,
+    visible_comment_count: '0',
+    work_item_count: 1,
+    report_count: 1,
+    report_note_plaintext_count: 0,
+    comment_event_count: 9,
+    natural_actor_leak_count: 0,
+  })
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -180,7 +382,7 @@ async function run(): Promise<void> {
 
 try {
   await run()
-  process.stdout.write('community_fixture_ok interactions=1 receipts=4 events=5\n')
+  process.stdout.write('community_fixture_ok interactions=1 comments=3 reports=1 events=14\n')
 } finally {
   await pool.end()
 }
