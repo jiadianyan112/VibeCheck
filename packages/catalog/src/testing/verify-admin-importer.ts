@@ -12,6 +12,11 @@ const pool = new Pool({ connectionString, ssl, application_name: 'vibecheck-admi
 const editorId = '2a000000-0000-4000-8000-000000000001'
 const regularUserId = '2a000000-0000-4000-8000-000000000002'
 const sourceName = 'ci-reviewed-catalog'
+let fixtureStage = 'initialize'
+
+function workflowAnnotation(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
 
 function item(index: number) {
   const project = syntheticCatalogFixture.projects[index]!
@@ -33,6 +38,7 @@ function envelope(batchKey: string, items: readonly unknown[]) {
 }
 
 try {
+  fixtureStage = 'prepare_actor_fixtures'
   await pool.query(
     `INSERT INTO iam.users (user_id,status) VALUES ($1,'active'),($2,'active')
      ON CONFLICT (user_id) DO NOTHING`,
@@ -48,6 +54,7 @@ try {
   const projectsBefore = await pool.query<{ count: number }>(
     'SELECT count(*)::int AS count FROM catalog.projects',
   )
+  fixtureStage = 'import_valid_dual_category_batch'
   const acceptedInput = envelope('reviewed-batch-001', [item(0), item(1)])
   const accepted = await importer.import({
     sourceName,
@@ -61,6 +68,7 @@ try {
   assert.ok(accepted.items.every(({ duplicate_candidates }) => duplicate_candidates.length === 1))
   assert.ok(accepted.items.every(({ replayed }) => replayed === false))
 
+  fixtureStage = 'verify_same_batch_replay'
   const sameBatchReplay = await importer.import({
     sourceName,
     actorUserId: editorId,
@@ -69,6 +77,7 @@ try {
   })
   assert.deepEqual(sameBatchReplay, accepted)
 
+  fixtureStage = 'verify_cross_batch_replay'
   const crossBatchReplay = await importer.import({
     sourceName,
     actorUserId: editorId,
@@ -79,6 +88,7 @@ try {
   assert.equal(crossBatchReplay.items[0]!.replayed, true)
   assert.equal(crossBatchReplay.items[0]!.admin_creation_draft_id, accepted.items[0]!.admin_creation_draft_id)
 
+  fixtureStage = 'verify_cross_batch_conflict'
   const changedItem = { ...item(0), reason_code: 'SOURCE_RECORD_CHANGED' }
   const conflict = await importer.import({
     sourceName,
@@ -89,6 +99,7 @@ try {
   assert.equal(conflict.status, 'completed_with_errors')
   assert.equal(conflict.items[0]!.error_code, 'IMPORT_ITEM_KEY_CONFLICT')
 
+  fixtureStage = 'verify_schema_mismatch_receipt'
   const invalid = await importer.import({
     sourceName,
     actorUserId: editorId,
@@ -103,6 +114,7 @@ try {
   assert.equal(invalid.status, 'completed_with_errors')
   assert.equal(invalid.items[0]!.error_code, 'IMPORT_CATEGORY_SCHEMA_MISMATCH')
 
+  fixtureStage = 'verify_unauthorized_actor'
   await assert.rejects(
     () => importer.import({
       sourceName,
@@ -113,6 +125,7 @@ try {
     (error) => error instanceof AdminProjectImportError && error.code === 'IMPORT_ACTOR_FORBIDDEN',
   )
 
+  fixtureStage = 'verify_zero_publication_and_audits'
   const facts = await pool.query<{
     project_count: number
     draft_count: number
@@ -141,6 +154,7 @@ try {
   assert.equal(facts.rows[0]!.creation_audit_count, 2)
   assert.equal(facts.rows[0]!.forbidden_batch_count, 0)
 
+  fixtureStage = 'verify_immutable_receipts'
   const receiptId = await pool.query<{ import_item_id: string }>(
     `SELECT import_item_id FROM workflow.admin_project_import_receipts
      ORDER BY created_at,import_item_id LIMIT 1`,
@@ -152,6 +166,7 @@ try {
     ),
     /IMMUTABLE_IMPORT_RECEIPT/,
   )
+  fixtureStage = 'verify_immutable_audits'
   const auditId = await pool.query<{ audit_id: string }>(
     `SELECT audit_id FROM audit.audit_logs
      WHERE target_type='admin_project_creation_draft' ORDER BY created_at LIMIT 1`,
@@ -167,6 +182,12 @@ try {
     receipt_count: facts.rows[0]!.receipt_count,
     project_count_unchanged: true,
   }))
+} catch (error) {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error)
+  process.stderr.write(
+    `::error title=Admin importer fixture ${workflowAnnotation(fixtureStage)}::${workflowAnnotation(detail)}\n`,
+  )
+  throw error
 } finally {
   await pool.end()
 }

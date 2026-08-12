@@ -425,7 +425,7 @@ export class PostgresAdminProjectImporter {
          RETURNING admin_creation_draft_id`,
         [
           actorUserId, item.categoryId, item.categorySchemaVersion, item.snapshot,
-          item.canonicalPublicUrl, item.canonicalUrlHash, candidates, item.reasonCode,
+          item.canonicalPublicUrl, item.canonicalUrlHash, JSON.stringify(candidates), item.reasonCode,
           sourceName, item.sourceRecordKey, item.requestHash,
         ],
       )
@@ -450,7 +450,7 @@ export class PostgresAdminProjectImporter {
         [
           `admin-import-${receipt.rows[0]!.import_item_id}`,
           actorUserId,
-          roles,
+          JSON.stringify(roles),
           draftId,
           item.requestHash,
           {
@@ -550,7 +550,7 @@ export class PostgresAdminProjectImporter {
       [
         `admin-import-${receipt.rows[0]!.import_item_id}`,
         actorUserId,
-        roles,
+        JSON.stringify(roles),
         receipt.rows[0]!.import_item_id,
         requestHash,
         { error_code: errorCode, import_source: sourceName },
