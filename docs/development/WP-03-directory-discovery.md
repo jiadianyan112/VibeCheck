@@ -60,7 +60,7 @@
 - Event-Version、Event-supersedes、Evidence-target 与 Relation-Asset 的跨对象归属由数据库触发器约束；
 - API 列表状态、Query 重复/未知/超限、Project/Creator ETag；
 - OpenAPI Operation ID 唯一、引用无悬空；
-- 第四号迁移由 GitHub CI 在 PostgreSQL 18 + pgvector 上首跑和二次幂等后，才可标记数据库验收通过。
+- 目录/搜索迁移由 GitHub CI 在 PostgreSQL 18 + pgvector 上首跑和二次幂等后，才可标记数据库验收通过。
 - CI 在迁移后连续加载两次合成夹具，并通过真实 `PostgresCatalogStore + CatalogService` 验证列表、详情、证据、关系、事件、资产和 SearchDocument；仅 Mock Store 通过不能替代此门禁。
 
 ## 5. 未完成范围
@@ -70,16 +70,15 @@
 - Asset 外链 resolve 安全执行器与接口；Evidence/Relation 当前按冻结契约嵌入 Project/Event/Asset 公共投影，不新增未定义的独立公共路由；
 - AdminProjectCreationDraft 的受审计 importer 已完成；Submission/ReviewWorkItem 发布链及 64 个经审核正式档案仍未完成，当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
-- 意图解析适配器、语义匹配、同类分析与搜索导航归因；当前 keyword 分支明确 `semantic_degraded=true`，不冒充语义结果；
+- 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
 - P09 服务端 Comparison、同品类 2—5 项约束、匿名合并与完成口径；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 
 ## 6. 下一批顺序
 
-1. 基于已生成 SearchDocument 建结构化索引查询及 FTS 降级排序；
-2. 交付 Asset resolve 的 SSRF/重定向/协议白名单安全执行器；
-3. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-4. 最后实现 P09 Comparison，避免前端继续把 DecisionRecord 当作 P0 事实。
+1. 交付 Asset resolve 的 SSRF/重定向/协议白名单安全执行器；
+2. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
+3. 最后实现 P09 Comparison，避免前端继续把 DecisionRecord 当作 P0 事实。
 
 ## 7. 受审计目录 importer（WP-03 增量）
 
@@ -90,3 +89,10 @@
 - `(import_source,source_record_key)` 是跨批次幂等范围；同键同载荷返回既有草稿，不复制审计事实；同键异载荷产生 `IMPORT_ITEM_KEY_CONFLICT` 拒绝回执，不覆盖草稿。
 - 每个新草稿和每个拒绝项写不可删除审计；导入回执不可更新/删除。批次重复调用必须使用相同输入摘要、actor 和 item_count，否则返回 `IMPORT_BATCH_KEY_CONFLICT`。
 - migration `000007_admin_project_import.sql` 和 PostgreSQL fixture 验证双品类、重复候选、同批/跨批重放、Schema 错配、无权限、不可变回执/审计，并断言导入前后公开 Project 数量不变。
+
+## 8. 结构化 keyword 与 FTS 降级（WP-03 增量）
+
+- `search.keyword.v1` 保持冻结 ranking version：规范 URL/名称精确或前缀命中优先，其次结构化匹配字段数、PostgreSQL `ts_rank_cd`、相似度、公开 Evidence 数、`last_verified_at` 与稳定 `project_id`。
+- 同字段多值使用 OR，不同字段使用 AND，`exclude_category_fields` 使用 NOT；公共状态、可用资产和最近核验窗口在候选召回前应用。硬过滤字段严格采用 PRD 24.3：Learning 四项、Portfolio 五项；视觉风格、响应式等仍是软匹配理由，不接受伪装成硬过滤。
+- migration `000008_search_structured_fts.sql` 校正双 Category Schema 的 `search_field_map` 漂移，增加 `structured_json` GIN、公共过滤组合索引，并阻止 SearchDocument 的 Project/Version/Category/Schema 交叉归属。
+- PostgreSQL fixture 分别验证 Learning FTS、Portfolio 同字段 OR/跨字段 AND/排除 NOT、版本化配置、FTS/结构化索引和交叉归属拒绝；响应继续返回 `semantic_degraded=true`，本批不实现向量召回或自然语言意图解析。

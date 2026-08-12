@@ -30,4 +30,28 @@ test('category filters enforce frozen per-category whitelists and deterministic 
     () => parseSearchFilters({ category_fields: { target_users: ['student'] } }, null),
     (error: unknown) => error instanceof SearchError && error.code === 'SEARCH_FILTER_CATEGORY_REQUIRED',
   )
+  assert.deepEqual(parseSearchFilters({
+    category_fields: {
+      target_users: ['self_directed_learners'],
+      use_scenarios: ['daily_review'],
+      main_inputs: ['notes'],
+      main_outputs: ['quiz'],
+    },
+  }, 'ai_learning_quiz').category_fields, {
+    main_inputs: ['notes'],
+    main_outputs: ['quiz'],
+    target_users: ['self_directed_learners'],
+    use_scenarios: ['daily_review'],
+  })
+  for (const [categoryId, field] of [
+    ['ai_learning_quiz', 'practice_formats'],
+    ['personal_site_portfolio', 'visual_styles'],
+    ['personal_site_portfolio', 'responsive_support'],
+  ] as const) {
+    assert.throws(
+      () => parseSearchFilters({ category_fields: { [field]: ['value'] } }, categoryId),
+      (error: unknown) => error instanceof SearchError &&
+        error.code === 'SEARCH_CATEGORY_FILTER_INVALID',
+    )
+  }
 })

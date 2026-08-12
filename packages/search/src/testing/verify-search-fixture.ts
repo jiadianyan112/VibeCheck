@@ -70,6 +70,78 @@ try {
   assert.equal(replayed.result_version, created.result_version)
   assert.deepEqual(replayed.groups, created.groups)
 
+  fixtureStage = 'verify_learning_structured_fts'
+  const learning = await service.search(Object.freeze({
+    ...command,
+    query: 'spaced_repetition',
+    categoryId: 'ai_learning_quiz',
+    filters: Object.freeze({
+      access_status: ['normal'],
+      category_fields: Object.freeze({
+        target_users: ['self_directed_learners'],
+        main_inputs: ['notes', 'pdf'],
+      }),
+      exclude_category_fields: Object.freeze({ use_scenarios: ['classroom_only'] }),
+    }),
+  }), owner)
+  assert.equal(learning.exact_count, 1)
+  assert.equal(learning.groups[0]?.items[0]?.project_id, '10000000-0000-4000-8000-000000000001')
+  assert.ok(learning.groups[0]?.items[0]?.match_reason.matched_fields.includes('full_text'))
+
+  fixtureStage = 'verify_portfolio_and_or_not_filters'
+  const portfolio = await service.search(Object.freeze({
+    ...command,
+    query: 'showcase_work',
+    filters: Object.freeze({
+      access_status: ['normal'],
+      category_fields: Object.freeze({
+        site_type: ['portfolio', 'hybrid'],
+        creator_roles: ['product_designer'],
+        core_modules: ['case_study'],
+      }),
+      exclude_category_fields: Object.freeze({ core_modules: ['blog'] }),
+    }),
+  }), owner)
+  assert.equal(portfolio.exact_count, 1)
+  assert.equal(portfolio.groups[0]?.items[0]?.project_id, '10000000-0000-4000-8000-000000000002')
+  assert.ok(portfolio.groups[0]?.items[0]?.match_reason.matched_fields.includes('category_data'))
+
+  fixtureStage = 'verify_search_config_and_indexes'
+  const searchConfig = await pool.query<{ category_id: string; filters: string[] }>(
+    `SELECT category_id,ARRAY(
+       SELECT jsonb_array_elements_text(search_field_map->'filters')
+     ) AS filters
+     FROM taxonomy.category_schema_versions
+     WHERE (category_id,schema_version) IN (
+       ('ai_learning_quiz','learning.v1'),
+       ('personal_site_portfolio','portfolio.v1')
+     )
+     ORDER BY category_id`,
+  )
+  assert.deepEqual(searchConfig.rows, [
+    {
+      category_id: 'ai_learning_quiz',
+      filters: ['target_users', 'use_scenarios', 'main_inputs', 'main_outputs'],
+    },
+    {
+      category_id: 'personal_site_portfolio',
+      filters: ['site_type', 'creator_roles', 'primary_goals', 'page_model', 'core_modules'],
+    },
+  ])
+  const indexNames = await pool.query<{ indexname: string }>(
+    `SELECT indexname FROM pg_indexes
+     WHERE schemaname='search' AND tablename='project_documents'`,
+  )
+  assert.ok(indexNames.rows.some(({ indexname }) => indexname === 'project_documents_search_idx'))
+  assert.ok(indexNames.rows.some(({ indexname }) => indexname === 'project_documents_structured_idx'))
+  await assert.rejects(
+    () => pool.query(
+      `UPDATE search.project_documents SET category_id='ai_learning_quiz'
+       WHERE project_id='10000000-0000-4000-8000-000000000002'`,
+    ),
+    /project_documents_structured_identity_valid|SEARCH_DOCUMENT_CATEGORY_MISMATCH/,
+  )
+
   fixtureStage = 'recover_query_snapshot'
   const recovered = await service.getQuerySnapshot(created.query_id, owner, 'fixture_query_read')
   assert.equal(recovered.input_state, 'not_restored')
