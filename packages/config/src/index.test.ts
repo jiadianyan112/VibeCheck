@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { loadCatalogConfig, loadIdentityConfig, loadSearchConfig, loadServiceConfig } from './index.js'
+import {
+  loadCatalogConfig,
+  loadComparisonConfig,
+  loadIdentityConfig,
+  loadSearchConfig,
+  loadServiceConfig,
+} from './index.js'
 
 describe('loadServiceConfig', () => {
   it('loads deterministic defaults for local services', () => {
@@ -122,5 +128,21 @@ describe('loadServiceConfig', () => {
     assert.equal(config.enabled, true)
     assert.equal(config.encryptionMasterKey, key)
     assert.equal(config.snapshotTtlSeconds, 86_400)
+  })
+
+  it('keeps comparison optional and requires isolated owner secrets when enabled', () => {
+    assert.equal(loadComparisonConfig({ COMPARISON_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadComparisonConfig({ COMPARISON_ENABLED: 'true' }),
+      /CONFIG_COMPARISON_SUBJECT_HASH_PEPPER_REQUIRED/,
+    )
+    const config = loadComparisonConfig({
+      COMPARISON_ENABLED: 'true',
+      COMPARISON_SUBJECT_HASH_PEPPER: 'comparison-subject-hash-pepper-at-least-32-characters',
+      COMPARISON_SUBJECT_COOKIE_SECRET: 'comparison-subject-cookie-secret-at-least-32-characters',
+      COMPARISON_ANONYMOUS_TTL_SECONDS: '604800',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.anonymousTtlSeconds, 604_800)
   })
 })

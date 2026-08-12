@@ -15,6 +15,7 @@
   "dependencies": {
     "@vibecheck/catalog": "*",
     "@vibecheck/config": "*",
+    "@vibecheck/comparison": "*",
     "@vibecheck/contracts": "*",
     "@vibecheck/database": "*",
     "@vibecheck/identity": "*",

@@ -14,6 +14,14 @@ import type {
   ProjectListProjection,
   ProjectProjection,
 } from '@vibecheck/catalog'
+import {
+  ComparisonError,
+  type ComparisonMutationProjection,
+  type ComparisonProjection,
+  type ComparisonSubject,
+  type PutComparisonCommand,
+  type SetComparisonSavedCommand,
+} from '@vibecheck/comparison'
 import type { ServiceConfig } from '@vibecheck/config'
 import type {
   SessionProjection,
@@ -27,6 +35,7 @@ import {
   createApiServer,
   type ApiCatalogService,
   type ApiAssetResolutionService,
+  type ApiComparisonService,
   type ApiIdentityService,
   type ApiSearchService,
 } from './server.js'
@@ -52,6 +61,7 @@ async function start(
   catalog?: ApiCatalogService,
   search?: ApiSearchService,
   assetResolver?: ApiAssetResolutionService,
+  comparison?: ApiComparisonService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -64,7 +74,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver)
+    ...((identity || search || assetResolver || comparison)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -77,6 +87,7 @@ async function start(
       : {}),
     ...(search ? { search } : {}),
     ...(assetResolver ? { assetResolver } : {}),
+    ...(comparison ? { comparison } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -86,6 +97,75 @@ async function start(
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     stop: () => close(server),
+  }
+}
+
+function comparisonProjection(
+  comparisonId: string,
+  orderedProjectIds: readonly string[],
+  mutationResult?: ComparisonMutationProjection['mutation_result'],
+): ComparisonProjection | ComparisonMutationProjection {
+  const projection: ComparisonProjection = Object.freeze({
+    comparison_id: comparisonId,
+    comparison_version: 1,
+    category_id: 'personal_site_portfolio',
+    category_schema_version: 'portfolio.v1',
+    ordered_project_ids: Object.freeze([...orderedProjectIds]),
+    items: Object.freeze([]),
+    valid_count: orderedProjectIds.length,
+    invalid_count: 0,
+    dimension_groups: Object.freeze(['audience', 'problem', 'workflow', 'capabilities']),
+    dimension_groups_viewed: Object.freeze([]),
+    visible_duration_ms: 0,
+    saved_at: null,
+    completed_at: null,
+    expires_at: '2026-08-17T00:00:00.000Z',
+    created_at: '2026-08-10T00:00:00.000Z',
+    updated_at: '2026-08-10T00:00:00.000Z',
+  })
+  return mutationResult === undefined
+    ? projection
+    : Object.freeze({ ...projection, mutation_result: mutationResult })
+}
+
+class FakeComparisonService implements ApiComparisonService {
+  getSubject: ComparisonSubject | null = null
+  putCommand: PutComparisonCommand | null = null
+  saveCommand: SetComparisonSavedCommand | null = null
+
+  getSaveCommand(): SetComparisonSavedCommand | null {
+    return this.saveCommand
+  }
+
+  async getComparison(
+    comparisonId: string,
+    subject: ComparisonSubject,
+  ): Promise<ComparisonProjection> {
+    this.getSubject = subject
+    return comparisonProjection(comparisonId, [])
+  }
+
+  async putComparison(command: PutComparisonCommand): Promise<ComparisonMutationProjection> {
+    this.putCommand = command
+    if (command.orderedProjectIds.length > 5) {
+      throw new ComparisonError('COMPARISON_ITEM_LIMIT_EXCEEDED', 409, false, undefined, {
+        maximum_count: 5,
+        requested_count: command.orderedProjectIds.length,
+      })
+    }
+    return comparisonProjection(
+      command.comparisonId,
+      command.orderedProjectIds,
+      'created',
+    ) as ComparisonMutationProjection
+  }
+
+  async setSaved(command: SetComparisonSavedCommand): Promise<ComparisonProjection> {
+    this.saveCommand = command
+    return Object.freeze({
+      ...comparisonProjection(command.comparisonId, []),
+      saved_at: command.state ? '2026-08-10T00:00:00.000Z' : null,
+    })
   }
 }
 
@@ -269,6 +349,100 @@ test('search rejects cross-origin creation before invoking the search service', 
   }
 })
 
+test('comparison creates and reuses a signed anonymous owner without exposing its hash', async () => {
+  const comparison = new FakeComparisonService()
+  const runtime = await start(
+    async () => undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+  )
+  const comparisonId = '61000000-0000-4000-8000-000000000001'
+  const projectId = '62000000-0000-4000-8000-000000000001'
+  try {
+    const created = await fetch(`${runtime.baseUrl}/api/v1/comparisons/${comparisonId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify({
+        ordered_project_ids: [projectId],
+        comparison_version: 0,
+        client_request_id: '63000000-0000-4000-8000-000000000001',
+      }),
+    })
+    assert.equal(created.status, 200)
+    assert.equal((await created.json() as { mutation_result: string }).mutation_result, 'created')
+    const setCookie = created.headers.get('set-cookie') ?? ''
+    assert.match(setCookie, /vc_anon=/)
+    assert.equal(comparison.putCommand?.expectedVersion, 0)
+    assert.deepEqual(comparison.putCommand?.orderedProjectIds, [projectId])
+    assert.equal(comparison.putCommand?.subject.kind, 'anonymous')
+
+    const anonymous = cookieValue(setCookie, 'vc_anon')
+    const recovered = await fetch(`${runtime.baseUrl}/api/v1/comparisons/${comparisonId}`, {
+      headers: { cookie: `vc_anon=${encodeURIComponent(anonymous)}` },
+    })
+    assert.equal(recovered.status, 200)
+    assert.deepEqual(comparison.getSubject, comparison.putCommand?.subject)
+    assert.equal(JSON.stringify(await recovered.json()).includes(comparison.getSubject?.id ?? ''), false)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('comparison rejects cross-origin writes and returns an actionable five-item conflict', async () => {
+  const comparison = new FakeComparisonService()
+  const runtime = await start(
+    async () => undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+  )
+  const comparisonId = '61000000-0000-4000-8000-000000000002'
+  const body = {
+    ordered_project_ids: Array.from(
+      { length: 6 },
+      (_, index) => `62000000-0000-4000-8000-00000000000${index + 1}`,
+    ),
+    comparison_version: 1,
+    client_request_id: '63000000-0000-4000-8000-000000000002',
+  }
+  try {
+    const crossOrigin = await fetch(`${runtime.baseUrl}/api/v1/comparisons/${comparisonId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
+      body: JSON.stringify(body),
+    })
+    assert.equal(crossOrigin.status, 403)
+    assert.equal(comparison.putCommand, null)
+
+    const overflow = await fetch(`${runtime.baseUrl}/api/v1/comparisons/${comparisonId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify(body),
+    })
+    assert.equal(overflow.status, 409)
+    assert.deepEqual(
+      (await overflow.json() as { error: { code: string; details: unknown } }).error,
+      {
+        code: 'COMPARISON_ITEM_LIMIT_EXCEEDED',
+        message_key: 'error.comparison_item_limit_exceeded',
+        request_id: overflow.headers.get('x-request-id'),
+        retryable: false,
+        retry_after_ms: null,
+        details: { maximum_count: 5, requested_count: 6 },
+      },
+    )
+  } finally {
+    await runtime.stop()
+  }
+})
+
 class FakeAssetResolutionService implements ApiAssetResolutionService {
   command: AssetResolutionCommand | null = null
 
@@ -435,6 +609,50 @@ test('search binds an active authenticated session to the user subject', async (
     })
     assert.equal(response.status, 200)
     assert.deepEqual(search.subject, { kind: 'user', id: session.userId })
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('comparison save requires an authenticated session and matching CSRF token', async () => {
+  const comparison = new FakeComparisonService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+  )
+  const comparisonId = '61000000-0000-4000-8000-000000000003'
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const request = (csrf: boolean) => fetch(
+    `${runtime.baseUrl}/api/v1/comparisons/${comparisonId}/saved`,
+    {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+        ...(csrf ? { 'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' } : {}),
+      },
+      body: JSON.stringify({ state: true, comparison_version: 1 }),
+    },
+  )
+  try {
+    const rejected = await request(false)
+    assert.equal(rejected.status, 403)
+    assert.equal(comparison.saveCommand, null)
+
+    const saved = await request(true)
+    assert.equal(saved.status, 200)
+    assert.equal((await saved.json() as { saved_at: string | null }).saved_at, '2026-08-10T00:00:00.000Z')
+    const savedCommand = comparison.getSaveCommand()
+    assert.ok(savedCommand)
+    assert.deepEqual(savedCommand.subject, { kind: 'user', id: session.userId })
+    assert.equal(savedCommand.comparisonVersion, 1)
+    assert.equal(savedCommand.state, true)
   } finally {
     await runtime.stop()
   }

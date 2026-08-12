@@ -60,6 +60,7 @@ export interface ErrorResponse {
     readonly request_id: string
     readonly retryable: boolean
     readonly retry_after_ms: number | null
+    readonly details?: Readonly<Record<string, unknown>>
     readonly field_errors?: readonly {
       readonly path: string
       readonly code: string

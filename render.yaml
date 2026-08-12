@@ -61,6 +61,12 @@ services:
         generateValue: true
       - key: SEARCH_SUBJECT_COOKIE_SECRET
         generateValue: true
+      - key: COMPARISON_ENABLED
+        value: "true"
+      - key: COMPARISON_SUBJECT_HASH_PEPPER
+        generateValue: true
+      - key: COMPARISON_SUBJECT_COOKIE_SECRET
+        generateValue: true
 
   - type: worker
     name: vibecheck-worker

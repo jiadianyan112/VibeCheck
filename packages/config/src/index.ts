@@ -60,6 +60,14 @@ export interface SearchConfig {
   readonly rawQueryRateWindowSeconds: number
 }
 
+export interface ComparisonConfig {
+  readonly enabled: boolean
+  readonly subjectHashPepper: string
+  readonly subjectCookieSecret: string
+  readonly anonymousTtlSeconds: number
+  readonly maximumVisibleMsPerEvent: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -336,6 +344,38 @@ export function loadSearchConfig(
     rawQueryRateWindowSeconds: parseInteger(
       'SEARCH_RAW_QUERY_RATE_WINDOW_SECONDS', env.SEARCH_RAW_QUERY_RATE_WINDOW_SECONDS,
       900, 60, 86_400,
+    ),
+  })
+}
+
+export function loadComparisonConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ComparisonConfig {
+  const enabled = parseBoolean('COMPARISON_ENABLED', env.COMPARISON_ENABLED, false)
+  if (!enabled) {
+    return Object.freeze({
+      enabled: false,
+      subjectHashPepper: '',
+      subjectCookieSecret: '',
+      anonymousTtlSeconds: 604_800,
+      maximumVisibleMsPerEvent: 60_000,
+    })
+  }
+  return Object.freeze({
+    enabled: true,
+    subjectHashPepper: requiredSecret(
+      'COMPARISON_SUBJECT_HASH_PEPPER', env.COMPARISON_SUBJECT_HASH_PEPPER,
+    ),
+    subjectCookieSecret: requiredSecret(
+      'COMPARISON_SUBJECT_COOKIE_SECRET', env.COMPARISON_SUBJECT_COOKIE_SECRET,
+    ),
+    anonymousTtlSeconds: parseInteger(
+      'COMPARISON_ANONYMOUS_TTL_SECONDS', env.COMPARISON_ANONYMOUS_TTL_SECONDS,
+      604_800, 3_600, 2_592_000,
+    ),
+    maximumVisibleMsPerEvent: parseInteger(
+      'COMPARISON_MAXIMUM_VISIBLE_MS_PER_EVENT', env.COMPARISON_MAXIMUM_VISIBLE_MS_PER_EVENT,
+      60_000, 1_000, 300_000,
     ),
   })
 }

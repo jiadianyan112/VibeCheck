@@ -18,6 +18,7 @@ describe('discoverMigrations', () => {
         '000007_admin_project_import.sql',
         '000008_search_structured_fts.sql',
         '000009_asset_resolution_security.sql',
+        '000010_comparison_core.sql',
       ],
     )
     for (const migration of migrations) {

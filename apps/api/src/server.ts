@@ -17,6 +17,14 @@ import {
   type ProjectProjection,
 } from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
+import {
+  ComparisonError,
+  type ComparisonMutationProjection,
+  type ComparisonProjection,
+  type ComparisonSubject,
+  type PutComparisonCommand,
+  type SetComparisonSavedCommand,
+} from '@vibecheck/comparison'
 import type { ServiceHealth } from '@vibecheck/contracts'
 import {
   IdentityError,
@@ -84,6 +92,15 @@ export interface ApiAssetResolutionService {
   resolve(command: AssetResolutionCommand): Promise<AssetResolutionProjection>
 }
 
+export interface ApiComparisonService {
+  getComparison(
+    comparisonId: string,
+    subject: ComparisonSubject,
+  ): Promise<ComparisonProjection>
+  putComparison(command: PutComparisonCommand): Promise<ComparisonMutationProjection>
+  setSaved(command: SetComparisonSavedCommand): Promise<ComparisonProjection>
+}
+
 export interface ApiSearchService {
   search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection>
   getQuerySnapshot(
@@ -115,6 +132,7 @@ export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
   readonly catalog?: ApiCatalogService
   readonly assetResolver?: ApiAssetResolutionService
+  readonly comparison?: ApiComparisonService
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
@@ -128,6 +146,7 @@ export interface ApiServerDependencies {
 interface ErrorEnvelopeOptions {
   readonly retryable?: boolean
   readonly retryAfterSeconds?: number
+  readonly details?: Readonly<Record<string, unknown>>
 }
 
 type JsonObject = Record<string, unknown>
@@ -173,6 +192,7 @@ function errorEnvelope(
       retry_after_ms: options.retryAfterSeconds === undefined
         ? null
         : options.retryAfterSeconds * 1_000,
+      ...(options.details === undefined ? {} : { details: options.details }),
     }),
   })
 }
@@ -344,6 +364,30 @@ function integerField(value: JsonObject, key: string, minimum: number): number {
     throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
   }
   return field as number
+}
+
+function booleanField(value: JsonObject, key: string): boolean {
+  const field = value[key]
+  if (typeof field !== 'boolean') {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  return field
+}
+
+function stringArrayField(
+  value: JsonObject,
+  key: string,
+  maximumItems: number,
+  maximumLength: number,
+): readonly string[] {
+  const field = value[key]
+  if (!Array.isArray(field) || field.length > maximumItems) {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  if (field.some((item) => typeof item !== 'string' || item.length < 1 || item.length > maximumLength)) {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  return Object.freeze([...field]) as readonly string[]
 }
 
 function sessionResponse(session: SessionProjection): JsonObject {
@@ -674,6 +718,18 @@ function resolveAssetSubject(
   )
 }
 
+function resolveComparisonSubject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<ComparisonSubject> {
+  return resolveBrowserSubject(
+    request, response, config, dependencies,
+    () => new ComparisonError('COMPARISON_SERVICE_UNAVAILABLE', 503, true),
+  )
+}
+
 async function resolveAuthenticatedSearchSubject(
   request: IncomingMessage,
   dependencies: ApiServerDependencies,
@@ -693,6 +749,15 @@ function requireSearchMutationCsrf(request: IncomingMessage): void {
   const csrfCookie = cookies[authCookieNames.csrf]
   if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
     throw new SearchError('CSRF_INVALID', 403)
+  }
+}
+
+function requireComparisonMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new ComparisonError('CSRF_INVALID', 403)
   }
 }
 
@@ -923,6 +988,67 @@ async function handleAssetResolutionRequest(
   return 200
 }
 
+async function handleComparisonRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const comparisonMatch = path.match(/^\/api\/v1\/comparisons\/([^/]+)$/)
+  const savedMatch = path.match(/^\/api\/v1\/comparisons\/([^/]+)\/saved$/)
+  if (comparisonMatch === null && savedMatch === null) return null
+  if (!dependencies.comparison) {
+    throw new ComparisonError('COMPARISON_SERVICE_UNAVAILABLE', 503, true)
+  }
+  exactQueryKeys(url.searchParams, [])
+
+  if (comparisonMatch !== null && method === 'GET') {
+    const subject = await resolveComparisonSubject(request, response, config, dependencies)
+    const projection = await dependencies.comparison.getComparison(comparisonMatch[1]!, subject)
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (!requestOriginAllowed(request, config)) throw new ComparisonError('ORIGIN_INVALID', 403)
+  if (comparisonMatch !== null && method === 'PUT') {
+    const body = await readJsonBody(request)
+    exactKeys(body, ['ordered_project_ids', 'comparison_version', 'client_request_id'])
+    const subject = await resolveComparisonSubject(request, response, config, dependencies)
+    if (subject.kind === 'user') requireComparisonMutationCsrf(request)
+    const projection = await dependencies.comparison.putComparison({
+      comparisonId: comparisonMatch[1]!,
+      orderedProjectIds: stringArrayField(body, 'ordered_project_ids', 6, 64),
+      expectedVersion: integerField(body, 'comparison_version', 0),
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
+      subject,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (savedMatch !== null && method === 'PUT') {
+    const body = await readJsonBody(request)
+    exactKeys(body, ['state', 'comparison_version'])
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    requireComparisonMutationCsrf(request)
+    const projection = await dependencies.comparison.setSaved({
+      comparisonId: savedMatch[1]!,
+      comparisonVersion: integerField(body, 'comparison_version', 1),
+      state: booleanField(body, 'state'),
+      subject,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  return null
+}
+
 export function createApiServer(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
@@ -998,42 +1124,49 @@ export function createApiServer(
             if (authStatus !== null) {
               statusCode = authStatus
             } else {
-              const assetResolutionStatus = await handleAssetResolutionRequest(
+              const comparisonStatus = await handleComparisonRequest(
                 request, response, url, path, method, requestId, config, dependencies,
               )
-              if (assetResolutionStatus !== null) {
-                statusCode = assetResolutionStatus
+              if (comparisonStatus !== null) {
+                statusCode = comparisonStatus
               } else {
-                const searchStatus = await handleSearchRequest(
-                  request, response, path, method, requestId, config, dependencies,
+                const assetResolutionStatus = await handleAssetResolutionRequest(
+                  request, response, url, path, method, requestId, config, dependencies,
                 )
-                if (searchStatus !== null) {
-                  statusCode = searchStatus
+                if (assetResolutionStatus !== null) {
+                  statusCode = assetResolutionStatus
                 } else {
-                  const catalogStatus = await handleCatalogRequest(
-                    response, url, path, method, requestId, dependencies,
+                  const searchStatus = await handleSearchRequest(
+                    request, response, path, method, requestId, config, dependencies,
                   )
-                  if (catalogStatus !== null) {
-                    statusCode = catalogStatus
+                  if (searchStatus !== null) {
+                    statusCode = searchStatus
                   } else {
-                    const staticStatus = await handleStaticRequest(
-                      request,
-                      response,
-                      path,
-                      method,
-                      requestId,
-                      dependencies.staticDirectory,
+                    const catalogStatus = await handleCatalogRequest(
+                      response, url, path, method, requestId, dependencies,
                     )
-                    if (staticStatus !== null) {
-                      statusCode = staticStatus
+                    if (catalogStatus !== null) {
+                      statusCode = catalogStatus
                     } else {
-                      statusCode = 404
-                      writeJson(
+                      const staticStatus = await handleStaticRequest(
+                        request,
                         response,
-                        statusCode,
-                        errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                        path,
+                        method,
                         requestId,
+                        dependencies.staticDirectory,
                       )
+                      if (staticStatus !== null) {
+                        statusCode = staticStatus
+                      } else {
+                        statusCode = 404
+                        writeJson(
+                          response,
+                          statusCode,
+                          errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                          requestId,
+                        )
+                      }
                     }
                   }
                 }
@@ -1041,7 +1174,8 @@ export function createApiServer(
             }
           }
         } catch (error) {
-          const apiError = error instanceof IdentityError || error instanceof CatalogError || error instanceof SearchError
+          const apiError = error instanceof IdentityError || error instanceof CatalogError ||
+            error instanceof SearchError || error instanceof ComparisonError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
@@ -1058,6 +1192,9 @@ export function createApiServer(
                 ...(retryAfterSeconds === undefined
                   ? {}
                   : { retryAfterSeconds }),
+                ...(apiError instanceof ComparisonError && apiError.details !== undefined
+                  ? { details: apiError.details }
+                  : {}),
               }),
               requestId,
             )

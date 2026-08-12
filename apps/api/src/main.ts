@@ -7,7 +7,14 @@ import {
   PostgresAssetResolutionStore,
   PostgresCatalogStore,
 } from '@vibecheck/catalog'
-import { loadCatalogConfig, loadIdentityConfig, loadSearchConfig, loadServiceConfig } from '@vibecheck/config'
+import { ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
+import {
+  loadCatalogConfig,
+  loadComparisonConfig,
+  loadIdentityConfig,
+  loadSearchConfig,
+  loadServiceConfig,
+} from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import { IdentityService, PostgresIdentityStore, ResendEmailSender } from '@vibecheck/identity'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
@@ -18,6 +25,7 @@ import { close, createApiServer, listen } from './server.js'
 const config = loadServiceConfig({ serviceName: 'vibecheck-api' })
 const identityConfig = loadIdentityConfig()
 const catalogConfig = loadCatalogConfig()
+const comparisonConfig = loadComparisonConfig()
 const searchConfig = loadSearchConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
@@ -67,13 +75,23 @@ const server = createApiServer(config, {
         }),
       }
     : {}),
-  ...((catalogConfig.enabled || searchConfig.enabled || identityConfig.enabled)
+  ...(comparisonConfig.enabled
+    ? {
+        comparison: new ComparisonService({
+          store: new PostgresComparisonStore(pool),
+          config: comparisonConfig,
+        }),
+      }
+    : {}),
+  ...((catalogConfig.enabled || comparisonConfig.enabled || searchConfig.enabled || identityConfig.enabled)
     ? {
         anonymousCookieSecret: searchConfig.enabled
           ? searchConfig.subjectCookieSecret
           : identityConfig.enabled
             ? identityConfig.authTokenSecret
-            : catalogConfig.cursorSecret,
+            : comparisonConfig.enabled
+              ? comparisonConfig.subjectCookieSecret
+              : catalogConfig.cursorSecret,
       }
     : {}),
 })
