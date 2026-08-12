@@ -1203,7 +1203,7 @@ components:
       properties:
         result:
           type: string
-          enum: [not_required, adopted, merged, conflict, category_mismatch]
+          enum: [not_required, adopted, merged, conflict]
         comparison_id:
           oneOf:
             - type: string

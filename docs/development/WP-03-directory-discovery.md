@@ -74,7 +74,7 @@
 - 目录/搜索迁移由 GitHub CI 在 PostgreSQL 18 + pgvector 上首跑和二次幂等后，才可标记数据库验收通过。
 - CI 在迁移后连续加载两次合成夹具，并通过真实 `PostgresCatalogStore + CatalogService` 验证列表、详情、证据、关系、事件、资产和 SearchDocument；仅 Mock Store 通过不能替代此门禁。
 - Comparison PostgreSQL 门禁验证 owner 隔离、请求回放、版本冲突、同品类限制、顺序保留、下架墓碑、保存幂等和不可变历史；四个不同维度累计可见 30 秒且当前有效作品为 2—5 个时，只为该 `comparison_id + comparison_version` 完成一次并写 `comparison_completed` Outbox。
-- 登录合并 PostgreSQL 门禁验证每主体唯一活动指针、去重并集恰为 5 自动追加账户版本、6 项创建可恢复冲突、resolve 幂等、cancel 幂等且两端原集合保持不变；IdentityLink 与所有写入在同一事务消费或撤销。
+- 登录合并 PostgreSQL 门禁验证每主体唯一活动指针、跨品类固定保留账户集合且不写账户历史、去重并集恰为 5 自动追加账户版本、6 项创建可恢复冲突、resolve 幂等、cancel 幂等且两端原集合保持不变；IdentityLink 与所有写入在同一事务消费或撤销。
 
 ## 5. 未完成范围
 
@@ -85,7 +85,7 @@
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
 - P09 Comparison 核心、完成口径、同品类登录合并以及 PendingAction 四操作/登录链接/比较冲突取消级联已落地；收藏、点赞、关注、评论和发布领域尚未实现，因此服务端签名 execution receipt 的真实业务写入与自动动作执行仍在对应工作包完成前保持不可触发；
-- 登录时账户活动集合与游客活动集合属于不同品类的产品处置仍待确认；当前服务端返回 `category_mismatch`、保留两端集合和短期 IdentityLink，不自动切换、不截断也不隐式创建第二个活动集合；
+- 登录时账户活动集合与游客活动集合属于不同品类时固定以账户状态为准：不弹选择、不导入游客集合、不创建冲突或第二个账户活动集合；返回账户当前 Comparison 的 `not_required` 结果并消费本次 comparison IdentityLink。匿名集合不写入账户历史，仍按原匿名 TTL 独立过期；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 
 ## 6. 下一批顺序
@@ -139,6 +139,7 @@
 - 认证成功后，API 使用认证域签发的 `comparison_merge` IdentityLink、轮换后 user ID 和该认证流绑定的 anonymous subject 调用登录合并；客户端不能自报两端 owner 映射。
 - 无游客活动集合时返回 `not_required` 并消费链接；账户无活动集合或账户集合为空时复制游客当前版本到新的账户 Comparison 并返回 `adopted`，游客原 Comparison 保留。
 - 同品类并集以“账户当前顺序在前、游客新增项在后”稳定去重：不超过 5 时返回 `merged/not_required`，有新增成员才递增账户版本；达到 6—10 时冻结两端版本和候选，创建 `ComparisonMergeConflict`，不消费链接、不回跳也不截断。
+- 不同品类不进入合并候选：账户活动指针、Comparison 版本与成员保持原值，游客集合不复制到任何账户 Comparison；接口返回指向账户集合的 `not_required`，消费 comparison IdentityLink，并写 `comparison_login_merge_skipped(reason=category_mismatch_account_preserved)` 脱敏安全审计。匿名集合仅保留在匿名 owner 下并按原 TTL 过期。
 - resolve 必须提交 0—5 个唯一候选 ID、两端冻结版本、冲突期望版本和 operation ID；事务内重新计算候选并校验当前公开性/Category 后，无论选择是否等于原账户集合都创建新的不可变账户版本，再把冲突写 resolved、链接写 consumed。
 - cancel 写 cancelled、撤销链接并保留两端集合；相同 operation ID/载荷返回不可变回执，不同载荷重用同一 ID 返回 409。冲突过期写 expired 并返回 410；GET 只返回仍公开候选的摘要，不泄露受限作品字段。
 

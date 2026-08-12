@@ -620,14 +620,28 @@ export class PostgresComparisonStore implements ComparisonStore {
         accountActive.category_schema_version !== anonymousActive.category_schema_version
       ) {
         const projection = Object.freeze({
-          result: 'category_mismatch' as const,
+          result: 'not_required' as const,
           comparison_id: accountActive.comparison_id,
           comparison_version: accountActive.current_version,
           conflict_id: null,
           conflict_version: null,
-          expires_at: link!.expires_at.toISOString(),
+          expires_at: null,
         })
-        await this.finishLoginMerge(client, input, projection, false)
+        await this.insertMergeSecurityEvent(
+          client,
+          'comparison_login_merge_skipped',
+          input.userSubjectHash,
+          'comparison',
+          accountActive.comparison_id,
+          {
+            reason: 'category_mismatch_account_preserved',
+            account_category_id: accountActive.category_id,
+            anonymous_category_id: anonymousActive.category_id,
+          },
+          input.operationId,
+          input.now,
+        )
+        await this.finishLoginMerge(client, input, projection, true)
         await client.query('COMMIT')
         return projection
       }

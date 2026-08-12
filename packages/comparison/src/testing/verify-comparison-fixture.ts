@@ -406,6 +406,83 @@ try {
   )
   assert.equal(saveAudits.rows[0]?.count, 2)
 
+  const mismatchUserId = randomUUID()
+  await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [mismatchUserId])
+  const mismatchUser = { kind: 'user' as const, id: mismatchUserId }
+  const mismatchAccountComparisonId = randomUUID()
+  await service.putComparison({
+    comparisonId: mismatchAccountComparisonId,
+    orderedProjectIds: [learningId],
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: mismatchUser,
+  })
+  const mismatchAnonymous = { kind: 'anonymous' as const, id: randomUUID() }
+  const mismatchAnonymousComparisonId = randomUUID()
+  await service.putComparison({
+    comparisonId: mismatchAnonymousComparisonId,
+    orderedProjectIds: [portfolioIds[0]!],
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: mismatchAnonymous,
+  })
+  const mismatchLinkId = await createMergeIdentityLink(mismatchUserId, mismatchAnonymous.id)
+  const mismatchOperationId = randomUUID()
+  const accountPreserved = await service.prepareLoginMerge({
+    userId: mismatchUserId,
+    anonymousSubjectId: mismatchAnonymous.id,
+    identityLinkId: mismatchLinkId,
+    operationId: mismatchOperationId,
+    pendingActionId: null,
+  })
+  assert.deepEqual(accountPreserved, {
+    result: 'not_required',
+    comparison_id: mismatchAccountComparisonId,
+    comparison_version: 1,
+    conflict_id: null,
+    conflict_version: null,
+    expires_at: null,
+  })
+  assert.deepEqual(
+    (await service.getComparison(mismatchAccountComparisonId, mismatchUser)).ordered_project_ids,
+    [learningId],
+  )
+  const mismatchState = await pool.query<{
+    active_comparison_id: string
+    account_comparison_count: number
+    anonymous_status: string
+    link_status: string
+    skip_audit_count: number
+  }>(
+    `SELECT active.comparison_id AS active_comparison_id,
+       (SELECT count(*)::int FROM comparison.comparisons WHERE owner_user_id=$1)
+         AS account_comparison_count,
+       anonymous.status AS anonymous_status,
+       link.status AS link_status,
+       (SELECT count(*)::int FROM audit.security_events
+        WHERE event_type='comparison_login_merge_skipped'
+          AND request_id=$4
+          AND metadata_json->>'reason'='category_mismatch_account_preserved')
+         AS skip_audit_count
+     FROM comparison.active_comparisons active
+     JOIN comparison.comparisons anonymous ON anonymous.comparison_id=$2
+     JOIN iam.identity_links link ON link.identity_link_id=$3
+     WHERE active.owner_user_id=$1`,
+    [mismatchUserId, mismatchAnonymousComparisonId, mismatchLinkId, mismatchOperationId],
+  )
+  assert.equal(mismatchState.rows[0]?.active_comparison_id, mismatchAccountComparisonId)
+  assert.equal(mismatchState.rows[0]?.account_comparison_count, 1)
+  assert.equal(mismatchState.rows[0]?.anonymous_status, 'active')
+  assert.equal(mismatchState.rows[0]?.link_status, 'consumed')
+  assert.equal(mismatchState.rows[0]?.skip_audit_count, 1)
+  assert.deepEqual(await service.prepareLoginMerge({
+    userId: mismatchUserId,
+    anonymousSubjectId: mismatchAnonymous.id,
+    identityLinkId: mismatchLinkId,
+    operationId: mismatchOperationId,
+    pendingActionId: null,
+  }), accountPreserved)
+
   const mergeProjectIds = await createPortfolioProjects(6)
   const autoMergeUserId = randomUUID()
   await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [autoMergeUserId])

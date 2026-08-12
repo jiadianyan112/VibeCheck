@@ -90,7 +90,6 @@ export type ComparisonLoginMergeResult =
   | 'adopted'
   | 'merged'
   | 'conflict'
-  | 'category_mismatch'
 
 export interface ComparisonLoginMergeProjection {
   readonly result: ComparisonLoginMergeResult

@@ -107,17 +107,18 @@ export type AuthVerificationResponse =
       readonly return_to: string
       readonly identity_links: readonly {
         readonly identity_link_id: string
-        readonly purpose: 'query_continuation' | 'comparison_merge'
+        readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
         readonly expires_at: string
       }[]
       readonly comparison_merge: {
-        readonly result: 'not_required' | 'adopted' | 'merged' | 'conflict' | 'category_mismatch'
+        readonly result: 'not_required' | 'adopted' | 'merged' | 'conflict'
         readonly comparison_id: string | null
         readonly comparison_version: number | null
         readonly conflict_id: string | null
         readonly conflict_version: number | null
         readonly expires_at: string | null
       } | null
+      readonly pending_action_id: string | null
     }
   | {
       readonly purpose: 'admin_confirm'
