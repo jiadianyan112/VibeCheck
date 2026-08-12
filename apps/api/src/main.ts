@@ -1,4 +1,12 @@
-import { CatalogService, PostgresCatalogStore } from '@vibecheck/catalog'
+import {
+  AssetResolutionService,
+  AssetWebSafetyResolver,
+  CatalogService,
+  DefaultAssetDnsResolver,
+  NodePinnedAssetHttpProbe,
+  PostgresAssetResolutionStore,
+  PostgresCatalogStore,
+} from '@vibecheck/catalog'
 import { loadCatalogConfig, loadIdentityConfig, loadSearchConfig, loadServiceConfig } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import { IdentityService, PostgresIdentityStore, ResendEmailSender } from '@vibecheck/identity'
@@ -27,6 +35,13 @@ const server = createApiServer(config, {
           store: new PostgresCatalogStore(pool),
           cursorSecret: catalogConfig.cursorSecret,
         }),
+        assetResolver: new AssetResolutionService({
+          store: new PostgresAssetResolutionStore(pool),
+          webResolver: new AssetWebSafetyResolver(
+            new DefaultAssetDnsResolver(),
+            new NodePinnedAssetHttpProbe(),
+          ),
+        }),
         catalogDefaultPageSize: catalogConfig.defaultPageSize,
         catalogMaximumPageSize: catalogConfig.maximumPageSize,
       }
@@ -52,11 +67,13 @@ const server = createApiServer(config, {
         }),
       }
     : {}),
-  ...((searchConfig.enabled || identityConfig.enabled)
+  ...((catalogConfig.enabled || searchConfig.enabled || identityConfig.enabled)
     ? {
         anonymousCookieSecret: searchConfig.enabled
           ? searchConfig.subjectCookieSecret
-          : identityConfig.authTokenSecret,
+          : identityConfig.enabled
+            ? identityConfig.authTokenSecret
+            : catalogConfig.cursorSecret,
       }
     : {}),
 })

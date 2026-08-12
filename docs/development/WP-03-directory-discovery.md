@@ -1,6 +1,6 @@
 # WP-03：目录与发现
 
-**状态：开发中（公共读取、关键词搜索与 QuerySnapshot 生命周期已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
+**状态：开发中（公共读取、关键词搜索、QuerySnapshot 生命周期与 Asset 安全解析已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
 
 ## 1. 本批交付
 
@@ -11,10 +11,10 @@
 - Project Version 使用 `ProjectCore + category_id + category_schema_version + category_data`，Learning 专属字段不得出现在 ProjectCore；
 - ProjectVersion、CreatorProfileVersion、Event 使用 append-only 保护；Project 当前版本在事务提交时校验所属 Project 与 Category Schema；
 - taxonomy 固定启用 `ai_learning_quiz / learning.v1` 与 `personal_site_portfolio / portfolio.v1`；配置内容哈希由数据库生成；
-- 实现目录公共读取、`OP-SEARCH` 关键词检索，以及 `OP-QUERY-GET/LINK/UNLINK/INVALIDATE`；OpenAPI 当前为 14 条路径、16 个 Operation；
+- 实现目录公共读取、`OP-SEARCH` 关键词检索、`OP-QUERY-GET/LINK/UNLINK/INVALIDATE` 与 `OP-ASSET-RESOLVE`；OpenAPI 当前为 15 条路径、17 个 Operation；
 - Project Detail 内嵌仅公开、有效且未过期的 Evidence 摘要，以及已确认且两端作品均公开的 Project→Project Relation；不暴露内部记录引用、私有证据或审核人；
 - Event 使用 `event_sort.v1` 将日/月/年/估算精度映射为持久 UTC 排序锚点；默认只读当前事件头，生命周期状态由 supersedes 关系派生；
-- Asset 列表只返回可复用元数据和 `requires_resolve`，不返回 `safe_web_url/contact_uri` 原值；安全解析接口留到外链安全执行器完成后实现；
+- Asset 列表只返回可复用元数据和 `requires_resolve`，不返回 `safe_web_url/contact_uri` 原值；只有按次安全解析成功后才返回短期目标；
 - 新增双品类确定性 SearchDocument 构建器，只索引公开快照中的冻结字段，不索引 URL 或私密资料；
 - 新增 `catalog.synthetic.v1` development/test 合成夹具：3 个 Project、双 Category Schema、Creator/Event/Asset/Evidence/Relation/SearchDocument；固定 manifest hash、事务级 advisory lock、幂等审计和状态漂移检测；
 - 合成夹具在 `production` 进入数据库连接前硬拒绝；它只用于本地联调与 CI，不是 64 个正式冷启动档案，也不得计入业务指标；
@@ -35,6 +35,7 @@
 | OP-CREATOR-GET | GET `/api/v1/creators/{creator_id}` | 仅 canonical/public Creator；返回公开档案和已发布作品 ID |
 | OP-EVENT-LIST | GET `/api/v1/projects/{project_id}/events` | 固定每页 30；可按冻结事件类型过滤并选择是否含被替代事件；签名游标绑定作品和过滤条件 |
 | OP-ASSET-LIST | GET `/api/v1/projects/{project_id}/assets` | 固定每页 30；仅公开且未移除；签名游标绑定作品；原始目标不出列表响应 |
+| OP-ASSET-RESOLVE | POST `/api/v1/assets/{asset_id}/resolve` | 同源写请求；`attempt_id` 幂等；HTTP(S) 逐跳 DNS/IP/重定向复检，mailto/tel 不发网；返回 allowed/uncertain/blocked 短期回执 |
 | OP-SEARCH | POST `/api/v1/search` | raw query 创建或 owner/authorized `query_id` 重放；关键词 FTS、结构化过滤、稳定结果版本与主体绑定 token |
 | OP-QUERY-GET | GET `/api/v1/query-snapshots/{query_id}` | 仅 owner/authorized；返回脱敏恢复投影；跨主体 403、失效/过期 410 |
 | OP-QUERY-LINK | POST `/api/v1/query-snapshots/{query_id}/authorized-subjects` | 登录用户+CSRF+有效一次性 IdentityLink；owner/expires 不变 |
@@ -67,7 +68,7 @@
 
 下列仍属于 WP-03，当前不得标记完成：
 
-- Asset 外链 resolve 安全执行器与接口；Evidence/Relation 当前按冻结契约嵌入 Project/Event/Asset 公共投影，不新增未定义的独立公共路由；
+- Evidence/Relation 当前按冻结契约嵌入 Project/Event/Asset 公共投影，不新增未定义的独立公共路由；
 - AdminProjectCreationDraft 的受审计 importer 已完成；Submission/ReviewWorkItem 发布链及 64 个经审核正式档案仍未完成，当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
@@ -76,9 +77,9 @@
 
 ## 6. 下一批顺序
 
-1. 交付 Asset resolve 的 SSRF/重定向/协议白名单安全执行器；
-2. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-3. 最后实现 P09 Comparison，避免前端继续把 DecisionRecord 当作 P0 事实。
+1. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
+2. 实现 P09 Comparison，落实同品类 2—5 项、匿名合并与完成口径；
+3. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，不允许目录 importer 绕过审核直接发布。
 
 ## 7. 受审计目录 importer（WP-03 增量）
 
@@ -96,3 +97,14 @@
 - 同字段多值使用 OR，不同字段使用 AND，`exclude_category_fields` 使用 NOT；公共状态、可用资产和最近核验窗口在候选召回前应用。硬过滤字段严格采用 PRD 24.3：Learning 四项、Portfolio 五项；视觉风格、响应式等仍是软匹配理由，不接受伪装成硬过滤。
 - migration `000008_search_structured_fts.sql` 校正双 Category Schema 的 `search_field_map` 漂移，增加 `structured_json` GIN、公共过滤组合索引，并阻止 SearchDocument 的 Project/Version/Category/Schema 交叉归属。
 - PostgreSQL fixture 分别验证 Learning FTS、Portfolio 同字段 OR/跨字段 AND/排除 NOT、版本化配置、FTS/结构化索引和交叉归属拒绝；响应继续返回 `semantic_degraded=true`，本批不实现向量召回或自然语言意图解析。
+
+## 9. Asset 外链安全解析（WP-03 增量）
+
+- `OP-ASSET-RESOLVE` 采用“先取数据库内目标、再解析”的边界，客户端不能提交任意 URL；每次回放前重查当前可见性/下架状态，目标哈希也进入请求摘要；`attempt_id` 同一主体同一目标可重放，同 ID 跨主体、异载荷或目标已变更返回 409。
+- `safe_web_url` 只允许无凭据、无异常端口的 HTTP(S)。每次请求与每次重定向都重新解析 DNS；只要答案集合含 loopback、private、link-local、reserved、文档地址或 IPv4-mapped private IPv6，就在发出该跳请求前返回 blocked。
+- HTTP 探测固定连接到已检查 IP，同时保留原 Host/TLS server name，避免 DNS 检查与连接间重绑定；先 HEAD，405/501 时才使用 `Range: bytes=0-0` 的 GET；最多五次重定向。
+- DNS、探测超时和上游 5xx 只产生 uncertain，不能降级成 allowed；前端必须显式提示确认。blocked 响应不携带可继续访问的 URL。
+- `contact_uri` 只接受 mailto/tel，完成 NFKC、长度、换行和格式校验，永不进入 DNS/HTTP。若一项资产同时存在 Web 与联系目标，请求必须显式给 `target_kind`；这是避免歧义的技术契约补充。
+- 每次新解析写入不可更新/删除的 `workflow.asset_resolution_receipts` 与脱敏 `audit.security_events`；审计仅记录目标域哈希，不记录原始 URL/contact。回执 allowed/blocked 有效五分钟，uncertain 有效一分钟；过期 attempt 返回 410，客户端使用新 attempt 重新检查。
+- 每主体默认每分钟 30 个新 attempt；已有有效回执在计数前返回。迁移 `000009_asset_resolution_security.sql` 落地不可变回执与限流桶。
+- 单元测试覆盖协议、凭据、端口、私网/保留地址、混合 DNS、逐跳重定向、HEAD→GET、降级和联系 URI；PostgreSQL fixture 额外验证回执重放、跨主体冲突、危险地址零探测、审计脱敏和数据库不可变触发器。

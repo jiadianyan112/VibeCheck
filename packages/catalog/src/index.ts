@@ -1,4 +1,22 @@
 export { CatalogError, catalogError } from './errors.js'
+export { PostgresAssetResolutionStore } from './asset-resolution-store.js'
+export {
+  AssetResolutionService,
+  AssetWebSafetyResolver,
+  DefaultAssetDnsResolver,
+  NodePinnedAssetHttpProbe,
+  isPublicAssetAddress,
+  normalizeAssetContactUri,
+  type AssetDnsResolver,
+  type AssetHttpProbe,
+  type AssetResolutionCommand,
+  type AssetResolutionProjection,
+  type AssetResolutionStore,
+  type AssetResolutionSubject,
+  type AssetWebResolutionResult,
+  type ResolvedAddress,
+  type StoredAssetResolutionTarget,
+} from './asset-resolution.js'
 export {
   AdminProjectImportError,
   PostgresAdminProjectImporter,

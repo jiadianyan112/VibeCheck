@@ -469,6 +469,53 @@ paths:
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
+  /api/v1/assets/{asset_id}/resolve:
+    post:
+      tags: [Catalog]
+      operationId: OP-ASSET-RESOLVE
+      summary: Resolve one stored asset target through the SSRF-safe network boundary
+      parameters:
+        - in: path
+          name: asset_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetResolutionRequest'
+      responses:
+        '200':
+          description: A short-lived immutable resolution receipt; uncertain requires user confirmation and blocked cannot continue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResolutionProjection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
   /api/v1/creators/{creator_id}:
     get:
       tags: [Catalog]
@@ -1430,6 +1477,47 @@ components:
           maxItems: 30
           items: { $ref: '#/components/schemas/AssetPublicProjection' }
         next_cursor: { type: [string, 'null'], maxLength: 1024 }
+    AssetResolutionRequest:
+      type: object
+      additionalProperties: false
+      required: [attempt_id]
+      properties:
+        attempt_id:
+          type: string
+          format: uuid
+        target_kind:
+          type: [string, 'null']
+          enum: [safe_web_url, contact_uri, null]
+          description: Required only when the stored asset exposes both target kinds.
+    AssetResolutionProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - attempt_id
+        - asset_id
+        - project_id
+        - target_kind
+        - result
+        - safe_web_url
+        - contact_uri
+        - target_domain
+        - reason_code
+        - redirect_count
+        - checked_at
+        - expires_at
+      properties:
+        attempt_id: { type: string, format: uuid }
+        asset_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        target_kind: { type: string, enum: [safe_web_url, contact_uri] }
+        result: { type: string, enum: [allowed, uncertain, blocked] }
+        safe_web_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        contact_uri: { type: [string, 'null'], maxLength: 512 }
+        target_domain: { type: [string, 'null'], maxLength: 253 }
+        reason_code: { type: [string, 'null'], maxLength: 64 }
+        redirect_count: { type: integer, minimum: 0, maximum: 5 }
+        checked_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
     CreatorProjection:
       type: object
       unevaluatedProperties: false

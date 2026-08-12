@@ -7,6 +7,8 @@ import { test } from 'node:test'
 
 import type {
   AssetPage,
+  AssetResolutionCommand,
+  AssetResolutionProjection,
   CreatorProjection,
   EventPage,
   ProjectListProjection,
@@ -24,6 +26,7 @@ import {
   close,
   createApiServer,
   type ApiCatalogService,
+  type ApiAssetResolutionService,
   type ApiIdentityService,
   type ApiSearchService,
 } from './server.js'
@@ -48,6 +51,7 @@ async function start(
   staticDirectory?: string,
   catalog?: ApiCatalogService,
   search?: ApiSearchService,
+  assetResolver?: ApiAssetResolutionService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -60,7 +64,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search)
+    ...((identity || search || assetResolver)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -72,6 +76,7 @@ async function start(
         }
       : {}),
     ...(search ? { search } : {}),
+    ...(assetResolver ? { assetResolver } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -259,6 +264,86 @@ test('search rejects cross-origin creation before invoking the search service', 
     })
     assert.equal(response.status, 403)
     assert.equal(search.command, null)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+class FakeAssetResolutionService implements ApiAssetResolutionService {
+  command: AssetResolutionCommand | null = null
+
+  getCommand(): AssetResolutionCommand | null {
+    return this.command
+  }
+
+  async resolve(command: AssetResolutionCommand): Promise<AssetResolutionProjection> {
+    this.command = command
+    return Object.freeze({
+      attempt_id: command.attemptId,
+      asset_id: command.assetId,
+      project_id: '22222222-2222-4222-8222-222222222222',
+      target_kind: command.targetKind ?? 'safe_web_url',
+      result: 'allowed',
+      safe_web_url: command.targetKind === 'contact_uri' ? null : 'https://example.com/resource',
+      contact_uri: command.targetKind === 'contact_uri' ? 'mailto:team@example.com' : null,
+      target_domain: command.targetKind === 'contact_uri' ? null : 'example.com',
+      reason_code: null,
+      redirect_count: 0,
+      checked_at: '2026-08-10T00:00:00.000Z',
+      expires_at: '2026-08-10T00:05:00.000Z',
+    })
+  }
+}
+
+test('asset resolve binds an anonymous subject, returns no-store, and validates mutation origin first', async () => {
+  const resolver = new FakeAssetResolutionService()
+  const runtime = await start(
+    async () => undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    resolver,
+  )
+  const assetId = '11111111-1111-4111-8111-111111111111'
+  const attemptId = '22222222-2222-4222-8222-222222222223'
+  try {
+    const rejected = await fetch(`${runtime.baseUrl}/api/v1/assets/${assetId}/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
+      body: JSON.stringify({ attempt_id: attemptId }),
+    })
+    assert.equal(rejected.status, 403)
+    assert.equal(resolver.command, null)
+
+    const resolved = await fetch(`${runtime.baseUrl}/api/v1/assets/${assetId}/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify({ attempt_id: attemptId, target_kind: 'safe_web_url' }),
+    })
+    assert.equal(resolved.status, 200)
+    assert.equal(resolved.headers.get('cache-control'), 'no-store')
+    assert.match(resolved.headers.get('set-cookie') ?? '', /vc_anon=/)
+    assert.equal((await resolved.json() as { result: string }).result, 'allowed')
+    const captured = resolver.getCommand()
+    assert.ok(captured)
+    assert.equal(captured.assetId, assetId)
+    assert.equal(captured.attemptId, attemptId)
+    assert.equal(captured.targetKind, 'safe_web_url')
+    assert.equal(captured.subject.kind, 'anonymous')
+
+    for (const body of [
+      { attempt_id: attemptId, target_kind: 'file' },
+      { attempt_id: attemptId, unexpected: true },
+      { target_kind: 'safe_web_url' },
+    ]) {
+      const invalid = await fetch(`${runtime.baseUrl}/api/v1/assets/${assetId}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+        body: JSON.stringify(body),
+      })
+      assert.equal(invalid.status, 422)
+    }
   } finally {
     await runtime.stop()
   }

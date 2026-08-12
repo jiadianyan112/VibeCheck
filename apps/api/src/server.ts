@@ -7,6 +7,8 @@ import {
   CatalogError,
   eventTypes,
   type AssetPage,
+  type AssetResolutionCommand,
+  type AssetResolutionProjection,
   type CategoryId,
   type CreatorProjection,
   type EventPage,
@@ -78,6 +80,10 @@ export interface ApiCatalogService {
   }): Promise<AssetPage>
 }
 
+export interface ApiAssetResolutionService {
+  resolve(command: AssetResolutionCommand): Promise<AssetResolutionProjection>
+}
+
 export interface ApiSearchService {
   search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection>
   getQuerySnapshot(
@@ -108,6 +114,7 @@ export interface ApiSearchService {
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
   readonly catalog?: ApiCatalogService
+  readonly assetResolver?: ApiAssetResolutionService
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
@@ -608,11 +615,12 @@ function requireSearch(dependencies: ApiServerDependencies): ApiSearchService {
   return dependencies.search
 }
 
-async function resolveSearchSubject(
+async function resolveBrowserSubject(
   request: IncomingMessage,
   response: ServerResponse,
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
+  unavailableError: () => Error,
 ): Promise<SearchSubject> {
   const cookies = parseCookies(request)
   if (dependencies.identity && cookies[authCookieNames.session]) {
@@ -629,7 +637,7 @@ async function resolveSearchSubject(
     }
   }
   const secret = dependencies.anonymousCookieSecret ?? ''
-  if (secret.length < 32) throw new SearchError('SEARCH_SERVICE_UNAVAILABLE', 503, true)
+  if (secret.length < 32) throw unavailableError()
   const subjectId = verifiedAnonymousSubject(cookies[authCookieNames.anonymous], secret) ?? randomUUID()
   appendCookies(response, [
     cookie(
@@ -640,6 +648,30 @@ async function resolveSearchSubject(
     ),
   ])
   return Object.freeze({ kind: 'anonymous', id: subjectId })
+}
+
+function resolveSearchSubject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<SearchSubject> {
+  return resolveBrowserSubject(
+    request, response, config, dependencies,
+    () => new SearchError('SEARCH_SERVICE_UNAVAILABLE', 503, true),
+  )
+}
+
+function resolveAssetSubject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<SearchSubject> {
+  return resolveBrowserSubject(
+    request, response, config, dependencies,
+    () => new CatalogError('ASSET_RESOLUTION_SERVICE_UNAVAILABLE', 503, true),
+  )
 }
 
 async function resolveAuthenticatedSearchSubject(
@@ -855,6 +887,42 @@ async function handleCatalogRequest(
   return 200
 }
 
+async function handleAssetResolutionRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const match = path.match(/^\/api\/v1\/assets\/([^/]+)\/resolve$/)
+  if (match === null || method !== 'POST') return null
+  if (!dependencies.assetResolver) {
+    throw new CatalogError('ASSET_RESOLUTION_SERVICE_UNAVAILABLE', 503, true)
+  }
+  if (!requestOriginAllowed(request, config)) throw new CatalogError('ORIGIN_INVALID', 403)
+  exactQueryKeys(url.searchParams, [])
+  const body = await readJsonBody(request)
+  exactKeys(body, ['attempt_id', 'target_kind'])
+  const rawTargetKind = body.target_kind
+  if (
+    rawTargetKind !== undefined && rawTargetKind !== null &&
+    rawTargetKind !== 'safe_web_url' && rawTargetKind !== 'contact_uri'
+  ) throw new CatalogError('REQUEST_TARGET_KIND_INVALID', 422)
+  const subject = await resolveAssetSubject(request, response, config, dependencies)
+  const projection = await dependencies.assetResolver.resolve({
+    assetId: match[1]!,
+    attemptId: stringField(body, 'attempt_id', { maximum: 64 })!,
+    targetKind: rawTargetKind ?? null,
+    subject,
+    requestId,
+  })
+  writeJson(response, 200, projection, requestId)
+  return 200
+}
+
 export function createApiServer(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
@@ -930,36 +998,43 @@ export function createApiServer(
             if (authStatus !== null) {
               statusCode = authStatus
             } else {
-              const searchStatus = await handleSearchRequest(
-                request, response, path, method, requestId, config, dependencies,
+              const assetResolutionStatus = await handleAssetResolutionRequest(
+                request, response, url, path, method, requestId, config, dependencies,
               )
-              if (searchStatus !== null) {
-                statusCode = searchStatus
+              if (assetResolutionStatus !== null) {
+                statusCode = assetResolutionStatus
               } else {
-                const catalogStatus = await handleCatalogRequest(
-                  response, url, path, method, requestId, dependencies,
+                const searchStatus = await handleSearchRequest(
+                  request, response, path, method, requestId, config, dependencies,
                 )
-                if (catalogStatus !== null) {
-                  statusCode = catalogStatus
+                if (searchStatus !== null) {
+                  statusCode = searchStatus
                 } else {
-                  const staticStatus = await handleStaticRequest(
-                    request,
-                    response,
-                    path,
-                    method,
-                    requestId,
-                    dependencies.staticDirectory,
+                  const catalogStatus = await handleCatalogRequest(
+                    response, url, path, method, requestId, dependencies,
                   )
-                  if (staticStatus !== null) {
-                    statusCode = staticStatus
+                  if (catalogStatus !== null) {
+                    statusCode = catalogStatus
                   } else {
-                    statusCode = 404
-                    writeJson(
+                    const staticStatus = await handleStaticRequest(
+                      request,
                       response,
-                      statusCode,
-                      errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                      path,
+                      method,
                       requestId,
+                      dependencies.staticDirectory,
                     )
+                    if (staticStatus !== null) {
+                      statusCode = staticStatus
+                    } else {
+                      statusCode = 404
+                      writeJson(
+                        response,
+                        statusCode,
+                        errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                        requestId,
+                      )
+                    }
                   }
                 }
               }
@@ -970,9 +1045,7 @@ export function createApiServer(
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
-          const retryAfterSeconds = apiError instanceof IdentityError || apiError instanceof SearchError
-            ? apiError.retryAfterSeconds
-            : undefined
+          const retryAfterSeconds = apiError.retryAfterSeconds
           if (retryAfterSeconds !== undefined) {
             response.setHeader('retry-after', String(retryAfterSeconds))
           }

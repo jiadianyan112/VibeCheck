@@ -22,9 +22,10 @@ describe('OpenAPI contract', () => {
       'OP-PROJ-GET',
       'OP-EVENT-LIST',
       'OP-ASSET-LIST',
+      'OP-ASSET-RESOLVE',
       'OP-CREATOR-GET',
     ])
-    assert.equal(result.pathCount, 14)
+    assert.equal(result.pathCount, 15)
   })
 
   it('rejects a dangling local schema reference', () => {
