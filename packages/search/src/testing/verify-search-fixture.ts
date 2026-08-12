@@ -44,7 +44,14 @@ const command: SearchCommand = Object.freeze({
   rateLimitKey: 'ci-loopback',
 })
 
+let fixtureStage = 'initialize'
+
+function workflowAnnotation(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+}
+
 try {
+  fixtureStage = 'create_keyword_search'
   const store = new PostgresSearchStore(pool)
   const service = new SearchService({ store, config })
   const created = await service.search(command, owner)
@@ -63,12 +70,14 @@ try {
   assert.equal(replayed.result_version, created.result_version)
   assert.deepEqual(replayed.groups, created.groups)
 
+  fixtureStage = 'recover_query_snapshot'
   const recovered = await service.getQuerySnapshot(created.query_id, owner, 'fixture_query_read')
   assert.equal(recovered.input_state, 'not_restored')
   assert.equal(recovered.notice_key, 'search.conditions_restored')
   assert.equal(recovered.version, 1)
   assert.equal(JSON.stringify(recovered).includes(command.query!), false)
 
+  fixtureStage = 'verify_empty_search'
   const empty = await service.search(Object.freeze({
     ...command,
     query: 'term-with-no-synthetic-fixture-match-987654321',
@@ -81,6 +90,7 @@ try {
   assert.equal(empty.adjacent_count, 0)
   assert.deepEqual(empty.groups, [])
 
+  fixtureStage = 'verify_encrypted_storage'
   const stored = await pool.query<{
     raw_query_ciphertext: Buffer
     owner_subject_hash: Buffer
@@ -101,6 +111,7 @@ try {
   assert.equal(JSON.stringify(stored.rows[0]!.intent_json).includes(command.query!), false)
   assert.equal(JSON.stringify(stored.rows[0]!.filter_snapshot_json).includes(command.query!), false)
 
+  fixtureStage = 'verify_cross_subject_access'
   await assert.rejects(
     service.search(Object.freeze({ ...command, query: null, queryId: created.query_id }), Object.freeze({
       kind: 'anonymous',
@@ -116,6 +127,7 @@ try {
     (error: unknown) => error instanceof SearchError && error.code === 'QUERY_FORBIDDEN',
   )
 
+  fixtureStage = 'verify_expired_access'
   const expiredService = new SearchService({
     store,
     config,
@@ -126,6 +138,7 @@ try {
     (error: unknown) => error instanceof SearchError && error.code === 'QUERY_GONE',
   )
 
+  fixtureStage = 'link_query_identity'
   const userId = randomUUID()
   const identityLinkId = randomUUID()
   const authFlowId = randomUUID()
@@ -152,6 +165,7 @@ try {
     'fixture_linked_read',
   )).version, 2)
 
+  fixtureStage = 'unlink_query_identity'
   await service.unlinkQuery(created.query_id, {
     expectedVersion: 2,
     operationId: randomUUID(),
@@ -170,6 +184,7 @@ try {
     'fixture_owner_after_unlink',
   )).version, 3)
 
+  fixtureStage = 'invalidate_query_snapshot'
   await service.invalidateQuery(created.query_id, {
     operationId: randomUUID(),
   }, owner, 'fixture_query_invalidate')
@@ -180,6 +195,7 @@ try {
     service.getQuerySnapshot(created.query_id, owner, 'fixture_invalidated_read'),
     (error: unknown) => error instanceof SearchError && error.code === 'QUERY_GONE',
   )
+  fixtureStage = 'verify_query_lifecycle_storage'
   const lifecycle = await pool.query<{
     status: string
     owner_subject_hash: Buffer
@@ -215,6 +231,12 @@ try {
     semantic_degraded: created.semantic_degraded,
     lifecycle: 'verified',
   }) + '\n')
+} catch (error) {
+  const detail = error instanceof Error ? error.stack ?? error.message : String(error)
+  process.stderr.write(
+    `::error title=Search fixture ${workflowAnnotation(fixtureStage)}::${workflowAnnotation(detail)}\n`,
+  )
+  throw error
 } finally {
   await pool.end()
 }
