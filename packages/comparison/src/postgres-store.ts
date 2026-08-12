@@ -400,10 +400,10 @@ export class PostgresComparisonStore implements ComparisonStore {
                gen_random_uuid(),'comparison',$1::text,'comparison_completed',1,
                jsonb_build_object(
                  'comparison_id',$1::text,
-                 'comparison_version',$2,
-                 'valid_project_count',$3,
-                 'dimension_group_count',$4,
-                 'visible_duration_ms',$5,
+                 'comparison_version',$2::integer,
+                 'valid_project_count',$3::integer,
+                 'dimension_group_count',$4::integer,
+                 'visible_duration_ms',$5::bigint,
                  'completed_at',$6::timestamptz
                ),gen_random_uuid(),$6,$6
              )`,
