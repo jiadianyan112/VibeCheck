@@ -14,13 +14,17 @@ describe('OpenAPI contract', () => {
       'OP-AUTH-SESSION-GET',
       'OP-AUTH-SESSION-DELETE',
       'OP-SEARCH',
+      'OP-QUERY-GET',
+      'OP-QUERY-INVALIDATE',
+      'OP-QUERY-LINK',
+      'OP-QUERY-UNLINK',
       'OP-PROJ-LIST',
       'OP-PROJ-GET',
       'OP-EVENT-LIST',
       'OP-ASSET-LIST',
       'OP-CREATOR-GET',
     ])
-    assert.equal(result.pathCount, 11)
+    assert.equal(result.pathCount, 14)
   })
 
   it('rejects a dangling local schema reference', () => {

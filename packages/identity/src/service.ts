@@ -208,6 +208,7 @@ export class IdentityService {
       ipHash: this.hashOptional(command.ipAddress),
       userAgentHash: this.hashOptional(command.userAgent),
       reauthExpiresAt: addSeconds(now, 300),
+      identityLinkExpiresAt: addSeconds(now, 300),
       requestId: command.requestId,
       now,
     })
@@ -242,6 +243,11 @@ export class IdentityService {
       }, csrfToken, email),
       sessionToken,
       returnTo: safeReturnTo,
+      identityLinks: Object.freeze(result.identityLinks.map((link) => Object.freeze({
+        identityLinkId: link.identityLinkId,
+        purpose: link.purpose,
+        expiresAt: link.expiresAt.toISOString(),
+      }))),
     })
   }
 

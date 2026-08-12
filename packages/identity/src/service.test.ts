@@ -93,6 +93,11 @@ class InMemoryFlowStore implements IdentityStore {
       expiresAt: new Date('2026-09-10T00:00:00.000Z'),
       sessionVersion: 1,
       returnTo: created.returnTo,
+      identityLinks: [{
+        identityLinkId: '88888888-8888-4888-8888-888888888888',
+        purpose: 'query_continuation',
+        expiresAt: new Date('2026-08-11T00:05:00.000Z'),
+      }] as const,
     } as const
   }
 
@@ -138,6 +143,12 @@ describe('IdentityService', () => {
     assert.ok(verified.sessionToken.length >= 32)
     assert.ok(verified.session.csrfToken.length >= 32)
     assert.equal(verified.returnTo, '/notifications')
+    assert.deepEqual(verified.identityLinks, [{
+      identityLinkId: '88888888-8888-4888-8888-888888888888',
+      purpose: 'query_continuation',
+      expiresAt: '2026-08-11T00:05:00.000Z',
+    }])
+    assert.equal(store.completed?.identityLinkExpiresAt.toISOString(), '2026-08-11T00:05:00.000Z')
     assert.equal(store.completed?.otpValid, true)
   })
 

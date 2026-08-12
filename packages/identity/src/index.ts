@@ -27,6 +27,7 @@ export type {
   EmailOtpMessage,
   EmailSender,
   IdentityPermission,
+  IdentityLinkProjection,
   IdentityRole,
   SessionProjection,
   StartChallengeCommand,

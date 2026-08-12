@@ -72,6 +72,48 @@ export interface SearchProjection {
   readonly expires_at: string
 }
 
+export interface QuerySnapshotProjection {
+  readonly query_id: string
+  readonly mode: SearchMode
+  readonly category_id: CategoryId | null
+  readonly intent: Readonly<Record<string, unknown>>
+  readonly confidence: Readonly<Record<string, unknown>>
+  readonly intent_version: number
+  readonly parser_version: string
+  readonly result_version: string
+  readonly ranking_version: string
+  readonly filters: SearchFilters
+  readonly sort: SearchSort
+  readonly semantic_degraded: boolean
+  readonly exact_count: number
+  readonly adjacent_count: number
+  readonly version: number
+  readonly expires_at: string
+  readonly input_state: 'not_restored'
+  readonly notice_key: 'search.conditions_restored'
+}
+
+export interface QueryLinkCommand {
+  readonly identityLinkId: string
+  readonly expectedVersion: number
+  readonly operationId: string
+}
+
+export interface QueryMutationCommand {
+  readonly expectedVersion: number
+  readonly operationId: string
+}
+
+export interface QueryInvalidationCommand {
+  readonly operationId: string
+}
+
+export interface QueryLinkProjection {
+  readonly authorized: true
+  readonly version: number
+  readonly expires_at: string
+}
+
 export interface SearchServiceConfig {
   readonly encryptionMasterKey: string
   readonly encryptionKeyVersion: string

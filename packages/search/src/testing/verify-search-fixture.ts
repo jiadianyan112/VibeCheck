@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 
 import { Pool } from 'pg'
 
@@ -62,6 +63,12 @@ try {
   assert.equal(replayed.result_version, created.result_version)
   assert.deepEqual(replayed.groups, created.groups)
 
+  const recovered = await service.getQuerySnapshot(created.query_id, owner, 'fixture_query_read')
+  assert.equal(recovered.input_state, 'not_restored')
+  assert.equal(recovered.notice_key, 'search.conditions_restored')
+  assert.equal(recovered.version, 1)
+  assert.equal(JSON.stringify(recovered).includes(command.query!), false)
+
   const empty = await service.search(Object.freeze({
     ...command,
     query: 'term-with-no-synthetic-fixture-match-987654321',
@@ -101,6 +108,13 @@ try {
     })),
     (error: unknown) => error instanceof SearchError && error.code === 'QUERY_FORBIDDEN',
   )
+  await assert.rejects(
+    service.getQuerySnapshot(created.query_id, Object.freeze({
+      kind: 'anonymous',
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    }), 'fixture_cross_subject_read'),
+    (error: unknown) => error instanceof SearchError && error.code === 'QUERY_FORBIDDEN',
+  )
 
   const expiredService = new SearchService({
     store,
@@ -112,12 +126,94 @@ try {
     (error: unknown) => error instanceof SearchError && error.code === 'QUERY_GONE',
   )
 
+  const userId = randomUUID()
+  const identityLinkId = randomUUID()
+  const authFlowId = randomUUID()
+  await pool.query(`INSERT INTO iam.users (user_id,status,role_version,privacy_state)
+                    VALUES ($1,'active',1,'active')`, [userId])
+  await pool.query(
+    `INSERT INTO iam.identity_links (
+       identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,issued_at,expires_at
+     ) VALUES ($1,$2,$3,$4,'query_continuation','active',now(),now()+interval '5 minutes')`,
+    [identityLinkId, owner.id, userId, authFlowId],
+  )
+  const userSubject: SearchSubject = Object.freeze({ kind: 'user', id: userId })
+  const linked = await service.linkQuery(created.query_id, {
+    identityLinkId,
+    expectedVersion: 1,
+    operationId: randomUUID(),
+  }, userSubject, 'fixture_query_link')
+  assert.equal(linked.authorized, true)
+  assert.equal(linked.version, 2)
+  assert.equal(linked.expires_at, created.expires_at)
+  assert.equal((await service.getQuerySnapshot(
+    created.query_id,
+    userSubject,
+    'fixture_linked_read',
+  )).version, 2)
+
+  await service.unlinkQuery(created.query_id, {
+    expectedVersion: 2,
+    operationId: randomUUID(),
+  }, userSubject, 'fixture_query_unlink')
+  await service.unlinkQuery(created.query_id, {
+    expectedVersion: 2,
+    operationId: randomUUID(),
+  }, userSubject, 'fixture_query_unlink_repeat')
+  await assert.rejects(
+    service.getQuerySnapshot(created.query_id, userSubject, 'fixture_unlinked_read'),
+    (error: unknown) => error instanceof SearchError && error.code === 'QUERY_FORBIDDEN',
+  )
+  assert.equal((await service.getQuerySnapshot(
+    created.query_id,
+    owner,
+    'fixture_owner_after_unlink',
+  )).version, 3)
+
+  await service.invalidateQuery(created.query_id, {
+    operationId: randomUUID(),
+  }, owner, 'fixture_query_invalidate')
+  await service.invalidateQuery(created.query_id, {
+    operationId: randomUUID(),
+  }, owner, 'fixture_query_invalidate_repeat')
+  await assert.rejects(
+    service.getQuerySnapshot(created.query_id, owner, 'fixture_invalidated_read'),
+    (error: unknown) => error instanceof SearchError && error.code === 'QUERY_GONE',
+  )
+  const lifecycle = await pool.query<{
+    status: string
+    owner_subject_hash: Buffer
+    expires_at: Date
+    encrypted_data_key: Buffer | null
+    raw_query_ciphertext: Buffer | null
+    link_status: string
+    audit_count: number
+  }>(
+    `SELECT snapshot.status,snapshot.owner_subject_hash,snapshot.expires_at,
+       snapshot.encrypted_data_key,snapshot.raw_query_ciphertext,link.status AS link_status,
+       (SELECT count(*)::integer FROM audit.security_events event
+        WHERE event.target_type='query_snapshot'
+          AND event.target_id_hash=digest($1::text,'sha256')) AS audit_count
+     FROM search.query_snapshots snapshot
+     JOIN iam.identity_links link ON link.identity_link_id=$2
+     WHERE snapshot.query_id=$1`,
+    [created.query_id, identityLinkId],
+  )
+  assert.equal(lifecycle.rows[0]!.status, 'invalidated')
+  assert.ok(lifecycle.rows[0]!.owner_subject_hash.equals(stored.rows[0]!.owner_subject_hash))
+  assert.equal(lifecycle.rows[0]!.expires_at.toISOString(), created.expires_at)
+  assert.equal(lifecycle.rows[0]!.encrypted_data_key, null)
+  assert.equal(lifecycle.rows[0]!.raw_query_ciphertext, null)
+  assert.equal(lifecycle.rows[0]!.link_status, 'consumed')
+  assert.ok(lifecycle.rows[0]!.audit_count >= 8)
+
   process.stdout.write(JSON.stringify({
     result: 'verified',
     query_id: created.query_id,
     result_version: created.result_version,
     exact_count: created.exact_count,
     semantic_degraded: created.semantic_degraded,
+    lifecycle: 'verified',
   }) + '\n')
 } finally {
   await pool.end()

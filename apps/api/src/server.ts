@@ -27,6 +27,11 @@ import {
 import { redactRecord, withSpan } from '@vibecheck/observability'
 import {
   SearchError,
+  type QueryInvalidationCommand,
+  type QueryLinkCommand,
+  type QueryLinkProjection,
+  type QueryMutationCommand,
+  type QuerySnapshotProjection,
   type SearchCommand,
   type SearchProjection,
   type SearchSubject,
@@ -75,6 +80,29 @@ export interface ApiCatalogService {
 
 export interface ApiSearchService {
   search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection>
+  getQuerySnapshot(
+    queryId: string,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<QuerySnapshotProjection>
+  linkQuery(
+    queryId: string,
+    command: QueryLinkCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<QueryLinkProjection>
+  unlinkQuery(
+    queryId: string,
+    command: QueryMutationCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<void>
+  invalidateQuery(
+    queryId: string,
+    command: QueryInvalidationCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<void>
 }
 
 export interface ApiServerDependencies {
@@ -512,6 +540,11 @@ async function handleAuthRequest(
         purpose: 'login',
         session: sessionResponse(result.session),
         return_to: result.returnTo,
+        identity_links: result.identityLinks.map((link) => Object.freeze({
+          identity_link_id: link.identityLinkId,
+          purpose: link.purpose,
+          expires_at: link.expiresAt,
+        })),
       }, requestId)
     } else {
       appendCookies(response, [
@@ -609,6 +642,28 @@ async function resolveSearchSubject(
   return Object.freeze({ kind: 'anonymous', id: subjectId })
 }
 
+async function resolveAuthenticatedSearchSubject(
+  request: IncomingMessage,
+  dependencies: ApiServerDependencies,
+): Promise<SearchSubject> {
+  const identity = requireIdentity(dependencies)
+  const cookies = parseCookies(request)
+  const session = await identity.getSession(
+    cookies[authCookieNames.session] ?? null,
+    cookies[authCookieNames.csrf] ?? null,
+  )
+  return Object.freeze({ kind: 'user', id: session.userId })
+}
+
+function requireSearchMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new SearchError('CSRF_INVALID', 403)
+  }
+}
+
 async function handleSearchRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -618,9 +673,68 @@ async function handleSearchRequest(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
+  const queryPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)$/)
+  const queryLinkPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)\/authorized-subjects$/)
+  const queryUnlinkPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)\/authorized-subjects\/me$/)
+  if (
+    path !== '/api/v1/search' && queryPath === null &&
+    queryLinkPath === null && queryUnlinkPath === null
+  ) return null
+  const search = requireSearch(dependencies)
+
+  if (queryPath !== null && method === 'GET') {
+    const subject = await resolveSearchSubject(request, response, config, dependencies)
+    const projection = await search.getQuerySnapshot(queryPath[1]!, subject, requestId)
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (queryLinkPath !== null && method === 'POST') {
+    if (!requestOriginAllowed(request, config)) throw new SearchError('ORIGIN_INVALID', 403)
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    requireSearchMutationCsrf(request)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['identity_link_id', 'expected_version', 'operation_id'])
+    const projection = await search.linkQuery(queryLinkPath[1]!, {
+      identityLinkId: stringField(body, 'identity_link_id', { maximum: 64 })!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 64 })!,
+    }, subject, requestId)
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (queryUnlinkPath !== null && method === 'DELETE') {
+    if (!requestOriginAllowed(request, config)) throw new SearchError('ORIGIN_INVALID', 403)
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    requireSearchMutationCsrf(request)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['expected_version', 'operation_id'])
+    await search.unlinkQuery(queryUnlinkPath[1]!, {
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 64 })!,
+    }, subject, requestId)
+    response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
+    response.end()
+    return 204
+  }
+
+  if (queryPath !== null && method === 'DELETE') {
+    if (!requestOriginAllowed(request, config)) throw new SearchError('ORIGIN_INVALID', 403)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['operation_id'])
+    const subject = await resolveSearchSubject(request, response, config, dependencies)
+    if (subject.kind === 'user') requireSearchMutationCsrf(request)
+    await search.invalidateQuery(queryPath[1]!, {
+      operationId: stringField(body, 'operation_id', { maximum: 64 })!,
+    }, subject, requestId)
+    response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
+    response.end()
+    return 204
+  }
+
   if (path !== '/api/v1/search' || method !== 'POST') return null
   if (!requestOriginAllowed(request, config)) throw new SearchError('ORIGIN_INVALID', 403)
-  const search = requireSearch(dependencies)
   const body = await readJsonBody(request)
   exactKeys(body, ['query', 'query_id', 'mode', 'category_id', 'filters', 'sort', 'cursor', 'locale'])
   const query = body.query === null ? null : stringField(body, 'query', { maximum: 500, optional: true })

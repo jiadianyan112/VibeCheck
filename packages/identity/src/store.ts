@@ -78,6 +78,7 @@ export interface CompleteVerificationInput {
   readonly ipHash: Buffer | null
   readonly userAgentHash: Buffer | null
   readonly reauthExpiresAt: Date
+  readonly identityLinkExpiresAt: Date
   readonly requestId: string
   readonly now: Date
 }
@@ -97,6 +98,11 @@ export type CompleteVerificationResult =
       readonly expiresAt: Date
       readonly sessionVersion: number
       readonly returnTo: string
+      readonly identityLinks: readonly {
+        readonly identityLinkId: string
+        readonly purpose: 'query_continuation'
+        readonly expiresAt: Date
+      }[]
     }
   | {
       readonly kind: 'admin_confirm'
@@ -510,6 +516,19 @@ export class PostgresIdentityStore {
       ],
     )
     const roles = await rolesFor(client, userId)
+    const identityLink = await client.query<{ identity_link_id: string; expires_at: Date }>(
+      `INSERT INTO iam.identity_links (
+         anonymous_subject_id,user_id,auth_flow_id,purpose,status,issued_at,expires_at
+       ) VALUES ($1,$2,$3,'query_continuation','active',$4,$5)
+       RETURNING identity_link_id,expires_at`,
+      [
+        challenge.anonymous_subject_id,
+        userId,
+        challenge.auth_flow_id,
+        input.now,
+        input.identityLinkExpiresAt,
+      ],
+    )
     await this.insertSecurityEvent(client, 'auth_login_completed', 'info', input.requestId, null)
     return {
       kind: 'login',
@@ -524,6 +543,11 @@ export class PostgresIdentityStore {
       expiresAt: input.sessionExpiresAt,
       sessionVersion: 1,
       returnTo: challenge.return_to,
+      identityLinks: Object.freeze([Object.freeze({
+        identityLinkId: identityLink.rows[0]!.identity_link_id,
+        purpose: 'query_continuation' as const,
+        expiresAt: identityLink.rows[0]!.expires_at,
+      })]),
     }
   }
 
@@ -661,6 +685,15 @@ export class PostgresIdentityStore {
         [sessionHash, expectedVersion, now],
       )
       if ((result.rowCount ?? 0) === 1) {
+        await client.query(
+          `UPDATE iam.identity_links link
+           SET status='revoked',revoked_at=$2
+           FROM iam.sessions session
+           WHERE session.session_id_hash=$1
+             AND link.user_id=session.user_id
+             AND link.status='active'`,
+          [sessionHash, now],
+        )
         await this.insertSecurityEvent(client, 'auth_logout_completed', 'info', requestId, null)
       }
       await client.query('COMMIT')

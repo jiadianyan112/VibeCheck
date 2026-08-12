@@ -9,6 +9,7 @@ import type {
   QueryAccessResult,
   SearchStore,
   StoredQuerySnapshot,
+  StoredQueryProjection,
   StoredSearchExecution,
 } from './store.js'
 import type { SearchCommand, SearchSubject } from './types.js'
@@ -98,6 +99,50 @@ class FakeStore implements SearchStore {
     assert.deepEqual(input.filters.category_fields, { site_type: ['portfolio'] })
     return Object.freeze({ ...execution(this.created!, null), items: Object.freeze([]) })
   }
+
+  async readQuerySnapshot(): Promise<StoredQueryProjection> {
+    const created = this.created!
+    return Object.freeze({
+      queryId: created.queryId,
+      mode: created.mode,
+      categoryId: created.categoryId,
+      intent: Object.freeze({ mode: 'search', hard_filters: created.filters }),
+      confidence: Object.freeze({ overall: 'not_applicable' }),
+      intentVersion: 1,
+      parserVersion: 'keyword.v1',
+      resultVersion: '91000000-0000-4000-8000-000000000001',
+      rankingVersion: 'search.keyword.v1',
+      filters: created.filters,
+      sort: created.sort,
+      semanticDegraded: true,
+      exactCount: 1,
+      adjacentCount: 0,
+      version: 1,
+      expiresAt: created.expiresAt,
+    })
+  }
+
+  async getIdentityLink() {
+    return Object.freeze({
+      identityLinkId: '93000000-0000-4000-8000-000000000001',
+      anonymousSubjectId: owner.id,
+      userId: '94000000-0000-4000-8000-000000000001',
+      purpose: 'query_continuation' as const,
+      status: 'active' as const,
+      expiresAt: new Date('2026-08-12T00:05:00.000Z'),
+    })
+  }
+
+  async linkQuery() {
+    return Object.freeze({
+      authorized: true as const,
+      version: 2,
+      expiresAt: this.created!.expiresAt,
+    })
+  }
+
+  async unlinkQuery() {}
+  async invalidateQuery() {}
 }
 
 function service(store: SearchStore): SearchService {
@@ -178,4 +223,25 @@ test('raw query rate limiting fails before a QuerySnapshot is created', async ()
       error.code === 'SEARCH_RATE_LIMITED' && error.retryAfterSeconds === 60,
   )
   assert.equal(store.created, null)
+})
+
+test('query recovery returns only structured state and a logged-in user can link once', async () => {
+  const store = new FakeStore()
+  const search = service(store)
+  const created = await search.search(rawCommand(), owner)
+  const recovered = await search.getQuerySnapshot(created.query_id, owner, 'request_query_read')
+  assert.equal(recovered.input_state, 'not_restored')
+  assert.equal(recovered.notice_key, 'search.conditions_restored')
+  assert.equal(JSON.stringify(recovered).includes('Northstar Portfolio'), false)
+
+  const linked = await search.linkQuery(created.query_id, {
+    identityLinkId: '93000000-0000-4000-8000-000000000001',
+    expectedVersion: 1,
+    operationId: '95000000-0000-4000-8000-000000000001',
+  }, {
+    kind: 'user',
+    id: '94000000-0000-4000-8000-000000000001',
+  }, 'request_query_link')
+  assert.equal(linked.version, 2)
+  assert.equal(linked.expires_at, created.expires_at)
 })

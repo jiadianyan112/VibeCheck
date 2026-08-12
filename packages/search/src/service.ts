@@ -8,6 +8,11 @@ import type { SearchStore, StoredQuerySnapshot, StoredSearchExecution } from './
 import type {
   SearchCommand,
   SearchProjection,
+  QueryInvalidationCommand,
+  QueryLinkCommand,
+  QueryLinkProjection,
+  QueryMutationCommand,
+  QuerySnapshotProjection,
   SearchResultGroup,
   SearchResultItem,
   SearchServiceConfig,
@@ -59,6 +64,18 @@ function queryEncryption(snapshot: StoredQuerySnapshot) {
     iv: snapshot.raw_query_iv,
     authTag: snapshot.raw_query_auth_tag,
   })
+}
+
+function operationUuid(name: string, value: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw searchError(`${name}_INVALID`, 422)
+  }
+  return value.toLowerCase()
+}
+
+function expectedVersion(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw searchError('EXPECTED_VERSION_INVALID', 422)
+  return value
 }
 
 export class SearchService {
@@ -188,6 +205,134 @@ export class SearchService {
       now,
     })
     return this.projection(execution, subjectHash, command.cursor)
+  }
+
+  async getQuerySnapshot(
+    queryIdValue: string,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<QuerySnapshotProjection> {
+    const queryId = parseQueryId(queryIdValue)
+    const stored = await this.dependencies.store.readQuerySnapshot({
+      queryId,
+      subjectKind: subject.kind,
+      subjectHash: this.crypto.subjectHash(subject),
+      requestId,
+      now: this.now(),
+    })
+    return Object.freeze({
+      query_id: stored.queryId,
+      mode: stored.mode,
+      category_id: stored.categoryId,
+      intent: stored.intent,
+      confidence: stored.confidence,
+      intent_version: stored.intentVersion,
+      parser_version: stored.parserVersion,
+      result_version: stored.resultVersion,
+      ranking_version: stored.rankingVersion,
+      filters: stored.filters,
+      sort: stored.sort,
+      semantic_degraded: stored.semanticDegraded,
+      exact_count: stored.exactCount,
+      adjacent_count: stored.adjacentCount,
+      version: stored.version,
+      expires_at: stored.expiresAt.toISOString(),
+      input_state: 'not_restored',
+      notice_key: 'search.conditions_restored',
+    })
+  }
+
+  async linkQuery(
+    queryIdValue: string,
+    command: QueryLinkCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<QueryLinkProjection> {
+    if (subject.kind !== 'user') throw searchError('AUTHENTICATION_REQUIRED', 401)
+    const queryId = parseQueryId(queryIdValue)
+    const identityLinkId = operationUuid('IDENTITY_LINK_ID', command.identityLinkId)
+    const operationId = operationUuid('OPERATION_ID', command.operationId)
+    const version = expectedVersion(command.expectedVersion)
+    const link = await this.dependencies.store.getIdentityLink(identityLinkId)
+    if (link === null) throw searchError('IDENTITY_LINK_NOT_FOUND', 404)
+    const userSubjectHash = this.crypto.subjectHash(subject)
+    const result = await this.dependencies.store.linkQuery({
+      queryId,
+      identityLinkId,
+      anonymousSubjectId: link.anonymousSubjectId,
+      anonymousSubjectHash: this.crypto.subjectHash({
+        kind: 'anonymous',
+        id: link.anonymousSubjectId,
+      }),
+      userId: subject.id,
+      userSubjectHash,
+      expectedVersion: version,
+      operationId,
+      requestHash: this.crypto.fingerprint({
+        operation: 'link',
+        query_id: queryId,
+        identity_link_id: identityLinkId,
+        expected_version: version,
+      }),
+      requestId,
+      now: this.now(),
+    })
+    return Object.freeze({
+      authorized: true,
+      version: result.version,
+      expires_at: result.expiresAt.toISOString(),
+    })
+  }
+
+  async unlinkQuery(
+    queryIdValue: string,
+    command: QueryMutationCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<void> {
+    if (subject.kind !== 'user') throw searchError('AUTHENTICATION_REQUIRED', 401)
+    const queryId = parseQueryId(queryIdValue)
+    const operationId = operationUuid('OPERATION_ID', command.operationId)
+    const version = expectedVersion(command.expectedVersion)
+    const subjectHash = this.crypto.subjectHash(subject)
+    await this.dependencies.store.unlinkQuery({
+      queryId,
+      subjectKind: subject.kind,
+      subjectHash,
+      expectedVersion: version,
+      operationId,
+      requestHash: this.crypto.fingerprint({
+        operation: 'unlink',
+        query_id: queryId,
+        expected_version: version,
+      }),
+      requestId,
+      now: this.now(),
+    })
+  }
+
+  async invalidateQuery(
+    queryIdValue: string,
+    command: QueryInvalidationCommand,
+    subject: SearchSubject,
+    requestId: string,
+  ): Promise<void> {
+    const queryId = parseQueryId(queryIdValue)
+    const operationId = operationUuid('OPERATION_ID', command.operationId)
+    const subjectHash = this.crypto.subjectHash(subject)
+    await this.dependencies.store.invalidateQuery({
+      queryId,
+      subjectKind: subject.kind,
+      subjectHash,
+      operationId,
+      requestHash: this.crypto.fingerprint({
+        operation: 'invalidate',
+        query_id: queryId,
+        subject_kind: subject.kind,
+      }),
+      requestId,
+      now: this.now(),
+    })
   }
 
   private categoryForReplay(

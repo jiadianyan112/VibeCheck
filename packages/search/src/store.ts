@@ -5,7 +5,12 @@ import type { Pool, PoolClient } from 'pg'
 
 import type { EncryptedQuery } from './crypto.js'
 import { searchError } from './errors.js'
-import type { SearchFilters, SearchMatchReason, SearchMode, SearchSort } from './types.js'
+import type {
+  SearchFilters,
+  SearchMatchReason,
+  SearchMode,
+  SearchSort,
+} from './types.js'
 
 export interface StoredQuerySnapshot {
   readonly query_id: string
@@ -120,6 +125,69 @@ export interface QueryAccessResult {
   readonly snapshot?: StoredQuerySnapshot
 }
 
+export interface StoredIdentityLink {
+  readonly identityLinkId: string
+  readonly anonymousSubjectId: string
+  readonly userId: string
+  readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
+  readonly status: 'active' | 'consumed' | 'revoked' | 'expired'
+  readonly expiresAt: Date
+}
+
+export interface StoredQueryProjection {
+  readonly queryId: string
+  readonly mode: SearchMode
+  readonly categoryId: CategoryId | null
+  readonly intent: Readonly<Record<string, unknown>>
+  readonly confidence: Readonly<Record<string, unknown>>
+  readonly intentVersion: number
+  readonly parserVersion: string
+  readonly resultVersion: string
+  readonly rankingVersion: string
+  readonly filters: SearchFilters
+  readonly sort: SearchSort
+  readonly semanticDegraded: boolean
+  readonly exactCount: number
+  readonly adjacentCount: number
+  readonly version: number
+  readonly expiresAt: Date
+}
+
+export interface QueryLinkStoreInput {
+  readonly queryId: string
+  readonly identityLinkId: string
+  readonly anonymousSubjectId: string
+  readonly anonymousSubjectHash: Buffer
+  readonly userId: string
+  readonly userSubjectHash: Buffer
+  readonly expectedVersion: number
+  readonly operationId: string
+  readonly requestHash: Buffer
+  readonly requestId: string
+  readonly now: Date
+}
+
+export interface QueryMutationStoreInput {
+  readonly queryId: string
+  readonly subjectKind: 'anonymous' | 'user'
+  readonly subjectHash: Buffer
+  readonly expectedVersion: number
+  readonly operationId: string
+  readonly requestHash: Buffer
+  readonly requestId: string
+  readonly now: Date
+}
+
+export interface QueryInvalidationStoreInput {
+  readonly queryId: string
+  readonly subjectKind: 'anonymous' | 'user'
+  readonly subjectHash: Buffer
+  readonly operationId: string
+  readonly requestHash: Buffer
+  readonly requestId: string
+  readonly now: Date
+}
+
 export interface SearchStore {
   consumeRawQueryRateLimit(input: {
     readonly bucketKeyHash: Buffer
@@ -130,6 +198,21 @@ export interface SearchStore {
   createSearch(input: CreateStoredSearchInput): Promise<StoredSearchExecution>
   getAuthorizedQuery(queryId: string, subjectHash: Buffer, now: Date): Promise<QueryAccessResult>
   searchExisting(input: ExistingStoredSearchInput): Promise<StoredSearchExecution>
+  readQuerySnapshot(input: {
+    readonly queryId: string
+    readonly subjectKind: 'anonymous' | 'user'
+    readonly subjectHash: Buffer
+    readonly requestId: string
+    readonly now: Date
+  }): Promise<StoredQueryProjection>
+  getIdentityLink(identityLinkId: string): Promise<StoredIdentityLink | null>
+  linkQuery(input: QueryLinkStoreInput): Promise<{
+    readonly authorized: true
+    readonly version: number
+    readonly expiresAt: Date
+  }>
+  unlinkQuery(input: QueryMutationStoreInput): Promise<void>
+  invalidateQuery(input: QueryInvalidationStoreInput): Promise<void>
 }
 
 const candidateSql = `
@@ -442,6 +525,145 @@ async function begin<T>(pool: Pool, action: (client: PoolClient) => Promise<T>):
   }
 }
 
+interface QueryProjectionRow {
+  readonly query_id: string
+  readonly mode: SearchMode
+  readonly category_id: CategoryId | null
+  readonly snapshot_version: string
+  readonly status: 'active' | 'invalidated'
+  readonly expires_at: Date
+  readonly authorized: boolean
+  readonly intent_version: number
+  readonly intent_json: Record<string, unknown>
+  readonly confidence_json: Record<string, unknown>
+  readonly intent_parser_version: string
+  readonly result_version: string
+  readonly ranking_version: string
+  readonly filter_snapshot_json: SearchFilters
+  readonly sort: SearchSort
+  readonly semantic_degraded: boolean
+  readonly exact_count: number
+  readonly adjacent_count: number
+}
+
+interface IdentityLinkRow {
+  readonly identity_link_id: string
+  readonly anonymous_subject_id: string
+  readonly user_id: string
+  readonly purpose: StoredIdentityLink['purpose']
+  readonly status: StoredIdentityLink['status']
+  readonly expires_at: Date
+}
+
+interface QueryOperationReceiptRow {
+  readonly operation_type: 'link' | 'unlink' | 'invalidate'
+  readonly request_hash: Buffer
+  readonly response_json: Record<string, unknown>
+}
+
+function queryTargetHash(queryId: string): Buffer {
+  return createHash('sha256').update(queryId, 'utf8').digest()
+}
+
+async function auditQueryOperation(
+  client: PoolClient,
+  input: {
+    readonly eventType: string
+    readonly queryId: string
+    readonly requestId: string
+    readonly subjectKind: 'anonymous' | 'user'
+    readonly subjectHash: Buffer
+    readonly result: string
+    readonly version?: number
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO audit.security_events (
+       event_type,severity,actor_user_id_hash,target_type,target_id_hash,
+       metadata_json,request_id
+     ) VALUES ($1,$2,$3,'query_snapshot',$4,$5::jsonb,$6)`,
+    [
+      input.eventType,
+      input.result === 'forbidden' ? 'warning' : 'info',
+      input.subjectKind === 'user' ? input.subjectHash : null,
+      queryTargetHash(input.queryId),
+      JSON.stringify({ result: input.result, version: input.version ?? null }),
+      input.requestId,
+    ],
+  )
+}
+
+async function operationReceipt(
+  client: PoolClient,
+  queryId: string,
+  operationId: string,
+  operationType: 'link' | 'unlink' | 'invalidate',
+  subjectHash: Buffer,
+  requestHash: Buffer,
+): Promise<Record<string, unknown> | null> {
+  const receipt = await client.query<QueryOperationReceiptRow>(
+    `SELECT operation_type,request_hash,response_json
+     FROM search.query_operation_receipts
+     WHERE query_id=$1 AND operation_id=$2 AND subject_hash=$3`,
+    [queryId, operationId, subjectHash],
+  )
+  const row = receipt.rows[0]
+  if (!row) return null
+  if (row.operation_type !== operationType || !row.request_hash.equals(requestHash)) {
+    throw searchError('QUERY_OPERATION_ID_REUSED', 409)
+  }
+  return row.response_json
+}
+
+async function saveOperationReceipt(
+  client: PoolClient,
+  input: {
+    readonly queryId: string
+    readonly operationId: string
+    readonly operationType: 'link' | 'unlink' | 'invalidate'
+    readonly subjectHash: Buffer
+    readonly requestHash: Buffer
+    readonly response: Readonly<Record<string, unknown>>
+    readonly now: Date
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO search.query_operation_receipts (
+       query_id,operation_id,operation_type,subject_hash,request_hash,response_json,created_at
+     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)`,
+    [
+      input.queryId,
+      input.operationId,
+      input.operationType,
+      input.subjectHash,
+      input.requestHash,
+      JSON.stringify(input.response),
+      input.now,
+    ],
+  )
+}
+
+function storedQueryProjection(row: QueryProjectionRow): StoredQueryProjection {
+  return Object.freeze({
+    queryId: row.query_id,
+    mode: row.mode,
+    categoryId: row.category_id,
+    intent: Object.freeze(row.intent_json),
+    confidence: Object.freeze(row.confidence_json),
+    intentVersion: row.intent_version,
+    parserVersion: row.intent_parser_version,
+    resultVersion: row.result_version,
+    rankingVersion: row.ranking_version,
+    filters: Object.freeze(row.filter_snapshot_json),
+    sort: row.sort,
+    semanticDegraded: row.semantic_degraded,
+    exactCount: row.exact_count,
+    adjacentCount: row.adjacent_count,
+    version: Number(row.snapshot_version),
+    expiresAt: row.expires_at,
+  })
+}
+
 export class PostgresSearchStore implements SearchStore {
   constructor(private readonly pool: Pool) {}
 
@@ -609,6 +831,366 @@ export class PostgresSearchStore implements SearchStore {
       }
       const execution = await page(client, resultVersion, input.offset, input.pageSize)
       return Object.freeze({ ...execution, categoryId: input.categoryId })
+    })
+  }
+
+  async readQuerySnapshot(input: {
+    readonly queryId: string
+    readonly subjectKind: 'anonymous' | 'user'
+    readonly subjectHash: Buffer
+    readonly requestId: string
+    readonly now: Date
+  }): Promise<StoredQueryProjection> {
+    const outcome = await begin(this.pool, async (client) => {
+      const result = await client.query<QueryProjectionRow>(
+        `SELECT snapshot.query_id,snapshot.mode,snapshot.category_id,snapshot.snapshot_version,
+           snapshot.status,snapshot.expires_at,
+           (snapshot.owner_subject_hash=$2 OR EXISTS (
+             SELECT 1 FROM search.query_authorized_subjects authorized
+             WHERE authorized.query_id=snapshot.query_id
+               AND authorized.subject_hash=$2
+               AND authorized.revoked_at IS NULL
+           )) AS authorized,
+           intent.intent_version,intent.intent_json,intent.confidence_json,
+           intent.parser_version AS intent_parser_version,
+           result.result_version,result.ranking_version,result.filter_snapshot_json,
+           result.sort,result.semantic_degraded,result.exact_count,result.adjacent_count
+         FROM search.query_snapshots snapshot
+         JOIN search.intent_versions intent
+           ON intent.query_id=snapshot.query_id
+          AND intent.intent_version=snapshot.active_intent_version
+         JOIN LATERAL (
+           SELECT current_result.result_version,current_result.ranking_version,
+             current_result.filter_snapshot_json,current_result.sort,
+             current_result.semantic_degraded,current_result.exact_count,current_result.adjacent_count
+           FROM search.result_versions current_result
+           WHERE current_result.query_id=snapshot.query_id
+             AND current_result.intent_version=snapshot.active_intent_version
+           ORDER BY current_result.created_at DESC,current_result.result_version DESC
+           LIMIT 1
+         ) result ON true
+         WHERE snapshot.query_id=$1`,
+        [input.queryId, input.subjectHash],
+      )
+      const row = result.rows[0]
+      const auditResult = !row
+        ? 'missing'
+        : !row.authorized
+          ? 'forbidden'
+          : row.status !== 'active' || row.expires_at.getTime() <= input.now.getTime()
+            ? 'gone'
+            : 'allowed'
+      await auditQueryOperation(client, {
+        eventType: 'query_snapshot_read',
+        queryId: input.queryId,
+        requestId: input.requestId,
+        subjectKind: input.subjectKind,
+        subjectHash: input.subjectHash,
+        result: auditResult,
+        ...(row ? { version: Number(row.snapshot_version) } : {}),
+      })
+      if (!row) return Object.freeze({ kind: 'missing' as const })
+      if (!row.authorized) return Object.freeze({ kind: 'forbidden' as const })
+      if (row.status !== 'active' || row.expires_at.getTime() <= input.now.getTime()) {
+        return Object.freeze({ kind: 'gone' as const })
+      }
+      return Object.freeze({ kind: 'active' as const, projection: storedQueryProjection(row) })
+    })
+    if (outcome.kind === 'missing') throw searchError('QUERY_NOT_FOUND', 404)
+    if (outcome.kind === 'forbidden') throw searchError('QUERY_FORBIDDEN', 403)
+    if (outcome.kind === 'gone') throw searchError('QUERY_GONE', 410)
+    return outcome.projection
+  }
+
+  async getIdentityLink(identityLinkId: string): Promise<StoredIdentityLink | null> {
+    const result = await this.pool.query<IdentityLinkRow>(
+      `SELECT identity_link_id,anonymous_subject_id,user_id,purpose,status,expires_at
+       FROM iam.identity_links WHERE identity_link_id=$1`,
+      [identityLinkId],
+    )
+    const row = result.rows[0]
+    if (!row) return null
+    return Object.freeze({
+      identityLinkId: row.identity_link_id,
+      anonymousSubjectId: row.anonymous_subject_id,
+      userId: row.user_id,
+      purpose: row.purpose,
+      status: row.status,
+      expiresAt: row.expires_at,
+    })
+  }
+
+  async linkQuery(input: QueryLinkStoreInput): Promise<{
+    readonly authorized: true
+    readonly version: number
+    readonly expiresAt: Date
+  }> {
+    return begin(this.pool, async (client) => {
+      const replay = await operationReceipt(
+        client,
+        input.queryId,
+        input.operationId,
+        'link',
+        input.userSubjectHash,
+        input.requestHash,
+      )
+      if (replay) {
+        return Object.freeze({
+          authorized: true,
+          version: Number(replay.version),
+          expiresAt: new Date(String(replay.expires_at)),
+        })
+      }
+
+      const linkResult = await client.query<IdentityLinkRow>(
+        `SELECT identity_link_id,anonymous_subject_id,user_id,purpose,status,expires_at
+         FROM iam.identity_links WHERE identity_link_id=$1 FOR UPDATE`,
+        [input.identityLinkId],
+      )
+      const link = linkResult.rows[0]
+      if (!link) throw searchError('IDENTITY_LINK_NOT_FOUND', 404)
+      if (
+        link.purpose !== 'query_continuation' || link.user_id !== input.userId ||
+        link.anonymous_subject_id !== input.anonymousSubjectId
+      ) throw searchError('IDENTITY_LINK_FORBIDDEN', 403)
+      if (link.status !== 'active' || link.expires_at.getTime() <= input.now.getTime()) {
+        if (link.status === 'active') {
+          await client.query(
+            `UPDATE iam.identity_links SET status='expired'
+             WHERE identity_link_id=$1 AND status='active'`,
+            [input.identityLinkId],
+          )
+        }
+        throw searchError('IDENTITY_LINK_GONE', 410)
+      }
+
+      const queryResult = await client.query<{
+        snapshot_version: string
+        status: 'active' | 'invalidated'
+        expires_at: Date
+        owner_subject_kind: 'anonymous' | 'user'
+        owner_subject_hash: Buffer
+      }>(
+        `SELECT snapshot_version,status,expires_at,owner_subject_kind,owner_subject_hash
+         FROM search.query_snapshots WHERE query_id=$1 FOR UPDATE`,
+        [input.queryId],
+      )
+      const query = queryResult.rows[0]
+      if (!query) throw searchError('QUERY_NOT_FOUND', 404)
+      if (
+        query.owner_subject_kind !== 'anonymous' ||
+        !query.owner_subject_hash.equals(input.anonymousSubjectHash)
+      ) throw searchError('IDENTITY_LINK_FORBIDDEN', 403)
+      if (query.status !== 'active' || query.expires_at.getTime() <= input.now.getTime()) {
+        throw searchError('QUERY_GONE', 410)
+      }
+      if (Number(query.snapshot_version) !== input.expectedVersion) {
+        throw searchError('QUERY_VERSION_CONFLICT', 409)
+      }
+
+      await client.query(
+        `INSERT INTO search.query_authorized_subjects (
+           query_id,subject_kind,subject_hash,identity_link_id,authorized_at,revoked_at
+         ) VALUES ($1,'user',$2,$3,$4,NULL)
+         ON CONFLICT (query_id,subject_hash) DO UPDATE SET
+           subject_kind='user',identity_link_id=EXCLUDED.identity_link_id,
+           authorized_at=EXCLUDED.authorized_at,revoked_at=NULL`,
+        [input.queryId, input.userSubjectHash, input.identityLinkId, input.now],
+      )
+      await client.query(
+        `UPDATE iam.identity_links SET status='consumed',consumed_at=$2
+         WHERE identity_link_id=$1`,
+        [input.identityLinkId, input.now],
+      )
+      const updated = await client.query<{ snapshot_version: string }>(
+        `UPDATE search.query_snapshots
+         SET snapshot_version=snapshot_version+1
+         WHERE query_id=$1 RETURNING snapshot_version`,
+        [input.queryId],
+      )
+      const version = Number(updated.rows[0]!.snapshot_version)
+      const response = Object.freeze({
+        authorized: true,
+        version,
+        expires_at: query.expires_at.toISOString(),
+      })
+      await saveOperationReceipt(client, {
+        queryId: input.queryId,
+        operationId: input.operationId,
+        operationType: 'link',
+        subjectHash: input.userSubjectHash,
+        requestHash: input.requestHash,
+        response,
+        now: input.now,
+      })
+      await auditQueryOperation(client, {
+        eventType: 'query_snapshot_linked',
+        queryId: input.queryId,
+        requestId: input.requestId,
+        subjectKind: 'user',
+        subjectHash: input.userSubjectHash,
+        result: 'authorized',
+        version,
+      })
+      return Object.freeze({ authorized: true, version, expiresAt: query.expires_at })
+    })
+  }
+
+  async unlinkQuery(input: QueryMutationStoreInput): Promise<void> {
+    await begin(this.pool, async (client) => {
+      const replay = await operationReceipt(
+        client,
+        input.queryId,
+        input.operationId,
+        'unlink',
+        input.subjectHash,
+        input.requestHash,
+      )
+      if (replay) return
+      if (input.subjectKind !== 'user') throw searchError('QUERY_LINK_FORBIDDEN', 403)
+
+      const result = await client.query<{
+        snapshot_version: string
+        status: 'active' | 'invalidated'
+        expires_at: Date
+        linked: boolean
+        ever_linked: boolean
+      }>(
+        `SELECT snapshot.snapshot_version,snapshot.status,snapshot.expires_at,
+           EXISTS (
+             SELECT 1 FROM search.query_authorized_subjects authorized
+             WHERE authorized.query_id=snapshot.query_id
+               AND authorized.subject_hash=$2 AND authorized.revoked_at IS NULL
+           ) AS linked,
+           EXISTS (
+             SELECT 1 FROM search.query_authorized_subjects authorized
+             WHERE authorized.query_id=snapshot.query_id AND authorized.subject_hash=$2
+           ) AS ever_linked
+         FROM search.query_snapshots snapshot WHERE snapshot.query_id=$1 FOR UPDATE`,
+        [input.queryId, input.subjectHash],
+      )
+      const query = result.rows[0]
+      if (!query) throw searchError('QUERY_NOT_FOUND', 404)
+      if (!query.ever_linked) throw searchError('QUERY_LINK_FORBIDDEN', 403)
+      if (!query.linked) {
+        await saveOperationReceipt(client, {
+          queryId: input.queryId,
+          operationId: input.operationId,
+          operationType: 'unlink',
+          subjectHash: input.subjectHash,
+          requestHash: input.requestHash,
+          response: Object.freeze({}),
+          now: input.now,
+        })
+        await auditQueryOperation(client, {
+          eventType: 'query_snapshot_unlinked',
+          queryId: input.queryId,
+          requestId: input.requestId,
+          subjectKind: 'user',
+          subjectHash: input.subjectHash,
+          result: 'no_change',
+          version: Number(query.snapshot_version),
+        })
+        return
+      }
+      if (query.status !== 'active' || query.expires_at.getTime() <= input.now.getTime()) {
+        throw searchError('QUERY_GONE', 410)
+      }
+      if (Number(query.snapshot_version) !== input.expectedVersion) {
+        throw searchError('QUERY_VERSION_CONFLICT', 409)
+      }
+      await client.query(
+        `UPDATE search.query_authorized_subjects SET revoked_at=$3
+         WHERE query_id=$1 AND subject_hash=$2 AND revoked_at IS NULL`,
+        [input.queryId, input.subjectHash, input.now],
+      )
+      const updated = await client.query<{ snapshot_version: string }>(
+        `UPDATE search.query_snapshots SET snapshot_version=snapshot_version+1
+         WHERE query_id=$1 RETURNING snapshot_version`,
+        [input.queryId],
+      )
+      const version = Number(updated.rows[0]!.snapshot_version)
+      await saveOperationReceipt(client, {
+        queryId: input.queryId,
+        operationId: input.operationId,
+        operationType: 'unlink',
+        subjectHash: input.subjectHash,
+        requestHash: input.requestHash,
+        response: Object.freeze({}),
+        now: input.now,
+      })
+      await auditQueryOperation(client, {
+        eventType: 'query_snapshot_unlinked',
+        queryId: input.queryId,
+        requestId: input.requestId,
+        subjectKind: 'user',
+        subjectHash: input.subjectHash,
+        result: 'revoked',
+        version,
+      })
+    })
+  }
+
+  async invalidateQuery(input: QueryInvalidationStoreInput): Promise<void> {
+    await begin(this.pool, async (client) => {
+      const replay = await operationReceipt(
+        client,
+        input.queryId,
+        input.operationId,
+        'invalidate',
+        input.subjectHash,
+        input.requestHash,
+      )
+      if (replay) return
+      const result = await client.query<{
+        snapshot_version: string
+        status: 'active' | 'invalidated'
+        authorized: boolean
+      }>(
+        `SELECT snapshot.snapshot_version,snapshot.status,
+           (snapshot.owner_subject_hash=$2 OR EXISTS (
+             SELECT 1 FROM search.query_authorized_subjects authorized
+             WHERE authorized.query_id=snapshot.query_id
+               AND authorized.subject_hash=$2 AND authorized.revoked_at IS NULL
+           )) AS authorized
+         FROM search.query_snapshots snapshot WHERE snapshot.query_id=$1 FOR UPDATE`,
+        [input.queryId, input.subjectHash],
+      )
+      const query = result.rows[0]
+      if (!query) throw searchError('QUERY_NOT_FOUND', 404)
+      if (!query.authorized) throw searchError('QUERY_FORBIDDEN', 403)
+      let version = Number(query.snapshot_version)
+      let resultKey = 'no_change'
+      if (query.status === 'active') {
+        const updated = await client.query<{ snapshot_version: string }>(
+          `UPDATE search.query_snapshots SET
+             status='invalidated',invalidated_at=$2,snapshot_version=snapshot_version+1,
+             encrypted_data_key=NULL,data_key_iv=NULL,data_key_auth_tag=NULL,
+             raw_query_ciphertext=NULL,raw_query_iv=NULL,raw_query_auth_tag=NULL
+           WHERE query_id=$1 RETURNING snapshot_version`,
+          [input.queryId, input.now],
+        )
+        version = Number(updated.rows[0]!.snapshot_version)
+        resultKey = 'invalidated'
+      }
+      await saveOperationReceipt(client, {
+        queryId: input.queryId,
+        operationId: input.operationId,
+        operationType: 'invalidate',
+        subjectHash: input.subjectHash,
+        requestHash: input.requestHash,
+        response: Object.freeze({}),
+        now: input.now,
+      })
+      await auditQueryOperation(client, {
+        eventType: 'query_snapshot_invalidated',
+        queryId: input.queryId,
+        requestId: input.requestId,
+        subjectKind: input.subjectKind,
+        subjectHash: input.subjectHash,
+        result: resultKey,
+        version,
+      })
     })
   }
 }

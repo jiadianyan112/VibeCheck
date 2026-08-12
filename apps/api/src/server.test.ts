@@ -87,6 +87,7 @@ async function start(
 class FakeSearchService implements ApiSearchService {
   command: SearchCommand | null = null
   subject: SearchSubject | null = null
+  lifecycleSubject: SearchSubject | null = null
 
   async search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection> {
     this.command = command
@@ -114,6 +115,53 @@ class FakeSearchService implements ApiSearchService {
       next_cursor: null,
       expires_at: '2026-08-11T00:00:00.000Z',
     })
+  }
+
+
+  async getQuerySnapshot(queryId: string, subject: SearchSubject) {
+    this.lifecycleSubject = subject
+    return Object.freeze({
+      query_id: queryId,
+      mode: 'search' as const,
+      category_id: 'personal_site_portfolio' as const,
+      intent: Object.freeze({ mode: 'search' }),
+      confidence: Object.freeze({ overall: 'not_applicable' }),
+      intent_version: 1,
+      parser_version: 'keyword.v1',
+      result_version: '91000000-0000-4000-8000-000000000001',
+      ranking_version: 'search.keyword.v1',
+      filters: Object.freeze({
+        access_status: Object.freeze([]),
+        has_available_asset: null,
+        verified_since: null,
+        category_fields: Object.freeze({}),
+        exclude_category_fields: Object.freeze({}),
+      }),
+      sort: 'relevance' as const,
+      semantic_degraded: true,
+      exact_count: 0,
+      adjacent_count: 0,
+      version: 1,
+      expires_at: '2026-08-11T00:00:00.000Z',
+      input_state: 'not_restored' as const,
+      notice_key: 'search.conditions_restored' as const,
+    })
+  }
+
+  async linkQuery(_queryId: string, _command: unknown, subject: SearchSubject) {
+    this.lifecycleSubject = subject
+    return Object.freeze({
+      authorized: true as const,
+      version: 2,
+      expires_at: '2026-08-11T00:00:00.000Z',
+    })
+  }
+
+  async unlinkQuery(_queryId: string, _command: unknown, subject: SearchSubject) {
+    this.lifecycleSubject = subject
+  }
+  async invalidateQuery(_queryId: string, _command: unknown, subject: SearchSubject) {
+    this.lifecycleSubject = subject
   }
 }
 
@@ -254,6 +302,11 @@ class FakeIdentityService implements ApiIdentityService {
       session,
       sessionToken: 'session-token-with-at-least-thirty-two-characters',
       returnTo: '/me',
+      identityLinks: [{
+        identityLinkId: '99999999-9999-4999-8999-999999999999',
+        purpose: 'query_continuation',
+        expiresAt: '2026-08-10T00:05:00.000Z',
+      }] as const,
     } as const
   }
 
@@ -302,6 +355,69 @@ test('search binds an active authenticated session to the user subject', async (
   }
 })
 
+test('query lifecycle exposes structured recovery and enforces session CSRF on identity linking', async () => {
+  const search = new FakeSearchService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    search,
+  )
+  const queryId = '90000000-0000-4000-8000-000000000001'
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  try {
+    const recovered = await fetch(`${runtime.baseUrl}/api/v1/query-snapshots/${queryId}`, {
+      headers: { cookie: sessionCookie },
+    })
+    assert.equal(recovered.status, 200)
+    const recovery = await recovered.json() as Record<string, unknown>
+    assert.equal(recovery.input_state, 'not_restored')
+    assert.equal('query' in recovery, false)
+    assert.deepEqual(search.lifecycleSubject, { kind: 'user', id: session.userId })
+
+    const rejected = await fetch(
+      `${runtime.baseUrl}/api/v1/query-snapshots/${queryId}/authorized-subjects`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: sessionCookie,
+          origin: 'https://web.example',
+        },
+        body: JSON.stringify({
+          identity_link_id: '99999999-9999-4999-8999-999999999999',
+          expected_version: 1,
+          operation_id: '98000000-0000-4000-8000-000000000001',
+        }),
+      },
+    )
+    assert.equal(rejected.status, 403)
+
+    const linked = await fetch(
+      `${runtime.baseUrl}/api/v1/query-snapshots/${queryId}/authorized-subjects`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: sessionCookie,
+          origin: 'https://web.example',
+          'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+        },
+        body: JSON.stringify({
+          identity_link_id: '99999999-9999-4999-8999-999999999999',
+          expected_version: 1,
+          operation_id: '98000000-0000-4000-8000-000000000001',
+        }),
+      },
+    )
+    assert.equal(linked.status, 200)
+    assert.equal((await linked.json() as { authorized: boolean }).authorized, true)
+  } finally {
+    await runtime.stop()
+  }
+})
+
 test('email OTP flow establishes signed browser cookies and a server session', async () => {
   const identity = new FakeIdentityService()
   const runtime = await start(async () => undefined, identity)
@@ -344,7 +460,16 @@ test('email OTP flow establishes signed browser cookies and a server session', a
       },
     )
     assert.equal(verification.status, 200)
-    assert.equal((await verification.json() as { purpose: string }).purpose, 'login')
+    const verificationBody = await verification.json() as {
+      purpose: string
+      identity_links: readonly { identity_link_id: string; purpose: string; expires_at: string }[]
+    }
+    assert.equal(verificationBody.purpose, 'login')
+    assert.deepEqual(verificationBody.identity_links, [{
+      identity_link_id: '99999999-9999-4999-8999-999999999999',
+      purpose: 'query_continuation',
+      expires_at: '2026-08-10T00:05:00.000Z',
+    }])
     assert.equal(identity.verifyCommand?.browserBindingToken, browserBinding)
     const sessionCookies = verification.headers.get('set-cookie') ?? ''
     assert.match(sessionCookies, /vc_session=/)

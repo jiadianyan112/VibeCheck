@@ -19,6 +19,12 @@ export type IdentityPermission = (typeof identityPermissions)[number]
 export type AuthPurpose = 'login' | 'admin_confirm'
 export type AccountStatus = 'active' | 'restricted' | 'disabled'
 
+export interface IdentityLinkProjection {
+  readonly identityLinkId: string
+  readonly purpose: 'query_continuation'
+  readonly expiresAt: string
+}
+
 export interface SessionProjection {
   readonly authenticated: true
   readonly userId: string
@@ -74,6 +80,7 @@ export type VerifyChallengeResult =
       readonly session: SessionProjection
       readonly sessionToken: string
       readonly returnTo: string
+      readonly identityLinks: readonly IdentityLinkProjection[]
     }
   | {
       readonly purpose: 'admin_confirm'

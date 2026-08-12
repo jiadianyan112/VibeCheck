@@ -1,6 +1,6 @@
 # WP-03：目录与发现
 
-**状态：开发中（公共读取与非生产合成夹具已实现）｜日期：2026-08-11｜前置：WP-02 / PR #1**
+**状态：开发中（公共读取、关键词搜索与 QuerySnapshot 生命周期已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
 
 ## 1. 本批交付
 
@@ -11,7 +11,7 @@
 - Project Version 使用 `ProjectCore + category_id + category_schema_version + category_data`，Learning 专属字段不得出现在 ProjectCore；
 - ProjectVersion、CreatorProfileVersion、Event 使用 append-only 保护；Project 当前版本在事务提交时校验所属 Project 与 Category Schema；
 - taxonomy 固定启用 `ai_learning_quiz / learning.v1` 与 `personal_site_portfolio / portfolio.v1`；配置内容哈希由数据库生成；
-- 实现 `OP-PROJ-LIST`、`OP-PROJ-GET`、`OP-CREATOR-GET`、`OP-EVENT-LIST` 和 `OP-ASSET-LIST`；OpenAPI 当前为 10 条路径、11 个 Operation；
+- 实现目录公共读取、`OP-SEARCH` 关键词检索，以及 `OP-QUERY-GET/LINK/UNLINK/INVALIDATE`；OpenAPI 当前为 14 条路径、16 个 Operation；
 - Project Detail 内嵌仅公开、有效且未过期的 Evidence 摘要，以及已确认且两端作品均公开的 Project→Project Relation；不暴露内部记录引用、私有证据或审核人；
 - Event 使用 `event_sort.v1` 将日/月/年/估算精度映射为持久 UTC 排序锚点；默认只读当前事件头，生命周期状态由 supersedes 关系派生；
 - Asset 列表只返回可复用元数据和 `requires_resolve`，不返回 `safe_web_url/contact_uri` 原值；安全解析接口留到外链安全执行器完成后实现；
@@ -21,6 +21,10 @@
 - 作品列表使用 HMAC 签名游标，绑定 category、snapshot_at、最后更新时间和稳定 ID；并发新增/更新不会进入既有翻页快照；
 - 公共读取只返回 `published_platform/published_author`，`restricted/archived` 返回 403，`deleted` 返回 410；非 active AuthorRelation 不进入 Creator 公开投影；
 - Render 通过 `CATALOG_ENABLED` 和独立 `CATALOG_CURSOR_SECRET` 启用目录域，不复用 OTP 或 Session 密钥。
+- QuerySnapshot 使用 envelope encryption；原始查询不进入响应、URL、普通日志、Analytics、Intent 或过滤快照；恢复接口只返回结构化意图、筛选、排序与版本，并固定返回 `input_state=not_restored`。
+- 邮箱 OTP 登录成功签发 5 分钟、单用途、单次消费的 `query_continuation` IdentityLink；链接只增加用户授权，不迁移匿名 owner、不延长 24 小时快照 TTL；解绑后用户立即恢复 403，匿名 owner 不受影响。
+- QuerySnapshot 失效对 owner/authorized subject 幂等返回 204，并在同一事务把 envelope data key 和原文密文置空；后续所有主体读取返回 410。
+- 第六号迁移增加查询操作幂等回执、IdentityLink 外键/撤销时间、密文擦除约束和隐私审计落点；`query_id+operation_id+subject_hash` 防止同一操作 ID 以不同负载重放。
 
 ## 2. 当前接口
 
@@ -31,6 +35,11 @@
 | OP-CREATOR-GET | GET `/api/v1/creators/{creator_id}` | 仅 canonical/public Creator；返回公开档案和已发布作品 ID |
 | OP-EVENT-LIST | GET `/api/v1/projects/{project_id}/events` | 固定每页 30；可按冻结事件类型过滤并选择是否含被替代事件；签名游标绑定作品和过滤条件 |
 | OP-ASSET-LIST | GET `/api/v1/projects/{project_id}/assets` | 固定每页 30；仅公开且未移除；签名游标绑定作品；原始目标不出列表响应 |
+| OP-SEARCH | POST `/api/v1/search` | raw query 创建或 owner/authorized `query_id` 重放；关键词 FTS、结构化过滤、稳定结果版本与主体绑定 token |
+| OP-QUERY-GET | GET `/api/v1/query-snapshots/{query_id}` | 仅 owner/authorized；返回脱敏恢复投影；跨主体 403、失效/过期 410 |
+| OP-QUERY-LINK | POST `/api/v1/query-snapshots/{query_id}/authorized-subjects` | 登录用户+CSRF+有效一次性 IdentityLink；owner/expires 不变 |
+| OP-QUERY-UNLINK | DELETE `/api/v1/query-snapshots/{query_id}/authorized-subjects/me` | 登录用户+CSRF；重复撤销 204，撤销后该用户读取 403 |
+| OP-QUERY-INVALIDATE | DELETE `/api/v1/query-snapshots/{query_id}` | owner/authorized；重复失效 204并完成密钥/密文擦除 |
 
 公共响应允许短缓存；身份与错误响应仍为 `no-store`。查询参数未知、重复、超限或游标被修改时返回 canonical 400 错误。
 
@@ -61,7 +70,7 @@
 - Asset 外链 resolve 安全执行器与接口；Evidence/Relation 当前按冻结契约嵌入 Project/Event/Asset 公共投影，不新增未定义的独立公共路由；
 - 生产受审计目录 importer、AdminProjectCreationDraft/Submission/ReviewWorkItem 发布链及 64 个经审核正式档案；当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
-- 结构化过滤、PostgreSQL FTS、意图解析适配器、语义匹配降级和搜索导航归因；
+- 意图解析适配器、语义匹配、同类分析与搜索导航归因；当前 keyword 分支明确 `semantic_degraded=true`，不冒充语义结果；
 - P09 服务端 Comparison、同品类 2—5 项约束、匿名合并与完成口径；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 

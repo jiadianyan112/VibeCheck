@@ -14,6 +14,7 @@ describe('discoverMigrations', () => {
         '000003_identity_access.sql',
         '000004_catalog_public_read.sql',
         '000005_search_keyword.sql',
+        '000006_query_snapshot_lifecycle.sql',
       ],
     )
     for (const migration of migrations) {
