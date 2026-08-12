@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type {
+  AnalyticsBatchReceipt,
+  AnalyticsBrowserContext,
+  IngestClientBatchCommand,
+} from '@vibecheck/analytics'
+import type {
   AssetPage,
   AssetResolutionCommand,
   AssetResolutionProjection,
@@ -58,6 +63,7 @@ import {
   close,
   createApiServer,
   type ApiCatalogService,
+  type ApiAnalyticsService,
   type ApiAssetResolutionService,
   type ApiComparisonService,
   type ApiCommunityService,
@@ -92,6 +98,7 @@ async function start(
   pendingActions?: ApiPendingActionService,
   community?: ApiCommunityService,
   pendingActionExecutor?: ApiPendingActionExecutor,
+  analytics?: ApiAnalyticsService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -104,7 +111,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -121,6 +128,7 @@ async function start(
     ...(pendingActions ? { pendingActions } : {}),
     ...(community ? { community } : {}),
     ...(pendingActionExecutor ? { pendingActionExecutor } : {}),
+    ...(analytics ? { analytics } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -130,6 +138,28 @@ async function start(
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     stop: () => close(server),
+  }
+}
+
+class FakeAnalyticsService implements ApiAnalyticsService {
+  issuedContext: AnalyticsBrowserContext | null = null
+  ingestCommand: IngestClientBatchCommand | null = null
+
+  issueSession(context: AnalyticsBrowserContext): string {
+    this.issuedContext = context
+    return 'v1.1786611600.opaque-binding.valid-signature'
+  }
+
+  async ingestClientBatch(command: IngestClientBatchCommand): Promise<AnalyticsBatchReceipt> {
+    this.ingestCommand = command
+    const events = command.body.events as readonly Readonly<Record<string, unknown>>[]
+    return Object.freeze({
+      receipt_id: 'a1000000-0000-4000-8000-000000000001',
+      items: Object.freeze(events.map((event) => Object.freeze({
+        event_id: String(event.event_id),
+        status: 'accepted' as const,
+      }))),
+    })
   }
 }
 
@@ -572,6 +602,81 @@ test('comparison creates and reuses a signed anonymous owner without exposing it
     assert.equal(recovered.status, 200)
     assert.deepEqual(comparison.getSubject, comparison.putCommand?.subject)
     assert.equal(JSON.stringify(await recovered.json()).includes(comparison.getSubject?.id ?? ''), false)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('analytics session is issued from a business response and ingest binds it to the same browser', async () => {
+  const comparison = new FakeComparisonService()
+  const analytics = new FakeAnalyticsService()
+  const runtime = await start(
+    async () => undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+    undefined,
+    undefined,
+    undefined,
+    analytics,
+  )
+  const comparisonId = '61000000-0000-4000-8000-000000000091'
+  try {
+    const comparisonResponse = await fetch(
+      `${runtime.baseUrl}/api/v1/comparisons/${comparisonId}`,
+      { headers: { origin: 'https://web.example' } },
+    )
+    assert.equal(comparisonResponse.status, 200)
+    const analyticsSession = comparisonResponse.headers.get('x-analytics-session')
+    assert.equal(analyticsSession, 'v1.1786611600.opaque-binding.valid-signature')
+    assert.equal(
+      comparisonResponse.headers.get('access-control-expose-headers'),
+      'x-analytics-session,x-request-id',
+    )
+    const anonymous = cookieValue(comparisonResponse.headers.get('set-cookie') ?? '', 'vc_anon')
+    assert.equal(analytics.issuedContext?.subject.kind, 'anonymous')
+
+    const eventId = 'e1000000-0000-4000-8000-000000000001'
+    const ingest = await fetch(`${runtime.baseUrl}/api/v1/analytics/events:batch`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: `vc_anon=${encodeURIComponent(anonymous)}`,
+        'x-analytics-session': analyticsSession!,
+      },
+      body: JSON.stringify({
+        batch_version: 1,
+        sent_at: '2026-08-10T00:00:00.000Z',
+        sdk_version: 'web-1',
+        events: [{
+          event_id: eventId,
+          event_name: 'comparison_dimension_viewed',
+          event_version: 1,
+          occurred_at: '2026-08-10T00:00:00.000Z',
+          app_version: '0.2.0',
+          page_id: 'P09',
+          payload: {
+            comparison_id: comparisonId,
+            comparison_version: 1,
+            dimension_group: 'workflow',
+            visible_ms: 1_200,
+            project_count: 2,
+            view_sequence: 1,
+          },
+        }],
+      }),
+    })
+    assert.equal(ingest.status, 202)
+    assert.equal((await ingest.json() as { items: readonly { event_id: string }[] }).items[0]?.event_id, eventId)
+    assert.equal(analytics.ingestCommand?.sessionHeader, analyticsSession)
+    assert.deepEqual(
+      analytics.ingestCommand?.context.subject,
+      analytics.issuedContext?.subject,
+    )
   } finally {
     await runtime.stop()
   }

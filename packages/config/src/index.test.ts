@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  loadAnalyticsConfig,
   loadCatalogConfig,
   loadComparisonConfig,
   loadCommunityConfig,
@@ -164,5 +165,23 @@ describe('loadServiceConfig', () => {
     assert.equal(config.enabled, true)
     assert.equal(config.reportEncryptionKey, key)
     assert.equal(config.commentPageSize, 15)
+  })
+
+  it('requires explicit analytics secrets and consent policy only when collection is enabled', () => {
+    assert.equal(loadAnalyticsConfig({ ANALYTICS_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadAnalyticsConfig({ ANALYTICS_ENABLED: 'true' }),
+      /CONFIG_ANALYTICS_CONSENT_STATE_REQUIRED/,
+    )
+    const config = loadAnalyticsConfig({
+      ANALYTICS_ENABLED: 'true',
+      ANALYTICS_CONSENT_STATE: 'not_required',
+      ANALYTICS_SESSION_SECRET: 'analytics-session-secret-at-least-thirty-two-characters',
+      ANALYTICS_SUBJECT_HASH_PEPPER: 'analytics-subject-pepper-at-least-thirty-two-characters',
+      ANALYTICS_SESSION_TTL_SECONDS: '3600',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.sessionTtlSeconds, 3_600)
+    assert.equal(config.consentState, 'not_required')
   })
 })

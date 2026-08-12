@@ -23,6 +23,7 @@ describe('discoverMigrations', () => {
         '000012_pending_actions.sql',
         '000013_community_interactions.sql',
         '000014_community_comments.sql',
+        '000015_analytics_client_ingest.sql',
       ],
     )
     for (const migration of migrations) {

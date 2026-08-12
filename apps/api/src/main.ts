@@ -1,4 +1,9 @@
 import {
+  AnalyticsService,
+  PostgresAnalyticsStore,
+  type RecordComparisonDimensionInput,
+} from '@vibecheck/analytics'
+import {
   AssetResolutionService,
   AssetWebSafetyResolver,
   CatalogService,
@@ -7,9 +12,10 @@ import {
   PostgresAssetResolutionStore,
   PostgresCatalogStore,
 } from '@vibecheck/catalog'
-import { ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
+import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
 import { CommunityService, PostgresCommunityStore } from '@vibecheck/community'
 import {
+  loadAnalyticsConfig,
   loadCatalogConfig,
   loadCommunityConfig,
   loadComparisonConfig,
@@ -37,6 +43,7 @@ const catalogConfig = loadCatalogConfig()
 const comparisonConfig = loadComparisonConfig()
 const searchConfig = loadSearchConfig()
 const communityConfig = loadCommunityConfig()
+const analyticsConfig = loadAnalyticsConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -56,9 +63,29 @@ const comparison = comparisonConfig.enabled
       config: comparisonConfig,
     })
   : undefined
+if (analyticsConfig.enabled && !comparison) {
+  throw new Error('CONFIG_ANALYTICS_REQUIRES_COMPARISON')
+}
+const analytics = analyticsConfig.enabled && comparison
+  ? new AnalyticsService({
+      config: analyticsConfig,
+      store: new PostgresAnalyticsStore(pool),
+      eventHandler: {
+        async recordComparisonDimension(input: RecordComparisonDimensionInput): Promise<void> {
+          const current = await comparison.getComparison(input.comparisonId, input.subject)
+          if (
+            current.comparison_version !== input.comparisonVersion ||
+            current.valid_count !== input.projectCount
+          ) throw new ComparisonError('COMPARISON_PROJECT_COUNT_MISMATCH', 409)
+          await comparison.recordDimensionProgress(input)
+        },
+      },
+    })
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
+  ...(analytics ? { analytics } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

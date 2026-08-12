@@ -4,6 +4,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, resolve, sep } from 'node:path'
 
 import {
+  AnalyticsError,
+  type AnalyticsBatchReceipt,
+  type AnalyticsBrowserContext,
+  type IngestClientBatchCommand,
+} from '@vibecheck/analytics'
+import {
   CatalogError,
   eventTypes,
   type AssetPage,
@@ -161,6 +167,11 @@ export interface ApiComparisonService {
   ): Promise<ComparisonMergeCancellationProjection>
 }
 
+export interface ApiAnalyticsService {
+  issueSession(context: AnalyticsBrowserContext): string
+  ingestClientBatch(command: IngestClientBatchCommand): Promise<AnalyticsBatchReceipt>
+}
+
 export interface ApiSearchService {
   search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection>
   getQuerySnapshot(
@@ -200,6 +211,7 @@ export interface ApiCommunityService {
 
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
+  readonly analytics?: ApiAnalyticsService
   readonly catalog?: ApiCatalogService
   readonly assetResolver?: ApiAssetResolutionService
   readonly comparison?: ApiComparisonService
@@ -293,6 +305,7 @@ function applyCorsHeaders(
   )
   response.setHeader('access-control-allow-methods', 'DELETE,GET,OPTIONS,PATCH,POST,PUT')
   response.setHeader('access-control-allow-origin', origin)
+  response.setHeader('access-control-expose-headers', 'x-analytics-session,x-request-id')
   response.setHeader('access-control-max-age', '600')
   response.setHeader('vary', 'Origin')
 }
@@ -386,7 +399,10 @@ function requestOriginAllowed(request: IncomingMessage, config: ServiceConfig): 
   return origin === `${protocol}://${host}`
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<JsonObject> {
+async function readJsonBody(
+  request: IncomingMessage,
+  maximumBytes = maxJsonBodyBytes,
+): Promise<JsonObject> {
   const contentType = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase()
   if (contentType !== 'application/json') throw new IdentityError('CONTENT_TYPE_INVALID', 415, false)
   const chunks: Buffer[] = []
@@ -394,7 +410,7 @@ async function readJsonBody(request: IncomingMessage): Promise<JsonObject> {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     length += buffer.length
-    if (length > maxJsonBodyBytes) throw new IdentityError('REQUEST_BODY_TOO_LARGE', 413, false)
+    if (length > maximumBytes) throw new IdentityError('REQUEST_BODY_TOO_LARGE', 413, false)
     chunks.push(buffer)
   }
   let value: unknown
@@ -971,7 +987,12 @@ async function resolveBrowserSubject(
         cookies[authCookieNames.session] ?? null,
         cookies[authCookieNames.csrf] ?? null,
       )
-      return Object.freeze({ kind: 'user', id: session.userId })
+      const subject = Object.freeze({ kind: 'user' as const, id: session.userId })
+      issueAnalyticsSession(response, dependencies, {
+        subject,
+        bindingMaterial: cookies[authCookieNames.session]!,
+      })
+      return subject
     } catch (error) {
       if (!(error instanceof IdentityError) || ![
         'AUTHENTICATION_REQUIRED', 'SESSION_INVALID', 'CSRF_INVALID',
@@ -989,7 +1010,40 @@ async function resolveBrowserSubject(
       { httpOnly: true, maxAgeSeconds: 31_536_000 },
     ),
   ])
-  return Object.freeze({ kind: 'anonymous', id: subjectId })
+  const subject = Object.freeze({ kind: 'anonymous' as const, id: subjectId })
+  issueAnalyticsSession(response, dependencies, {
+    subject,
+    bindingMaterial: signAnonymousSubject(subjectId, secret),
+  })
+  return subject
+}
+
+function issueAnalyticsSession(
+  response: ServerResponse,
+  dependencies: ApiServerDependencies,
+  context: AnalyticsBrowserContext,
+): void {
+  if (!dependencies.analytics) return
+  response.setHeader('x-analytics-session', dependencies.analytics.issueSession(context))
+}
+
+function analyticsBrowserContext(
+  request: IncomingMessage,
+  subject: SearchSubject,
+  dependencies: ApiServerDependencies,
+): AnalyticsBrowserContext {
+  const cookies = parseCookies(request)
+  if (subject.kind === 'user') {
+    const sessionToken = cookies[authCookieNames.session]
+    if (!sessionToken) throw new AnalyticsError('ACTOR_IDENTITY_INVALID', 401)
+    return Object.freeze({ subject, bindingMaterial: sessionToken })
+  }
+  const secret = dependencies.anonymousCookieSecret ?? ''
+  if (secret.length < 32) throw new AnalyticsError('ANALYTICS_SERVICE_UNAVAILABLE', 503, true)
+  return Object.freeze({
+    subject,
+    bindingMaterial: signAnonymousSubject(subject.id, secret),
+  })
 }
 
 function resolveSearchSubject(
@@ -1427,6 +1481,42 @@ async function handleComparisonRequest(
   return null
 }
 
+async function handleAnalyticsRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  if (path !== '/api/v1/analytics/events:batch' || method !== 'POST') return null
+  if (!dependencies.analytics) {
+    throw new AnalyticsError('ANALYTICS_SERVICE_UNAVAILABLE', 503, true)
+  }
+  if (!requestOriginAllowed(request, config)) throw new AnalyticsError('ORIGIN_INVALID', 403)
+  exactQueryKeys(url.searchParams, [])
+  const body = await readJsonBody(request, 256 * 1024)
+  const subject = await resolveBrowserSubject(
+    request,
+    response,
+    config,
+    dependencies,
+    () => new AnalyticsError('ANALYTICS_SERVICE_UNAVAILABLE', 503, true),
+  )
+  const rawHeader = request.headers['x-analytics-session']
+  if (Array.isArray(rawHeader)) throw new AnalyticsError('SESSION_BINDING_AMBIGUOUS', 422)
+  const receipt = await dependencies.analytics.ingestClientBatch({
+    body,
+    sessionHeader: rawHeader ?? null,
+    context: analyticsBrowserContext(request, subject, dependencies),
+    environment: config.environment,
+  })
+  writeJson(response, 202, receipt, requestId)
+  return 202
+}
+
 async function handleCommunityRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1616,54 +1706,61 @@ export function createApiServer(
               if (pendingActionStatus !== null) {
                 statusCode = pendingActionStatus
               } else {
-                const communityStatus = await handleCommunityRequest(
+                const analyticsStatus = await handleAnalyticsRequest(
                   request, response, url, path, method, requestId, config, dependencies,
                 )
-                if (communityStatus !== null) {
-                  statusCode = communityStatus
+                if (analyticsStatus !== null) {
+                  statusCode = analyticsStatus
                 } else {
-                  const comparisonStatus = await handleComparisonRequest(
+                  const communityStatus = await handleCommunityRequest(
                     request, response, url, path, method, requestId, config, dependencies,
                   )
-                  if (comparisonStatus !== null) {
-                    statusCode = comparisonStatus
+                  if (communityStatus !== null) {
+                    statusCode = communityStatus
                   } else {
-                    const assetResolutionStatus = await handleAssetResolutionRequest(
+                    const comparisonStatus = await handleComparisonRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
-                    if (assetResolutionStatus !== null) {
-                      statusCode = assetResolutionStatus
+                    if (comparisonStatus !== null) {
+                      statusCode = comparisonStatus
                     } else {
-                      const searchStatus = await handleSearchRequest(
-                        request, response, path, method, requestId, config, dependencies,
+                      const assetResolutionStatus = await handleAssetResolutionRequest(
+                        request, response, url, path, method, requestId, config, dependencies,
                       )
-                      if (searchStatus !== null) {
-                        statusCode = searchStatus
+                      if (assetResolutionStatus !== null) {
+                        statusCode = assetResolutionStatus
                       } else {
-                        const catalogStatus = await handleCatalogRequest(
-                          response, url, path, method, requestId, dependencies,
+                        const searchStatus = await handleSearchRequest(
+                          request, response, path, method, requestId, config, dependencies,
                         )
-                        if (catalogStatus !== null) {
-                          statusCode = catalogStatus
+                        if (searchStatus !== null) {
+                          statusCode = searchStatus
                         } else {
-                          const staticStatus = await handleStaticRequest(
-                            request,
-                            response,
-                            path,
-                            method,
-                            requestId,
-                            dependencies.staticDirectory,
+                          const catalogStatus = await handleCatalogRequest(
+                            response, url, path, method, requestId, dependencies,
                           )
-                          if (staticStatus !== null) {
-                            statusCode = staticStatus
+                          if (catalogStatus !== null) {
+                            statusCode = catalogStatus
                           } else {
-                            statusCode = 404
-                            writeJson(
+                            const staticStatus = await handleStaticRequest(
+                              request,
                               response,
-                              statusCode,
-                              errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                              path,
+                              method,
                               requestId,
+                              dependencies.staticDirectory,
                             )
+                            if (staticStatus !== null) {
+                              statusCode = staticStatus
+                            } else {
+                              statusCode = 404
+                              writeJson(
+                                response,
+                                statusCode,
+                                errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                                requestId,
+                              )
+                            }
                           }
                         }
                       }
@@ -1676,7 +1773,7 @@ export function createApiServer(
         } catch (error) {
           const apiError = error instanceof IdentityError || error instanceof CatalogError ||
             error instanceof SearchError || error instanceof ComparisonError ||
-            error instanceof CommunityError
+            error instanceof CommunityError || error instanceof AnalyticsError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus

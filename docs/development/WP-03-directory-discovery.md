@@ -1,6 +1,6 @@
 # WP-03：目录与发现
 
-**状态：开发中（公共读取、关键词搜索、QuerySnapshot、Asset 安全解析、Comparison 与 PendingAction 服务端生命周期已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
+**状态：开发中（公共读取、关键词搜索、QuerySnapshot、Asset 安全解析、Comparison、PendingAction 与可信比较进度接收已实现）｜日期：2026-08-13｜前置：WP-02 / PR #1**
 
 ## 1. 本批交付
 
@@ -11,7 +11,7 @@
 - Project Version 使用 `ProjectCore + category_id + category_schema_version + category_data`，Learning 专属字段不得出现在 ProjectCore；
 - ProjectVersion、CreatorProfileVersion、Event 使用 append-only 保护；Project 当前版本在事务提交时校验所属 Project 与 Category Schema；
 - taxonomy 固定启用 `ai_learning_quiz / learning.v1` 与 `personal_site_portfolio / portfolio.v1`；配置内容哈希由数据库生成；
-- 实现目录公共读取、`OP-SEARCH` 关键词检索、`OP-QUERY-GET/LINK/UNLINK/INVALIDATE`、`OP-ASSET-RESOLVE`、`OP-COMP-GET/PUT/SAVE`、`OP-AUTH-MERGE-GET/RESOLVE/CANCEL` 与 `OP-AUTH-PENDING-CREATE/GET/CONSUME/CANCEL`；OpenAPI 当前为 24 条路径、27 个 Operation；
+- 实现目录公共读取、`OP-SEARCH` 关键词检索、`OP-QUERY-GET/LINK/UNLINK/INVALIDATE`、`OP-ASSET-RESOLVE`、`OP-COMP-GET/PUT/SAVE`、`OP-AUTH-MERGE-GET/RESOLVE/CANCEL`、`OP-AUTH-PENDING-CREATE/GET/CONSUME/CANCEL` 与 `OP-ANALYTICS-INGEST` 的首个可信事件分支；OpenAPI 当前为 29 条路径、33 个 Operation；
 - Project Detail 内嵌仅公开、有效且未过期的 Evidence 摘要，以及已确认且两端作品均公开的 Project→Project Relation；不暴露内部记录引用、私有证据或审核人；
 - Event 使用 `event_sort.v1` 将日/月/年/估算精度映射为持久 UTC 排序锚点；默认只读当前事件头，生命周期状态由 supersedes 关系派生；
 - Asset 列表只返回可复用元数据和 `requires_resolve`，不返回 `safe_web_url/contact_uri` 原值；只有按次安全解析成功后才返回短期目标；
@@ -51,6 +51,7 @@
 | OP-AUTH-PENDING-GET | GET `/api/v1/auth/pending-actions/{pending_action_id}` | 当前 owner 或持同认证流 `pending_action_replay` IdentityLink 的登录用户读取脱敏状态；不返回动作参数 |
 | OP-AUTH-PENDING-CONSUME | POST `/api/v1/auth/pending-actions/{pending_action_id}/consume` | 浏览器只提交登录主体 + CSRF + 单用途 IdentityLink；服务端以原 client_request_id 执行真实领域写，成功后在进程内签发回执并原子消费动作/链接、擦除密文 |
 | OP-AUTH-PENDING-CANCEL | POST `/api/v1/auth/pending-actions/{pending_action_id}/cancel` | 当前 owner 或链接后的登录主体取消；写不可回放终态、擦除密文并撤销全部活动回放链接 |
+| OP-ANALYTICS-INGEST | POST `/api/v1/analytics/events:batch` | 严格 BatchEnvelope、Header/item session XOR 和逐项回执；当前只接受 `comparison_dimension_viewed/v1`，客户端不能产生可信 `comparison_completed` |
 
 公共响应允许短缓存；身份与错误响应仍为 `no-store`。查询参数未知、重复、超限或游标被修改时返回 canonical 400 错误。
 
@@ -77,6 +78,7 @@
 - 登录合并 PostgreSQL 门禁验证每主体唯一活动指针、跨品类固定保留账户集合且不写账户历史、去重并集恰为 5 自动追加账户版本、6 项创建可恢复冲突、resolve 幂等、cancel 幂等且两端原集合保持不变；IdentityLink 与所有写入在同一事务消费或撤销。
 - Community PostgreSQL 门禁验证收藏/点赞/关注最终态幂等、级联约束、并发计数、评论创建/撤回/举报、A14 版本化限流、审核工单、密文举报说明、公开评论计数与 Outbox 去标识化。
 - PendingAction API 门禁验证浏览器不能提交成功回执；服务端内部解密并将原 client_request_id 传入 Interaction、Comment 或 Comparison 领域，领域失败保持 pending，成功才签发内部回执并消费，consumed 重试不重复业务写。
+- Analytics PostgreSQL 门禁验证服务端签发的 opaque token 与当前 HttpOnly 登录/游客上下文强绑定；受保护身份字段和敏感文本不进入事实表；四个维度累计 30 秒只产生一次 `comparison_completed`，事件和批次重试只返回 deduplicated。
 
 ## 5. 未完成范围
 
@@ -87,14 +89,15 @@
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
 - P09 Comparison 核心、完成口径、同品类登录合并以及 PendingAction 四操作/登录链接/比较冲突取消级联已落地；收藏、点赞、关注、评论和比较保存已接入可信自动回放。`start_submission` 在 WP-04 发布草稿服务完成前固定返回 501 且不消费 PendingAction；
+- `OP-ANALYTICS-INGEST` 当前仅实现比较维度可见事件；其余 client 事件注册表、service Outbox 接收、IdentityLink 后的版本化 Bridge、删除请求和 A13 指标控制面仍按后续批次交付。生产 `ANALYTICS_ENABLED` 默认关闭，只有合规责任人明确 `ANALYTICS_CONSENT_STATE` 后才启用；
 - 登录时账户活动集合与游客活动集合属于不同品类时固定以账户状态为准：不弹选择、不导入游客集合、不创建冲突或第二个账户活动集合；返回账户当前 Comparison 的 `not_required` 结果并消费本次 comparison IdentityLink。匿名集合不写入账户历史，仍按原匿名 TTL 独立过期；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 
 ## 6. 下一批顺序
 
-1. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-2. 把 `OP-ANALYTICS-INGEST` 可信维度可见事件接到 Comparison 内部进度服务；
-3. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，完成后再开放 `start_submission` 回放，不允许目录 importer 绕过审核直接发布。
+1. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，完成后再开放 `start_submission` 回放，不允许目录 importer 绕过审核直接发布；
+2. 与 WorkBuddy 的 P01/P08/P09/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
+3. 扩展剩余 client/service Analytics 注册表与身份桥，不在合规策略确认前打开生产收集。
 
 ## 7. 受审计目录 importer（WP-03 增量）
 
@@ -131,7 +134,7 @@
 - `client_request_id + subject_hash` 保存不可变回执；同主体同请求同载荷返回原响应，异载荷返回 409。版本冲突返回当前版本和当前有序 Project ID，客户端不得静默覆盖或截断。
 - 匿名主体保存 7 天且只存 HMAC；用户主体必须匹配真实 Session owner。保存状态使用最终状态语义，只有状态变化才写脱敏安全审计，保存本身不增加成员版本。
 - Learning 原三组维度无法满足冻结的“四组”完成口径；迁移将 `learning.v1` 比较映射明确拆为 audience/problem/workflow/capabilities，Portfolio 保持 purpose/structure/visual/interaction，并在 Store 层拒绝少于四组的无效配置。
-- 维度进度按 `comparison_id + comparison_version + dimension_group` 聚合，单事件限制 1—60 秒，`event_id` 与组内 `view_sequence` 双重幂等。当前尚不公开新的进度写路由；后续由冻结的 `OP-ANALYTICS-INGEST` 校验事件后调用可信内部方法。
+- 维度进度按 `comparison_id + comparison_version + dimension_group` 聚合，单事件限制 1—60 秒，`event_id` 与组内 `view_sequence` 双重幂等；冻结的 `OP-ANALYTICS-INGEST` 已在服务端校验同站会话、所有权、当前版本、有效作品数、维度组和时钟边界后调用内部方法。
 - 当且仅当当前版本含 2—5 个有效公开作品、至少四个不同维度组各有可见记录且累计不少于 30,000ms，原子设置一次 `completed_at`，并在同事务写入 `comparison_completed` Outbox；不创建 DecisionRecord，不产生 `decision_submitted`。
 - 作品后续 restricted/archived/deleted 或当前版本失效时，不改写历史 Item；GET 动态返回 invalid tombstone 和原因。当前数据模型尚无已合并作品的 canonical 映射，因此归并墓碑随后台合并能力一并补齐。
 
@@ -155,3 +158,11 @@
 - cancel/consume 使用 `pending_action_id+operation_id` 不可变回执。相同请求返回同一终态，异载荷复用返回 409；consumed/cancelled/expired 不可回 pending。惰性过期必须先提交 expired、擦除密文并终止绑定链接，再向调用方返回 410，不能因异常回滚生命周期事实。
 - ComparisonMergeConflict 创建前校验 pending action 与 comparison link 属于同一 auth_flow/用户/匿名主体；取消冲突原子取消 PendingAction 并撤销回放链接，冲突过期原子过期 PendingAction。resolve 只消费 comparison link，PendingAction 保持 pending，待真实领域写成功后单独 consume。
 - PostgreSQL 质量门覆盖 OTP 登录签发三个独立用途链接、脱敏读取、内部解密、签名消费、回执重放、密文擦除、直接取消、惰性过期提交、不可变触发器，以及比较冲突取消对 PendingAction 的级联。
+
+## 13. 可信比较进度 Analytics（WP-03 增量）
+
+- `@vibecheck/analytics` 实现 `BatchEnvelope.v1`、逐项 receipt、`event_id` 幂等、不可变 AnalyticsEnvelope 和 `AnalyticsIdentityBridge` 初始版本；事实表不存在 `user_id` 列，服务只持久化 HMAC session、不可逆 subject ref 和 opaque metric subject 三元组。
+- 业务接口在已经解析真实登录或签名游客主体时签发短期 `X-Analytics-Session`；token 不编码自然人 ID，并绑定当前原始 Session Cookie 或签名游客 Cookie。登录轮换、跨浏览器、过期 token 均拒绝为 `ACTOR_IDENTITY_INVALID`，不得降级或重归因。
+- Header 与 item `session_id` 严格二选一；多 item session、受保护身份字段、敏感 query/正文、未知 Key、非法页面/时间/维度均使用冻结错误码拒绝。非法 item 只保留 HMAC payload 摘要和错误码，不保存原值。
+- 当前 client 白名单只开放 `comparison_dimension_viewed/v1`；`project_count` 必须与服务端当前投影一致，客户端自报 `comparison_completed` 返回 `SCHEMA_INVALID`。真正的完成事实仍由 Comparison PostgreSQL 事务基于当前 2—5 个有效作品、四个维度和累计 30 秒产生一次 Outbox。
+- migration `000015_analytics_client_ingest.sql` 创建 ingest receipt/item、immutable event 和 append-only identity bridge event；生产配置默认关闭，启用必须提供隔离的 session/subject 密钥及明确的 `granted｜not_required` consent policy。

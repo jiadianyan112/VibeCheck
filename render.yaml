@@ -67,6 +67,8 @@ services:
         generateValue: true
       - key: COMPARISON_SUBJECT_COOKIE_SECRET
         generateValue: true
+      - key: ANALYTICS_ENABLED
+        value: "false"
 
   - type: worker
     name: vibecheck-worker

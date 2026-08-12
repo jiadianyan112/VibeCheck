@@ -76,6 +76,14 @@ export interface CommunityConfig {
   readonly commentPageSize: number
 }
 
+export interface AnalyticsConfig {
+  readonly enabled: boolean
+  readonly sessionSecret: string
+  readonly subjectHashPepper: string
+  readonly sessionTtlSeconds: number
+  readonly consentState: 'granted' | 'not_required'
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -413,5 +421,36 @@ export function loadCommunityConfig(
     commentPageSize: parseInteger(
       'COMMUNITY_COMMENT_PAGE_SIZE', env.COMMUNITY_COMMENT_PAGE_SIZE, 20, 1, 50,
     ),
+  })
+}
+
+export function loadAnalyticsConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): AnalyticsConfig {
+  const enabled = parseBoolean('ANALYTICS_ENABLED', env.ANALYTICS_ENABLED, false)
+  if (!enabled) {
+    return Object.freeze({
+      enabled: false,
+      sessionSecret: '',
+      subjectHashPepper: '',
+      sessionTtlSeconds: 86_400,
+      consentState: 'not_required',
+    })
+  }
+  const consentState = env.ANALYTICS_CONSENT_STATE
+  if (consentState !== 'granted' && consentState !== 'not_required') {
+    throw new Error('CONFIG_ANALYTICS_CONSENT_STATE_REQUIRED')
+  }
+  return Object.freeze({
+    enabled: true,
+    sessionSecret: requiredSecret('ANALYTICS_SESSION_SECRET', env.ANALYTICS_SESSION_SECRET),
+    subjectHashPepper: requiredSecret(
+      'ANALYTICS_SUBJECT_HASH_PEPPER', env.ANALYTICS_SUBJECT_HASH_PEPPER,
+    ),
+    sessionTtlSeconds: parseInteger(
+      'ANALYTICS_SESSION_TTL_SECONDS', env.ANALYTICS_SESSION_TTL_SECONDS,
+      86_400, 300, 604_800,
+    ),
+    consentState,
   })
 }
