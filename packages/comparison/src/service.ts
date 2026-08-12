@@ -1,16 +1,24 @@
-import { createHash, createHmac } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 
 import type { ComparisonConfig } from '@vibecheck/config'
 
 import { comparisonError } from './errors.js'
 import type { ComparisonStore } from './store-port.js'
 import type {
+  CancelComparisonMergeConflictCommand,
+  ComparisonLoginMergeProjection,
+  ComparisonMergeCancellationProjection,
+  ComparisonMergeConflictProjection,
+  ComparisonMergeResolutionProjection,
   ComparisonProgressProjection,
   ComparisonProjection,
   PutComparisonCommand,
   ComparisonMutationProjection,
   ComparisonSubject,
+  GetComparisonMergeConflictCommand,
+  PrepareComparisonLoginMergeCommand,
   RecordComparisonDimensionCommand,
+  ResolveComparisonMergeConflictCommand,
   SetComparisonSavedCommand,
 } from './types.js'
 
@@ -134,6 +142,114 @@ export class ComparisonService {
     })
   }
 
+  prepareLoginMerge(
+    command: PrepareComparisonLoginMergeCommand,
+  ): Promise<ComparisonLoginMergeProjection> {
+    const userId = this.uuid(command.userId, 'USER_ID_INVALID')
+    const anonymousSubjectId = this.uuid(
+      command.anonymousSubjectId,
+      'COMPARISON_SUBJECT_INVALID',
+    )
+    const user = this.owner({ kind: 'user', id: userId })
+    const anonymous = this.owner({ kind: 'anonymous', id: anonymousSubjectId })
+    return this.dependencies.store.prepareLoginMerge({
+      userId,
+      userSubjectHash: user.subjectHash,
+      anonymousSubjectId,
+      anonymousSubjectHash: anonymous.subjectHash,
+      identityLinkId: this.uuid(command.identityLinkId, 'IDENTITY_LINK_ID_INVALID'),
+      operationId: this.uuid(command.operationId, 'OPERATION_ID_INVALID'),
+      adoptedComparisonId: randomUUID(),
+      conflictId: randomUUID(),
+      now: this.now(),
+    })
+  }
+
+  getMergeConflict(
+    command: GetComparisonMergeConflictCommand,
+  ): Promise<ComparisonMergeConflictProjection> {
+    if (command.subject.kind !== 'user') throw comparisonError('AUTHENTICATION_REQUIRED', 401)
+    return this.dependencies.store.getMergeConflict({
+      conflictId: this.uuid(command.conflictId, 'CONFLICT_ID_INVALID'),
+      ...this.owner(command.subject),
+      now: this.now(),
+    })
+  }
+
+  resolveMergeConflict(
+    command: ResolveComparisonMergeConflictCommand,
+  ): Promise<ComparisonMergeResolutionProjection> {
+    if (command.subject.kind !== 'user') throw comparisonError('AUTHENTICATION_REQUIRED', 401)
+    this.mergeVersion(command.accountVersion)
+    this.mergeVersion(command.anonymousVersion)
+    this.mergeVersion(command.expectedConflictVersion)
+    if (!Array.isArray(command.selectedProjectIds) || command.selectedProjectIds.length > 5) {
+      throw comparisonError('COMPARISON_ITEM_LIMIT_EXCEEDED', 409, false, undefined, {
+        maximum_count: 5,
+        requested_count: command.selectedProjectIds.length,
+      })
+    }
+    const selectedProjectIds = Object.freeze(command.selectedProjectIds.map((projectId) => (
+      this.uuid(projectId, 'PROJECT_ID_INVALID')
+    )))
+    if (new Set(selectedProjectIds).size !== selectedProjectIds.length) {
+      throw comparisonError('COMPARISON_PROJECT_DUPLICATED', 422)
+    }
+    const conflictId = this.uuid(command.conflictId, 'CONFLICT_ID_INVALID')
+    const operationId = this.uuid(command.operationId, 'OPERATION_ID_INVALID')
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      conflict_id: conflictId,
+      selected_project_ids: selectedProjectIds,
+      account_version: command.accountVersion,
+      anonymous_version: command.anonymousVersion,
+      expected_conflict_version: command.expectedConflictVersion,
+    })).digest('hex')
+    return this.dependencies.store.resolveMergeConflict({
+      conflictId,
+      selectedProjectIds,
+      accountVersion: command.accountVersion,
+      anonymousVersion: command.anonymousVersion,
+      expectedConflictVersion: command.expectedConflictVersion,
+      operationId,
+      requestHash,
+      ...this.owner(command.subject),
+      now: this.now(),
+    })
+  }
+
+  cancelMergeConflict(
+    command: CancelComparisonMergeConflictCommand,
+  ): Promise<ComparisonMergeCancellationProjection> {
+    if (command.subject.kind !== 'user') throw comparisonError('AUTHENTICATION_REQUIRED', 401)
+    this.mergeVersion(command.expectedConflictVersion)
+    const cancelReason = command.cancelReason.trim()
+    if (
+      cancelReason.length < 1 || cancelReason.length > 128 ||
+      [...cancelReason].some((character) => {
+        const code = character.charCodeAt(0)
+        return code <= 31 || code === 127
+      })
+    ) {
+      throw comparisonError('CANCEL_REASON_INVALID', 422)
+    }
+    const conflictId = this.uuid(command.conflictId, 'CONFLICT_ID_INVALID')
+    const operationId = this.uuid(command.operationId, 'OPERATION_ID_INVALID')
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      conflict_id: conflictId,
+      cancel_reason: cancelReason,
+      expected_conflict_version: command.expectedConflictVersion,
+    })).digest('hex')
+    return this.dependencies.store.cancelMergeConflict({
+      conflictId,
+      cancelReason,
+      expectedConflictVersion: command.expectedConflictVersion,
+      operationId,
+      requestHash,
+      ...this.owner(command.subject),
+      now: this.now(),
+    })
+  }
+
   private owner(subject: ComparisonSubject) {
     const id = this.uuid(subject.id, 'COMPARISON_SUBJECT_INVALID')
     if (subject.kind !== 'anonymous' && subject.kind !== 'user') {
@@ -157,5 +273,11 @@ export class ComparisonService {
   private requestId(value: string): string {
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(value)) throw comparisonError('REQUEST_ID_INVALID', 422)
     return value
+  }
+
+  private mergeVersion(value: number): void {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      throw comparisonError('COMPARISON_MERGE_VERSION_INVALID', 422)
+    }
   }
 }

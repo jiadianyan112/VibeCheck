@@ -100,7 +100,7 @@ export type CompleteVerificationResult =
       readonly returnTo: string
       readonly identityLinks: readonly {
         readonly identityLinkId: string
-        readonly purpose: 'query_continuation'
+        readonly purpose: 'query_continuation' | 'comparison_merge'
         readonly expiresAt: Date
       }[]
     }
@@ -516,11 +516,17 @@ export class PostgresIdentityStore {
       ],
     )
     const roles = await rolesFor(client, userId)
-    const identityLink = await client.query<{ identity_link_id: string; expires_at: Date }>(
+    const identityLinks = await client.query<{
+      identity_link_id: string
+      purpose: 'query_continuation' | 'comparison_merge'
+      expires_at: Date
+    }>(
       `INSERT INTO iam.identity_links (
          anonymous_subject_id,user_id,auth_flow_id,purpose,status,issued_at,expires_at
-       ) VALUES ($1,$2,$3,'query_continuation','active',$4,$5)
-       RETURNING identity_link_id,expires_at`,
+       ) VALUES
+         ($1,$2,$3,'query_continuation','active',$4,$5),
+         ($1,$2,$3,'comparison_merge','active',$4,$5)
+       RETURNING identity_link_id,purpose,expires_at`,
       [
         challenge.anonymous_subject_id,
         userId,
@@ -543,11 +549,11 @@ export class PostgresIdentityStore {
       expiresAt: input.sessionExpiresAt,
       sessionVersion: 1,
       returnTo: challenge.return_to,
-      identityLinks: Object.freeze([Object.freeze({
-        identityLinkId: identityLink.rows[0]!.identity_link_id,
-        purpose: 'query_continuation' as const,
-        expiresAt: identityLink.rows[0]!.expires_at,
-      })]),
+      identityLinks: Object.freeze(identityLinks.rows.map((link) => Object.freeze({
+        identityLinkId: link.identity_link_id,
+        purpose: link.purpose,
+        expiresAt: link.expires_at,
+      }))),
     }
   }
 

@@ -1,4 +1,8 @@
 import type {
+  ComparisonLoginMergeProjection,
+  ComparisonMergeCancellationProjection,
+  ComparisonMergeConflictProjection,
+  ComparisonMergeResolutionProjection,
   ComparisonMutationProjection,
   ComparisonProgressProjection,
   ComparisonProjection,
@@ -41,4 +45,37 @@ export interface ComparisonStore {
     readonly occurredAt: Date
     readonly now: Date
   }): Promise<ComparisonProgressProjection>
+  prepareLoginMerge(input: {
+    readonly userId: string
+    readonly userSubjectHash: Buffer
+    readonly anonymousSubjectId: string
+    readonly anonymousSubjectHash: Buffer
+    readonly identityLinkId: string
+    readonly operationId: string
+    readonly adoptedComparisonId: string
+    readonly conflictId: string
+    readonly now: Date
+  }): Promise<ComparisonLoginMergeProjection>
+  getMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly now: Date
+  }): Promise<ComparisonMergeConflictProjection>
+  resolveMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly selectedProjectIds: readonly string[]
+    readonly accountVersion: number
+    readonly anonymousVersion: number
+    readonly expectedConflictVersion: number
+    readonly operationId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ComparisonMergeResolutionProjection>
+  cancelMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly cancelReason: string
+    readonly expectedConflictVersion: number
+    readonly operationId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ComparisonMergeCancellationProjection>
 }

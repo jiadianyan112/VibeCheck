@@ -19,10 +19,18 @@ import {
 import type { ServiceConfig } from '@vibecheck/config'
 import {
   ComparisonError,
+  type CancelComparisonMergeConflictCommand,
+  type ComparisonLoginMergeProjection,
+  type ComparisonMergeCancellationProjection,
+  type ComparisonMergeConflictProjection,
+  type ComparisonMergeResolutionProjection,
   type ComparisonMutationProjection,
   type ComparisonProjection,
   type ComparisonSubject,
+  type GetComparisonMergeConflictCommand,
+  type PrepareComparisonLoginMergeCommand,
   type PutComparisonCommand,
+  type ResolveComparisonMergeConflictCommand,
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
 import type { ServiceHealth } from '@vibecheck/contracts'
@@ -99,6 +107,14 @@ export interface ApiComparisonService {
   ): Promise<ComparisonProjection>
   putComparison(command: PutComparisonCommand): Promise<ComparisonMutationProjection>
   setSaved(command: SetComparisonSavedCommand): Promise<ComparisonProjection>
+  prepareLoginMerge(command: PrepareComparisonLoginMergeCommand): Promise<ComparisonLoginMergeProjection>
+  getMergeConflict(command: GetComparisonMergeConflictCommand): Promise<ComparisonMergeConflictProjection>
+  resolveMergeConflict(
+    command: ResolveComparisonMergeConflictCommand,
+  ): Promise<ComparisonMergeResolutionProjection>
+  cancelMergeConflict(
+    command: CancelComparisonMergeConflictCommand,
+  ): Promise<ComparisonMergeCancellationProjection>
 }
 
 export interface ApiSearchService {
@@ -572,6 +588,15 @@ async function handleAuthRequest(
       requestId,
     })
     if (result.purpose === 'login') {
+      const mergeIdentityLink = result.identityLinks.find(({ purpose }) => purpose === 'comparison_merge')
+      const comparisonMerge = dependencies.comparison && mergeIdentityLink
+        ? await dependencies.comparison.prepareLoginMerge({
+          userId: result.session.userId,
+          anonymousSubjectId: result.anonymousSubjectId,
+          identityLinkId: mergeIdentityLink.identityLinkId,
+          operationId: stringField(body, 'client_request_id', { maximum: 64 })!,
+        })
+        : null
       const maxAgeSeconds = Math.max(
         0,
         Math.floor((Date.parse(result.session.expiresAt) - (dependencies.now?.() ?? new Date()).getTime()) / 1_000),
@@ -596,6 +621,7 @@ async function handleAuthRequest(
           purpose: link.purpose,
           expires_at: link.expiresAt,
         })),
+        comparison_merge: comparisonMerge,
       }, requestId)
     } else {
       appendCookies(response, [
@@ -1000,11 +1026,75 @@ async function handleComparisonRequest(
 ): Promise<number | null> {
   const comparisonMatch = path.match(/^\/api\/v1\/comparisons\/([^/]+)$/)
   const savedMatch = path.match(/^\/api\/v1\/comparisons\/([^/]+)\/saved$/)
-  if (comparisonMatch === null && savedMatch === null) return null
+  const mergeConflictMatch = path.match(
+    /^\/api\/v1\/auth\/comparison-merge-conflicts\/([^/]+)$/,
+  )
+  const mergeResolveMatch = path.match(
+    /^\/api\/v1\/auth\/comparison-merge-conflicts\/([^/]+)\/resolve$/,
+  )
+  const mergeCancelMatch = path.match(
+    /^\/api\/v1\/auth\/comparison-merge-conflicts\/([^/]+)\/cancel$/,
+  )
+  if (
+    comparisonMatch === null && savedMatch === null && mergeConflictMatch === null &&
+    mergeResolveMatch === null && mergeCancelMatch === null
+  ) return null
   if (!dependencies.comparison) {
     throw new ComparisonError('COMPARISON_SERVICE_UNAVAILABLE', 503, true)
   }
   exactQueryKeys(url.searchParams, [])
+
+  if (mergeConflictMatch !== null && method === 'GET') {
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    const projection = await dependencies.comparison.getMergeConflict({
+      conflictId: mergeConflictMatch[1]!,
+      subject,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (mergeResolveMatch !== null && method === 'POST') {
+    if (!requestOriginAllowed(request, config)) throw new ComparisonError('ORIGIN_INVALID', 403)
+    const body = await readJsonBody(request)
+    exactKeys(body, [
+      'selected_project_ids',
+      'account_version',
+      'anonymous_version',
+      'expected_conflict_version',
+      'operation_id',
+    ])
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    requireComparisonMutationCsrf(request)
+    const projection = await dependencies.comparison.resolveMergeConflict({
+      conflictId: mergeResolveMatch[1]!,
+      selectedProjectIds: stringArrayField(body, 'selected_project_ids', 5, 64),
+      accountVersion: integerField(body, 'account_version', 1),
+      anonymousVersion: integerField(body, 'anonymous_version', 1),
+      expectedConflictVersion: integerField(body, 'expected_conflict_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 64 })!,
+      subject,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (mergeCancelMatch !== null && method === 'POST') {
+    if (!requestOriginAllowed(request, config)) throw new ComparisonError('ORIGIN_INVALID', 403)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['cancel_reason', 'expected_conflict_version', 'operation_id'])
+    const subject = await resolveAuthenticatedSearchSubject(request, dependencies)
+    requireComparisonMutationCsrf(request)
+    const projection = await dependencies.comparison.cancelMergeConflict({
+      conflictId: mergeCancelMatch[1]!,
+      cancelReason: stringField(body, 'cancel_reason', { maximum: 128 })!,
+      expectedConflictVersion: integerField(body, 'expected_conflict_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 64 })!,
+      subject,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
 
   if (comparisonMatch !== null && method === 'GET') {
     const subject = await resolveComparisonSubject(request, response, config, dependencies)

@@ -242,6 +242,7 @@ export class IdentityService {
         roles: result.roles,
       }, csrfToken, email),
       sessionToken,
+      anonymousSubjectId: result.anonymousSubjectId,
       returnTo: safeReturnTo,
       identityLinks: Object.freeze(result.identityLinks.map((link) => Object.freeze({
         identityLinkId: link.identityLinkId,

@@ -4,6 +4,11 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg'
 import { comparisonError } from './errors.js'
 import type { ComparisonStore, ComparisonStoreOwner } from './store-port.js'
 import type {
+  ComparisonLoginMergeProjection,
+  ComparisonMergeCancellationProjection,
+  ComparisonMergeConflictProjection,
+  ComparisonMergeProjectSummary,
+  ComparisonMergeResolutionProjection,
   ComparisonItemProjection,
   ComparisonMutationProjection,
   ComparisonProgressProjection,
@@ -69,6 +74,59 @@ interface DimensionEventRow extends QueryResultRow {
   readonly visible_ms: number
   readonly subject_hash: Buffer
   readonly occurred_at: Date
+}
+
+interface IdentityLinkRow extends QueryResultRow {
+  readonly identity_link_id: string
+  readonly anonymous_subject_id: string
+  readonly user_id: string
+  readonly purpose: string
+  readonly status: 'active' | 'consumed' | 'revoked' | 'expired'
+  readonly expires_at: Date
+}
+
+interface ActiveComparisonRow extends QueryResultRow {
+  readonly comparison_id: string
+}
+
+interface LoginMergeReceiptRow extends QueryResultRow {
+  readonly operation_id: string
+  readonly response_json: ComparisonLoginMergeProjection
+}
+
+interface MergeConflictRow extends QueryResultRow {
+  readonly conflict_id: string
+  readonly identity_link_id: string
+  readonly user_id: string
+  readonly account_comparison_id: string
+  readonly account_comparison_version: number
+  readonly anonymous_comparison_id: string
+  readonly anonymous_comparison_version: number
+  readonly candidate_project_ids: string[]
+  readonly selected_project_ids: string[] | null
+  readonly pending_action_id: string | null
+  readonly status: 'pending' | 'resolved' | 'cancelled' | 'expired'
+  readonly version: number
+  readonly expires_at: Date
+  readonly resolved_at: Date | null
+  readonly cancelled_at: Date | null
+}
+
+interface MergeOperationReceiptRow extends QueryResultRow {
+  readonly operation_type: 'resolve' | 'cancel'
+  readonly request_hash: string
+  readonly response_json: ComparisonMergeResolutionProjection | ComparisonMergeCancellationProjection
+}
+
+interface MergeProjectSummaryRow extends QueryResultRow {
+  readonly project_id: string
+  readonly current_name: string
+  readonly category_id: CategoryId
+  readonly access_status: string
+  readonly freshness_status: string
+  readonly last_verified_at: Date
+  readonly review_status: string
+  readonly current_version_id: string | null
 }
 
 export class PostgresComparisonStore implements ComparisonStore {
@@ -151,6 +209,7 @@ export class PostgresComparisonStore implements ComparisonStore {
             )
             row = await this.comparisonRow(client, input.comparisonId, true)
           }
+          await this.setActiveComparison(client, input, input.comparisonId, input.now)
           const projection = Object.freeze({
             ...await this.projection(client, row!, input),
             mutation_result: 'no_change' as const,
@@ -201,6 +260,7 @@ export class PostgresComparisonStore implements ComparisonStore {
           [input.comparisonId, nextVersion, input.orderedProjectIds[index], index + 1, input.now],
         )
       }
+      await this.setActiveComparison(client, input, input.comparisonId, input.now)
       row = await this.comparisonRow(client, input.comparisonId, true)
       const projection = Object.freeze({
         ...await this.projection(client, row!, input),
@@ -428,6 +488,791 @@ export class PostgresComparisonStore implements ComparisonStore {
     } finally {
       client.release()
     }
+  }
+
+  async prepareLoginMerge(input: {
+    readonly userId: string
+    readonly userSubjectHash: Buffer
+    readonly anonymousSubjectId: string
+    readonly anonymousSubjectHash: Buffer
+    readonly identityLinkId: string
+    readonly operationId: string
+    readonly adoptedComparisonId: string
+    readonly conflictId: string
+    readonly now: Date
+  }): Promise<ComparisonLoginMergeProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        `comparison-login-merge:${input.identityLinkId}`,
+      ])
+      const receipt = await client.query<LoginMergeReceiptRow>(
+        `SELECT operation_id,response_json
+         FROM comparison.comparison_login_merge_receipts WHERE identity_link_id=$1`,
+        [input.identityLinkId],
+      )
+      if (receipt.rows[0]) {
+        if (receipt.rows[0].operation_id !== input.operationId) {
+          throw comparisonError('OPERATION_ID_CONFLICT', 409)
+        }
+        await client.query('COMMIT')
+        return Object.freeze(receipt.rows[0].response_json)
+      }
+
+      const link = await this.identityLink(client, input.identityLinkId, true)
+      this.assertMergeIdentityLink(link, input.userId, input.anonymousSubjectId, input.now)
+      const anonymous = await this.activeComparison(
+        client,
+        { kind: 'anonymous', hash: input.anonymousSubjectHash },
+        true,
+      )
+      const account = await this.activeComparison(
+        client,
+        { kind: 'user', id: input.userId },
+        true,
+      )
+      const anonymousActive = anonymous !== null && this.isActiveAt(anonymous, input.now)
+        ? anonymous
+        : null
+      const accountActive = account !== null && this.isActiveAt(account, input.now)
+        ? account
+        : null
+
+      if (anonymousActive === null) {
+        const projection = Object.freeze({
+          result: 'not_required' as const,
+          comparison_id: accountActive?.comparison_id ?? null,
+          comparison_version: accountActive?.current_version ?? null,
+          conflict_id: null,
+          conflict_version: null,
+          expires_at: null,
+        })
+        await this.finishLoginMerge(client, input, projection, true)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      const anonymousIds = await this.currentProjectIds(client, anonymousActive)
+      if (anonymousIds.length === 0) {
+        const projection = Object.freeze({
+          result: 'not_required' as const,
+          comparison_id: accountActive?.comparison_id ?? null,
+          comparison_version: accountActive?.current_version ?? null,
+          conflict_id: null,
+          conflict_version: null,
+          expires_at: null,
+        })
+        await this.finishLoginMerge(client, input, projection, true)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      const accountIds = accountActive === null
+        ? Object.freeze([]) as readonly string[]
+        : await this.currentProjectIds(client, accountActive)
+      if (accountActive === null || accountIds.length === 0) {
+        await this.createUserComparisonCopy(
+          client,
+          input.adoptedComparisonId,
+          input.userId,
+          anonymousActive,
+          anonymousIds,
+          input.now,
+        )
+        const projection = Object.freeze({
+          result: 'adopted' as const,
+          comparison_id: input.adoptedComparisonId,
+          comparison_version: 1,
+          conflict_id: null,
+          conflict_version: null,
+          expires_at: null,
+        })
+        await this.insertMergeSecurityEvent(
+          client,
+          'comparison_login_merged',
+          input.userSubjectHash,
+          'comparison',
+          input.adoptedComparisonId,
+          { result: 'adopted', comparison_version: 1 },
+          input.operationId,
+          input.now,
+        )
+        await this.finishLoginMerge(client, input, projection, true)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      if (
+        accountActive.category_id !== anonymousActive.category_id ||
+        accountActive.category_schema_version !== anonymousActive.category_schema_version
+      ) {
+        const projection = Object.freeze({
+          result: 'category_mismatch' as const,
+          comparison_id: accountActive.comparison_id,
+          comparison_version: accountActive.current_version,
+          conflict_id: null,
+          conflict_version: null,
+          expires_at: link!.expires_at.toISOString(),
+        })
+        await this.finishLoginMerge(client, input, projection, false)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      const candidateIds = Object.freeze([...new Set([...accountIds, ...anonymousIds])])
+      if (candidateIds.length <= 5) {
+        let nextVersion = accountActive.current_version
+        let result: ComparisonLoginMergeProjection['result'] = 'not_required'
+        if (!this.sameOrder(accountIds, candidateIds)) {
+          nextVersion += 1
+          await this.appendComparisonVersion(
+            client,
+            accountActive.comparison_id,
+            nextVersion,
+            candidateIds,
+            input.now,
+          )
+          result = 'merged'
+        }
+        await this.setActiveComparison(client, {
+          subject: { kind: 'user', id: input.userId },
+          subjectHash: input.userSubjectHash,
+        }, accountActive.comparison_id, input.now)
+        const projection = Object.freeze({
+          result,
+          comparison_id: accountActive.comparison_id,
+          comparison_version: nextVersion,
+          conflict_id: null,
+          conflict_version: null,
+          expires_at: null,
+        })
+        if (result === 'merged') {
+          await this.insertMergeSecurityEvent(
+            client,
+            'comparison_login_merged',
+            input.userSubjectHash,
+            'comparison',
+            accountActive.comparison_id,
+            { result, comparison_version: nextVersion, candidate_count: candidateIds.length },
+            input.operationId,
+            input.now,
+          )
+        }
+        await this.finishLoginMerge(client, input, projection, true)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      await client.query(
+        `INSERT INTO comparison.comparison_merge_conflicts (
+           conflict_id,identity_link_id,user_id,account_comparison_id,
+           account_comparison_version,anonymous_comparison_id,
+           anonymous_comparison_version,candidate_project_ids,status,version,
+           expires_at,created_at,updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',1,$9,$10,$10)`,
+        [
+          input.conflictId,
+          input.identityLinkId,
+          input.userId,
+          accountActive.comparison_id,
+          accountActive.current_version,
+          anonymousActive.comparison_id,
+          anonymousActive.current_version,
+          candidateIds,
+          link!.expires_at,
+          input.now,
+        ],
+      )
+      const projection = Object.freeze({
+        result: 'conflict' as const,
+        comparison_id: accountActive.comparison_id,
+        comparison_version: accountActive.current_version,
+        conflict_id: input.conflictId,
+        conflict_version: 1,
+        expires_at: link!.expires_at.toISOString(),
+      })
+      await this.insertMergeSecurityEvent(
+        client,
+        'comparison_merge_conflict_created',
+        input.userSubjectHash,
+        'comparison_merge_conflict',
+        input.conflictId,
+        {
+          candidate_count: candidateIds.length,
+          account_comparison_version: accountActive.current_version,
+          anonymous_comparison_version: anonymousActive.current_version,
+        },
+        input.operationId,
+        input.now,
+      )
+      await this.finishLoginMerge(client, input, projection, false)
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async getMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly now: Date
+  }): Promise<ComparisonMergeConflictProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const conflict = await this.mergeConflict(client, input.conflictId, true)
+      await this.assertMergeConflictAccess(client, conflict, input, input.now)
+      const current = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
+      if (current.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      const projection = await this.mergeConflictProjection(client, current)
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async resolveMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly selectedProjectIds: readonly string[]
+    readonly accountVersion: number
+    readonly anonymousVersion: number
+    readonly expectedConflictVersion: number
+    readonly operationId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ComparisonMergeResolutionProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        `comparison-merge-conflict:${input.conflictId}`,
+      ])
+      const receipt = await this.mergeOperationReceipt(client, input.conflictId, input.operationId)
+      if (receipt !== null) {
+        if (receipt.operation_type !== 'resolve' || receipt.request_hash !== input.requestHash) {
+          throw comparisonError('OPERATION_ID_CONFLICT', 409)
+        }
+        await client.query('COMMIT')
+        return Object.freeze(receipt.response_json as ComparisonMergeResolutionProjection)
+      }
+      let conflict = await this.mergeConflict(client, input.conflictId, true)
+      await this.assertMergeConflictAccess(client, conflict, input, input.now)
+      conflict = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
+      if (conflict.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      if (conflict.status !== 'pending') throw comparisonError('COMPARISON_MERGE_CONFLICT_TERMINAL', 409)
+      if (conflict.version !== input.expectedConflictVersion) {
+        throw comparisonError('COMPARISON_MERGE_CONFLICT_VERSION_CONFLICT', 409, false, undefined, {
+          current_conflict_version: conflict.version,
+          current_status: conflict.status,
+        })
+      }
+      if (
+        conflict.account_comparison_version !== input.accountVersion ||
+        conflict.anonymous_comparison_version !== input.anonymousVersion
+      ) throw comparisonError('COMPARISON_VERSION_CONFLICT', 409)
+
+      const account = await this.comparisonRow(client, conflict.account_comparison_id, true)
+      const anonymous = await this.comparisonRow(client, conflict.anonymous_comparison_id, true)
+      if (account === null || anonymous === null) throw comparisonError('COMPARISON_MERGE_STATE_INVALID', 500, true)
+      if (
+        account.current_version !== input.accountVersion ||
+        anonymous.current_version !== input.anonymousVersion
+      ) {
+        throw comparisonError('COMPARISON_VERSION_CONFLICT', 409, false, undefined, {
+          current_account_version: account.current_version,
+          current_anonymous_version: anonymous.current_version,
+          current_account_project_ids: await this.currentProjectIds(client, account),
+          current_anonymous_project_ids: await this.currentProjectIds(client, anonymous),
+        })
+      }
+      const currentCandidates = Object.freeze([...new Set([
+        ...await this.currentProjectIds(client, account),
+        ...await this.currentProjectIds(client, anonymous),
+      ])])
+      if (!this.sameOrder(currentCandidates, conflict.candidate_project_ids)) {
+        throw comparisonError('COMPARISON_MERGE_CANDIDATES_CHANGED', 409)
+      }
+      if (input.selectedProjectIds.some((id) => !conflict.candidate_project_ids.includes(id))) {
+        throw comparisonError('COMPARISON_MERGE_SELECTION_INVALID', 422)
+      }
+      const selected = await this.validateProjects(client, input.selectedProjectIds)
+      if (selected.some(({ category_id }) => category_id !== account.category_id)) {
+        throw comparisonError('COMPARISON_CATEGORY_MISMATCH', 422)
+      }
+      const nextComparisonVersion = account.current_version + 1
+      await this.appendComparisonVersion(
+        client,
+        account.comparison_id,
+        nextComparisonVersion,
+        input.selectedProjectIds,
+        input.now,
+      )
+      await this.setActiveComparison(client, input, account.comparison_id, input.now)
+      const updated = await client.query<MergeConflictRow>(
+        `UPDATE comparison.comparison_merge_conflicts
+         SET selected_project_ids=$2,status='resolved',version=version+1,
+           resolved_at=$3,updated_at=$3
+         WHERE conflict_id=$1
+         RETURNING conflict_id,identity_link_id,user_id,account_comparison_id,
+           account_comparison_version,anonymous_comparison_id,anonymous_comparison_version,
+           candidate_project_ids,selected_project_ids,pending_action_id,status,version,
+           expires_at,resolved_at,cancelled_at`,
+        [input.conflictId, input.selectedProjectIds, input.now],
+      )
+      await client.query(
+        `UPDATE iam.identity_links SET status='consumed',consumed_at=$2
+         WHERE identity_link_id=$1 AND status='active'`,
+        [conflict.identity_link_id, input.now],
+      )
+      const projection = Object.freeze({
+        conflict_id: input.conflictId,
+        status: 'resolved' as const,
+        conflict_version: updated.rows[0]!.version,
+        comparison_id: account.comparison_id,
+        comparison_version: nextComparisonVersion,
+        selected_project_ids: Object.freeze([...input.selectedProjectIds]),
+        resolved_at: input.now.toISOString(),
+      })
+      await this.insertMergeSecurityEvent(
+        client,
+        'comparison_merge_conflict_resolved',
+        input.subjectHash,
+        'comparison_merge_conflict',
+        input.conflictId,
+        {
+          conflict_version: updated.rows[0]!.version,
+          comparison_version: nextComparisonVersion,
+          selected_count: input.selectedProjectIds.length,
+        },
+        input.operationId,
+        input.now,
+      )
+      await this.saveMergeOperationReceipt(client, input, 'resolve', projection)
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async cancelMergeConflict(input: ComparisonStoreOwner & {
+    readonly conflictId: string
+    readonly cancelReason: string
+    readonly expectedConflictVersion: number
+    readonly operationId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ComparisonMergeCancellationProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        `comparison-merge-conflict:${input.conflictId}`,
+      ])
+      const receipt = await this.mergeOperationReceipt(client, input.conflictId, input.operationId)
+      if (receipt !== null) {
+        if (receipt.operation_type !== 'cancel' || receipt.request_hash !== input.requestHash) {
+          throw comparisonError('OPERATION_ID_CONFLICT', 409)
+        }
+        await client.query('COMMIT')
+        return Object.freeze(receipt.response_json as ComparisonMergeCancellationProjection)
+      }
+      let conflict = await this.mergeConflict(client, input.conflictId, true)
+      await this.assertMergeConflictAccess(client, conflict, input, input.now)
+      conflict = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
+      if (conflict.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      if (conflict.status === 'resolved') throw comparisonError('COMPARISON_MERGE_CONFLICT_TERMINAL', 409)
+      if (conflict.status === 'cancelled') {
+        const terminal = Object.freeze({
+          conflict_id: conflict.conflict_id,
+          status: 'cancelled' as const,
+          conflict_version: conflict.version,
+          cancelled_at: conflict.cancelled_at!.toISOString(),
+          pending_action_status: null,
+        })
+        await this.saveMergeOperationReceipt(client, input, 'cancel', terminal)
+        await client.query('COMMIT')
+        return terminal
+      }
+      if (conflict.version !== input.expectedConflictVersion) {
+        throw comparisonError('COMPARISON_MERGE_CONFLICT_VERSION_CONFLICT', 409, false, undefined, {
+          current_conflict_version: conflict.version,
+          current_status: conflict.status,
+        })
+      }
+      const updated = await client.query<MergeConflictRow>(
+        `UPDATE comparison.comparison_merge_conflicts
+         SET status='cancelled',version=version+1,cancelled_at=$2,
+           cancel_reason=$3,updated_at=$2
+         WHERE conflict_id=$1
+         RETURNING conflict_id,identity_link_id,user_id,account_comparison_id,
+           account_comparison_version,anonymous_comparison_id,anonymous_comparison_version,
+           candidate_project_ids,selected_project_ids,pending_action_id,status,version,
+           expires_at,resolved_at,cancelled_at`,
+        [input.conflictId, input.now, input.cancelReason],
+      )
+      await client.query(
+        `UPDATE iam.identity_links SET status='revoked',revoked_at=$2
+         WHERE identity_link_id=$1 AND status='active'`,
+        [conflict.identity_link_id, input.now],
+      )
+      const projection = Object.freeze({
+        conflict_id: input.conflictId,
+        status: 'cancelled' as const,
+        conflict_version: updated.rows[0]!.version,
+        cancelled_at: input.now.toISOString(),
+        pending_action_status: null,
+      })
+      await this.insertMergeSecurityEvent(
+        client,
+        'comparison_merge_conflict_cancelled',
+        input.subjectHash,
+        'comparison_merge_conflict',
+        input.conflictId,
+        { conflict_version: updated.rows[0]!.version },
+        input.operationId,
+        input.now,
+      )
+      await this.saveMergeOperationReceipt(client, input, 'cancel', projection)
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  private async identityLink(
+    queryable: Queryable,
+    identityLinkId: string,
+    forUpdate = false,
+  ): Promise<IdentityLinkRow | null> {
+    const result = await queryable.query<IdentityLinkRow>(
+      `SELECT identity_link_id,anonymous_subject_id,user_id,purpose,status,expires_at
+       FROM iam.identity_links WHERE identity_link_id=$1${forUpdate ? ' FOR UPDATE' : ''}`,
+      [identityLinkId],
+    )
+    return result.rows[0] ?? null
+  }
+
+  private assertMergeIdentityLink(
+    link: IdentityLinkRow | null,
+    userId: string,
+    anonymousSubjectId: string,
+    now: Date,
+  ): void {
+    if (link === null) throw comparisonError('IDENTITY_LINK_NOT_FOUND', 404)
+    if (
+      link.user_id !== userId ||
+      link.anonymous_subject_id !== anonymousSubjectId ||
+      link.purpose !== 'comparison_merge'
+    ) throw comparisonError('IDENTITY_LINK_FORBIDDEN', 403)
+    if (link.status !== 'active' || link.expires_at <= now) {
+      throw comparisonError('IDENTITY_LINK_GONE', 410)
+    }
+  }
+
+  private async activeComparison(
+    queryable: Queryable,
+    owner: { readonly kind: 'user'; readonly id: string } |
+      { readonly kind: 'anonymous'; readonly hash: Buffer },
+    forUpdate = false,
+  ): Promise<ComparisonRow | null> {
+    const pointer = owner.kind === 'user'
+      ? await queryable.query<ActiveComparisonRow>(
+        `SELECT comparison_id FROM comparison.active_comparisons
+         WHERE owner_user_id=$1${forUpdate ? ' FOR UPDATE' : ''}`,
+        [owner.id],
+      )
+      : await queryable.query<ActiveComparisonRow>(
+        `SELECT comparison_id FROM comparison.active_comparisons
+         WHERE anonymous_subject_hash=$1${forUpdate ? ' FOR UPDATE' : ''}`,
+        [owner.hash],
+      )
+    if (!pointer.rows[0]) return null
+    return this.comparisonRow(queryable, pointer.rows[0].comparison_id, forUpdate)
+  }
+
+  private isActiveAt(row: ComparisonRow, now: Date): boolean {
+    return row.status === 'active' && (row.expires_at === null || row.expires_at > now)
+  }
+
+  private async setActiveComparison(
+    client: PoolClient,
+    owner: ComparisonStoreOwner,
+    comparisonId: string,
+    now: Date,
+  ): Promise<void> {
+    if (owner.subject.kind === 'user') {
+      await client.query(
+        `INSERT INTO comparison.active_comparisons (
+           owner_user_id,anonymous_subject_hash,comparison_id,updated_at
+         ) VALUES ($1,NULL,$2,$3)
+         ON CONFLICT (owner_user_id) WHERE owner_user_id IS NOT NULL DO UPDATE
+         SET comparison_id=EXCLUDED.comparison_id,updated_at=EXCLUDED.updated_at`,
+        [owner.subject.id, comparisonId, now],
+      )
+      return
+    }
+    await client.query(
+      `INSERT INTO comparison.active_comparisons (
+         owner_user_id,anonymous_subject_hash,comparison_id,updated_at
+       ) VALUES (NULL,$1,$2,$3)
+       ON CONFLICT (anonymous_subject_hash) WHERE anonymous_subject_hash IS NOT NULL DO UPDATE
+       SET comparison_id=EXCLUDED.comparison_id,updated_at=EXCLUDED.updated_at`,
+      [owner.subjectHash, comparisonId, now],
+    )
+  }
+
+  private async appendComparisonVersion(
+    client: PoolClient,
+    comparisonId: string,
+    comparisonVersion: number,
+    orderedProjectIds: readonly string[],
+    now: Date,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE comparison.comparisons
+       SET current_version=$2,updated_at=$3 WHERE comparison_id=$1`,
+      [comparisonId, comparisonVersion, now],
+    )
+    await client.query(
+      `INSERT INTO comparison.comparison_versions (
+         comparison_id,comparison_version,item_count,created_at
+       ) VALUES ($1,$2,$3,$4)`,
+      [comparisonId, comparisonVersion, orderedProjectIds.length, now],
+    )
+    for (let index = 0; index < orderedProjectIds.length; index += 1) {
+      await client.query(
+        `INSERT INTO comparison.comparison_items (
+           comparison_id,comparison_version,project_id,position,validity_status,added_at
+         ) VALUES ($1,$2,$3,$4,'valid',$5)`,
+        [comparisonId, comparisonVersion, orderedProjectIds[index], index + 1, now],
+      )
+    }
+  }
+
+  private async createUserComparisonCopy(
+    client: PoolClient,
+    comparisonId: string,
+    userId: string,
+    source: ComparisonRow,
+    orderedProjectIds: readonly string[],
+    now: Date,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO comparison.comparisons (
+         comparison_id,owner_user_id,anonymous_subject_hash,category_id,
+         category_schema_version,current_version,status,expires_at,created_at,updated_at
+       ) VALUES ($1,$2,NULL,$3,$4,1,'active',NULL,$5,$5)`,
+      [comparisonId, userId, source.category_id, source.category_schema_version, now],
+    )
+    await this.appendComparisonVersion(client, comparisonId, 1, orderedProjectIds, now)
+    await this.setActiveComparison(client, {
+      subject: { kind: 'user', id: userId },
+      subjectHash: Buffer.alloc(32),
+    }, comparisonId, now)
+  }
+
+  private async finishLoginMerge(
+    client: PoolClient,
+    input: {
+      readonly identityLinkId: string
+      readonly operationId: string
+      readonly now: Date
+    },
+    projection: ComparisonLoginMergeProjection,
+    consumeIdentityLink: boolean,
+  ): Promise<void> {
+    if (consumeIdentityLink) {
+      await client.query(
+        `UPDATE iam.identity_links SET status='consumed',consumed_at=$2
+         WHERE identity_link_id=$1 AND status='active'`,
+        [input.identityLinkId, input.now],
+      )
+    }
+    await client.query(
+      `INSERT INTO comparison.comparison_login_merge_receipts (
+         identity_link_id,operation_id,response_json,created_at
+       ) VALUES ($1,$2,$3,$4)`,
+      [input.identityLinkId, input.operationId, projection, input.now],
+    )
+  }
+
+  private async mergeConflict(
+    queryable: Queryable,
+    conflictId: string,
+    forUpdate = false,
+  ): Promise<MergeConflictRow | null> {
+    const result = await queryable.query<MergeConflictRow>(
+      `SELECT conflict_id,identity_link_id,user_id,account_comparison_id,
+         account_comparison_version,anonymous_comparison_id,anonymous_comparison_version,
+         candidate_project_ids,selected_project_ids,pending_action_id,status,version,
+         expires_at,resolved_at,cancelled_at
+       FROM comparison.comparison_merge_conflicts
+       WHERE conflict_id=$1${forUpdate ? ' FOR UPDATE' : ''}`,
+      [conflictId],
+    )
+    return result.rows[0] ?? null
+  }
+
+  private async assertMergeConflictAccess(
+    queryable: Queryable,
+    conflict: MergeConflictRow | null,
+    owner: ComparisonStoreOwner,
+    now: Date,
+  ): Promise<void> {
+    if (owner.subject.kind !== 'user') throw comparisonError('AUTHENTICATION_REQUIRED', 401)
+    if (conflict === null) throw comparisonError('COMPARISON_MERGE_CONFLICT_NOT_FOUND', 404)
+    if (conflict.user_id !== owner.subject.id) throw comparisonError('COMPARISON_MERGE_CONFLICT_FORBIDDEN', 403)
+    const link = await this.identityLink(queryable, conflict.identity_link_id)
+    if (link === null || link.user_id !== owner.subject.id || link.purpose !== 'comparison_merge') {
+      throw comparisonError('COMPARISON_MERGE_CONFLICT_FORBIDDEN', 403)
+    }
+    if (conflict.status === 'pending' && link.status !== 'active' && link.expires_at > now) {
+      throw comparisonError('IDENTITY_LINK_GONE', 410)
+    }
+  }
+
+  private async expireMergeConflictIfRequired(
+    client: PoolClient,
+    conflict: MergeConflictRow,
+    now: Date,
+  ): Promise<MergeConflictRow> {
+    if (conflict.status !== 'pending' || conflict.expires_at > now) return conflict
+    const result = await client.query<MergeConflictRow>(
+      `UPDATE comparison.comparison_merge_conflicts
+       SET status='expired',version=version+1,updated_at=$2
+       WHERE conflict_id=$1
+       RETURNING conflict_id,identity_link_id,user_id,account_comparison_id,
+         account_comparison_version,anonymous_comparison_id,anonymous_comparison_version,
+         candidate_project_ids,selected_project_ids,pending_action_id,status,version,
+         expires_at,resolved_at,cancelled_at`,
+      [conflict.conflict_id, now],
+    )
+    await client.query(
+      `UPDATE iam.identity_links SET status='expired'
+       WHERE identity_link_id=$1 AND status='active'`,
+      [conflict.identity_link_id],
+    )
+    return result.rows[0]!
+  }
+
+  private async mergeConflictProjection(
+    queryable: Queryable,
+    conflict: MergeConflictRow,
+  ): Promise<ComparisonMergeConflictProjection> {
+    const candidates = await queryable.query<MergeProjectSummaryRow>(
+      `SELECT project_id,current_name,category_id,access_status,freshness_status,
+         last_verified_at,review_status,current_version_id
+       FROM catalog.projects WHERE project_id=ANY($1::uuid[])
+       ORDER BY array_position($1::uuid[],project_id)`,
+      [conflict.candidate_project_ids],
+    )
+    const visible = Object.freeze(candidates.rows
+      .filter(({ review_status, current_version_id }) => (
+        ['published_platform', 'published_author'].includes(review_status) &&
+        current_version_id !== null
+      ))
+      .map((project): ComparisonMergeProjectSummary => Object.freeze({
+        project_id: project.project_id,
+        current_name: project.current_name,
+        category_id: project.category_id,
+        access_status: project.access_status,
+        freshness_status: project.freshness_status,
+        last_verified_at: project.last_verified_at.toISOString(),
+      })))
+    return Object.freeze({
+      conflict_id: conflict.conflict_id,
+      identity_link_id: conflict.identity_link_id,
+      account_comparison_id: conflict.account_comparison_id,
+      account_comparison_version: conflict.account_comparison_version,
+      anonymous_comparison_id: conflict.anonymous_comparison_id,
+      anonymous_comparison_version: conflict.anonymous_comparison_version,
+      candidate_project_ids: Object.freeze([...conflict.candidate_project_ids]),
+      candidate_projects: visible,
+      selected_project_ids: conflict.selected_project_ids === null
+        ? null
+        : Object.freeze([...conflict.selected_project_ids]),
+      status: conflict.status as 'pending' | 'resolved' | 'cancelled',
+      pending_action_id: conflict.pending_action_id,
+      version: conflict.version,
+      expires_at: conflict.expires_at.toISOString(),
+      resolved_at: conflict.resolved_at?.toISOString() ?? null,
+      cancelled_at: conflict.cancelled_at?.toISOString() ?? null,
+    })
+  }
+
+  private async mergeOperationReceipt(
+    queryable: Queryable,
+    conflictId: string,
+    operationId: string,
+  ): Promise<MergeOperationReceiptRow | null> {
+    const result = await queryable.query<MergeOperationReceiptRow>(
+      `SELECT operation_type,request_hash,response_json
+       FROM comparison.comparison_merge_operation_receipts
+       WHERE conflict_id=$1 AND operation_id=$2`,
+      [conflictId, operationId],
+    )
+    return result.rows[0] ?? null
+  }
+
+  private async saveMergeOperationReceipt(
+    client: PoolClient,
+    input: {
+      readonly conflictId: string
+      readonly operationId: string
+      readonly requestHash: string
+      readonly now: Date
+    },
+    operationType: 'resolve' | 'cancel',
+    projection: ComparisonMergeResolutionProjection | ComparisonMergeCancellationProjection,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO comparison.comparison_merge_operation_receipts (
+         conflict_id,operation_id,operation_type,request_hash,response_json,created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        input.conflictId,
+        input.operationId,
+        operationType,
+        input.requestHash,
+        projection,
+        input.now,
+      ],
+    )
+  }
+
+  private async insertMergeSecurityEvent(
+    client: PoolClient,
+    eventType: string,
+    actorUserIdHash: Buffer,
+    targetType: string,
+    targetId: string,
+    metadata: Readonly<Record<string, unknown>>,
+    requestId: string,
+    now: Date,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO audit.security_events (
+         event_type,severity,actor_user_id_hash,target_type,target_id_hash,
+         metadata_json,request_id,created_at
+       ) VALUES ($1,'info',$2,$3,digest($4::text,'sha256'),$5,$6,$7)`,
+      [eventType, actorUserIdHash, targetType, targetId, metadata, requestId, now],
+    )
   }
 
   private async comparisonRow(

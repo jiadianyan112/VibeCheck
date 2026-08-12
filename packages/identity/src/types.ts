@@ -21,7 +21,7 @@ export type AccountStatus = 'active' | 'restricted' | 'disabled'
 
 export interface IdentityLinkProjection {
   readonly identityLinkId: string
-  readonly purpose: 'query_continuation'
+  readonly purpose: 'query_continuation' | 'comparison_merge'
   readonly expiresAt: string
 }
 
@@ -81,6 +81,7 @@ export type VerifyChallengeResult =
       readonly sessionToken: string
       readonly returnTo: string
       readonly identityLinks: readonly IdentityLinkProjection[]
+      readonly anonymousSubjectId: string
     }
   | {
       readonly purpose: 'admin_confirm'

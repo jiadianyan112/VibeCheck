@@ -84,3 +84,94 @@ export interface ComparisonProgressProjection {
   readonly completed_now: boolean
   readonly deduplicated: boolean
 }
+
+export type ComparisonLoginMergeResult =
+  | 'not_required'
+  | 'adopted'
+  | 'merged'
+  | 'conflict'
+  | 'category_mismatch'
+
+export interface ComparisonLoginMergeProjection {
+  readonly result: ComparisonLoginMergeResult
+  readonly comparison_id: string | null
+  readonly comparison_version: number | null
+  readonly conflict_id: string | null
+  readonly conflict_version: number | null
+  readonly expires_at: string | null
+}
+
+export interface PrepareComparisonLoginMergeCommand {
+  readonly userId: string
+  readonly anonymousSubjectId: string
+  readonly identityLinkId: string
+  readonly operationId: string
+}
+
+export interface ComparisonMergeProjectSummary {
+  readonly project_id: string
+  readonly current_name: string
+  readonly category_id: CategoryId
+  readonly access_status: string
+  readonly freshness_status: string
+  readonly last_verified_at: string
+}
+
+export interface ComparisonMergeConflictProjection {
+  readonly conflict_id: string
+  readonly identity_link_id: string
+  readonly account_comparison_id: string
+  readonly account_comparison_version: number
+  readonly anonymous_comparison_id: string
+  readonly anonymous_comparison_version: number
+  readonly candidate_project_ids: readonly string[]
+  readonly candidate_projects: readonly ComparisonMergeProjectSummary[]
+  readonly selected_project_ids: readonly string[] | null
+  readonly status: 'pending' | 'resolved' | 'cancelled'
+  readonly pending_action_id: string | null
+  readonly version: number
+  readonly expires_at: string
+  readonly resolved_at: string | null
+  readonly cancelled_at: string | null
+}
+
+export interface GetComparisonMergeConflictCommand {
+  readonly conflictId: string
+  readonly subject: ComparisonSubject
+}
+
+export interface ResolveComparisonMergeConflictCommand {
+  readonly conflictId: string
+  readonly selectedProjectIds: readonly string[]
+  readonly accountVersion: number
+  readonly anonymousVersion: number
+  readonly expectedConflictVersion: number
+  readonly operationId: string
+  readonly subject: ComparisonSubject
+}
+
+export interface ComparisonMergeResolutionProjection {
+  readonly conflict_id: string
+  readonly status: 'resolved'
+  readonly conflict_version: number
+  readonly comparison_id: string
+  readonly comparison_version: number
+  readonly selected_project_ids: readonly string[]
+  readonly resolved_at: string
+}
+
+export interface CancelComparisonMergeConflictCommand {
+  readonly conflictId: string
+  readonly cancelReason: string
+  readonly expectedConflictVersion: number
+  readonly operationId: string
+  readonly subject: ComparisonSubject
+}
+
+export interface ComparisonMergeCancellationProjection {
+  readonly conflict_id: string
+  readonly status: 'cancelled'
+  readonly conflict_version: number
+  readonly cancelled_at: string
+  readonly pending_action_status: 'cancelled' | null
+}

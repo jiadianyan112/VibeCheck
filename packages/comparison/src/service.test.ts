@@ -50,6 +50,8 @@ class FakeStore implements ComparisonStore {
   putInput: Parameters<ComparisonStore['putComparison']>[0] | null = null
   progressInput: Parameters<ComparisonStore['recordDimensionProgress']>[0] | null = null
   saveInput: Parameters<ComparisonStore['setSaved']>[0] | null = null
+  prepareMergeInput: Parameters<ComparisonStore['prepareLoginMerge']>[0] | null = null
+  resolveMergeInput: Parameters<ComparisonStore['resolveMergeConflict']>[0] | null = null
 
   async getComparison(): Promise<ComparisonProjection> {
     return projection
@@ -81,6 +83,61 @@ class FakeStore implements ComparisonStore {
       completed_at: null,
       completed_now: false,
       deduplicated: false,
+    })
+  }
+
+  async prepareLoginMerge(input: Parameters<ComparisonStore['prepareLoginMerge']>[0]) {
+    this.prepareMergeInput = input
+    return Object.freeze({
+      result: 'not_required' as const,
+      comparison_id: null,
+      comparison_version: null,
+      conflict_id: null,
+      conflict_version: null,
+      expires_at: null,
+    })
+  }
+
+  async getMergeConflict(input: Parameters<ComparisonStore['getMergeConflict']>[0]) {
+    return Object.freeze({
+      conflict_id: input.conflictId,
+      identity_link_id: requestId,
+      account_comparison_id: comparisonId,
+      account_comparison_version: 1,
+      anonymous_comparison_id: '10000000-0000-4000-8000-000000000002',
+      anonymous_comparison_version: 1,
+      candidate_project_ids: Object.freeze([]),
+      candidate_projects: Object.freeze([]),
+      selected_project_ids: null,
+      status: 'pending' as const,
+      pending_action_id: null,
+      version: 1,
+      expires_at: '2026-08-12T00:05:00.000Z',
+      resolved_at: null,
+      cancelled_at: null,
+    })
+  }
+
+  async resolveMergeConflict(input: Parameters<ComparisonStore['resolveMergeConflict']>[0]) {
+    this.resolveMergeInput = input
+    return Object.freeze({
+      conflict_id: input.conflictId,
+      status: 'resolved' as const,
+      conflict_version: input.expectedConflictVersion + 1,
+      comparison_id: comparisonId,
+      comparison_version: input.accountVersion + 1,
+      selected_project_ids: input.selectedProjectIds,
+      resolved_at: now.toISOString(),
+    })
+  }
+
+  async cancelMergeConflict(input: Parameters<ComparisonStore['cancelMergeConflict']>[0]) {
+    return Object.freeze({
+      conflict_id: input.conflictId,
+      status: 'cancelled' as const,
+      conflict_version: input.expectedConflictVersion + 1,
+      cancelled_at: now.toISOString(),
+      pending_action_status: null,
     })
   }
 }
@@ -219,5 +276,62 @@ describe('ComparisonService trusted progress input', () => {
       occurredAt: '2026-08-20T00:00:00.000Z',
       subject: { kind: 'anonymous', id: subjectId },
     }), 'COMPARISON_PROGRESS_TIME_INVALID', 422)
+  })
+})
+
+describe('ComparisonService login merge commands', () => {
+  it('binds user, anonymous subject, link, operation and independent owner hashes', async () => {
+    const store = new FakeStore()
+    const service = new ComparisonService({ store, config, now: () => now })
+    await service.prepareLoginMerge({
+      userId: subjectId,
+      anonymousSubjectId: '30000000-0000-4000-8000-000000000002',
+      identityLinkId: requestId,
+      operationId: eventId,
+    })
+    assert.equal(store.prepareMergeInput?.userId, subjectId)
+    assert.equal(store.prepareMergeInput?.identityLinkId, requestId)
+    assert.equal(store.prepareMergeInput?.operationId, eventId)
+    assert.equal(store.prepareMergeInput?.userSubjectHash.length, 32)
+    assert.equal(store.prepareMergeInput?.anonymousSubjectHash.length, 32)
+    assert.notDeepEqual(
+      store.prepareMergeInput?.userSubjectHash,
+      store.prepareMergeInput?.anonymousSubjectHash,
+    )
+  })
+
+  it('validates merge selection, optimistic versions, operation id and cancel reason', async () => {
+    const store = new FakeStore()
+    const service = new ComparisonService({ store, config, now: () => now })
+    const subject = { kind: 'user' as const, id: subjectId }
+    const conflictId = '60000000-0000-4000-8000-000000000001'
+    await service.resolveMergeConflict({
+      conflictId,
+      selectedProjectIds: [projectId],
+      accountVersion: 1,
+      anonymousVersion: 1,
+      expectedConflictVersion: 1,
+      operationId: requestId,
+      subject,
+    })
+    assert.deepEqual(store.resolveMergeInput?.selectedProjectIds, [projectId])
+    assert.match(store.resolveMergeInput?.requestHash ?? '', /^[a-f0-9]{64}$/)
+
+    await failure(() => service.resolveMergeConflict({
+      conflictId,
+      selectedProjectIds: [projectId, projectId],
+      accountVersion: 1,
+      anonymousVersion: 1,
+      expectedConflictVersion: 1,
+      operationId: requestId,
+      subject,
+    }), 'COMPARISON_PROJECT_DUPLICATED', 422)
+    await failure(() => service.cancelMergeConflict({
+      conflictId,
+      cancelReason: ' ',
+      expectedConflictVersion: 1,
+      operationId: requestId,
+      subject,
+    }), 'CANCEL_REASON_INVALID', 422)
   })
 })

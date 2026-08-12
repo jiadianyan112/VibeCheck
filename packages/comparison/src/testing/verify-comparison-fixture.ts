@@ -34,6 +34,75 @@ const service = new ComparisonService({
   now: () => clock,
 })
 
+async function createPortfolioProjects(count: number): Promise<readonly string[]> {
+  const source = await pool.query<{ snapshot_json: unknown }>(
+    `SELECT version.snapshot_json
+     FROM catalog.project_versions version
+     JOIN catalog.projects project ON project.current_version_id=version.version_id
+     WHERE project.category_id='personal_site_portfolio'
+       AND project.review_status IN ('published_platform','published_author')
+     LIMIT 1`,
+  )
+  assert.ok(source.rows[0])
+  const client = await pool.connect()
+  const ids: string[] = []
+  try {
+    await client.query('BEGIN')
+    for (let index = 0; index < count; index += 1) {
+      const projectId = randomUUID()
+      const versionId = randomUUID()
+      ids.push(projectId)
+      const url = `https://merge-fixture-${projectId}.example/`
+      await client.query(
+        `INSERT INTO catalog.projects (
+           project_id,current_version_id,current_name,category_id,category_schema_version,
+           canonical_public_url,canonical_url_hash,review_status,access_status,http_check_status,
+           author_link_status,completeness_level,freshness_status,record_source,first_seen_at,
+           last_verified_at,created_at,updated_at
+         ) VALUES ($1,NULL,$2,'personal_site_portfolio','portfolio.v1',$3,
+           digest($3::text,'sha256'),'published_platform','normal','normal','unlinked',
+           'complete','valid','platform_editor',$4,$4,$4,$4)`,
+        [projectId, `Merge fixture ${index + 1}`, url, clock],
+      )
+      await client.query(
+        `INSERT INTO catalog.project_versions (
+           version_id,project_id,version_number,category_id,category_schema_version,
+           snapshot_json,source_decision_type,source_decision_id,transaction_id,
+           effective_at,created_at
+         ) VALUES ($1,$2,1,'personal_site_portfolio','portfolio.v1',$3,
+           'admin_fact',$4,$5,$6,$6)`,
+        [versionId, projectId, source.rows[0].snapshot_json, randomUUID(), randomUUID(), clock],
+      )
+      await client.query(
+        'UPDATE catalog.projects SET current_version_id=$2 WHERE project_id=$1',
+        [projectId, versionId],
+      )
+    }
+    await client.query('COMMIT')
+    return Object.freeze(ids)
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+async function createMergeIdentityLink(
+  userId: string,
+  anonymousSubjectId: string,
+): Promise<string> {
+  const identityLinkId = randomUUID()
+  await pool.query(
+    `INSERT INTO iam.identity_links (
+       identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,
+       issued_at,expires_at
+     ) VALUES ($1,$2,$3,$4,'comparison_merge','active',$5,$6)`,
+    [identityLinkId, anonymousSubjectId, userId, randomUUID(), clock, new Date(clock.getTime() + 300_000)],
+  )
+  return identityLinkId
+}
+
 async function expectComparisonError(
   run: () => Promise<unknown>,
   code: string,
@@ -336,6 +405,160 @@ try {
   )
   assert.equal(saveAudits.rows[0]?.count, 2)
 
+  const mergeProjectIds = await createPortfolioProjects(6)
+  const autoMergeUserId = randomUUID()
+  await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [autoMergeUserId])
+  const autoMergeUser = { kind: 'user' as const, id: autoMergeUserId }
+  const autoAccountComparisonId = randomUUID()
+  await service.putComparison({
+    comparisonId: autoAccountComparisonId,
+    orderedProjectIds: mergeProjectIds.slice(0, 3),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: autoMergeUser,
+  })
+  const autoAnonymousSubject = { kind: 'anonymous' as const, id: randomUUID() }
+  const autoAnonymousComparisonId = randomUUID()
+  await service.putComparison({
+    comparisonId: autoAnonymousComparisonId,
+    orderedProjectIds: [mergeProjectIds[2]!, mergeProjectIds[3]!, mergeProjectIds[4]!],
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: autoAnonymousSubject,
+  })
+  const autoLinkId = await createMergeIdentityLink(autoMergeUserId, autoAnonymousSubject.id)
+  const autoOperationId = randomUUID()
+  const autoMerged = await service.prepareLoginMerge({
+    userId: autoMergeUserId,
+    anonymousSubjectId: autoAnonymousSubject.id,
+    identityLinkId: autoLinkId,
+    operationId: autoOperationId,
+  })
+  assert.equal(autoMerged.result, 'merged')
+  assert.equal(autoMerged.comparison_id, autoAccountComparisonId)
+  assert.equal(autoMerged.comparison_version, 2)
+  assert.deepEqual(
+    (await service.getComparison(autoAccountComparisonId, autoMergeUser)).ordered_project_ids,
+    mergeProjectIds.slice(0, 5),
+  )
+  assert.equal(
+    (await pool.query<{ status: string }>(
+      'SELECT status FROM iam.identity_links WHERE identity_link_id=$1',
+      [autoLinkId],
+    )).rows[0]?.status,
+    'consumed',
+  )
+  assert.deepEqual(await service.prepareLoginMerge({
+    userId: autoMergeUserId,
+    anonymousSubjectId: autoAnonymousSubject.id,
+    identityLinkId: autoLinkId,
+    operationId: autoOperationId,
+  }), autoMerged)
+
+  const conflictUserId = randomUUID()
+  await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [conflictUserId])
+  const conflictUser = { kind: 'user' as const, id: conflictUserId }
+  const conflictAccountId = randomUUID()
+  await service.putComparison({
+    comparisonId: conflictAccountId,
+    orderedProjectIds: mergeProjectIds.slice(0, 3),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: conflictUser,
+  })
+  const conflictAnonymous = { kind: 'anonymous' as const, id: randomUUID() }
+  const conflictAnonymousId = randomUUID()
+  await service.putComparison({
+    comparisonId: conflictAnonymousId,
+    orderedProjectIds: mergeProjectIds.slice(3, 6),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: conflictAnonymous,
+  })
+  const conflictLinkId = await createMergeIdentityLink(conflictUserId, conflictAnonymous.id)
+  const conflict = await service.prepareLoginMerge({
+    userId: conflictUserId,
+    anonymousSubjectId: conflictAnonymous.id,
+    identityLinkId: conflictLinkId,
+    operationId: randomUUID(),
+  })
+  assert.equal(conflict.result, 'conflict')
+  assert.ok(conflict.conflict_id)
+  const recovered = await service.getMergeConflict({
+    conflictId: conflict.conflict_id!,
+    subject: conflictUser,
+  })
+  assert.equal(recovered.status, 'pending')
+  assert.equal(recovered.version, 1)
+  assert.deepEqual(recovered.candidate_project_ids, mergeProjectIds)
+  assert.equal(recovered.candidate_projects.length, 6)
+
+  const resolveOperationId = randomUUID()
+  const resolutionCommand = {
+    conflictId: conflict.conflict_id!,
+    selectedProjectIds: mergeProjectIds.slice(0, 5),
+    accountVersion: 1,
+    anonymousVersion: 1,
+    expectedConflictVersion: 1,
+    operationId: resolveOperationId,
+    subject: conflictUser,
+  }
+  const resolved = await service.resolveMergeConflict(resolutionCommand)
+  assert.equal(resolved.status, 'resolved')
+  assert.equal(resolved.conflict_version, 2)
+  assert.equal(resolved.comparison_version, 2)
+  assert.deepEqual(await service.resolveMergeConflict(resolutionCommand), resolved)
+  assert.equal((await service.getComparison(conflictAnonymousId, conflictAnonymous)).comparison_version, 1)
+  const retainedAccountVersion = await pool.query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM comparison.comparison_versions
+     WHERE comparison_id=$1 AND comparison_version=1`,
+    [conflictAccountId],
+  )
+  assert.equal(retainedAccountVersion.rows[0]?.count, 1)
+
+  const cancelUserId = randomUUID()
+  await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [cancelUserId])
+  const cancelUser = { kind: 'user' as const, id: cancelUserId }
+  const cancelAccountId = randomUUID()
+  await service.putComparison({
+    comparisonId: cancelAccountId,
+    orderedProjectIds: mergeProjectIds.slice(0, 3),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: cancelUser,
+  })
+  const cancelAnonymous = { kind: 'anonymous' as const, id: randomUUID() }
+  const cancelAnonymousId = randomUUID()
+  await service.putComparison({
+    comparisonId: cancelAnonymousId,
+    orderedProjectIds: mergeProjectIds.slice(3, 6),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: cancelAnonymous,
+  })
+  const cancelLinkId = await createMergeIdentityLink(cancelUserId, cancelAnonymous.id)
+  const pendingCancellation = await service.prepareLoginMerge({
+    userId: cancelUserId,
+    anonymousSubjectId: cancelAnonymous.id,
+    identityLinkId: cancelLinkId,
+    operationId: randomUUID(),
+  })
+  assert.equal(pendingCancellation.result, 'conflict')
+  const cancelOperationId = randomUUID()
+  const cancellationCommand = {
+    conflictId: pendingCancellation.conflict_id!,
+    cancelReason: 'user_closed',
+    expectedConflictVersion: 1,
+    operationId: cancelOperationId,
+    subject: cancelUser,
+  }
+  const cancelled = await service.cancelMergeConflict(cancellationCommand)
+  assert.equal(cancelled.status, 'cancelled')
+  assert.equal(cancelled.conflict_version, 2)
+  assert.deepEqual(await service.cancelMergeConflict(cancellationCommand), cancelled)
+  assert.equal((await service.getComparison(cancelAccountId, cancelUser)).comparison_version, 1)
+  assert.equal((await service.getComparison(cancelAnonymousId, cancelAnonymous)).comparison_version, 1)
+
   await assert.rejects(
     pool.query(
       `UPDATE comparison.comparison_items SET position=position
@@ -366,6 +589,7 @@ try {
     comparison_version_count: 4,
     completion_event_count: completionOutbox.rows[0]?.count,
     save_audit_count: saveAudits.rows[0]?.count,
+    login_merge_candidate_count: recovered.candidate_project_ids.length,
   }))
 } finally {
   await pool.end()

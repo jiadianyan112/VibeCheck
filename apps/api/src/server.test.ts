@@ -16,10 +16,14 @@ import type {
 } from '@vibecheck/catalog'
 import {
   ComparisonError,
+  type CancelComparisonMergeConflictCommand,
   type ComparisonMutationProjection,
   type ComparisonProjection,
   type ComparisonSubject,
+  type GetComparisonMergeConflictCommand,
+  type PrepareComparisonLoginMergeCommand,
   type PutComparisonCommand,
+  type ResolveComparisonMergeConflictCommand,
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
 import type { ServiceConfig } from '@vibecheck/config'
@@ -132,9 +136,17 @@ class FakeComparisonService implements ApiComparisonService {
   getSubject: ComparisonSubject | null = null
   putCommand: PutComparisonCommand | null = null
   saveCommand: SetComparisonSavedCommand | null = null
+  prepareMergeCommand: PrepareComparisonLoginMergeCommand | null = null
+  getMergeCommand: GetComparisonMergeConflictCommand | null = null
+  resolveMergeCommand: ResolveComparisonMergeConflictCommand | null = null
+  cancelMergeCommand: CancelComparisonMergeConflictCommand | null = null
 
   getSaveCommand(): SetComparisonSavedCommand | null {
     return this.saveCommand
+  }
+
+  getResolveMergeCommand(): ResolveComparisonMergeConflictCommand | null {
+    return this.resolveMergeCommand
   }
 
   async getComparison(
@@ -165,6 +177,64 @@ class FakeComparisonService implements ApiComparisonService {
     return Object.freeze({
       ...comparisonProjection(command.comparisonId, []),
       saved_at: command.state ? '2026-08-10T00:00:00.000Z' : null,
+    })
+  }
+
+  async prepareLoginMerge(command: PrepareComparisonLoginMergeCommand) {
+    this.prepareMergeCommand = command
+    return Object.freeze({
+      result: 'not_required' as const,
+      comparison_id: null,
+      comparison_version: null,
+      conflict_id: null,
+      conflict_version: null,
+      expires_at: null,
+      operation_id: command.operationId,
+    })
+  }
+
+  async getMergeConflict(command: GetComparisonMergeConflictCommand) {
+    this.getMergeCommand = command
+    return Object.freeze({
+      conflict_id: command.conflictId,
+      identity_link_id: '88888888-8888-4888-8888-888888888888',
+      account_comparison_id: '61000000-0000-4000-8000-000000000011',
+      account_comparison_version: 1,
+      anonymous_comparison_id: '61000000-0000-4000-8000-000000000012',
+      anonymous_comparison_version: 1,
+      candidate_project_ids: Object.freeze([]),
+      candidate_projects: Object.freeze([]),
+      selected_project_ids: null,
+      status: 'pending' as const,
+      pending_action_id: null,
+      version: 1,
+      expires_at: '2026-08-10T00:05:00.000Z',
+      resolved_at: null,
+      cancelled_at: null,
+    })
+  }
+
+  async resolveMergeConflict(command: ResolveComparisonMergeConflictCommand) {
+    this.resolveMergeCommand = command
+    return Object.freeze({
+      conflict_id: command.conflictId,
+      status: 'resolved' as const,
+      conflict_version: command.expectedConflictVersion + 1,
+      comparison_id: '61000000-0000-4000-8000-000000000011',
+      comparison_version: command.accountVersion + 1,
+      selected_project_ids: Object.freeze([...command.selectedProjectIds]),
+      resolved_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async cancelMergeConflict(command: CancelComparisonMergeConflictCommand) {
+    this.cancelMergeCommand = command
+    return Object.freeze({
+      conflict_id: command.conflictId,
+      status: 'cancelled' as const,
+      conflict_version: command.expectedConflictVersion + 1,
+      cancelled_at: '2026-08-10T00:00:00.000Z',
+      pending_action_status: null,
     })
   }
 }
@@ -561,9 +631,14 @@ class FakeIdentityService implements ApiIdentityService {
       session,
       sessionToken: 'session-token-with-at-least-thirty-two-characters',
       returnTo: '/me',
+      anonymousSubjectId: '77777777-7777-4777-8777-777777777777',
       identityLinks: [{
         identityLinkId: '99999999-9999-4999-8999-999999999999',
         purpose: 'query_continuation',
+        expiresAt: '2026-08-10T00:05:00.000Z',
+      }, {
+        identityLinkId: '99999999-9999-4999-8999-999999999998',
+        purpose: 'comparison_merge',
         expiresAt: '2026-08-10T00:05:00.000Z',
       }] as const,
     } as const
@@ -658,6 +733,93 @@ test('comparison save requires an authenticated session and matching CSRF token'
   }
 })
 
+test('comparison merge conflict APIs require a user session, CSRF, and exact optimistic versions', async () => {
+  const comparison = new FakeComparisonService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+  )
+  const conflictId = '62000000-0000-4000-8000-000000000001'
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  try {
+    const recovered = await fetch(
+      `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}`,
+      { headers: { cookie: sessionCookie } },
+    )
+    assert.equal(recovered.status, 200)
+    assert.deepEqual(comparison.getMergeCommand?.subject, { kind: 'user', id: session.userId })
+
+    const resolveBody = {
+      selected_project_ids: ['10000000-0000-4000-8000-000000000001'],
+      account_version: 2,
+      anonymous_version: 3,
+      expected_conflict_version: 1,
+      operation_id: '63000000-0000-4000-8000-000000000001',
+    }
+    const rejected = await fetch(
+      `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}/resolve`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: sessionCookie,
+          origin: 'https://web.example',
+        },
+        body: JSON.stringify(resolveBody),
+      },
+    )
+    assert.equal(rejected.status, 403)
+    assert.equal(comparison.resolveMergeCommand, null)
+
+    const resolved = await fetch(
+      `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}/resolve`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: sessionCookie,
+          origin: 'https://web.example',
+          'x-csrf-token': session.csrfToken,
+        },
+        body: JSON.stringify(resolveBody),
+      },
+    )
+    assert.equal(resolved.status, 200)
+    const resolveCommand = comparison.getResolveMergeCommand()
+    assert.ok(resolveCommand)
+    assert.equal(resolveCommand.accountVersion, 2)
+    assert.equal(resolveCommand.anonymousVersion, 3)
+    assert.deepEqual(resolveCommand.selectedProjectIds, resolveBody.selected_project_ids)
+
+    const cancelled = await fetch(
+      `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: sessionCookie,
+          origin: 'https://web.example',
+          'x-csrf-token': session.csrfToken,
+        },
+        body: JSON.stringify({
+          cancel_reason: 'user_closed',
+          expected_conflict_version: 1,
+          operation_id: '63000000-0000-4000-8000-000000000002',
+        }),
+      },
+    )
+    assert.equal(cancelled.status, 200)
+    assert.equal(comparison.cancelMergeCommand?.cancelReason, 'user_closed')
+  } finally {
+    await runtime.stop()
+  }
+})
+
 test('query lifecycle exposes structured recovery and enforces session CSRF on identity linking', async () => {
   const search = new FakeSearchService()
   const runtime = await start(
@@ -723,7 +885,16 @@ test('query lifecycle exposes structured recovery and enforces session CSRF on i
 
 test('email OTP flow establishes signed browser cookies and a server session', async () => {
   const identity = new FakeIdentityService()
-  const runtime = await start(async () => undefined, identity)
+  const comparison = new FakeComparisonService()
+  const runtime = await start(
+    async () => undefined,
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    comparison,
+  )
   try {
     const challenge = await fetch(`${runtime.baseUrl}/api/v1/auth/email-challenges`, {
       method: 'POST',
@@ -766,13 +937,28 @@ test('email OTP flow establishes signed browser cookies and a server session', a
     const verificationBody = await verification.json() as {
       purpose: string
       identity_links: readonly { identity_link_id: string; purpose: string; expires_at: string }[]
+      comparison_merge: { result: string } | null
     }
     assert.equal(verificationBody.purpose, 'login')
-    assert.deepEqual(verificationBody.identity_links, [{
-      identity_link_id: '99999999-9999-4999-8999-999999999999',
-      purpose: 'query_continuation',
-      expires_at: '2026-08-10T00:05:00.000Z',
-    }])
+    assert.deepEqual(verificationBody.identity_links, [
+      {
+        identity_link_id: '99999999-9999-4999-8999-999999999999',
+        purpose: 'query_continuation',
+        expires_at: '2026-08-10T00:05:00.000Z',
+      },
+      {
+        identity_link_id: '99999999-9999-4999-8999-999999999998',
+        purpose: 'comparison_merge',
+        expires_at: '2026-08-10T00:05:00.000Z',
+      },
+    ])
+    assert.equal(verificationBody.comparison_merge?.result, 'not_required')
+    assert.deepEqual(comparison.prepareMergeCommand, {
+      userId: session.userId,
+      anonymousSubjectId: '77777777-7777-4777-8777-777777777777',
+      identityLinkId: '99999999-9999-4999-8999-999999999998',
+      operationId: '55555555-5555-4555-8555-555555555555',
+    })
     assert.equal(identity.verifyCommand?.browserBindingToken, browserBinding)
     const sessionCookies = verification.headers.get('set-cookie') ?? ''
     assert.match(sessionCookies, /vc_session=/)

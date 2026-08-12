@@ -3,13 +3,23 @@ export { ComparisonService, type ComparisonServiceDependencies } from './service
 export { PostgresComparisonStore } from './postgres-store.js'
 export { type ComparisonStore, type ComparisonStoreOwner } from './store-port.js'
 export type {
+  CancelComparisonMergeConflictCommand,
+  ComparisonLoginMergeProjection,
+  ComparisonLoginMergeResult,
+  ComparisonMergeCancellationProjection,
+  ComparisonMergeConflictProjection,
+  ComparisonMergeProjectSummary,
+  ComparisonMergeResolutionProjection,
   ComparisonItemProjection,
   ComparisonMutationProjection,
   ComparisonProgressProjection,
   ComparisonProjectSummary,
   ComparisonProjection,
   ComparisonSubject,
+  GetComparisonMergeConflictCommand,
+  PrepareComparisonLoginMergeCommand,
   PutComparisonCommand,
   RecordComparisonDimensionCommand,
+  ResolveComparisonMergeConflictCommand,
   SetComparisonSavedCommand,
 } from './types.js'
