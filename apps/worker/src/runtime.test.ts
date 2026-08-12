@@ -25,6 +25,7 @@ test('worker publishes handled events and retries deterministic failures', async
   const events = [event('project.updated', 'outbox-1'), event('project.updated', 'outbox-2')]
   const store: OutboxStore = {
     requeueExpired: async () => 1,
+    requeueExpiredReviewClaims: async () => 2,
     claim: async (_workerId, names, limit) => {
       assert.deepEqual(names, ['project.updated'])
       assert.equal(limit, 25)
@@ -45,7 +46,9 @@ test('worker publishes handled events and retries deterministic failures', async
 
   const result = await runWorkerCycle(store, 'worker-1', handlers, 25)
 
-  assert.deepEqual(result, { requeued: 1, claimed: 2, published: 1, failed: 1 })
+  assert.deepEqual(result, {
+    requeued: 1, reviewClaimsRequeued: 2, claimed: 2, published: 1, failed: 1,
+  })
   assert.deepEqual(published, ['outbox-1'])
   assert.deepEqual(retried, [['outbox-2', 'INDEX_TEMPORARILY_UNAVAILABLE']])
 })
@@ -54,6 +57,7 @@ test('worker with no registered module handlers only recovers expired leases', a
   let claimCalled = false
   const store: OutboxStore = {
     requeueExpired: async () => 2,
+    requeueExpiredReviewClaims: async () => 3,
     claim: async () => {
       claimCalled = true
       return []
@@ -65,5 +69,7 @@ test('worker with no registered module handlers only recovers expired leases', a
   const result = await runWorkerCycle(store, 'worker-1', new Map(), 25)
 
   assert.equal(claimCalled, false)
-  assert.deepEqual(result, { requeued: 2, claimed: 0, published: 0, failed: 0 })
+  assert.deepEqual(result, {
+    requeued: 2, reviewClaimsRequeued: 3, claimed: 0, published: 0, failed: 0,
+  })
 })

@@ -90,6 +90,17 @@ import {
   type SubmissionDraftProjection,
   type SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
+import {
+  WorkflowError,
+  type ClaimReviewWorkItemCommand,
+  type HeartbeatReviewWorkItemCommand,
+  type ListReviewWorkItemsCommand,
+  type ReleaseReviewWorkItemCommand,
+  type ReviewActor,
+  type ReviewClaimProjection,
+  type ReviewWorkItemPage,
+  type ReviewWorkItemProjection,
+} from '@vibecheck/workflow'
 
 const serviceVersion = '0.1.0'
 const maxJsonBodyBytes = 16 * 1024
@@ -225,6 +236,13 @@ export interface ApiSubmissionService {
   patchDraft(command: PatchSubmissionDraftCommand): Promise<SubmissionDraftProjection>
 }
 
+export interface ApiWorkflowService {
+  listWorkItems(command: ListReviewWorkItemsCommand): Promise<ReviewWorkItemPage>
+  claimWorkItem(command: ClaimReviewWorkItemCommand): Promise<ReviewClaimProjection>
+  heartbeatWorkItem(command: HeartbeatReviewWorkItemCommand): Promise<ReviewWorkItemProjection>
+  releaseWorkItem(command: ReleaseReviewWorkItemCommand): Promise<ReviewWorkItemProjection>
+}
+
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
   readonly analytics?: ApiAnalyticsService
@@ -239,6 +257,7 @@ export interface ApiServerDependencies {
   readonly pendingActionExecutor?: ApiPendingActionExecutor
   readonly search?: ApiSearchService
   readonly submission?: ApiSubmissionService
+  readonly workflow?: ApiWorkflowService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
   readonly staticDirectory?: string
@@ -1155,6 +1174,129 @@ function requireSubmissionMutationCsrf(request: IncomingMessage): void {
   }
 }
 
+function requireWorkflowMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new WorkflowError('CSRF_INVALID', 403)
+  }
+}
+
+function exactWorkflowQueryKeys(searchParams: URLSearchParams, allowed: readonly string[]): void {
+  const allowedSet = new Set(allowed)
+  for (const key of searchParams.keys()) {
+    if (!allowedSet.has(key) || searchParams.getAll(key).length !== 1) {
+      throw new WorkflowError('QUERY_PARAMETER_INVALID', 422)
+    }
+  }
+}
+
+function reviewActor(session: SessionProjection): ReviewActor {
+  return Object.freeze({
+    userId: session.userId,
+    roles: Object.freeze([...session.roles]),
+    permissions: Object.freeze([...session.permissions]),
+  })
+}
+
+async function handleWorkflowRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/admin/work-items'
+  const claimMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/claim$/)
+  const heartbeatMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/heartbeat$/)
+  const releaseMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/release$/)
+  if (
+    path !== collectionPath && claimMatch === null &&
+    heartbeatMatch === null && releaseMatch === null
+  ) return null
+  if (
+    (path === collectionPath && method !== 'GET') ||
+    (claimMatch !== null && method !== 'POST') ||
+    (heartbeatMatch !== null && method !== 'POST') ||
+    (releaseMatch !== null && method !== 'POST')
+  ) return null
+  if (!dependencies.workflow) throw new WorkflowError('WORKFLOW_SERVICE_UNAVAILABLE', 503, true)
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  if (!session.roles.includes('admin') && !session.permissions.includes('admin:access')) {
+    throw new WorkflowError('WORK_ITEM_FORBIDDEN', 403)
+  }
+  const actor = reviewActor(session)
+
+  if (path === collectionPath && method === 'GET') {
+    exactWorkflowQueryKeys(url.searchParams, ['work_type', 'target_type', 'status', 'cursor'])
+    const workType = url.searchParams.get('work_type')
+    if (workType === null) throw new WorkflowError('WORK_TYPE_REQUIRED', 422)
+    const projection = await dependencies.workflow.listWorkItems({
+      actor,
+      workType,
+      targetType: url.searchParams.get('target_type'),
+      status: url.searchParams.get('status'),
+      cursor: url.searchParams.get('cursor'),
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  exactWorkflowQueryKeys(url.searchParams, [])
+  if (session.accountStatus === 'restricted') throw new WorkflowError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new WorkflowError('ORIGIN_INVALID', 403)
+  requireWorkflowMutationCsrf(request)
+  const body = await readJsonBody(request)
+  if (claimMatch !== null) {
+    exactKeys(body, ['expected_version', 'expected_conflict_principal_version'])
+    const rawPrincipalVersion = body.expected_conflict_principal_version
+    if (
+      rawPrincipalVersion !== undefined && rawPrincipalVersion !== null &&
+      (!Number.isSafeInteger(rawPrincipalVersion) || (rawPrincipalVersion as number) < 1)
+    ) throw new WorkflowError('EXPECTED_CONFLICT_PRINCIPAL_VERSION_INVALID', 422)
+    const projection = await dependencies.workflow.claimWorkItem({
+      actor,
+      workItemId: claimMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      expectedConflictPrincipalVersion: typeof rawPrincipalVersion === 'number'
+        ? rawPrincipalVersion
+        : null,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (heartbeatMatch !== null) {
+    exactKeys(body, ['claim_token'])
+    const projection = await dependencies.workflow.heartbeatWorkItem({
+      actor,
+      workItemId: heartbeatMatch[1]!,
+      claimToken: stringField(body, 'claim_token', { minimum: 43, maximum: 43 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (releaseMatch !== null) {
+    exactKeys(body, ['claim_token', 'reason_code'])
+    const projection = await dependencies.workflow.releaseWorkItem({
+      actor,
+      workItemId: releaseMatch[1]!,
+      claimToken: stringField(body, 'claim_token', { minimum: 43, maximum: 43 })!,
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  return null
+}
+
 async function handleSubmissionRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1818,9 +1960,15 @@ export function createApiServer(
                   const submissionStatus = await handleSubmissionRequest(
                     request, response, url, path, method, requestId, config, dependencies,
                   )
-                  if (submissionStatus !== null) {
-                    statusCode = submissionStatus
-                  } else {
+                if (submissionStatus !== null) {
+                  statusCode = submissionStatus
+                } else {
+                    const workflowStatus = await handleWorkflowRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (workflowStatus !== null) {
+                      statusCode = workflowStatus
+                    } else {
                     const communityStatus = await handleCommunityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -1875,6 +2023,7 @@ export function createApiServer(
                         }
                       }
                     }
+                    }
                   }
                 }
               }
@@ -1884,7 +2033,7 @@ export function createApiServer(
           const apiError = error instanceof IdentityError || error instanceof CatalogError ||
             error instanceof SearchError || error instanceof ComparisonError ||
             error instanceof CommunityError || error instanceof AnalyticsError ||
-            error instanceof SubmissionError
+            error instanceof SubmissionError || error instanceof WorkflowError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
@@ -1902,7 +2051,7 @@ export function createApiServer(
                   ? {}
                   : { retryAfterSeconds }),
                 ...((apiError instanceof ComparisonError || apiError instanceof CommunityError ||
-                    apiError instanceof SubmissionError) &&
+                    apiError instanceof SubmissionError || apiError instanceof WorkflowError) &&
                     apiError.details !== undefined
                   ? { details: apiError.details }
                   : {}),

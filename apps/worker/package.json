@@ -15,6 +15,7 @@
   "dependencies": {
     "@vibecheck/config": "*",
     "@vibecheck/database": "*",
-    "@vibecheck/observability": "*"
+    "@vibecheck/observability": "*",
+    "@vibecheck/workflow": "*"
   }
 }

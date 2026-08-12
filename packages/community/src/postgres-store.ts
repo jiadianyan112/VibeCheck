@@ -506,6 +506,13 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
           input.requestHash, input.now,
         ],
       )
+      await client.query(
+        `INSERT INTO workflow.review_work_item_conflict_principals (
+           work_item_id,principal_user_id,source_type,source_id,principal_version,created_at
+         ) VALUES ($1,$2,'reporter',$3,1,$4)
+         ON CONFLICT DO NOTHING`,
+        [workItemId, input.userId, reportId, input.now],
+      )
       const countDelta = -1
       const updated = await client.query<CommentRow>(
         `UPDATE community.comments SET moderation_state='under_review',
@@ -810,6 +817,15 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
       [commentId],
     )
     if (!active.rows[0]) throw communityError('COMMENT_WORK_ITEM_STATE_INVALID', 500, true)
+    await client.query(
+      `INSERT INTO workflow.review_work_item_conflict_principals (
+         work_item_id,principal_user_id,source_type,source_id,principal_version,created_at
+       )
+       SELECT $1,comment.author_user_id,'comment_author',comment.comment_id,1,$3
+       FROM community.comments comment WHERE comment.comment_id=$2
+       ON CONFLICT DO NOTHING`,
+      [active.rows[0].work_item_id, commentId, now],
+    )
     return active.rows[0].work_item_id
   }
 
@@ -820,11 +836,24 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
     now: Date,
   ): Promise<void> {
     await client.query(
-      `UPDATE workflow.review_work_items SET status='cancelled',cancel_reason=$2,
-         assignee_user_id=NULL,claim_token_hash=NULL,lease_expires_at=NULL,
-         last_heartbeat_at=NULL,version=version+1,updated_at=$3
-       WHERE work_type='community' AND target_type='comment' AND target_id=$1
-         AND status IN ('queued','claimed')`,
+      `WITH candidate AS (
+         SELECT work_item_id,status FROM workflow.review_work_items
+         WHERE work_type='community' AND target_type='comment' AND target_id=$1
+           AND status IN ('queued','claimed') FOR UPDATE
+       ), updated AS (
+         UPDATE workflow.review_work_items item SET status='cancelled',cancel_reason=$2,
+           assignee_user_id=NULL,claim_token_hash=NULL,lease_expires_at=NULL,
+           last_heartbeat_at=NULL,conflict_principal_version_at_claim=NULL,
+           version=item.version+1,updated_at=$3
+         FROM candidate WHERE item.work_item_id=candidate.work_item_id
+         RETURNING item.work_item_id,item.version,candidate.status AS from_status
+       )
+       INSERT INTO workflow.review_work_item_events (
+         event_id,work_item_id,event_type,from_status,to_status,work_item_version,
+         reason_code,occurred_at
+       )
+       SELECT gen_random_uuid(),work_item_id,'cancelled',from_status,'cancelled',version,$2,$3
+       FROM updated`,
       [commentId, reason, now],
     )
   }

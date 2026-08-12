@@ -9,6 +9,7 @@ import {
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
+  loadWorkflowConfig,
 } from './index.js'
 
 describe('loadServiceConfig', () => {
@@ -199,6 +200,27 @@ describe('loadServiceConfig', () => {
     assert.throws(
       () => loadSubmissionConfig({ SUBMISSION_URL_CHECK_TTL_SECONDS: '7200' }),
       /CONFIG_SUBMISSION_URL_CHECK_TTL_SECONDS_INVALID/,
+    )
+  })
+
+  it('freezes the review lease and requires an isolated signed cursor secret', () => {
+    assert.equal(loadWorkflowConfig({ REVIEW_WORKFLOW_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadWorkflowConfig({ REVIEW_WORKFLOW_ENABLED: 'true' }),
+      /CONFIG_REVIEW_WORKFLOW_CURSOR_SECRET_REQUIRED/,
+    )
+    const config = loadWorkflowConfig({
+      REVIEW_WORKFLOW_ENABLED: 'true',
+      REVIEW_WORKFLOW_CURSOR_SECRET: 'review-workflow-cursor-secret-at-least-32-characters',
+      REVIEW_WORKFLOW_LEASE_SECONDS: '60',
+      REVIEW_WORKFLOW_MAXIMUM_CLAIM_SECONDS: '900',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.leaseSeconds, 60)
+    assert.equal(config.maximumClaimSeconds, 900)
+    assert.throws(
+      () => loadWorkflowConfig({ REVIEW_WORKFLOW_LEASE_SECONDS: '120' }),
+      /CONFIG_REVIEW_WORKFLOW_LEASE_SECONDS_INVALID/,
     )
   })
 })

@@ -75,6 +75,16 @@ services:
         value: "1800"
       - key: SUBMISSION_DRAFT_TTL_SECONDS
         value: "2592000"
+      - key: REVIEW_WORKFLOW_ENABLED
+        value: "true"
+      - key: REVIEW_WORKFLOW_CURSOR_SECRET
+        generateValue: true
+      - key: REVIEW_WORKFLOW_LEASE_SECONDS
+        value: "60"
+      - key: REVIEW_WORKFLOW_MAXIMUM_CLAIM_SECONDS
+        value: "900"
+      - key: REVIEW_WORKFLOW_QUEUE_PAGE_SIZE
+        value: "25"
 
   - type: worker
     name: vibecheck-worker

@@ -23,6 +23,7 @@ import {
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
+  loadWorkflowConfig,
 } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import {
@@ -34,6 +35,7 @@ import {
 } from '@vibecheck/identity'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submission'
+import { PostgresWorkflowStore, WorkflowService } from '@vibecheck/workflow'
 import { fileURLToPath } from 'node:url'
 
 import { close, createApiServer, listen } from './server.js'
@@ -47,6 +49,7 @@ const searchConfig = loadSearchConfig()
 const communityConfig = loadCommunityConfig()
 const analyticsConfig = loadAnalyticsConfig()
 const submissionConfig = loadSubmissionConfig()
+const workflowConfig = loadWorkflowConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -99,11 +102,18 @@ const submission = submissionConfig.enabled
       config: submissionConfig,
     })
   : undefined
+if (workflowConfig.enabled && !identityConfig.enabled) {
+  throw new Error('CONFIG_REVIEW_WORKFLOW_REQUIRES_IDENTITY')
+}
+const workflow = workflowConfig.enabled
+  ? new WorkflowService(new PostgresWorkflowStore(pool), workflowConfig)
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
   ...(analytics ? { analytics } : {}),
   ...(submission ? { submission } : {}),
+  ...(workflow ? { workflow } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

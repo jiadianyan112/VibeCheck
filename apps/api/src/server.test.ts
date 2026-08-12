@@ -66,6 +66,15 @@ import type {
   SubmissionDraftProjection,
   SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
+import type {
+  ClaimReviewWorkItemCommand,
+  HeartbeatReviewWorkItemCommand,
+  ListReviewWorkItemsCommand,
+  ReleaseReviewWorkItemCommand,
+  ReviewClaimProjection,
+  ReviewWorkItemPage,
+  ReviewWorkItemProjection,
+} from '@vibecheck/workflow'
 
 import {
   close,
@@ -80,6 +89,7 @@ import {
   type ApiPendingActionExecutor,
   type ApiSearchService,
   type ApiSubmissionService,
+  type ApiWorkflowService,
 } from './server.js'
 
 const config: ServiceConfig = Object.freeze({
@@ -109,6 +119,7 @@ async function start(
   pendingActionExecutor?: ApiPendingActionExecutor,
   analytics?: ApiAnalyticsService,
   submission?: ApiSubmissionService,
+  workflow?: ApiWorkflowService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -121,7 +132,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -140,6 +151,7 @@ async function start(
     ...(pendingActionExecutor ? { pendingActionExecutor } : {}),
     ...(analytics ? { analytics } : {}),
     ...(submission ? { submission } : {}),
+    ...(workflow ? { workflow } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -900,6 +912,138 @@ class RestrictedIdentityService extends FakeIdentityService {
     return Object.freeze({ ...session, accountStatus: 'restricted' as const })
   }
 }
+
+class StaffIdentityService extends FakeIdentityService {
+  override async getSession(): Promise<SessionProjection> {
+    return Object.freeze({
+      ...session,
+      roles: Object.freeze(['user', 'editor'] as const),
+      primaryRole: 'editor' as const,
+      permissions: Object.freeze(['profile:read', 'admin:access', 'admin:review'] as const),
+    })
+  }
+}
+
+class FakeWorkflowService implements ApiWorkflowService {
+  listCommand: ListReviewWorkItemsCommand | null = null
+  claimCommand: ClaimReviewWorkItemCommand | null = null
+  heartbeatCommand: HeartbeatReviewWorkItemCommand | null = null
+  releaseCommand: ReleaseReviewWorkItemCommand | null = null
+  readonly item: ReviewWorkItemProjection = Object.freeze({
+    work_item_id: '85000000-0000-4000-8000-000000000001',
+    work_type: 'submission',
+    target_type: 'submission',
+    target_id: '85000000-0000-4000-8000-000000000002',
+    work_item_status: 'queued',
+    version: 1,
+    assignee_user_id: null,
+    lease_expires_at: null,
+    domain_summary: Object.freeze({ status: 'pending_review' }),
+    created_at: '2026-08-10T00:00:00.000Z',
+    updated_at: '2026-08-10T00:00:00.000Z',
+  })
+
+  getClaimCommand(): ClaimReviewWorkItemCommand | null { return this.claimCommand }
+
+  async listWorkItems(command: ListReviewWorkItemsCommand): Promise<ReviewWorkItemPage> {
+    this.listCommand = command
+    return Object.freeze({ items: Object.freeze([this.item]), total_count: 1, next_cursor: null })
+  }
+
+  async claimWorkItem(command: ClaimReviewWorkItemCommand): Promise<ReviewClaimProjection> {
+    this.claimCommand = command
+    return Object.freeze({
+      ...this.item,
+      work_item_status: 'claimed',
+      version: 2,
+      assignee_user_id: command.actor.userId,
+      lease_expires_at: '2026-08-10T00:01:00.000Z',
+      claim_token: 'a'.repeat(43),
+    })
+  }
+
+  async heartbeatWorkItem(command: HeartbeatReviewWorkItemCommand): Promise<ReviewWorkItemProjection> {
+    this.heartbeatCommand = command
+    return Object.freeze({
+      ...this.item,
+      work_item_status: 'claimed', version: 3, assignee_user_id: command.actor.userId,
+      lease_expires_at: '2026-08-10T00:01:30.000Z',
+    })
+  }
+
+  async releaseWorkItem(command: ReleaseReviewWorkItemCommand): Promise<ReviewWorkItemProjection> {
+    this.releaseCommand = command
+    return Object.freeze({ ...this.item, version: 4 })
+  }
+}
+
+test('review work-item queue and lease mutations use staff session, CSRF and frozen operation shapes', async () => {
+  const workflow = new FakeWorkflowService()
+  const runtime = await start(
+    async () => undefined,
+    new StaffIdentityService(),
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined,
+    workflow,
+  )
+  const cookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const mutationHeaders = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie,
+    'x-csrf-token': session.csrfToken,
+  }
+  try {
+    const listed = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items?work_type=submission&status=queued`,
+      { headers: { cookie } },
+    )
+    assert.equal(listed.status, 200)
+    assert.equal((await listed.json() as { total_count: number }).total_count, 1)
+    assert.equal(workflow.listCommand?.actor.roles.includes('editor'), true)
+
+    const missingCsrf = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items/${workflow.item.work_item_id}/claim`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://web.example', cookie },
+        body: JSON.stringify({ expected_version: 1 }),
+      },
+    )
+    assert.equal(missingCsrf.status, 403)
+    assert.equal(workflow.claimCommand, null)
+
+    const claimed = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items/${workflow.item.work_item_id}/claim`,
+      {
+        method: 'POST', headers: mutationHeaders,
+        body: JSON.stringify({ expected_version: 1 }),
+      },
+    )
+    assert.equal(claimed.status, 200)
+    const token = (await claimed.json() as { claim_token: string }).claim_token
+    assert.equal(workflow.getClaimCommand()?.expectedVersion, 1)
+
+    const heartbeat = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items/${workflow.item.work_item_id}/heartbeat`,
+      { method: 'POST', headers: mutationHeaders, body: JSON.stringify({ claim_token: token }) },
+    )
+    assert.equal(heartbeat.status, 200)
+    assert.equal(workflow.heartbeatCommand?.claimToken, token)
+
+    const released = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items/${workflow.item.work_item_id}/release`,
+      {
+        method: 'POST', headers: mutationHeaders,
+        body: JSON.stringify({ claim_token: token, reason_code: 'manual_release' }),
+      },
+    )
+    assert.equal(released.status, 200)
+    assert.equal(workflow.releaseCommand?.reasonCode, 'manual_release')
+  } finally {
+    await runtime.stop()
+  }
+})
 
 class FakeSubmissionService implements ApiSubmissionService {
   checkCommand: CheckSubmissionUrlCommand | null = null

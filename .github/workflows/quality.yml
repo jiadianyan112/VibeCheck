@@ -54,7 +54,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 16) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 17) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify synthetic catalog fixture and PostgreSQL projections
         run: |
           npm run catalog:fixture:load
@@ -76,3 +76,5 @@ jobs:
         run: npm run search:fixture:verify
       - name: Verify URL-check and immutable submission-draft boundaries against PostgreSQL
         run: npm run submission:fixture:verify
+      - name: Verify review queue conflict filtering and lease recovery against PostgreSQL
+        run: npm run workflow:fixture:verify

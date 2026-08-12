@@ -17,6 +17,7 @@ tags:
   - name: Community
   - name: Analytics
   - name: Submission
+  - name: Workflow
 paths:
   /health/live:
     get:
@@ -990,6 +991,151 @@ paths:
           $ref: '#/components/responses/Error'
         '422':
           $ref: '#/components/responses/Error'
+  /api/v1/admin/work-items:
+    get:
+      tags: [Workflow]
+      operationId: OP-WORK-QUEUE
+      summary: List a conflict-filtered stable page for one authorized review queue
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: work_type
+          required: true
+          schema:
+            $ref: '#/components/schemas/ReviewWorkType'
+        - in: query
+          name: target_type
+          required: false
+          schema:
+            $ref: '#/components/schemas/ReviewTargetType'
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/ReviewWorkItemStatus'
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        '200':
+          description: Total, items and cursor are all calculated after conflict filtering.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewWorkItemPage'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/work-items/{work_item_id}/claim:
+    post:
+      tags: [Workflow]
+      operationId: OP-ADMIN-CLAIM
+      summary: Atomically claim one eligible work item for a 60-second lease
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/WorkItemId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewClaimRequest'
+      responses:
+        '200':
+          description: Claimed item. The raw claim token is returned once and never persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewClaimProjection'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/work-items/{work_item_id}/heartbeat:
+    post:
+      tags: [Workflow]
+      operationId: OP-ADMIN-HEARTBEAT
+      summary: Renew the current assignee lease within the configured maximum claim duration
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/WorkItemId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewHeartbeatRequest'
+      responses:
+        '200':
+          description: Lease renewed and version incremented.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewWorkItem'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/work-items/{work_item_id}/release:
+    post:
+      tags: [Workflow]
+      operationId: OP-ADMIN-RELEASE
+      summary: Idempotently release one active claim without changing the domain decision state
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/WorkItemId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewReleaseRequest'
+      responses:
+        '200':
+          description: Work item returned to queued; a repeated identical release returns its receipt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewWorkItem'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
   /api/v1/projects:
     get:
       tags: [Catalog]
@@ -1236,6 +1382,13 @@ components:
       in: cookie
       name: vc_session
   parameters:
+    WorkItemId:
+      in: path
+      name: work_item_id
+      required: true
+      schema:
+        type: string
+        format: uuid
     QueryId:
       in: path
       name: query_id
@@ -3428,3 +3581,180 @@ components:
         expires_at:
           type: string
           format: date-time
+    ReviewWorkType:
+      type: string
+      enum:
+        - submission
+        - project_update
+        - verification
+        - ownership_case
+        - evidence
+        - recheck
+        - relation
+        - community
+        - creator_profile
+    ReviewTargetType:
+      type: string
+      enum:
+        - submission
+        - project_update
+        - verification_request
+        - ownership_case
+        - evidence
+        - recheck_task
+        - relation_candidate
+        - comment
+        - report
+        - creator_profile_draft
+    ReviewWorkItemStatus:
+      type: string
+      enum: [queued, claimed, decided, cancelled]
+    ReviewDomainSummary:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          minLength: 1
+          maxLength: 64
+    ReviewWorkItem:
+      type: object
+      additionalProperties: false
+      required:
+        - work_item_id
+        - work_type
+        - target_type
+        - target_id
+        - work_item_status
+        - version
+        - assignee_user_id
+        - lease_expires_at
+        - domain_summary
+        - created_at
+        - updated_at
+      properties:
+        work_item_id:
+          type: string
+          format: uuid
+        work_type:
+          $ref: '#/components/schemas/ReviewWorkType'
+        target_type:
+          $ref: '#/components/schemas/ReviewTargetType'
+        target_id:
+          type: string
+          format: uuid
+        work_item_status:
+          $ref: '#/components/schemas/ReviewWorkItemStatus'
+        version:
+          type: integer
+          minimum: 1
+        assignee_user_id:
+          type: [string, 'null']
+          format: uuid
+        lease_expires_at:
+          type: [string, 'null']
+          format: date-time
+        domain_summary:
+          $ref: '#/components/schemas/ReviewDomainSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ReviewWorkItemPage:
+      type: object
+      additionalProperties: false
+      required: [items, total_count, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ReviewWorkItem'
+        total_count:
+          type: integer
+          minimum: 0
+        next_cursor:
+          type: [string, 'null']
+          maxLength: 2048
+    ReviewClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version:
+          type: integer
+          minimum: 1
+        expected_conflict_principal_version:
+          type: [integer, 'null']
+          minimum: 1
+    ReviewHeartbeatRequest:
+      type: object
+      additionalProperties: false
+      required: [claim_token]
+      properties:
+        claim_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+    ReviewReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [claim_token, reason_code]
+      properties:
+        claim_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        reason_code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+    ReviewClaimProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - work_item_id
+        - work_type
+        - target_type
+        - target_id
+        - work_item_status
+        - version
+        - assignee_user_id
+        - lease_expires_at
+        - domain_summary
+        - created_at
+        - updated_at
+        - claim_token
+      properties:
+        work_item_id:
+          type: string
+          format: uuid
+        work_type:
+          $ref: '#/components/schemas/ReviewWorkType'
+        target_type:
+          $ref: '#/components/schemas/ReviewTargetType'
+        target_id:
+          type: string
+          format: uuid
+        work_item_status:
+          $ref: '#/components/schemas/ReviewWorkItemStatus'
+        version:
+          type: integer
+          minimum: 1
+        assignee_user_id:
+          type: [string, 'null']
+          format: uuid
+        lease_expires_at:
+          type: [string, 'null']
+          format: date-time
+        domain_summary:
+          $ref: '#/components/schemas/ReviewDomainSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        claim_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'

@@ -8,6 +8,7 @@ import {
   markOutboxRetry,
   requeueExpiredOutbox,
 } from '@vibecheck/database'
+import { PostgresWorkflowStore } from '@vibecheck/workflow'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
 
@@ -22,8 +23,12 @@ const pool = createDatabasePool({
 })
 const workerId = `${config.serviceName}-${randomUUID()}`
 const handlers = new Map<string, OutboxHandler>()
+const workflowStore = new PostgresWorkflowStore(pool)
 const store: OutboxStore = {
   requeueExpired: () => requeueExpiredOutbox(pool),
+  requeueExpiredReviewClaims: () => workflowStore.requeueExpiredClaims(
+    new Date(), config.workerBatchSize,
+  ),
   claim: (id, eventNames, limit) => claimOutboxEvents(pool, id, eventNames, limit),
   markPublished: (outboxId) => markOutboxPublished(pool, outboxId),
   markRetry: (outboxId, code) => markOutboxRetry(pool, outboxId, code),
@@ -34,7 +39,7 @@ let stopping = false
 async function cycle(): Promise<void> {
   try {
     const result = await runWorkerCycle(store, workerId, handlers, config.workerBatchSize)
-    if (result.requeued > 0 || result.claimed > 0) {
+    if (result.requeued > 0 || result.reviewClaimsRequeued > 0 || result.claimed > 0) {
       console.info(
         JSON.stringify({
           level: 'info',

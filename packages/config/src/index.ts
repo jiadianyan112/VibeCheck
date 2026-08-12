@@ -90,6 +90,14 @@ export interface SubmissionConfig {
   readonly draftTtlSeconds: number
 }
 
+export interface WorkflowConfig {
+  readonly enabled: boolean
+  readonly cursorSecret: string
+  readonly leaseSeconds: number
+  readonly maximumClaimSeconds: number
+  readonly queuePageSize: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -474,6 +482,28 @@ export function loadSubmissionConfig(
     draftTtlSeconds: parseInteger(
       'SUBMISSION_DRAFT_TTL_SECONDS', env.SUBMISSION_DRAFT_TTL_SECONDS,
       2_592_000, 86_400, 7_776_000,
+    ),
+  })
+}
+
+export function loadWorkflowConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): WorkflowConfig {
+  const enabled = parseBoolean('REVIEW_WORKFLOW_ENABLED', env.REVIEW_WORKFLOW_ENABLED, false)
+  return Object.freeze({
+    enabled,
+    cursorSecret: enabled
+      ? requiredSecret('REVIEW_WORKFLOW_CURSOR_SECRET', env.REVIEW_WORKFLOW_CURSOR_SECRET)
+      : '',
+    leaseSeconds: parseInteger(
+      'REVIEW_WORKFLOW_LEASE_SECONDS', env.REVIEW_WORKFLOW_LEASE_SECONDS, 60, 60, 60,
+    ),
+    maximumClaimSeconds: parseInteger(
+      'REVIEW_WORKFLOW_MAXIMUM_CLAIM_SECONDS', env.REVIEW_WORKFLOW_MAXIMUM_CLAIM_SECONDS,
+      900, 60, 86_400,
+    ),
+    queuePageSize: parseInteger(
+      'REVIEW_WORKFLOW_QUEUE_PAGE_SIZE', env.REVIEW_WORKFLOW_QUEUE_PAGE_SIZE, 25, 1, 50,
     ),
   })
 }

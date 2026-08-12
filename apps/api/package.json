@@ -23,6 +23,7 @@
     "@vibecheck/identity": "*",
     "@vibecheck/observability": "*",
     "@vibecheck/search": "*",
-    "@vibecheck/submission": "*"
+    "@vibecheck/submission": "*",
+    "@vibecheck/workflow": "*"
   }
 }

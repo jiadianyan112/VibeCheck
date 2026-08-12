@@ -48,6 +48,16 @@ async function run(): Promise<void> {
     [userId],
   )
   await pool.query(
+    `DELETE FROM workflow.review_work_item_conflict_principals
+     WHERE work_item_id IN (
+       SELECT work_item_id FROM workflow.review_work_items
+       WHERE work_type='community' AND target_type='comment' AND target_id IN (
+         SELECT comment_id FROM community.comments WHERE author_user_id=$1
+       )
+     )`,
+    [userId],
+  )
+  await pool.query(
     `DELETE FROM workflow.review_work_items
      WHERE work_type='community' AND target_type='comment' AND target_id IN (
        SELECT comment_id FROM community.comments WHERE author_user_id=$1
