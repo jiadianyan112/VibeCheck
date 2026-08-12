@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS search.query_snapshots (
   query_length_bucket varchar(16) NOT NULL
     CHECK (query_length_bucket IN ('1_10', '11_30', '31_80', '81_200', '201_500')),
   mode varchar(16) NOT NULL CHECK (mode IN ('search', 'discover')),
-  category_id varchar(64) REFERENCES taxonomy.categories(category_id),
+  category_id varchar(64)
+    CHECK (category_id IN ('ai_learning_quiz', 'personal_site_portfolio')),
   locale varchar(35) NOT NULL DEFAULT 'zh-CN',
   active_intent_version integer NOT NULL DEFAULT 1 CHECK (active_intent_version >= 1),
   snapshot_version bigint NOT NULL DEFAULT 1 CHECK (snapshot_version >= 1),
