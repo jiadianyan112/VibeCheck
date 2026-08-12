@@ -352,6 +352,87 @@ export class PostgresComparisonStore implements ComparisonStore {
     }
   }
 
+  async getReplayAnonymousSubjectId(input: {
+    readonly identityLinkId: string
+    readonly userId: string
+    readonly now: Date
+  }): Promise<string> {
+    const result = await this.pool.query<{ anonymous_subject_id: string }>(
+      `SELECT replay.anonymous_subject_id
+       FROM iam.identity_links replay
+       JOIN iam.identity_links merge_link
+         ON merge_link.auth_flow_id=replay.auth_flow_id
+        AND merge_link.user_id=replay.user_id
+        AND merge_link.anonymous_subject_id=replay.anonymous_subject_id
+        AND merge_link.purpose='comparison_merge'
+       JOIN comparison.comparison_login_merge_receipts receipt
+         ON receipt.identity_link_id=merge_link.identity_link_id
+       WHERE replay.identity_link_id=$1
+         AND replay.user_id=$2
+         AND replay.purpose='pending_action_replay'
+         AND replay.status='active'
+         AND replay.expires_at>$3
+         AND merge_link.status='consumed'
+       ORDER BY receipt.created_at DESC
+       LIMIT 1`,
+      [input.identityLinkId, input.userId, input.now],
+    )
+    if (!result.rows[0]) throw comparisonError('COMPARISON_REPLAY_LINK_INVALID', 403)
+    return result.rows[0].anonymous_subject_id
+  }
+
+  async resolveSavedReplayTarget(input: ComparisonStoreOwner & {
+    readonly sourceComparisonId: string
+    readonly sourceComparisonVersion: number
+    readonly sourceAnonymousSubjectHash: Buffer
+    readonly identityLinkId: string
+    readonly now: Date
+  }): Promise<{ readonly comparisonId: string; readonly comparisonVersion: number }> {
+    if (input.subject.kind !== 'user') throw comparisonError('AUTHENTICATION_REQUIRED', 401)
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        `comparison-owner:user:${input.subject.id}`,
+      ])
+      const source = await this.comparisonRow(client, input.sourceComparisonId, true)
+      const sourceOwned = source?.owner_user_id === input.subject.id ||
+        source?.anonymous_subject_hash?.equals(input.sourceAnonymousSubjectHash) === true
+      if (source === null || !sourceOwned) throw comparisonError('COMPARISON_REPLAY_SOURCE_INVALID', 403)
+      if (!this.isActiveAt(source, input.now)) throw comparisonError('COMPARISON_GONE', 410)
+      if (source.current_version !== input.sourceComparisonVersion) {
+        throw comparisonError('COMPARISON_VERSION_CONFLICT', 409, false, undefined, {
+          current_comparison_version: source.current_version,
+        })
+      }
+      const target = await this.activeComparison(
+        client,
+        { kind: 'user', id: input.subject.id },
+        true,
+      )
+      if (target === null || !this.isActiveAt(target, input.now)) {
+        throw comparisonError('COMPARISON_REPLAY_TARGET_NOT_FOUND', 409)
+      }
+      if (
+        target.category_id !== source.category_id ||
+        target.category_schema_version !== source.category_schema_version
+      ) {
+        throw comparisonError('COMPARISON_REPLAY_TARGET_NOT_ADOPTED', 409)
+      }
+      const result = Object.freeze({
+        comparisonId: target.comparison_id,
+        comparisonVersion: target.current_version,
+      })
+      await client.query('COMMIT')
+      return result
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   async recordDimensionProgress(input: ComparisonStoreOwner & {
     readonly eventId: string
     readonly comparisonId: string

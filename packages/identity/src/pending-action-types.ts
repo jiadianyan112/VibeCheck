@@ -81,6 +81,16 @@ export interface ConsumePendingActionCommand {
   readonly requestId: string
 }
 
+export interface CompletePendingActionExecutionCommand {
+  readonly pendingActionId: string
+  readonly subject: { readonly kind: 'user'; readonly id: string }
+  readonly identityLinkId: string
+  readonly businessRequestId: string
+  readonly clientRequestId: string
+  readonly expectedStatus: 'pending'
+  readonly requestId: string
+}
+
 export interface CancelPendingActionCommand {
   readonly pendingActionId: string
   readonly subject: PendingActionSubject

@@ -13,6 +13,7 @@ import type {
 import {
   pendingActionTypes,
   type CancelPendingActionCommand,
+  type CompletePendingActionExecutionCommand,
   type ConsumePendingActionCommand,
   type CreatePendingActionCommand,
   type GetPendingActionCommand,
@@ -205,7 +206,7 @@ export class PendingActionService {
     }
     const requestHash = hash(canonical({
       identity_link_id: identityLinkId,
-      execution_receipt_hash: hash(command.executionReceipt),
+      business_request_id: receipt.business_request_id,
       expected_status: command.expectedStatus,
     }))
     return this.dependencies.store.consume({
@@ -218,6 +219,28 @@ export class PendingActionService {
       businessRequestId: receipt.business_request_id,
       requestId: command.requestId,
       now,
+    })
+  }
+
+  completeExecution(
+    command: CompletePendingActionExecutionCommand,
+  ): Promise<PendingActionProjection> {
+    const now = this.now()
+    const executionReceipt = this.issueExecutionReceipt({
+      pendingActionId: command.pendingActionId,
+      userId: command.subject.id,
+      businessRequestId: command.businessRequestId,
+      result: 'success',
+      expiresAt: new Date(now.getTime() + 60_000),
+    })
+    return this.consume({
+      pendingActionId: command.pendingActionId,
+      subject: command.subject,
+      identityLinkId: command.identityLinkId,
+      executionReceipt,
+      clientRequestId: command.clientRequestId,
+      expectedStatus: command.expectedStatus,
+      requestId: command.requestId,
     })
   }
 

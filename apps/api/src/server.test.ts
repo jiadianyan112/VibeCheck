@@ -24,6 +24,7 @@ import {
   type PrepareComparisonLoginMergeCommand,
   type PutComparisonCommand,
   type ResolveComparisonMergeConflictCommand,
+  type SetComparisonSavedAfterLoginReplayCommand,
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
 import type {
@@ -41,9 +42,11 @@ import type { ServiceConfig } from '@vibecheck/config'
 import {
   IdentityError,
   type CancelPendingActionCommand,
-  type ConsumePendingActionCommand,
+  type CompletePendingActionExecutionCommand,
   type CreatePendingActionCommand,
   type GetPendingActionCommand,
+  type GetPendingActionExecutionCommand,
+  type PendingActionExecutionProjection,
   type PendingActionProjection,
   type SessionProjection,
   type StartChallengeCommand,
@@ -60,6 +63,7 @@ import {
   type ApiCommunityService,
   type ApiIdentityService,
   type ApiPendingActionService,
+  type ApiPendingActionExecutor,
   type ApiSearchService,
 } from './server.js'
 
@@ -87,6 +91,7 @@ async function start(
   comparison?: ApiComparisonService,
   pendingActions?: ApiPendingActionService,
   community?: ApiCommunityService,
+  pendingActionExecutor?: ApiPendingActionExecutor,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -115,6 +120,7 @@ async function start(
     ...(comparison ? { comparison } : {}),
     ...(pendingActions ? { pendingActions } : {}),
     ...(community ? { community } : {}),
+    ...(pendingActionExecutor ? { pendingActionExecutor } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -201,6 +207,12 @@ class FakeComparisonService implements ApiComparisonService {
       ...comparisonProjection(command.comparisonId, []),
       saved_at: command.state ? '2026-08-10T00:00:00.000Z' : null,
     })
+  }
+
+  async setSavedAfterLoginReplay(
+    command: SetComparisonSavedAfterLoginReplayCommand,
+  ): Promise<ComparisonProjection> {
+    return comparisonProjection(command.sourceComparisonId, [])
   }
 
   async prepareLoginMerge(command: PrepareComparisonLoginMergeCommand) {
@@ -774,13 +786,15 @@ class RestrictedIdentityService extends FakeIdentityService {
 }
 
 class FakePendingActionService implements ApiPendingActionService {
+  status: 'pending' | 'consumed' | 'cancelled' = 'pending'
   createCommand: CreatePendingActionCommand | null = null
   getCommand: GetPendingActionCommand | null = null
-  consumeCommand: ConsumePendingActionCommand | null = null
+  executionCommand: GetPendingActionExecutionCommand | null = null
+  completeCommand: CompletePendingActionExecutionCommand | null = null
   cancelCommand: CancelPendingActionCommand | null = null
 
-  getConsumeCommand(): ConsumePendingActionCommand | null {
-    return this.consumeCommand
+  getCompleteCommand(): CompletePendingActionExecutionCommand | null {
+    return this.completeCommand
   }
 
   async create(command: CreatePendingActionCommand): Promise<PendingActionProjection> {
@@ -790,16 +804,35 @@ class FakePendingActionService implements ApiPendingActionService {
 
   async get(command: GetPendingActionCommand): Promise<PendingActionProjection> {
     this.getCommand = command
-    return this.projection('pending')
+    return this.projection(this.status)
   }
 
-  async consume(command: ConsumePendingActionCommand): Promise<PendingActionProjection> {
-    this.consumeCommand = command
+  async getForExecution(
+    command: GetPendingActionExecutionCommand,
+  ): Promise<PendingActionExecutionProjection> {
+    this.executionCommand = command
+    return Object.freeze({
+      ...this.projection('pending'),
+      payload: Object.freeze({
+        action_type: 'set_project_favorite' as const,
+        project_id: '63000000-0000-4000-8000-000000000002',
+        state: true,
+      }),
+      client_request_id: '63000000-0000-4000-8000-000000000003',
+    })
+  }
+
+  async completeExecution(
+    command: CompletePendingActionExecutionCommand,
+  ): Promise<PendingActionProjection> {
+    this.completeCommand = command
+    this.status = 'consumed'
     return this.projection('consumed')
   }
 
   async cancel(command: CancelPendingActionCommand): Promise<PendingActionProjection> {
     this.cancelCommand = command
+    this.status = 'cancelled'
     return this.projection('cancelled')
   }
 
@@ -813,6 +846,30 @@ class FakePendingActionService implements ApiPendingActionService {
       consumed_at: status === 'consumed' ? '2026-08-10T00:00:00.000Z' : null,
       cancelled_at: status === 'cancelled' ? '2026-08-10T00:00:00.000Z' : null,
       cancel_reason: status === 'cancelled' ? 'user_cancelled' : null,
+    })
+  }
+}
+
+class FakePendingActionExecutor implements ApiPendingActionExecutor {
+  input: Parameters<ApiPendingActionExecutor['execute']>[0] | null = null
+
+  async execute(input: Parameters<ApiPendingActionExecutor['execute']>[0]) {
+    this.input = input
+    return Object.freeze({ status: 'executed' as const })
+  }
+}
+
+class FailingPendingActionExecutor implements ApiPendingActionExecutor {
+  async execute(): Promise<never> {
+    throw new IdentityError('PENDING_ACTION_DOMAIN_WRITE_FAILED', 503, true)
+  }
+}
+
+class CancellingPendingActionExecutor implements ApiPendingActionExecutor {
+  async execute() {
+    return Object.freeze({
+      status: 'cancelled' as const,
+      reason: 'account_comparison_preserved' as const,
     })
   }
 }
@@ -886,8 +943,9 @@ test('pending actions bind an anonymous owner, hide payloads, and cancel idempot
   }
 })
 
-test('pending action consumption requires session CSRF and forwards the attested receipt', async () => {
+test('pending action replay requires session CSRF and creates its receipt only after domain success', async () => {
   const pending = new FakePendingActionService()
+  const executor = new FakePendingActionExecutor()
   const runtime = await start(
     async () => undefined,
     new FakeIdentityService(),
@@ -897,10 +955,12 @@ test('pending action consumption requires session CSRF and forwards the attested
     undefined,
     undefined,
     pending,
+    undefined,
+    executor,
   )
   const pendingActionId = '63000000-0000-4000-8000-000000000001'
   const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
-  const request = (withCsrf: boolean) => fetch(
+  const request = (withCsrf: boolean, extra: Record<string, unknown> = {}) => fetch(
     `${runtime.baseUrl}/api/v1/auth/pending-actions/${pendingActionId}/consume`,
     {
       method: 'POST',
@@ -912,24 +972,111 @@ test('pending action consumption requires session CSRF and forwards the attested
       },
       body: JSON.stringify({
         identity_link_id: '63000000-0000-4000-8000-000000000005',
-        execution_receipt: 'signed-domain-execution-receipt-with-sufficient-length',
-        client_request_id: '63000000-0000-4000-8000-000000000006',
         expected_status: 'pending',
+        ...extra,
       }),
     },
   )
   try {
     assert.equal((await request(false)).status, 403)
-    assert.equal(pending.consumeCommand, null)
+    assert.equal(pending.completeCommand, null)
+    assert.equal((await request(true, { execution_receipt: 'browser-forged' })).status, 422)
+    assert.equal(pending.completeCommand, null)
     const consumed = await request(true)
     assert.equal(consumed.status, 200)
     assert.equal((await consumed.json() as { status: string }).status, 'consumed')
-    const consumeCommand = pending.getConsumeCommand()
-    assert.ok(consumeCommand)
-    assert.equal(consumeCommand.subject.id, session.userId)
-    assert.equal(consumeCommand.expectedStatus, 'pending')
+    assert.equal(executor.input?.action.client_request_id, '63000000-0000-4000-8000-000000000003')
+    const completed = pending.getCompleteCommand()
+    assert.ok(completed)
+    assert.equal(completed.subject.id, session.userId)
+    assert.equal(completed.businessRequestId, '63000000-0000-4000-8000-000000000003')
+    assert.equal(completed.expectedStatus, 'pending')
   } finally {
     await runtime.stop()
+  }
+})
+
+test('pending action replay keeps pending on domain failure and returns consumed retries without a rewrite', async () => {
+  const pending = new FakePendingActionService()
+  const identity = new FakeIdentityService()
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const body = JSON.stringify({
+    identity_link_id: '63000000-0000-4000-8000-000000000005',
+    expected_status: 'pending',
+  })
+  const request = (baseUrl: string) => fetch(
+    `${baseUrl}/api/v1/auth/pending-actions/63000000-0000-4000-8000-000000000001/consume`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+      },
+      body,
+    },
+  )
+  const failing = await start(
+    async () => undefined,
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    pending,
+    undefined,
+    new FailingPendingActionExecutor(),
+  )
+  try {
+    assert.equal((await request(failing.baseUrl)).status, 503)
+    assert.equal(pending.completeCommand, null)
+    assert.equal(pending.status, 'pending')
+  } finally {
+    await failing.stop()
+  }
+
+  const cancelling = await start(
+    async () => undefined,
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    pending,
+    undefined,
+    new CancellingPendingActionExecutor(),
+  )
+  try {
+    const response = await request(cancelling.baseUrl)
+    assert.equal(response.status, 200)
+    assert.equal((await response.json() as { status: string }).status, 'cancelled')
+    assert.equal(pending.cancelCommand?.cancelReason, 'account_comparison_preserved')
+  } finally {
+    await cancelling.stop()
+  }
+
+  pending.status = 'consumed'
+  pending.executionCommand = null
+  const retried = await start(
+    async () => undefined,
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    pending,
+  )
+  try {
+    const response = await request(retried.baseUrl)
+    assert.equal(response.status, 200)
+    assert.equal((await response.json() as { status: string }).status, 'consumed')
+    assert.equal(pending.executionCommand, null)
+  } finally {
+    await retried.stop()
   }
 })
 

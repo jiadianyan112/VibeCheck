@@ -126,7 +126,7 @@ async function run(): Promise<void> {
        (SELECT count(*)::int FROM ops.outbox_events
         WHERE aggregate_type='project' AND aggregate_id=$1::text
           AND event_name IN ('project_favorited','project_followed')) AS event_count
-     FROM catalog.project_interaction_counters counter WHERE project_id=$1`,
+     FROM catalog.project_interaction_counters counter WHERE project_id=$1::uuid`,
     [projectId],
   )
   assert.deepEqual(afterRetry.rows[0], {
@@ -192,9 +192,9 @@ async function run(): Promise<void> {
   }>(
     `SELECT
        (SELECT count(*)::int FROM community.project_interactions
-        WHERE user_id=$1 AND project_id=$2 AND state=true) AS interaction_count,
+        WHERE user_id=$1::uuid AND project_id=$2::uuid AND state=true) AS interaction_count,
        (SELECT count(*)::int FROM community.interaction_operation_receipts
-        WHERE user_id=$1) AS receipt_count,
+        WHERE user_id=$1::uuid) AS receipt_count,
        (SELECT count(*)::int FROM ops.outbox_events
         WHERE aggregate_type='project' AND aggregate_id=$2::text
           AND event_name IN ('project_favorited','project_liked','project_followed')) AS event_count,
@@ -326,16 +326,16 @@ async function run(): Promise<void> {
     natural_actor_leak_count: number
   }>(
     `SELECT
-       (SELECT count(*)::int FROM community.comments WHERE author_user_id=$1) AS comment_count,
+       (SELECT count(*)::int FROM community.comments WHERE author_user_id=$1::uuid) AS comment_count,
        (SELECT visible_comment_count::text FROM catalog.project_interaction_counters
-        WHERE project_id=$2) AS visible_comment_count,
+        WHERE project_id=$2::uuid) AS visible_comment_count,
        (SELECT count(*)::int FROM workflow.review_work_items
-        WHERE work_type='community' AND target_type='comment' AND target_id=$3
+        WHERE work_type='community' AND target_type='comment' AND target_id=$3::uuid
           AND status='queued') AS work_item_count,
        (SELECT count(*)::int FROM community.comment_reports
-        WHERE reporter_user_id=$1 AND comment_id=$3) AS report_count,
+        WHERE reporter_user_id=$1::uuid AND comment_id=$3::uuid) AS report_count,
        (SELECT count(*)::int FROM community.comment_reports
-        WHERE reporter_user_id=$1 AND
+        WHERE reporter_user_id=$1::uuid AND
           position(convert_to('fixture private report note','UTF8') in note_ciphertext)>0
        ) AS report_note_plaintext_count,
        (SELECT count(*)::int FROM ops.outbox_events

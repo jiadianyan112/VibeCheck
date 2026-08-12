@@ -49,7 +49,7 @@
 | OP-AUTH-MERGE-CANCEL | POST `/api/v1/auth/comparison-merge-conflicts/{conflict_id}/cancel` | 登录 owner + CSRF；终止冲突并撤销 IdentityLink，原账户/游客 Comparison 均不截断 |
 | OP-AUTH-PENDING-CREATE | POST `/api/v1/auth/pending-actions` | 签名游客或登录主体创建至多一条 15 分钟加密动作；白名单 Schema、主体和 client_request_id 幂等 |
 | OP-AUTH-PENDING-GET | GET `/api/v1/auth/pending-actions/{pending_action_id}` | 当前 owner 或持同认证流 `pending_action_replay` IdentityLink 的登录用户读取脱敏状态；不返回动作参数 |
-| OP-AUTH-PENDING-CONSUME | POST `/api/v1/auth/pending-actions/{pending_action_id}/consume` | 登录主体 + CSRF + 单用途 IdentityLink + 服务端签名领域成功回执；原子消费动作和链接并擦除密文 |
+| OP-AUTH-PENDING-CONSUME | POST `/api/v1/auth/pending-actions/{pending_action_id}/consume` | 浏览器只提交登录主体 + CSRF + 单用途 IdentityLink；服务端以原 client_request_id 执行真实领域写，成功后在进程内签发回执并原子消费动作/链接、擦除密文 |
 | OP-AUTH-PENDING-CANCEL | POST `/api/v1/auth/pending-actions/{pending_action_id}/cancel` | 当前 owner 或链接后的登录主体取消；写不可回放终态、擦除密文并撤销全部活动回放链接 |
 
 公共响应允许短缓存；身份与错误响应仍为 `no-store`。查询参数未知、重复、超限或游标被修改时返回 canonical 400 错误。
@@ -75,6 +75,8 @@
 - CI 在迁移后连续加载两次合成夹具，并通过真实 `PostgresCatalogStore + CatalogService` 验证列表、详情、证据、关系、事件、资产和 SearchDocument；仅 Mock Store 通过不能替代此门禁。
 - Comparison PostgreSQL 门禁验证 owner 隔离、请求回放、版本冲突、同品类限制、顺序保留、下架墓碑、保存幂等和不可变历史；四个不同维度累计可见 30 秒且当前有效作品为 2—5 个时，只为该 `comparison_id + comparison_version` 完成一次并写 `comparison_completed` Outbox。
 - 登录合并 PostgreSQL 门禁验证每主体唯一活动指针、跨品类固定保留账户集合且不写账户历史、去重并集恰为 5 自动追加账户版本、6 项创建可恢复冲突、resolve 幂等、cancel 幂等且两端原集合保持不变；IdentityLink 与所有写入在同一事务消费或撤销。
+- Community PostgreSQL 门禁验证收藏/点赞/关注最终态幂等、级联约束、并发计数、评论创建/撤回/举报、A14 版本化限流、审核工单、密文举报说明、公开评论计数与 Outbox 去标识化。
+- PendingAction API 门禁验证浏览器不能提交成功回执；服务端内部解密并将原 client_request_id 传入 Interaction、Comment 或 Comparison 领域，领域失败保持 pending，成功才签发内部回执并消费，consumed 重试不重复业务写。
 
 ## 5. 未完成范围
 
@@ -84,15 +86,15 @@
 - AdminProjectCreationDraft 的受审计 importer 已完成；Submission/ReviewWorkItem 发布链及 64 个经审核正式档案仍未完成，当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
-- P09 Comparison 核心、完成口径、同品类登录合并以及 PendingAction 四操作/登录链接/比较冲突取消级联已落地；收藏、点赞、关注、评论和发布领域尚未实现，因此服务端签名 execution receipt 的真实业务写入与自动动作执行仍在对应工作包完成前保持不可触发；
+- P09 Comparison 核心、完成口径、同品类登录合并以及 PendingAction 四操作/登录链接/比较冲突取消级联已落地；收藏、点赞、关注、评论和比较保存已接入可信自动回放。`start_submission` 在 WP-04 发布草稿服务完成前固定返回 501 且不消费 PendingAction；
 - 登录时账户活动集合与游客活动集合属于不同品类时固定以账户状态为准：不弹选择、不导入游客集合、不创建冲突或第二个账户活动集合；返回账户当前 Comparison 的 `not_required` 结果并消费本次 comparison IdentityLink。匿名集合不写入账户历史，仍按原匿名 TTL 独立过期；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 
 ## 6. 下一批顺序
 
 1. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-2. 实现 Interaction/Comment 领域写入后接通 PendingAction 的可信执行与一次消费，并把 `OP-ANALYTICS-INGEST` 可信维度可见事件接到 Comparison 内部进度服务；
-3. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，不允许目录 importer 绕过审核直接发布。
+2. 把 `OP-ANALYTICS-INGEST` 可信维度可见事件接到 Comparison 内部进度服务；
+3. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，完成后再开放 `start_submission` 回放，不允许目录 importer 绕过审核直接发布。
 
 ## 7. 受审计目录 importer（WP-03 增量）
 
@@ -149,7 +151,7 @@
 - P0 白名单固定为作品收藏/点赞/关注最终态、评论创建、比较保存和进入发布；历史 `decision` 不接受。每种参数使用独立运行时 Schema，评论净化后 1—2000 字，整个规范化载荷不超过 4096 字节。
 - 载荷使用身份主密钥派生的用途隔离 AES-256-GCM 密钥加密；公共 create/get/终态响应不返回参数。只有进程内可信执行入口可解密，密钥版本不可用明确 503，不降级为明文或浏览器持久化。
 - OP-AUTH-START 可绑定当前匿名 owner 的 pending_action_id；PostgreSQL 在创建 challenge 前核验主体、pending 状态和 TTL。登录成功只在对象仍有效时签发独立 purpose=`pending_action_replay` 链接，并记录 PendingAction↔IdentityLink 绑定；不得复用 query/comparison link。
-- consume 只接受当前登录用户、活动绑定链接、CSRF 与 HMAC 签名的 `pending-action-execution.v1` 成功回执；回执绑定 pending_action_id、user_id、原业务 client_request_id、result=success 和不超过 5 分钟的有效期。成功在同事务写 consumed、擦除密文、保存回执哈希、消费链接和写安全审计；客户端自造或篡改回执为 403。
+- 公共 consume 只接受当前登录用户、活动绑定链接、CSRF 和 `expected_status=pending`，不接受浏览器提供 execution receipt 或业务 request ID。API 内部解密白名单载荷，以存储的原 client_request_id 调用真实领域服务；只有业务写成功后才签发 `pending-action-execution.v1` 回执。内部回执绑定 pending_action_id、user_id、原业务 client_request_id、result=success 和 60 秒有效期；随后在同事务写 consumed、擦除密文、保存回执哈希、消费链接和写安全审计。比较保存先通过同一 auth_flow 的已完成 ComparisonMerge 解析账户目标：同品类保存合并/采纳后的账户当前版本；跨品类固定保留账户集合并将游客保存动作写 cancelled，不弹选择、不改账户 Comparison。
 - cancel/consume 使用 `pending_action_id+operation_id` 不可变回执。相同请求返回同一终态，异载荷复用返回 409；consumed/cancelled/expired 不可回 pending。惰性过期必须先提交 expired、擦除密文并终止绑定链接，再向调用方返回 410，不能因异常回滚生命周期事实。
 - ComparisonMergeConflict 创建前校验 pending action 与 comparison link 属于同一 auth_flow/用户/匿名主体；取消冲突原子取消 PendingAction 并撤销回放链接，冲突过期原子过期 PendingAction。resolve 只消费 comparison link，PendingAction 保持 pending，待真实领域写成功后单独 consume。
 - PostgreSQL 质量门覆盖 OTP 登录签发三个独立用途链接、脱敏读取、内部解密、签名消费、回执重放、密文擦除、直接取消、惰性过期提交、不可变触发器，以及比较冲突取消对 PendingAction 的级联。

@@ -49,6 +49,7 @@ export type {
 export {
   pendingActionTypes,
   type CancelPendingActionCommand,
+  type CompletePendingActionExecutionCommand,
   type ConsumePendingActionCommand,
   type CreatePendingActionCommand,
   type GetPendingActionCommand,

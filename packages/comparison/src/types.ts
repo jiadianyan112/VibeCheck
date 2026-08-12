@@ -64,6 +64,15 @@ export interface SetComparisonSavedCommand {
   readonly requestId: string
 }
 
+export interface SetComparisonSavedAfterLoginReplayCommand {
+  readonly sourceComparisonId: string
+  readonly sourceComparisonVersion: number
+  readonly state: true
+  readonly identityLinkId: string
+  readonly subject: { readonly kind: 'user'; readonly id: string }
+  readonly requestId: string
+}
+
 export interface RecordComparisonDimensionCommand {
   readonly eventId: string
   readonly comparisonId: string

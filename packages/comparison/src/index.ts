@@ -21,5 +21,6 @@ export type {
   PutComparisonCommand,
   RecordComparisonDimensionCommand,
   ResolveComparisonMergeConflictCommand,
+  SetComparisonSavedAfterLoginReplayCommand,
   SetComparisonSavedCommand,
 } from './types.js'

@@ -50,6 +50,7 @@ class FakeStore implements ComparisonStore {
   putInput: Parameters<ComparisonStore['putComparison']>[0] | null = null
   progressInput: Parameters<ComparisonStore['recordDimensionProgress']>[0] | null = null
   saveInput: Parameters<ComparisonStore['setSaved']>[0] | null = null
+  replayTargetInput: Parameters<ComparisonStore['resolveSavedReplayTarget']>[0] | null = null
   prepareMergeInput: Parameters<ComparisonStore['prepareLoginMerge']>[0] | null = null
   resolveMergeInput: Parameters<ComparisonStore['resolveMergeConflict']>[0] | null = null
 
@@ -69,6 +70,17 @@ class FakeStore implements ComparisonStore {
   ): Promise<ComparisonProjection> {
     this.saveInput = input
     return projection
+  }
+
+  async getReplayAnonymousSubjectId(): Promise<string> {
+    return '30000000-0000-4000-8000-000000000002'
+  }
+
+  async resolveSavedReplayTarget(
+    input: Parameters<ComparisonStore['resolveSavedReplayTarget']>[0],
+  ): Promise<{ readonly comparisonId: string; readonly comparisonVersion: number }> {
+    this.replayTargetInput = input
+    return { comparisonId, comparisonVersion: 2 }
   }
 
   async recordDimensionProgress(
@@ -226,6 +238,23 @@ describe('ComparisonService membership commands', () => {
       requestId: 'request_12345678',
     })
     assert.equal(store.saveInput?.state, true)
+  })
+
+  it('resolves a guest comparison to the same-category account target before replay saving', async () => {
+    const store = new FakeStore()
+    const service = new ComparisonService({ store, config, now: () => now })
+    await service.setSavedAfterLoginReplay({
+      sourceComparisonId: comparisonId,
+      sourceComparisonVersion: 1,
+      state: true,
+      identityLinkId: '60000000-0000-4000-8000-000000000001',
+      subject: { kind: 'user', id: subjectId },
+      requestId: 'request_replay_save',
+    })
+    assert.equal(store.replayTargetInput?.sourceComparisonId, comparisonId)
+    assert.equal(store.replayTargetInput?.sourceAnonymousSubjectHash.length, 32)
+    assert.equal(store.saveInput?.comparisonVersion, 2)
+    assert.equal(store.saveInput?.subject.kind, 'user')
   })
 })
 

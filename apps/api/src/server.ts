@@ -31,6 +31,7 @@ import {
   type PrepareComparisonLoginMergeCommand,
   type PutComparisonCommand,
   type ResolveComparisonMergeConflictCommand,
+  type SetComparisonSavedAfterLoginReplayCommand,
   type SetComparisonSavedCommand,
 } from '@vibecheck/comparison'
 import {
@@ -49,9 +50,11 @@ import type { ServiceHealth } from '@vibecheck/contracts'
 import {
   IdentityError,
   type CancelPendingActionCommand,
-  type ConsumePendingActionCommand,
+  type CompletePendingActionExecutionCommand,
   type CreatePendingActionCommand,
   type GetPendingActionCommand,
+  type GetPendingActionExecutionCommand,
+  type PendingActionExecutionProjection,
   type PendingActionProjection,
   type PendingActionSubject,
   type SessionProjection,
@@ -97,8 +100,21 @@ export interface ApiIdentityService {
 export interface ApiPendingActionService {
   create(command: CreatePendingActionCommand): Promise<PendingActionProjection>
   get(command: GetPendingActionCommand): Promise<PendingActionProjection>
-  consume(command: ConsumePendingActionCommand): Promise<PendingActionProjection>
+  getForExecution(command: GetPendingActionExecutionCommand): Promise<PendingActionExecutionProjection>
+  completeExecution(command: CompletePendingActionExecutionCommand): Promise<PendingActionProjection>
   cancel(command: CancelPendingActionCommand): Promise<PendingActionProjection>
+}
+
+export interface ApiPendingActionExecutor {
+  execute(input: {
+    readonly action: PendingActionExecutionProjection
+    readonly userId: string
+    readonly identityLinkId: string
+    readonly requestId: string
+  }): Promise<
+    | { readonly status: 'executed' }
+    | { readonly status: 'cancelled'; readonly reason: 'account_comparison_preserved' }
+  >
 }
 
 export interface ApiCatalogService {
@@ -132,6 +148,9 @@ export interface ApiComparisonService {
   ): Promise<ComparisonProjection>
   putComparison(command: PutComparisonCommand): Promise<ComparisonMutationProjection>
   setSaved(command: SetComparisonSavedCommand): Promise<ComparisonProjection>
+  setSavedAfterLoginReplay(
+    command: SetComparisonSavedAfterLoginReplayCommand,
+  ): Promise<ComparisonProjection>
   prepareLoginMerge(command: PrepareComparisonLoginMergeCommand): Promise<ComparisonLoginMergeProjection>
   getMergeConflict(command: GetComparisonMergeConflictCommand): Promise<ComparisonMergeConflictProjection>
   resolveMergeConflict(
@@ -189,6 +208,7 @@ export interface ApiServerDependencies {
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
   readonly pendingActions?: ApiPendingActionService
+  readonly pendingActionExecutor?: ApiPendingActionExecutor
   readonly search?: ApiSearchService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
@@ -842,19 +862,62 @@ async function handlePendingActionRequest(
     if ([...url.searchParams.keys()].length > 0) throw new IdentityError('QUERY_PARAMETER_INVALID', 400, false)
     const owner = await resolvePendingActionSubject(request, response, config, dependencies, false)
     if (owner.subject.kind !== 'user') throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
+    if (owner.session?.accountStatus === 'restricted') {
+      throw new IdentityError('ACCOUNT_RESTRICTED', 403, false)
+    }
     requireIdentityMutationCsrf(request)
     const body = await readJsonBody(request)
-    exactKeys(body, [
-      'identity_link_id', 'execution_receipt', 'client_request_id', 'expected_status',
-    ])
+    exactKeys(body, ['identity_link_id', 'expected_status'])
     const expectedStatus = stringField(body, 'expected_status', { maximum: 16 })
     if (expectedStatus !== 'pending') throw new IdentityError('EXPECTED_STATUS_INVALID', 422, false)
-    const result = await service.consume({
+    const identityLinkId = stringField(body, 'identity_link_id', { maximum: 64 })!
+    const current = await service.get({
       pendingActionId: consumeMatch[1]!,
       subject: owner.subject,
-      identityLinkId: stringField(body, 'identity_link_id', { maximum: 64 })!,
-      executionReceipt: stringField(body, 'execution_receipt', { maximum: 2_048 })!,
-      clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
+      identityLinkId,
+      requestId,
+    })
+    if (current.status === 'consumed') {
+      writeJson(response, 200, current, requestId)
+      return 200
+    }
+    if (current.status === 'cancelled') {
+      writeJson(response, 200, current, requestId)
+      return 200
+    }
+    if (!dependencies.pendingActionExecutor) {
+      throw new IdentityError('PENDING_ACTION_EXECUTION_UNAVAILABLE', 503, true)
+    }
+    const action = await service.getForExecution({
+      pendingActionId: consumeMatch[1]!,
+      subject: owner.subject,
+      identityLinkId,
+      requestId,
+    })
+    const execution = await dependencies.pendingActionExecutor.execute({
+      action,
+      userId: owner.subject.id,
+      identityLinkId,
+      requestId,
+    })
+    if (execution.status === 'cancelled') {
+      const cancelled = await service.cancel({
+        pendingActionId: action.pending_action_id,
+        subject: owner.subject,
+        identityLinkId,
+        cancelReason: execution.reason,
+        clientRequestId: action.client_request_id,
+        requestId,
+      })
+      writeJson(response, 200, cancelled, requestId)
+      return 200
+    }
+    const result = await service.completeExecution({
+      pendingActionId: action.pending_action_id,
+      subject: owner.subject,
+      identityLinkId,
+      businessRequestId: action.client_request_id,
+      clientRequestId: action.client_request_id,
       expectedStatus,
       requestId,
     })

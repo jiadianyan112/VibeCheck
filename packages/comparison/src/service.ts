@@ -19,6 +19,7 @@ import type {
   PrepareComparisonLoginMergeCommand,
   RecordComparisonDimensionCommand,
   ResolveComparisonMergeConflictCommand,
+  SetComparisonSavedAfterLoginReplayCommand,
   SetComparisonSavedCommand,
 } from './types.js'
 
@@ -106,6 +107,41 @@ export class ComparisonService {
       state: command.state,
       requestId: this.requestId(command.requestId),
       ...this.owner(command.subject),
+      now: this.now(),
+    })
+  }
+
+  async setSavedAfterLoginReplay(
+    command: SetComparisonSavedAfterLoginReplayCommand,
+  ): Promise<ComparisonProjection> {
+    if (command.subject.kind !== 'user' || command.state !== true) {
+      throw comparisonError('COMPARISON_REPLAY_INVALID', 422)
+    }
+    if (!Number.isSafeInteger(command.sourceComparisonVersion) || command.sourceComparisonVersion < 1) {
+      throw comparisonError('COMPARISON_VERSION_INVALID', 422)
+    }
+    const identityLinkId = this.uuid(command.identityLinkId, 'IDENTITY_LINK_ID_INVALID')
+    const user = this.owner(command.subject)
+    const anonymousSubjectId = await this.dependencies.store.getReplayAnonymousSubjectId({
+      identityLinkId,
+      userId: user.subject.id,
+      now: this.now(),
+    })
+    const anonymous = this.owner({ kind: 'anonymous', id: anonymousSubjectId })
+    const target = await this.dependencies.store.resolveSavedReplayTarget({
+      ...user,
+      sourceComparisonId: this.uuid(command.sourceComparisonId, 'COMPARISON_ID_INVALID'),
+      sourceComparisonVersion: command.sourceComparisonVersion,
+      sourceAnonymousSubjectHash: anonymous.subjectHash,
+      identityLinkId,
+      now: this.now(),
+    })
+    return this.dependencies.store.setSaved({
+      ...user,
+      comparisonId: target.comparisonId,
+      comparisonVersion: target.comparisonVersion,
+      state: true,
+      requestId: this.requestId(command.requestId),
       now: this.now(),
     })
   }

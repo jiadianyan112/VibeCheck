@@ -35,6 +35,18 @@ export interface ComparisonStore {
     readonly requestId: string
     readonly now: Date
   }): Promise<ComparisonProjection>
+  getReplayAnonymousSubjectId(input: {
+    readonly identityLinkId: string
+    readonly userId: string
+    readonly now: Date
+  }): Promise<string>
+  resolveSavedReplayTarget(input: ComparisonStoreOwner & {
+    readonly sourceComparisonId: string
+    readonly sourceComparisonVersion: number
+    readonly sourceAnonymousSubjectHash: Buffer
+    readonly identityLinkId: string
+    readonly now: Date
+  }): Promise<{ readonly comparisonId: string; readonly comparisonVersion: number }>
   recordDimensionProgress(input: ComparisonStoreOwner & {
     readonly eventId: string
     readonly comparisonId: string

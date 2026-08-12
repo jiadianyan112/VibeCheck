@@ -29,6 +29,7 @@ import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { fileURLToPath } from 'node:url'
 
 import { close, createApiServer, listen } from './server.js'
+import { PendingActionExecutor } from './pending-action-executor.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-api' })
 const identityConfig = loadIdentityConfig()
@@ -43,16 +44,21 @@ const pool = createDatabasePool({
   ssl: config.databaseSsl,
   applicationName: config.serviceName,
 })
+const community = communityConfig.enabled
+  ? new CommunityService({
+      store: new PostgresCommunityStore(pool),
+      config: communityConfig,
+    })
+  : undefined
+const comparison = comparisonConfig.enabled
+  ? new ComparisonService({
+      store: new PostgresComparisonStore(pool),
+      config: comparisonConfig,
+    })
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
-  ...(communityConfig.enabled
-    ? {
-        community: new CommunityService({
-          store: new PostgresCommunityStore(pool),
-          config: communityConfig,
-        }),
-      }
-    : {}),
+  ...(community ? { community } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {
@@ -85,6 +91,10 @@ const server = createApiServer(config, {
           config: identityConfig,
           store: new PostgresPendingActionStore(pool),
         }),
+        pendingActionExecutor: new PendingActionExecutor({
+          ...(community ? { community } : {}),
+          ...(comparison ? { comparison } : {}),
+        }),
         authCookieSecure: identityConfig.cookieSecure,
       }
     : {}),
@@ -96,14 +106,7 @@ const server = createApiServer(config, {
         }),
       }
     : {}),
-  ...(comparisonConfig.enabled
-    ? {
-        comparison: new ComparisonService({
-          store: new PostgresComparisonStore(pool),
-          config: comparisonConfig,
-        }),
-      }
-    : {}),
+  ...(comparison ? { comparison } : {}),
   ...((catalogConfig.enabled || comparisonConfig.enabled || searchConfig.enabled || identityConfig.enabled)
     ? {
         anonymousCookieSecret: searchConfig.enabled

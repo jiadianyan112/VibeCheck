@@ -121,7 +121,7 @@ describe('PendingActionService', () => {
     })
   })
 
-  it('rejects removed decision actions and requires a signed successful execution receipt', async () => {
+  it('rejects removed decision actions and completes only through an internally signed receipt', async () => {
     const store = new FakePendingActionStore()
     const service = new PendingActionService({ config, store, now: () => now })
     await failure(() => service.create({
@@ -141,6 +141,17 @@ describe('PendingActionService', () => {
       clientRequestId: '30000000-0000-4000-8000-000000000005',
       requestId: 'pending_action_user_create_test',
     })
+    await service.completeExecution({
+      pendingActionId: store.created!.pendingActionId,
+      subject: { kind: 'user', id: '30000000-0000-4000-8000-000000000003' },
+      identityLinkId: '30000000-0000-4000-8000-000000000007',
+      businessRequestId: '30000000-0000-4000-8000-000000000005',
+      clientRequestId: '30000000-0000-4000-8000-000000000008',
+      expectedStatus: 'pending',
+      requestId: 'pending_action_consume_test',
+    })
+    assert.equal(store.consumed?.executionReceiptHash.length, 32)
+    assert.equal(store.consumed?.businessRequestId, '30000000-0000-4000-8000-000000000005')
     const receipt = service.issueExecutionReceipt({
       pendingActionId: store.created!.pendingActionId,
       userId: '30000000-0000-4000-8000-000000000003',
@@ -148,16 +159,6 @@ describe('PendingActionService', () => {
       result: 'success',
       expiresAt: new Date('2026-08-12T00:01:00.000Z'),
     })
-    await service.consume({
-      pendingActionId: store.created!.pendingActionId,
-      subject: { kind: 'user', id: '30000000-0000-4000-8000-000000000003' },
-      identityLinkId: '30000000-0000-4000-8000-000000000007',
-      executionReceipt: receipt,
-      clientRequestId: '30000000-0000-4000-8000-000000000008',
-      expectedStatus: 'pending',
-      requestId: 'pending_action_consume_test',
-    })
-    assert.equal(store.consumed?.executionReceiptHash.length, 32)
     await failure(() => service.consume({
       pendingActionId: store.created!.pendingActionId,
       subject: { kind: 'user', id: '30000000-0000-4000-8000-000000000003' },

@@ -215,7 +215,14 @@ paths:
     post:
       tags: [Identity]
       operationId: OP-AUTH-PENDING-CONSUME
-      summary: Mark an action consumed only after an attested domain write succeeds
+      summary: Execute and consume one post-login action through trusted server orchestration
+      description: >-
+        The browser supplies only the one-time identity link and expected state. The server decrypts
+        the allowlisted payload, replays the real domain write with the originally stored request ID,
+        internally signs the success receipt, then consumes the action and link. Domain failure leaves
+        the action pending. If a guest comparison was not adopted because the account preserves a
+        different category, that save action is cancelled without changing the account comparison.
+        A consumed retry returns the same terminal projection without another write.
       security:
         - sessionCookie: []
       parameters:
@@ -241,6 +248,7 @@ paths:
         '410': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+        '501': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
   /api/v1/auth/pending-actions/{pending_action_id}/cancel:
     post:
@@ -1206,11 +1214,9 @@ components:
     PendingActionConsumeRequest:
       type: object
       additionalProperties: false
-      required: [identity_link_id, execution_receipt, client_request_id, expected_status]
+      required: [identity_link_id, expected_status]
       properties:
         identity_link_id: { type: string, format: uuid }
-        execution_receipt: { type: string, minLength: 32, maxLength: 2048 }
-        client_request_id: { type: string, format: uuid }
         expected_status: { const: pending }
     PendingActionCancelRequest:
       type: object

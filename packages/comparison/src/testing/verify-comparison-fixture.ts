@@ -104,6 +104,22 @@ async function createMergeIdentityLink(
   return identityLinkId
 }
 
+async function createPendingReplayIdentityLink(
+  userId: string,
+  anonymousSubjectId: string,
+  authFlowId: string,
+): Promise<string> {
+  const identityLinkId = randomUUID()
+  await pool.query(
+    `INSERT INTO iam.identity_links (
+       identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,
+       issued_at,expires_at
+     ) VALUES ($1,$2,$3,$4,'pending_action_replay','active',$5,$6)`,
+    [identityLinkId, anonymousSubjectId, userId, authFlowId, clock, new Date(clock.getTime() + 300_000)],
+  )
+  return identityLinkId
+}
+
 async function expectComparisonError(
   run: () => Promise<unknown>,
   code: string,
@@ -426,7 +442,17 @@ try {
     clientRequestId: randomUUID(),
     subject: mismatchAnonymous,
   })
-  const mismatchLinkId = await createMergeIdentityLink(mismatchUserId, mismatchAnonymous.id)
+  const mismatchAuthFlowId = randomUUID()
+  const mismatchLinkId = await createMergeIdentityLink(
+    mismatchUserId,
+    mismatchAnonymous.id,
+    mismatchAuthFlowId,
+  )
+  const mismatchReplayLinkId = await createPendingReplayIdentityLink(
+    mismatchUserId,
+    mismatchAnonymous.id,
+    mismatchAuthFlowId,
+  )
   const mismatchOperationId = randomUUID()
   const accountPreserved = await service.prepareLoginMerge({
     userId: mismatchUserId,
@@ -482,6 +508,14 @@ try {
     operationId: mismatchOperationId,
     pendingActionId: null,
   }), accountPreserved)
+  await expectComparisonError(() => service.setSavedAfterLoginReplay({
+    sourceComparisonId: mismatchAnonymousComparisonId,
+    sourceComparisonVersion: 1,
+    state: true,
+    identityLinkId: mismatchReplayLinkId,
+    subject: mismatchUser,
+    requestId: randomUUID(),
+  }), 'COMPARISON_REPLAY_TARGET_NOT_ADOPTED', 409)
 
   const mergeProjectIds = await createPortfolioProjects(6)
   const autoMergeUserId = randomUUID()
@@ -504,7 +538,17 @@ try {
     clientRequestId: randomUUID(),
     subject: autoAnonymousSubject,
   })
-  const autoLinkId = await createMergeIdentityLink(autoMergeUserId, autoAnonymousSubject.id)
+  const autoAuthFlowId = randomUUID()
+  const autoLinkId = await createMergeIdentityLink(
+    autoMergeUserId,
+    autoAnonymousSubject.id,
+    autoAuthFlowId,
+  )
+  const autoReplayLinkId = await createPendingReplayIdentityLink(
+    autoMergeUserId,
+    autoAnonymousSubject.id,
+    autoAuthFlowId,
+  )
   const autoOperationId = randomUUID()
   const autoMerged = await service.prepareLoginMerge({
     userId: autoMergeUserId,
@@ -534,6 +578,17 @@ try {
     operationId: autoOperationId,
     pendingActionId: null,
   }), autoMerged)
+  const replaySaved = await service.setSavedAfterLoginReplay({
+    sourceComparisonId: autoAnonymousComparisonId,
+    sourceComparisonVersion: 1,
+    state: true,
+    identityLinkId: autoReplayLinkId,
+    subject: autoMergeUser,
+    requestId: randomUUID(),
+  })
+  assert.equal(replaySaved.comparison_id, autoAccountComparisonId)
+  assert.equal(replaySaved.comparison_version, 2)
+  assert.ok(replaySaved.saved_at)
 
   const conflictUserId = randomUUID()
   await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [conflictUserId])
