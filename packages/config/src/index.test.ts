@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { loadCatalogConfig, loadIdentityConfig, loadServiceConfig } from './index.js'
+import { loadCatalogConfig, loadIdentityConfig, loadSearchConfig, loadServiceConfig } from './index.js'
 
 describe('loadServiceConfig', () => {
   it('loads deterministic defaults for local services', () => {
@@ -102,5 +102,25 @@ describe('loadServiceConfig', () => {
     })
     assert.equal(config.defaultPageSize, 20)
     assert.equal(config.maximumPageSize, 50)
+  })
+
+  it('keeps search optional and validates isolated search secrets when enabled', () => {
+    assert.equal(loadSearchConfig({ SEARCH_ENABLED: 'false' }).enabled, false)
+    assert.throws(
+      () => loadSearchConfig({ SEARCH_ENABLED: 'true' }),
+      /CONFIG_SEARCH_ENCRYPTION_MASTER_KEY_REQUIRED/,
+    )
+    const key = Buffer.alloc(32, 9).toString('base64')
+    const config = loadSearchConfig({
+      SEARCH_ENABLED: 'true',
+      SEARCH_ENCRYPTION_MASTER_KEY: key,
+      SEARCH_ENCRYPTION_KEY_VERSION: 'search-key-v1',
+      SEARCH_SUBJECT_HASH_PEPPER: 'search-subject-hash-pepper-at-least-32-characters',
+      SEARCH_RESULT_TOKEN_SECRET: 'search-result-token-secret-at-least-32-characters',
+      SEARCH_SUBJECT_COOKIE_SECRET: 'search-subject-cookie-secret-at-least-32-characters',
+    })
+    assert.equal(config.enabled, true)
+    assert.equal(config.encryptionMasterKey, key)
+    assert.equal(config.snapshotTtlSeconds, 86_400)
   })
 })

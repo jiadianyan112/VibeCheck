@@ -3,7 +3,7 @@ info:
   title: VibeCheck API
   version: 0.1.0
   description: >-
-    WP-02 platform and identity contract. Product operations are added only when
+    WP-03 platform, identity, public catalog and keyword-search contract. Product operations are added only when
     their module enters implementation and must preserve the v1.10 PRD Operation IDs.
 servers:
   - url: /
@@ -12,6 +12,7 @@ tags:
   - name: Platform
   - name: Identity
   - name: Catalog
+  - name: Search
 paths:
   /health/live:
     get:
@@ -156,6 +157,49 @@ paths:
         '403':
           $ref: '#/components/responses/Error'
         '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/search:
+    post:
+      tags: [Search]
+      operationId: OP-SEARCH
+      summary: Execute or resume an owner-bound public keyword search
+      description: >-
+        Exactly one of query and query_id is accepted. The current implementation serves
+        mode=search with PostgreSQL FTS and structured filters. mode=discover remains a
+        frozen contract but returns SEARCH_DISCOVER_NOT_IMPLEMENTED until its work package ships.
+        Raw query text is encrypted in QuerySnapshot and is never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Stable versioned search groups; no raw query is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchProjection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '422':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '501':
+          $ref: '#/components/responses/Error'
+        '503':
           $ref: '#/components/responses/Error'
   /api/v1/projects:
     get:
@@ -372,6 +416,212 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      oneOf:
+        - required: [query]
+          not:
+            required: [query_id]
+        - required: [query_id]
+          not:
+            required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Sent only in the HTTPS body; forbidden in URLs, logs, analytics and response bodies.
+        query_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum: [search, discover]
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        filters:
+          $ref: '#/components/schemas/SearchFilters'
+        sort:
+          type: string
+          enum: [relevance]
+          default: relevance
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        locale:
+          type: string
+          minLength: 2
+          maxLength: 35
+          default: zh-CN
+    SearchFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        access_status:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [normal, login_required, partial_abnormal, link_unavailable, suspected_migration, paused, ended, unknown]
+        has_available_asset:
+          type: boolean
+        verified_since:
+          type: string
+          format: date-time
+        category_fields:
+          $ref: '#/components/schemas/SearchCategoryFieldMap'
+        exclude_category_fields:
+          $ref: '#/components/schemas/SearchCategoryFieldMap'
+    SearchCategoryFieldMap:
+      type: object
+      description: >-
+        Keys are category-specific frozen filter fields. Values are OR within one field;
+        different keys are AND. Unknown or cross-category keys return 422.
+      maxProperties: 5
+      additionalProperties:
+        type: array
+        minItems: 1
+        maxItems: 10
+        uniqueItems: true
+        items:
+          type: string
+          minLength: 1
+          maxLength: 64
+    SearchMatchReason:
+      type: object
+      additionalProperties: false
+      required: [matched_fields, unmatched_soft_fields, relaxed_fields, evidence_freshness, reason_template_key]
+      properties:
+        matched_fields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        unmatched_soft_fields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        relaxed_fields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        evidence_freshness:
+          type: string
+          enum: [valid, expiring, expired]
+        reason_template_key:
+          type: string
+          enum: [search.match.exact, search.match.adjacent]
+    SearchResultItem:
+      type: object
+      additionalProperties: false
+      required: [project_id, category_id, result_item_id, position, result_item_token, match_reason]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        result_item_id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 1
+        result_item_token:
+          type: string
+          minLength: 32
+          maxLength: 4096
+        match_reason:
+          $ref: '#/components/schemas/SearchMatchReason'
+    SearchResultGroup:
+      type: object
+      additionalProperties: false
+      required: [group_id, channel, default_collapsed, items]
+      properties:
+        group_id:
+          type: string
+          enum: [exact, adjacent]
+        channel:
+          type: string
+          enum: [search_exact, search_adjacent]
+        default_collapsed:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+    SearchProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - query_id
+        - intent_version
+        - parser_version
+        - result_version
+        - ranking_version
+        - mode
+        - category_id
+        - filters
+        - sort
+        - semantic_degraded
+        - exact_count
+        - adjacent_count
+        - groups
+        - next_cursor
+        - expires_at
+      properties:
+        query_id:
+          type: string
+          format: uuid
+        intent_version:
+          type: integer
+          minimum: 1
+        parser_version:
+          type: string
+          enum: [keyword.v1]
+        result_version:
+          type: string
+          format: uuid
+        ranking_version:
+          type: string
+          enum: [search.keyword.v1]
+        mode:
+          type: string
+          enum: [search]
+        category_id:
+          oneOf:
+            - $ref: '#/components/schemas/CategoryId'
+            - type: 'null'
+        filters:
+          $ref: '#/components/schemas/SearchFilters'
+        sort:
+          type: string
+          enum: [relevance]
+        semantic_degraded:
+          type: boolean
+          const: true
+        exact_count:
+          type: integer
+          minimum: 0
+        adjacent_count:
+          type: integer
+          minimum: 0
+        groups:
+          type: array
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/SearchResultGroup'
+        next_cursor:
+          type: [string, 'null']
+          maxLength: 2048
+        expires_at:
+          type: string
+          format: date-time
     CategoryId:
       type: string
       enum: [ai_learning_quiz, personal_site_portfolio]

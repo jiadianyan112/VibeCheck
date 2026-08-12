@@ -18,6 +18,7 @@
     "@vibecheck/contracts": "*",
     "@vibecheck/database": "*",
     "@vibecheck/identity": "*",
-    "@vibecheck/observability": "*"
+    "@vibecheck/observability": "*",
+    "@vibecheck/search": "*"
   }
 }

@@ -13,6 +13,7 @@ describe('discoverMigrations', () => {
         '000002_platform_foundation.sql',
         '000003_identity_access.sql',
         '000004_catalog_public_read.sql',
+        '000005_search_keyword.sql',
       ],
     )
     for (const migration of migrations) {

@@ -25,6 +25,12 @@ import {
   type VerifyChallengeResult,
 } from '@vibecheck/identity'
 import { redactRecord, withSpan } from '@vibecheck/observability'
+import {
+  SearchError,
+  type SearchCommand,
+  type SearchProjection,
+  type SearchSubject,
+} from '@vibecheck/search'
 
 const serviceVersion = '0.1.0'
 const maxJsonBodyBytes = 16 * 1024
@@ -67,12 +73,17 @@ export interface ApiCatalogService {
   }): Promise<AssetPage>
 }
 
+export interface ApiSearchService {
+  search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection>
+}
+
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
   readonly catalog?: ApiCatalogService
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
+  readonly search?: ApiSearchService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
   readonly staticDirectory?: string
@@ -559,6 +570,88 @@ function requireCatalog(dependencies: ApiServerDependencies): ApiCatalogService 
   return dependencies.catalog
 }
 
+function requireSearch(dependencies: ApiServerDependencies): ApiSearchService {
+  if (!dependencies.search) throw new SearchError('SEARCH_SERVICE_UNAVAILABLE', 503, true)
+  return dependencies.search
+}
+
+async function resolveSearchSubject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<SearchSubject> {
+  const cookies = parseCookies(request)
+  if (dependencies.identity && cookies[authCookieNames.session]) {
+    try {
+      const session = await dependencies.identity.getSession(
+        cookies[authCookieNames.session] ?? null,
+        cookies[authCookieNames.csrf] ?? null,
+      )
+      return Object.freeze({ kind: 'user', id: session.userId })
+    } catch (error) {
+      if (!(error instanceof IdentityError) || ![
+        'AUTHENTICATION_REQUIRED', 'SESSION_INVALID', 'CSRF_INVALID',
+      ].includes(error.code)) throw error
+    }
+  }
+  const secret = dependencies.anonymousCookieSecret ?? ''
+  if (secret.length < 32) throw new SearchError('SEARCH_SERVICE_UNAVAILABLE', 503, true)
+  const subjectId = verifiedAnonymousSubject(cookies[authCookieNames.anonymous], secret) ?? randomUUID()
+  appendCookies(response, [
+    cookie(
+      authCookieNames.anonymous,
+      signAnonymousSubject(subjectId, secret),
+      dependencies.authCookieSecure ?? config.environment === 'production',
+      { httpOnly: true, maxAgeSeconds: 31_536_000 },
+    ),
+  ])
+  return Object.freeze({ kind: 'anonymous', id: subjectId })
+}
+
+async function handleSearchRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  if (path !== '/api/v1/search' || method !== 'POST') return null
+  if (!requestOriginAllowed(request, config)) throw new SearchError('ORIGIN_INVALID', 403)
+  const search = requireSearch(dependencies)
+  const body = await readJsonBody(request)
+  exactKeys(body, ['query', 'query_id', 'mode', 'category_id', 'filters', 'sort', 'cursor', 'locale'])
+  const query = body.query === null ? null : stringField(body, 'query', { maximum: 500, optional: true })
+  const queryId = body.query_id === null
+    ? null
+    : stringField(body, 'query_id', { maximum: 64, optional: true })
+  const mode = stringField(body, 'mode', { maximum: 16 })!
+  const categoryId = body.category_id === null
+    ? null
+    : stringField(body, 'category_id', { maximum: 64, optional: true })
+  const sort = stringField(body, 'sort', { maximum: 32, optional: true }) ?? 'relevance'
+  const cursor = body.cursor === null
+    ? null
+    : stringField(body, 'cursor', { maximum: 2_048, optional: true })
+  const locale = stringField(body, 'locale', { maximum: 35, optional: true }) ?? 'zh-CN'
+  const subject = await resolveSearchSubject(request, response, config, dependencies)
+  const result = await search.search({
+    query,
+    queryId,
+    mode: mode as SearchCommand['mode'],
+    categoryId: categoryId as SearchCommand['categoryId'],
+    filters: body.filters,
+    sort: sort as SearchCommand['sort'],
+    cursor,
+    locale,
+    rateLimitKey: clientIp(request) ?? 'unknown',
+  }, subject)
+  writeJson(response, 200, result, requestId)
+  return 200
+}
+
 async function handleCatalogRequest(
   response: ServerResponse,
   url: URL,
@@ -723,40 +816,47 @@ export function createApiServer(
             if (authStatus !== null) {
               statusCode = authStatus
             } else {
-              const catalogStatus = await handleCatalogRequest(
-                response, url, path, method, requestId, dependencies,
+              const searchStatus = await handleSearchRequest(
+                request, response, path, method, requestId, config, dependencies,
               )
-              if (catalogStatus !== null) {
-                statusCode = catalogStatus
+              if (searchStatus !== null) {
+                statusCode = searchStatus
               } else {
-                const staticStatus = await handleStaticRequest(
-                  request,
-                  response,
-                  path,
-                  method,
-                  requestId,
-                  dependencies.staticDirectory,
+                const catalogStatus = await handleCatalogRequest(
+                  response, url, path, method, requestId, dependencies,
                 )
-                if (staticStatus !== null) {
-                  statusCode = staticStatus
+                if (catalogStatus !== null) {
+                  statusCode = catalogStatus
                 } else {
-                  statusCode = 404
-                  writeJson(
+                  const staticStatus = await handleStaticRequest(
+                    request,
                     response,
-                    statusCode,
-                    errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                    path,
+                    method,
                     requestId,
+                    dependencies.staticDirectory,
                   )
+                  if (staticStatus !== null) {
+                    statusCode = staticStatus
+                  } else {
+                    statusCode = 404
+                    writeJson(
+                      response,
+                      statusCode,
+                      errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                      requestId,
+                    )
+                  }
                 }
               }
             }
           }
         } catch (error) {
-          const apiError = error instanceof IdentityError || error instanceof CatalogError
+          const apiError = error instanceof IdentityError || error instanceof CatalogError || error instanceof SearchError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
-          const retryAfterSeconds = apiError instanceof IdentityError
+          const retryAfterSeconds = apiError instanceof IdentityError || apiError instanceof SearchError
             ? apiError.retryAfterSeconds
             : undefined
           if (retryAfterSeconds !== undefined) {

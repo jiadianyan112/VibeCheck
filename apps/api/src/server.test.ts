@@ -18,12 +18,14 @@ import type {
   StartChallengeCommand,
   VerifyChallengeCommand,
 } from '@vibecheck/identity'
+import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
 
 import {
   close,
   createApiServer,
   type ApiCatalogService,
   type ApiIdentityService,
+  type ApiSearchService,
 } from './server.js'
 
 const config: ServiceConfig = Object.freeze({
@@ -45,6 +47,7 @@ async function start(
   identity?: ApiIdentityService,
   staticDirectory?: string,
   catalog?: ApiCatalogService,
+  search?: ApiSearchService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -55,8 +58,10 @@ async function start(
       ? {
           identity,
           authCookieSecure: false,
-          anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes',
         }
+      : {}),
+    ...((identity || search)
+      ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
     ...(catalog
@@ -66,6 +71,7 @@ async function start(
           catalogMaximumPageSize: 50,
         }
       : {}),
+    ...(search ? { search } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -75,6 +81,39 @@ async function start(
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     stop: () => close(server),
+  }
+}
+
+class FakeSearchService implements ApiSearchService {
+  command: SearchCommand | null = null
+  subject: SearchSubject | null = null
+
+  async search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection> {
+    this.command = command
+    this.subject = subject
+    return Object.freeze({
+      query_id: '90000000-0000-4000-8000-000000000001',
+      intent_version: 1,
+      parser_version: 'keyword.v1',
+      result_version: '91000000-0000-4000-8000-000000000001',
+      ranking_version: 'search.keyword.v1',
+      mode: 'search',
+      category_id: 'personal_site_portfolio',
+      filters: Object.freeze({
+        access_status: Object.freeze([]),
+        has_available_asset: null,
+        verified_since: null,
+        category_fields: Object.freeze({}),
+        exclude_category_fields: Object.freeze({}),
+      }),
+      sort: 'relevance',
+      semantic_degraded: true,
+      exact_count: 0,
+      adjacent_count: 0,
+      groups: Object.freeze([]),
+      next_cursor: null,
+      expires_at: '2026-08-11T00:00:00.000Z',
+    })
   }
 }
 
@@ -130,6 +169,48 @@ test('unknown routes return the standard error envelope', async () => {
         retry_after_ms: null,
       },
     })
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('search creates a signed anonymous subject and never echoes raw query text', async () => {
+  const search = new FakeSearchService()
+  const runtime = await start(async () => undefined, undefined, undefined, undefined, search)
+  try {
+    const response = await fetch(`${runtime.baseUrl}/api/v1/search`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify({
+        query: 'private raw query text',
+        mode: 'search',
+        category_id: 'personal_site_portfolio',
+        filters: {},
+        sort: 'relevance',
+      }),
+    })
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('set-cookie') ?? '', /vc_anon=/)
+    assert.equal(search.command?.query, 'private raw query text')
+    assert.equal(search.subject?.kind, 'anonymous')
+    assert.match(search.subject?.id ?? '', /^[0-9a-f-]{36}$/)
+    assert.equal(JSON.stringify(await response.json()).includes('private raw query text'), false)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('search rejects cross-origin creation before invoking the search service', async () => {
+  const search = new FakeSearchService()
+  const runtime = await start(async () => undefined, undefined, undefined, undefined, search)
+  try {
+    const response = await fetch(`${runtime.baseUrl}/api/v1/search`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://attacker.example' },
+      body: JSON.stringify({ query: 'portfolio', mode: 'search' }),
+    })
+    assert.equal(response.status, 403)
+    assert.equal(search.command, null)
   } finally {
     await runtime.stop()
   }
@@ -194,6 +275,32 @@ function cookieValue(setCookie: string, name: string): string {
   assert(match?.[1])
   return decodeURIComponent(match[1])
 }
+
+test('search binds an active authenticated session to the user subject', async () => {
+  const search = new FakeSearchService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    search,
+  )
+  try {
+    const response = await fetch(`${runtime.baseUrl}/api/v1/search`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+      },
+      body: JSON.stringify({ query: 'portfolio', mode: 'search' }),
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(search.subject, { kind: 'user', id: session.userId })
+  } finally {
+    await runtime.stop()
+  }
+})
 
 test('email OTP flow establishes signed browser cookies and a server session', async () => {
   const identity = new FakeIdentityService()

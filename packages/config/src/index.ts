@@ -46,6 +46,20 @@ export interface CatalogConfig {
   readonly maximumPageSize: number
 }
 
+export interface SearchConfig {
+  readonly enabled: boolean
+  readonly encryptionMasterKey: string
+  readonly encryptionKeyVersion: string
+  readonly subjectHashPepper: string
+  readonly resultTokenSecret: string
+  readonly subjectCookieSecret: string
+  readonly snapshotTtlSeconds: number
+  readonly pageSize: number
+  readonly maximumStoredResults: number
+  readonly rawQueryLimit: number
+  readonly rawQueryRateWindowSeconds: number
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -181,6 +195,15 @@ function encryptionKey(value: string | undefined): string {
   return normalized
 }
 
+function base64Key(name: string, value: string | undefined): string {
+  const normalized = requiredSecret(name, value)
+  const decoded = Buffer.from(normalized, 'base64')
+  if (decoded.length !== 32 || decoded.toString('base64') !== normalized) {
+    throw new Error(`CONFIG_${name}_INVALID`)
+  }
+  return normalized
+}
+
 export function loadIdentityConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): IdentityConfig {
@@ -272,5 +295,47 @@ export function loadCatalogConfig(
     cursorSecret: requiredSecret('CATALOG_CURSOR_SECRET', env.CATALOG_CURSOR_SECRET),
     defaultPageSize,
     maximumPageSize,
+  })
+}
+
+export function loadSearchConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): SearchConfig {
+  const enabled = parseBoolean('SEARCH_ENABLED', env.SEARCH_ENABLED, false)
+  if (!enabled) {
+    return Object.freeze({
+      enabled: false,
+      encryptionMasterKey: '',
+      encryptionKeyVersion: '',
+      subjectHashPepper: '',
+      resultTokenSecret: '',
+      subjectCookieSecret: '',
+      snapshotTtlSeconds: 86_400,
+      pageSize: 20,
+      maximumStoredResults: 100,
+      rawQueryLimit: 30,
+      rawQueryRateWindowSeconds: 900,
+    })
+  }
+  const pageSize = parseInteger('SEARCH_PAGE_SIZE', env.SEARCH_PAGE_SIZE, 20, 1, 50)
+  return Object.freeze({
+    enabled: true,
+    encryptionMasterKey: base64Key('SEARCH_ENCRYPTION_MASTER_KEY', env.SEARCH_ENCRYPTION_MASTER_KEY),
+    encryptionKeyVersion: requiredName(env.SEARCH_ENCRYPTION_KEY_VERSION ?? ''),
+    subjectHashPepper: requiredSecret('SEARCH_SUBJECT_HASH_PEPPER', env.SEARCH_SUBJECT_HASH_PEPPER),
+    resultTokenSecret: requiredSecret('SEARCH_RESULT_TOKEN_SECRET', env.SEARCH_RESULT_TOKEN_SECRET),
+    subjectCookieSecret: requiredSecret('SEARCH_SUBJECT_COOKIE_SECRET', env.SEARCH_SUBJECT_COOKIE_SECRET),
+    snapshotTtlSeconds: parseInteger(
+      'SEARCH_SNAPSHOT_TTL_SECONDS', env.SEARCH_SNAPSHOT_TTL_SECONDS, 86_400, 60, 86_400,
+    ),
+    pageSize,
+    maximumStoredResults: parseInteger(
+      'SEARCH_MAXIMUM_STORED_RESULTS', env.SEARCH_MAXIMUM_STORED_RESULTS, 100, pageSize, 500,
+    ),
+    rawQueryLimit: parseInteger('SEARCH_RAW_QUERY_LIMIT', env.SEARCH_RAW_QUERY_LIMIT, 30, 1, 1_000),
+    rawQueryRateWindowSeconds: parseInteger(
+      'SEARCH_RAW_QUERY_RATE_WINDOW_SECONDS', env.SEARCH_RAW_QUERY_RATE_WINDOW_SECONDS,
+      900, 60, 86_400,
+    ),
   })
 }

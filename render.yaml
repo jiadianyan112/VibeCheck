@@ -49,6 +49,18 @@ services:
         value: "true"
       - key: CATALOG_CURSOR_SECRET
         generateValue: true
+      - key: SEARCH_ENABLED
+        value: "true"
+      - key: SEARCH_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: SEARCH_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: SEARCH_SUBJECT_HASH_PEPPER
+        generateValue: true
+      - key: SEARCH_RESULT_TOKEN_SECRET
+        generateValue: true
+      - key: SEARCH_SUBJECT_COOKIE_SECRET
+        generateValue: true
 
   - type: worker
     name: vibecheck-worker
