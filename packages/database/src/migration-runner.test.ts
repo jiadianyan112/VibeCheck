@@ -15,6 +15,7 @@ describe('discoverMigrations', () => {
         '000004_catalog_public_read.sql',
         '000005_search_keyword.sql',
         '000006_query_snapshot_lifecycle.sql',
+        '000007_admin_project_import.sql',
       ],
     )
     for (const migration of migrations) {

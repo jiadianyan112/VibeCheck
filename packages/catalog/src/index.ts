@@ -1,4 +1,14 @@
 export { CatalogError, catalogError } from './errors.js'
+export {
+  AdminProjectImportError,
+  PostgresAdminProjectImporter,
+  normalizeImportedPublicUrl,
+  parseAdminProjectImportEnvelope,
+  type AdminProjectImportCommand,
+  type AdminProjectImportEnvelope,
+  type AdminProjectImportItemResult,
+  type AdminProjectImportResult,
+} from './admin-importer.js'
 export { CatalogService, type CatalogServiceDependencies } from './service.js'
 export {
   PostgresCatalogStore,

@@ -68,7 +68,7 @@
 下列仍属于 WP-03，当前不得标记完成：
 
 - Asset 外链 resolve 安全执行器与接口；Evidence/Relation 当前按冻结契约嵌入 Project/Event/Asset 公共投影，不新增未定义的独立公共路由；
-- 生产受审计目录 importer、AdminProjectCreationDraft/Submission/ReviewWorkItem 发布链及 64 个经审核正式档案；当前 3 个合成 fixture 不能替代；
+- AdminProjectCreationDraft 的受审计 importer 已完成；Submission/ReviewWorkItem 发布链及 64 个经审核正式档案仍未完成，当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因；当前 keyword 分支明确 `semantic_degraded=true`，不冒充语义结果；
 - P09 服务端 Comparison、同品类 2—5 项约束、匿名合并与完成口径；
@@ -76,8 +76,17 @@
 
 ## 6. 下一批顺序
 
-1. 实现只写 AdminProjectCreationDraft 的受审计生产 importer，并等待发布审核链后才生成公开事实；
-2. 基于已生成 SearchDocument 建结构化索引查询及 FTS 降级排序；
-3. 交付 Asset resolve 的 SSRF/重定向/协议白名单安全执行器；
-4. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-5. 最后实现 P09 Comparison，避免前端继续把 DecisionRecord 当作 P0 事实。
+1. 基于已生成 SearchDocument 建结构化索引查询及 FTS 降级排序；
+2. 交付 Asset resolve 的 SSRF/重定向/协议白名单安全执行器；
+3. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
+4. 最后实现 P09 Comparison，避免前端继续把 DecisionRecord 当作 P0 事实。
+
+## 7. 受审计目录 importer（WP-03 增量）
+
+- `admin_project_import.v1` 是内部 JSON 输入契约；批次含 1—500 项，每项必须有稳定 `source_record_key`，每项独立事务、校验和回执。
+- 入口 `npm run catalog:admin:import` 只读取 `CATALOG_IMPORT_FILE` 指定的本地 JSON，调用者由 `CATALOG_IMPORT_ACTOR_USER_ID` 指定，数据库实时校验 active editor/admin；无角色、受限或禁用账户在创建批次前拒绝。
+- 导入器只创建 `workflow.admin_project_creation_drafts(status=editing)`，不会创建 Project、Version、Submission、WorkItem、Evidence 或公开搜索文档。提交、审核和最终事实晋级仍属于 WP-04。
+- URL 只做确定性 HTTP(S) 规范化和重复候选哈希，不执行网络抓取，也不把该结果冒充 URL 安全/可访问性检查；SSRF、重定向和访问检查仍由后续安全执行器完成。
+- `(import_source,source_record_key)` 是跨批次幂等范围；同键同载荷返回既有草稿，不复制审计事实；同键异载荷产生 `IMPORT_ITEM_KEY_CONFLICT` 拒绝回执，不覆盖草稿。
+- 每个新草稿和每个拒绝项写不可删除审计；导入回执不可更新/删除。批次重复调用必须使用相同输入摘要、actor 和 item_count，否则返回 `IMPORT_BATCH_KEY_CONFLICT`。
+- migration `000007_admin_project_import.sql` 和 PostgreSQL fixture 验证双品类、重复候选、同批/跨批重放、Schema 错配、无权限、不可变回执/审计，并断言导入前后公开 Project 数量不变。

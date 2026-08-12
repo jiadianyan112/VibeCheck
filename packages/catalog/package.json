@@ -11,6 +11,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "admin:import": "tsx src/testing/run-admin-import.ts",
+    "admin:import:verify": "tsx src/testing/verify-admin-importer.ts",
     "fixture:load": "tsx src/testing/load-synthetic-fixture.ts",
     "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

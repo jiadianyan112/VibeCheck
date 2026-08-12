@@ -36,6 +36,8 @@
     "contracts:check": "npm run check -w @vibecheck/contracts",
     "catalog:fixture:load": "npm run fixture:load -w @vibecheck/catalog",
     "catalog:fixture:verify": "npm run fixture:verify -w @vibecheck/catalog",
+    "catalog:admin:import": "npm run admin:import -w @vibecheck/catalog",
+    "catalog:admin:import:verify": "npm run admin:import:verify -w @vibecheck/catalog",
     "search:fixture:verify": "npm run fixture:verify -w @vibecheck/search",
     "deployment:check": "npm run check:deployment -w @vibecheck/contracts",
     "db:migrate": "npm run migrate -w @vibecheck/database"
