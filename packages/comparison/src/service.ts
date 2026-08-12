@@ -159,6 +159,9 @@ export class ComparisonService {
       anonymousSubjectHash: anonymous.subjectHash,
       identityLinkId: this.uuid(command.identityLinkId, 'IDENTITY_LINK_ID_INVALID'),
       operationId: this.uuid(command.operationId, 'OPERATION_ID_INVALID'),
+      pendingActionId: command.pendingActionId === null
+        ? null
+        : this.uuid(command.pendingActionId, 'PENDING_ACTION_ID_INVALID'),
       adoptedComparisonId: randomUUID(),
       conflictId: randomUUID(),
       now: this.now(),

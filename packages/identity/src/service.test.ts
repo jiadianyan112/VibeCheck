@@ -93,6 +93,7 @@ class InMemoryFlowStore implements IdentityStore {
       expiresAt: new Date('2026-09-10T00:00:00.000Z'),
       sessionVersion: 1,
       returnTo: created.returnTo,
+      pendingActionId: null,
       identityLinks: [{
         identityLinkId: '88888888-8888-4888-8888-888888888888',
         purpose: 'query_continuation',
@@ -119,6 +120,7 @@ describe('IdentityService', () => {
       browserBindingToken: null,
       sessionToken: null,
       previewToken: null,
+      pendingActionId: null,
       ipAddress: '127.0.0.1',
       userAgent: 'identity-test',
       requestId: 'request_identity_test',
@@ -165,6 +167,7 @@ describe('IdentityService', () => {
       browserBindingToken: null,
       sessionToken: null,
       previewToken: null,
+      pendingActionId: null,
       ipAddress: null,
       userAgent: null,
       requestId: 'request_identity_invalid',

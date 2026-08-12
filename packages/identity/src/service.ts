@@ -95,13 +95,17 @@ export class IdentityService {
     const email = normalizeEmail(command.email)
     const returnTo = normalizeReturnTo(command.returnTo)
     const clientRequestId = requireUuid('CLIENT_REQUEST_ID', command.clientRequestId)
-    requireUuid('ANONYMOUS_SUBJECT_ID', command.anonymousSubjectId)
+    const anonymousSubjectId = requireUuid('ANONYMOUS_SUBJECT_ID', command.anonymousSubjectId)
+    const pendingActionId = command.pendingActionId === null
+      ? null
+      : requireUuid('PENDING_ACTION_ID', command.pendingActionId)
     const normalizedEmailHash = keyedHash(this.config.emailHashPepper, email)
     const currentSession = command.sessionToken === null
       ? null
       : await this.getStoredSession(command.sessionToken)
 
     if (command.purpose === 'admin_confirm') {
+      if (pendingActionId !== null) throw identityError('PENDING_ACTION_NOT_ALLOWED', 422)
       if (currentSession === null) throw identityError('AUTHENTICATION_REQUIRED', 401)
       if (!currentSession.normalizedEmailHash.equals(normalizedEmailHash)) {
         throw identityError('ADMIN_CONFIRM_ACCOUNT_MISMATCH', 403)
@@ -127,6 +131,7 @@ export class IdentityService {
       purpose: command.purpose,
       return_to: returnTo,
       preview_hash: this.hashOptional(command.previewToken)?.toString('hex') ?? null,
+      pending_action_id: pendingActionId,
     }))
     const created = await this.store.createChallenge({
       challengeId,
@@ -138,7 +143,9 @@ export class IdentityService {
       otpHash: hashOtp(this.config.otpPepper, otpSalt, otp),
       otpSalt,
       browserBindingHash: keyedHash(this.config.authTokenSecret, browserBindingToken),
-      anonymousSubjectId: command.anonymousSubjectId,
+      anonymousSubjectId,
+      anonymousSubjectHash: keyedHash(this.config.authTokenSecret, `anonymous:${anonymousSubjectId}`),
+      pendingActionId,
       clientRequestId,
       requestPayloadHash: payloadHash,
       returnTo,
@@ -243,6 +250,7 @@ export class IdentityService {
       }, csrfToken, email),
       sessionToken,
       anonymousSubjectId: result.anonymousSubjectId,
+      pendingActionId: result.pendingActionId,
       returnTo: safeReturnTo,
       identityLinks: Object.freeze(result.identityLinks.map((link) => Object.freeze({
         identityLinkId: link.identityLinkId,

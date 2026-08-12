@@ -25,6 +25,8 @@ export interface CreateChallengeInput {
   readonly otpSalt: Buffer
   readonly browserBindingHash: Buffer
   readonly anonymousSubjectId: string
+  readonly anonymousSubjectHash: Buffer
+  readonly pendingActionId: string | null
   readonly clientRequestId: string
   readonly requestPayloadHash: string
   readonly returnTo: string
@@ -98,9 +100,10 @@ export type CompleteVerificationResult =
       readonly expiresAt: Date
       readonly sessionVersion: number
       readonly returnTo: string
+      readonly pendingActionId: string | null
       readonly identityLinks: readonly {
         readonly identityLinkId: string
-        readonly purpose: 'query_continuation' | 'comparison_merge'
+        readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
         readonly expiresAt: Date
       }[]
     }
@@ -139,6 +142,7 @@ interface VerificationRow {
   primary_session_id_hash: Buffer | null
   preview_token_hash: Buffer | null
   return_to: string
+  pending_action_id: string | null
   expires_at: Date
 }
 
@@ -213,6 +217,26 @@ export class PostgresIdentityStore {
         return asChallenge(existing.rows[0], false)
       }
 
+      if (input.pendingActionId !== null) {
+        const pending = await client.query<{
+          anonymous_subject_hash: Buffer | null
+          status: string
+          expires_at: Date
+        }>(
+          `SELECT anonymous_subject_hash,status,expires_at
+           FROM iam.pending_actions WHERE pending_action_id=$1 FOR SHARE`,
+          [input.pendingActionId],
+        )
+        const action = pending.rows[0]
+        if (action === undefined) throw identityError('PENDING_ACTION_NOT_FOUND', 404)
+        if (action.anonymous_subject_hash?.equals(input.anonymousSubjectHash) !== true) {
+          throw identityError('PENDING_ACTION_FORBIDDEN', 403)
+        }
+        if (action.status !== 'pending' || action.expires_at <= input.now) {
+          throw identityError('PENDING_ACTION_GONE', 410)
+        }
+      }
+
       const emailRate = await this.incrementRateBucket(
         client,
         input.normalizedEmailHash,
@@ -251,10 +275,10 @@ export class PostgresIdentityStore {
            challenge_id,auth_flow_id,purpose,normalized_email_hash,email_ciphertext,
            email_key_version,otp_hash,otp_salt,browser_binding_hash,anonymous_subject_id,
            client_request_id,request_payload_hash,return_to,ip_hash,primary_session_id_hash,
-           preview_token_hash,status,attempt_count,max_attempts,expires_at,created_at
+           preview_token_hash,pending_action_id,status,attempt_count,max_attempts,expires_at,created_at
          ) VALUES (
            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-           'pending',0,5,$17,$18
+           $17,'pending',0,5,$18,$19
          )
          RETURNING challenge_id,auth_flow_id,status,expires_at,created_at,delivered_at,send_receipt_ref,
            request_payload_hash`,
@@ -275,6 +299,7 @@ export class PostgresIdentityStore {
           input.ipHash,
           input.primarySessionHash,
           input.previewTokenHash,
+          input.pendingActionId,
           input.expiresAt,
           input.now,
         ],
@@ -332,7 +357,7 @@ export class PostgresIdentityStore {
       `SELECT challenge_id,auth_flow_id,purpose,status,attempt_count,max_attempts,
          normalized_email_hash,email_ciphertext,email_key_version,otp_hash,otp_salt,
          browser_binding_hash,anonymous_subject_id,primary_session_id_hash,
-         preview_token_hash,return_to,expires_at
+         preview_token_hash,return_to,pending_action_id,expires_at
        FROM iam.auth_email_challenges
        WHERE challenge_id=$1 AND auth_flow_id=$2`,
       [challengeId, authFlowId],
@@ -359,7 +384,7 @@ export class PostgresIdentityStore {
         `SELECT challenge_id,auth_flow_id,purpose,status,attempt_count,max_attempts,
            normalized_email_hash,email_ciphertext,email_key_version,otp_hash,otp_salt,
            browser_binding_hash,anonymous_subject_id,primary_session_id_hash,
-           preview_token_hash,return_to,expires_at
+           preview_token_hash,return_to,pending_action_id,expires_at
          FROM iam.auth_email_challenges
          WHERE challenge_id=$1 AND auth_flow_id=$2
          FOR UPDATE`,
@@ -516,16 +541,39 @@ export class PostgresIdentityStore {
       ],
     )
     const roles = await rolesFor(client, userId)
+    let pendingActionActive = false
+    if (challenge.pending_action_id !== null) {
+      const action = await client.query<{ status: string; expires_at: Date }>(
+        `SELECT status,expires_at FROM iam.pending_actions
+         WHERE pending_action_id=$1 FOR UPDATE`,
+        [challenge.pending_action_id],
+      )
+      const current = action.rows[0]
+      pendingActionActive = current?.status === 'pending' && current.expires_at > input.now
+      if (current?.status === 'pending' && current.expires_at <= input.now) {
+        await client.query(
+          `UPDATE iam.pending_actions
+           SET status='expired',payload_ciphertext=NULL,updated_at=$2
+           WHERE pending_action_id=$1 AND status='pending'`,
+          [challenge.pending_action_id, input.now],
+        )
+      }
+    }
+    const linkPurposes = [
+      'query_continuation',
+      'comparison_merge',
+      ...(pendingActionActive ? ['pending_action_replay'] : []),
+    ]
     const identityLinks = await client.query<{
       identity_link_id: string
-      purpose: 'query_continuation' | 'comparison_merge'
+      purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
       expires_at: Date
     }>(
       `INSERT INTO iam.identity_links (
          anonymous_subject_id,user_id,auth_flow_id,purpose,status,issued_at,expires_at
-       ) VALUES
-         ($1,$2,$3,'query_continuation','active',$4,$5),
-         ($1,$2,$3,'comparison_merge','active',$4,$5)
+       )
+       SELECT $1,$2,$3,purpose,'active',$4,$5
+       FROM unnest($6::varchar[]) AS purpose
        RETURNING identity_link_id,purpose,expires_at`,
       [
         challenge.anonymous_subject_id,
@@ -533,8 +581,18 @@ export class PostgresIdentityStore {
         challenge.auth_flow_id,
         input.now,
         input.identityLinkExpiresAt,
+        linkPurposes,
       ],
     )
+    if (pendingActionActive) {
+      const pendingLink = identityLinks.rows.find(({ purpose }) => purpose === 'pending_action_replay')!
+      await client.query(
+        `INSERT INTO iam.pending_action_identity_links (
+           pending_action_id,identity_link_id,created_at
+         ) VALUES ($1,$2,$3)`,
+        [challenge.pending_action_id, pendingLink.identity_link_id, input.now],
+      )
+    }
     await this.insertSecurityEvent(client, 'auth_login_completed', 'info', input.requestId, null)
     return {
       kind: 'login',
@@ -549,6 +607,7 @@ export class PostgresIdentityStore {
       expiresAt: input.sessionExpiresAt,
       sessionVersion: 1,
       returnTo: challenge.return_to,
+      pendingActionId: pendingActionActive ? challenge.pending_action_id : null,
       identityLinks: Object.freeze(identityLinks.rows.map((link) => Object.freeze({
         identityLinkId: link.identity_link_id,
         purpose: link.purpose,

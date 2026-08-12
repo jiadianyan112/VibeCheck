@@ -21,7 +21,7 @@ export type AccountStatus = 'active' | 'restricted' | 'disabled'
 
 export interface IdentityLinkProjection {
   readonly identityLinkId: string
-  readonly purpose: 'query_continuation' | 'comparison_merge'
+  readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
   readonly expiresAt: string
 }
 
@@ -48,6 +48,7 @@ export interface StartChallengeCommand {
   readonly browserBindingToken: string | null
   readonly sessionToken: string | null
   readonly previewToken: string | null
+  readonly pendingActionId: string | null
   readonly ipAddress: string | null
   readonly userAgent: string | null
   readonly requestId: string
@@ -82,6 +83,7 @@ export type VerifyChallengeResult =
       readonly returnTo: string
       readonly identityLinks: readonly IdentityLinkProjection[]
       readonly anonymousSubjectId: string
+      readonly pendingActionId: string | null
     }
   | {
       readonly purpose: 'admin_confirm'

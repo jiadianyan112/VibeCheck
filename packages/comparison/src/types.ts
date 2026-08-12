@@ -106,6 +106,7 @@ export interface PrepareComparisonLoginMergeCommand {
   readonly anonymousSubjectId: string
   readonly identityLinkId: string
   readonly operationId: string
+  readonly pendingActionId: string | null
 }
 
 export interface ComparisonMergeProjectSummary {

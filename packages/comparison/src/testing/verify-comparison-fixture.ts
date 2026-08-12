@@ -91,6 +91,7 @@ async function createPortfolioProjects(count: number): Promise<readonly string[]
 async function createMergeIdentityLink(
   userId: string,
   anonymousSubjectId: string,
+  authFlowId = randomUUID(),
 ): Promise<string> {
   const identityLinkId = randomUUID()
   await pool.query(
@@ -98,7 +99,7 @@ async function createMergeIdentityLink(
        identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,
        issued_at,expires_at
      ) VALUES ($1,$2,$3,$4,'comparison_merge','active',$5,$6)`,
-    [identityLinkId, anonymousSubjectId, userId, randomUUID(), clock, new Date(clock.getTime() + 300_000)],
+    [identityLinkId, anonymousSubjectId, userId, authFlowId, clock, new Date(clock.getTime() + 300_000)],
   )
   return identityLinkId
 }
@@ -433,6 +434,7 @@ try {
     anonymousSubjectId: autoAnonymousSubject.id,
     identityLinkId: autoLinkId,
     operationId: autoOperationId,
+    pendingActionId: null,
   })
   assert.equal(autoMerged.result, 'merged')
   assert.equal(autoMerged.comparison_id, autoAccountComparisonId)
@@ -453,6 +455,7 @@ try {
     anonymousSubjectId: autoAnonymousSubject.id,
     identityLinkId: autoLinkId,
     operationId: autoOperationId,
+    pendingActionId: null,
   }), autoMerged)
 
   const conflictUserId = randomUUID()
@@ -481,6 +484,7 @@ try {
     anonymousSubjectId: conflictAnonymous.id,
     identityLinkId: conflictLinkId,
     operationId: randomUUID(),
+    pendingActionId: null,
   })
   assert.equal(conflict.result, 'conflict')
   assert.ok(conflict.conflict_id)
@@ -536,12 +540,52 @@ try {
     clientRequestId: randomUUID(),
     subject: cancelAnonymous,
   })
-  const cancelLinkId = await createMergeIdentityLink(cancelUserId, cancelAnonymous.id)
+  const cancelAuthFlowId = randomUUID()
+  const cancelLinkId = await createMergeIdentityLink(cancelUserId, cancelAnonymous.id, cancelAuthFlowId)
+  const cancelPendingActionId = randomUUID()
+  const cancelPendingLinkId = randomUUID()
+  await pool.query(
+    `INSERT INTO iam.pending_actions (
+       pending_action_id,anonymous_subject_hash,action_type,payload_ciphertext,
+       payload_key_version,request_payload_hash,return_to,client_request_id,status,
+       expires_at,created_at,updated_at
+     ) VALUES (
+       $1,digest($2,'sha256'),'save_comparison',decode('00','hex'),'fixture-v1',$3,
+       '/compare',$4,'pending',$5,$6,$6
+     )`,
+    [
+      cancelPendingActionId,
+      cancelAnonymous.id,
+      '0'.repeat(64),
+      randomUUID(),
+      new Date(clock.getTime() + 300_000),
+      clock,
+    ],
+  )
+  await pool.query(
+    `INSERT INTO iam.identity_links (
+       identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,issued_at,expires_at
+     ) VALUES ($1,$2,$3,$4,'pending_action_replay','active',$5,$6)`,
+    [
+      cancelPendingLinkId,
+      cancelAnonymous.id,
+      cancelUserId,
+      cancelAuthFlowId,
+      clock,
+      new Date(clock.getTime() + 300_000),
+    ],
+  )
+  await pool.query(
+    `INSERT INTO iam.pending_action_identity_links (pending_action_id,identity_link_id,created_at)
+     VALUES ($1,$2,$3)`,
+    [cancelPendingActionId, cancelPendingLinkId, clock],
+  )
   const pendingCancellation = await service.prepareLoginMerge({
     userId: cancelUserId,
     anonymousSubjectId: cancelAnonymous.id,
     identityLinkId: cancelLinkId,
     operationId: randomUUID(),
+    pendingActionId: cancelPendingActionId,
   })
   assert.equal(pendingCancellation.result, 'conflict')
   const cancelOperationId = randomUUID()
@@ -555,9 +599,67 @@ try {
   const cancelled = await service.cancelMergeConflict(cancellationCommand)
   assert.equal(cancelled.status, 'cancelled')
   assert.equal(cancelled.conflict_version, 2)
+  assert.equal(cancelled.pending_action_status, 'cancelled')
   assert.deepEqual(await service.cancelMergeConflict(cancellationCommand), cancelled)
   assert.equal((await service.getComparison(cancelAccountId, cancelUser)).comparison_version, 1)
   assert.equal((await service.getComparison(cancelAnonymousId, cancelAnonymous)).comparison_version, 1)
+  const cancelledPending = await pool.query<{
+    status: string
+    payload_ciphertext: Buffer | null
+    link_status: string
+  }>(
+    `SELECT action.status,action.payload_ciphertext,link.status AS link_status
+     FROM iam.pending_actions action
+     JOIN iam.pending_action_identity_links binding USING (pending_action_id)
+     JOIN iam.identity_links link USING (identity_link_id)
+     WHERE action.pending_action_id=$1`,
+    [cancelPendingActionId],
+  )
+  assert.equal(cancelledPending.rows[0]?.status, 'cancelled')
+  assert.equal(cancelledPending.rows[0]?.payload_ciphertext, null)
+  assert.equal(cancelledPending.rows[0]?.link_status, 'revoked')
+
+  const expiryUserId = randomUUID()
+  await pool.query('INSERT INTO iam.users (user_id) VALUES ($1)', [expiryUserId])
+  const expiryUser = { kind: 'user' as const, id: expiryUserId }
+  await service.putComparison({
+    comparisonId: randomUUID(),
+    orderedProjectIds: mergeProjectIds.slice(0, 3),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: expiryUser,
+  })
+  const expiryAnonymous = { kind: 'anonymous' as const, id: randomUUID() }
+  await service.putComparison({
+    comparisonId: randomUUID(),
+    orderedProjectIds: mergeProjectIds.slice(3, 6),
+    expectedVersion: 0,
+    clientRequestId: randomUUID(),
+    subject: expiryAnonymous,
+  })
+  const expiryLinkId = await createMergeIdentityLink(expiryUserId, expiryAnonymous.id)
+  const expiringConflict = await service.prepareLoginMerge({
+    userId: expiryUserId,
+    anonymousSubjectId: expiryAnonymous.id,
+    identityLinkId: expiryLinkId,
+    operationId: randomUUID(),
+    pendingActionId: null,
+  })
+  assert.equal(expiringConflict.result, 'conflict')
+  clock = new Date(clock.getTime() + 301_000)
+  await expectComparisonError(() => service.getMergeConflict({
+    conflictId: expiringConflict.conflict_id!,
+    subject: expiryUser,
+  }), 'COMPARISON_MERGE_CONFLICT_GONE', 410)
+  const expiredConflict = await pool.query<{ status: string; link_status: string }>(
+    `SELECT conflict.status,link.status AS link_status
+     FROM comparison.comparison_merge_conflicts conflict
+     JOIN iam.identity_links link ON link.identity_link_id=conflict.identity_link_id
+     WHERE conflict.conflict_id=$1`,
+    [expiringConflict.conflict_id],
+  )
+  assert.equal(expiredConflict.rows[0]?.status, 'expired')
+  assert.equal(expiredConflict.rows[0]?.link_status, 'expired')
 
   await assert.rejects(
     pool.query(

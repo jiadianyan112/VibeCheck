@@ -80,6 +80,7 @@ interface IdentityLinkRow extends QueryResultRow {
   readonly identity_link_id: string
   readonly anonymous_subject_id: string
   readonly user_id: string
+  readonly auth_flow_id: string
   readonly purpose: string
   readonly status: 'active' | 'consumed' | 'revoked' | 'expired'
   readonly expires_at: Date
@@ -497,6 +498,7 @@ export class PostgresComparisonStore implements ComparisonStore {
     readonly anonymousSubjectHash: Buffer
     readonly identityLinkId: string
     readonly operationId: string
+    readonly pendingActionId: string | null
     readonly adoptedComparisonId: string
     readonly conflictId: string
     readonly now: Date
@@ -522,6 +524,16 @@ export class PostgresComparisonStore implements ComparisonStore {
 
       const link = await this.identityLink(client, input.identityLinkId, true)
       this.assertMergeIdentityLink(link, input.userId, input.anonymousSubjectId, input.now)
+      if (input.pendingActionId !== null) {
+        await this.assertPendingActionBinding(
+          client,
+          input.pendingActionId,
+          link!,
+          input.userId,
+          input.anonymousSubjectId,
+          input.now,
+        )
+      }
       const anonymous = await this.activeComparison(
         client,
         { kind: 'anonymous', hash: input.anonymousSubjectHash },
@@ -669,8 +681,8 @@ export class PostgresComparisonStore implements ComparisonStore {
            conflict_id,identity_link_id,user_id,account_comparison_id,
            account_comparison_version,anonymous_comparison_id,
            anonymous_comparison_version,candidate_project_ids,status,version,
-           expires_at,created_at,updated_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',1,$9,$10,$10)`,
+           pending_action_id,expires_at,created_at,updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',1,$9,$10,$11,$11)`,
         [
           input.conflictId,
           input.identityLinkId,
@@ -680,6 +692,7 @@ export class PostgresComparisonStore implements ComparisonStore {
           anonymousActive.comparison_id,
           anonymousActive.current_version,
           candidateIds,
+          input.pendingActionId,
           link!.expires_at,
           input.now,
         ],
@@ -722,17 +735,23 @@ export class PostgresComparisonStore implements ComparisonStore {
     readonly now: Date
   }): Promise<ComparisonMergeConflictProjection> {
     const client = await this.pool.connect()
+    let transactionFinished = false
     try {
       await client.query('BEGIN')
       const conflict = await this.mergeConflict(client, input.conflictId, true)
       await this.assertMergeConflictAccess(client, conflict, input, input.now)
       const current = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
-      if (current.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      if (current.status === 'expired') {
+        await client.query('COMMIT')
+        transactionFinished = true
+        throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      }
       const projection = await this.mergeConflictProjection(client, current)
       await client.query('COMMIT')
+      transactionFinished = true
       return projection
     } catch (error) {
-      await client.query('ROLLBACK')
+      if (!transactionFinished) await client.query('ROLLBACK')
       throw error
     } finally {
       client.release()
@@ -750,6 +769,7 @@ export class PostgresComparisonStore implements ComparisonStore {
     readonly now: Date
   }): Promise<ComparisonMergeResolutionProjection> {
     const client = await this.pool.connect()
+    let transactionFinished = false
     try {
       await client.query('BEGIN')
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
@@ -761,12 +781,17 @@ export class PostgresComparisonStore implements ComparisonStore {
           throw comparisonError('OPERATION_ID_CONFLICT', 409)
         }
         await client.query('COMMIT')
+        transactionFinished = true
         return Object.freeze(receipt.response_json as ComparisonMergeResolutionProjection)
       }
       let conflict = await this.mergeConflict(client, input.conflictId, true)
       await this.assertMergeConflictAccess(client, conflict, input, input.now)
       conflict = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
-      if (conflict.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      if (conflict.status === 'expired') {
+        await client.query('COMMIT')
+        transactionFinished = true
+        throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      }
       if (conflict.status !== 'pending') throw comparisonError('COMPARISON_MERGE_CONFLICT_TERMINAL', 409)
       if (conflict.version !== input.expectedConflictVersion) {
         throw comparisonError('COMPARISON_MERGE_CONFLICT_VERSION_CONFLICT', 409, false, undefined, {
@@ -857,9 +882,10 @@ export class PostgresComparisonStore implements ComparisonStore {
       )
       await this.saveMergeOperationReceipt(client, input, 'resolve', projection)
       await client.query('COMMIT')
+      transactionFinished = true
       return projection
     } catch (error) {
-      await client.query('ROLLBACK')
+      if (!transactionFinished) await client.query('ROLLBACK')
       throw error
     } finally {
       client.release()
@@ -875,6 +901,7 @@ export class PostgresComparisonStore implements ComparisonStore {
     readonly now: Date
   }): Promise<ComparisonMergeCancellationProjection> {
     const client = await this.pool.connect()
+    let transactionFinished = false
     try {
       await client.query('BEGIN')
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
@@ -886,23 +913,30 @@ export class PostgresComparisonStore implements ComparisonStore {
           throw comparisonError('OPERATION_ID_CONFLICT', 409)
         }
         await client.query('COMMIT')
+        transactionFinished = true
         return Object.freeze(receipt.response_json as ComparisonMergeCancellationProjection)
       }
       let conflict = await this.mergeConflict(client, input.conflictId, true)
       await this.assertMergeConflictAccess(client, conflict, input, input.now)
       conflict = await this.expireMergeConflictIfRequired(client, conflict!, input.now)
-      if (conflict.status === 'expired') throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      if (conflict.status === 'expired') {
+        await client.query('COMMIT')
+        transactionFinished = true
+        throw comparisonError('COMPARISON_MERGE_CONFLICT_GONE', 410)
+      }
       if (conflict.status === 'resolved') throw comparisonError('COMPARISON_MERGE_CONFLICT_TERMINAL', 409)
       if (conflict.status === 'cancelled') {
+        const pendingActionStatus = await this.cancelPendingActionForMerge(client, conflict, input.now)
         const terminal = Object.freeze({
           conflict_id: conflict.conflict_id,
           status: 'cancelled' as const,
           conflict_version: conflict.version,
           cancelled_at: conflict.cancelled_at!.toISOString(),
-          pending_action_status: null,
+          pending_action_status: pendingActionStatus,
         })
         await this.saveMergeOperationReceipt(client, input, 'cancel', terminal)
         await client.query('COMMIT')
+        transactionFinished = true
         return terminal
       }
       if (conflict.version !== input.expectedConflictVersion) {
@@ -927,12 +961,13 @@ export class PostgresComparisonStore implements ComparisonStore {
          WHERE identity_link_id=$1 AND status='active'`,
         [conflict.identity_link_id, input.now],
       )
+      const pendingActionStatus = await this.cancelPendingActionForMerge(client, conflict, input.now)
       const projection = Object.freeze({
         conflict_id: input.conflictId,
         status: 'cancelled' as const,
         conflict_version: updated.rows[0]!.version,
         cancelled_at: input.now.toISOString(),
-        pending_action_status: null,
+        pending_action_status: pendingActionStatus,
       })
       await this.insertMergeSecurityEvent(
         client,
@@ -946,9 +981,10 @@ export class PostgresComparisonStore implements ComparisonStore {
       )
       await this.saveMergeOperationReceipt(client, input, 'cancel', projection)
       await client.query('COMMIT')
+      transactionFinished = true
       return projection
     } catch (error) {
-      await client.query('ROLLBACK')
+      if (!transactionFinished) await client.query('ROLLBACK')
       throw error
     } finally {
       client.release()
@@ -961,7 +997,7 @@ export class PostgresComparisonStore implements ComparisonStore {
     forUpdate = false,
   ): Promise<IdentityLinkRow | null> {
     const result = await queryable.query<IdentityLinkRow>(
-      `SELECT identity_link_id,anonymous_subject_id,user_id,purpose,status,expires_at
+      `SELECT identity_link_id,anonymous_subject_id,user_id,auth_flow_id,purpose,status,expires_at
        FROM iam.identity_links WHERE identity_link_id=$1${forUpdate ? ' FOR UPDATE' : ''}`,
       [identityLinkId],
     )
@@ -983,6 +1019,41 @@ export class PostgresComparisonStore implements ComparisonStore {
     if (link.status !== 'active' || link.expires_at <= now) {
       throw comparisonError('IDENTITY_LINK_GONE', 410)
     }
+  }
+
+  private async assertPendingActionBinding(
+    queryable: Queryable,
+    pendingActionId: string,
+    comparisonLink: IdentityLinkRow,
+    userId: string,
+    anonymousSubjectId: string,
+    now: Date,
+  ): Promise<void> {
+    const result = await queryable.query<{
+      action_status: string
+      action_expires_at: Date
+      link_status: string
+      link_expires_at: Date
+    }>(
+      `SELECT action.status AS action_status,action.expires_at AS action_expires_at,
+         link.status AS link_status,link.expires_at AS link_expires_at
+       FROM iam.pending_actions action
+       JOIN iam.pending_action_identity_links binding
+         ON binding.pending_action_id=action.pending_action_id
+       JOIN iam.identity_links link ON link.identity_link_id=binding.identity_link_id
+       WHERE action.pending_action_id=$1
+         AND link.auth_flow_id=$2
+         AND link.user_id=$3
+         AND link.anonymous_subject_id=$4
+         AND link.purpose='pending_action_replay'`,
+      [pendingActionId, comparisonLink.auth_flow_id, userId, anonymousSubjectId],
+    )
+    const binding = result.rows[0]
+    if (binding === undefined) throw comparisonError('PENDING_ACTION_LINK_INVALID', 403)
+    if (
+      binding.action_status !== 'pending' || binding.action_expires_at <= now ||
+      binding.link_status !== 'active' || binding.link_expires_at <= now
+    ) throw comparisonError('PENDING_ACTION_GONE', 410)
   }
 
   private async activeComparison(
@@ -1168,7 +1239,54 @@ export class PostgresComparisonStore implements ComparisonStore {
        WHERE identity_link_id=$1 AND status='active'`,
       [conflict.identity_link_id],
     )
+    if (conflict.pending_action_id !== null) {
+      await client.query(
+        `UPDATE iam.pending_actions
+         SET status='expired',payload_ciphertext=NULL,updated_at=$2
+         WHERE pending_action_id=$1 AND status='pending'`,
+        [conflict.pending_action_id, now],
+      )
+      await client.query(
+        `UPDATE iam.identity_links link SET status='expired'
+         FROM iam.pending_action_identity_links binding
+         WHERE binding.pending_action_id=$1
+           AND binding.identity_link_id=link.identity_link_id
+           AND link.status='active'`,
+        [conflict.pending_action_id],
+      )
+    }
     return result.rows[0]!
+  }
+
+  private async cancelPendingActionForMerge(
+    client: PoolClient,
+    conflict: MergeConflictRow,
+    now: Date,
+  ): Promise<'cancelled' | null> {
+    if (conflict.pending_action_id === null) return null
+    const action = await client.query<{ status: string }>(
+      `SELECT status FROM iam.pending_actions WHERE pending_action_id=$1 FOR UPDATE`,
+      [conflict.pending_action_id],
+    )
+    const priorStatus = action.rows[0]?.status
+    if (priorStatus === 'pending') {
+      await client.query(
+        `UPDATE iam.pending_actions
+         SET status='cancelled',payload_ciphertext=NULL,cancelled_at=$2,
+           cancel_reason='comparison_merge_cancelled',updated_at=$2
+         WHERE pending_action_id=$1 AND status='pending'`,
+        [conflict.pending_action_id, now],
+      )
+    }
+    await client.query(
+      `UPDATE iam.identity_links link SET status='revoked',revoked_at=$2
+       FROM iam.pending_action_identity_links binding
+       WHERE binding.pending_action_id=$1
+         AND binding.identity_link_id=link.identity_link_id
+         AND link.status='active'`,
+      [conflict.pending_action_id, now],
+    )
+    return priorStatus === 'pending' || priorStatus === 'cancelled' ? 'cancelled' : null
   }
 
   private async mergeConflictProjection(

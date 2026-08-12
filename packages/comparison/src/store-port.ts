@@ -52,6 +52,7 @@ export interface ComparisonStore {
     readonly anonymousSubjectHash: Buffer
     readonly identityLinkId: string
     readonly operationId: string
+    readonly pendingActionId: string | null
     readonly adoptedComparisonId: string
     readonly conflictId: string
     readonly now: Date

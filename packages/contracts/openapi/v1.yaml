@@ -159,6 +159,116 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/v1/auth/pending-actions:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-PENDING-CREATE
+      summary: Create one encrypted owner-bound action for post-login replay
+      description: >-
+        Anonymous callers are bound to the signed vc_anon cookie. Authenticated callers additionally
+        require CSRF. A subject may have only one non-expired pending action; the same client request
+        and payload is idempotent and a different payload is a 409 conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PendingActionCreateRequest'
+      responses:
+        '201':
+          description: Encrypted action accepted; sensitive parameters are not returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingActionProjection'
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/auth/pending-actions/{pending_action_id}:
+    get:
+      tags: [Identity]
+      operationId: OP-AUTH-PENDING-GET
+      summary: Recover a non-sensitive pending-action projection
+      parameters:
+        - $ref: '#/components/parameters/PendingActionId'
+        - in: query
+          name: identity_link_id
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Owner-authorized projection without the encrypted action parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingActionProjection'
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/auth/pending-actions/{pending_action_id}/consume:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-PENDING-CONSUME
+      summary: Mark an action consumed only after an attested domain write succeeds
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/PendingActionId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PendingActionConsumeRequest'
+      responses:
+        '200':
+          description: Consumed terminal state; the encrypted payload is cryptographically erased.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingActionProjection'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/auth/pending-actions/{pending_action_id}/cancel:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-PENDING-CANCEL
+      summary: Irreversibly cancel an owner-authorized pending action
+      parameters:
+        - $ref: '#/components/parameters/PendingActionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PendingActionCancelRequest'
+      responses:
+        '200':
+          description: Idempotent cancelled terminal state; all bound active replay links are revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingActionProjection'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/search:
     post:
       tags: [Search]
@@ -787,6 +897,13 @@ components:
       schema:
         type: string
         format: uuid
+    PendingActionId:
+      in: path
+      name: pending_action_id
+      required: true
+      schema:
+        type: string
+        format: uuid
     CsrfToken:
       in: header
       name: X-CSRF-Token
@@ -803,6 +920,120 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    PendingActionCreateRequest:
+      oneOf:
+        - $ref: '#/components/schemas/PendingActionProjectStateRequest'
+        - $ref: '#/components/schemas/PendingActionCommentRequest'
+        - $ref: '#/components/schemas/PendingActionComparisonSaveRequest'
+        - $ref: '#/components/schemas/PendingActionSubmissionStartRequest'
+    PendingActionProjectStateRequest:
+      type: object
+      additionalProperties: false
+      required: [action_type, parameters, return_to, client_request_id]
+      properties:
+        action_type:
+          enum: [set_project_favorite, set_project_like, set_project_follow]
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [project_id, state]
+          properties:
+            project_id: { type: string, format: uuid }
+            state: { type: boolean }
+        return_to: { type: string, minLength: 1, maxLength: 2048 }
+        client_request_id: { type: string, format: uuid }
+    PendingActionCommentRequest:
+      type: object
+      additionalProperties: false
+      required: [action_type, parameters, return_to, client_request_id]
+      properties:
+        action_type: { const: create_comment }
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [project_id, body]
+          properties:
+            project_id: { type: string, format: uuid }
+            body: { type: string, minLength: 1, maxLength: 2000 }
+            parent_comment_id: { type: [string, 'null'], format: uuid }
+        return_to: { type: string, minLength: 1, maxLength: 2048 }
+        client_request_id: { type: string, format: uuid }
+    PendingActionComparisonSaveRequest:
+      type: object
+      additionalProperties: false
+      required: [action_type, parameters, return_to, client_request_id]
+      properties:
+        action_type: { const: save_comparison }
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [comparison_id, comparison_version, state]
+          properties:
+            comparison_id: { type: string, format: uuid }
+            comparison_version: { type: integer, minimum: 1 }
+            state: { const: true }
+        return_to: { type: string, minLength: 1, maxLength: 2048 }
+        client_request_id: { type: string, format: uuid }
+    PendingActionSubmissionStartRequest:
+      type: object
+      additionalProperties: false
+      required: [action_type, parameters, return_to, client_request_id]
+      properties:
+        action_type: { const: start_submission }
+        parameters:
+          type: object
+          additionalProperties: false
+          required: [category_id]
+          properties:
+            category_id:
+              enum: [ai_learning_quiz, personal_site_portfolio]
+        return_to: { type: string, minLength: 1, maxLength: 2048 }
+        client_request_id: { type: string, format: uuid }
+    PendingActionProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - pending_action_id
+        - action_type
+        - return_to
+        - status
+        - expires_at
+        - consumed_at
+        - cancelled_at
+        - cancel_reason
+      properties:
+        pending_action_id: { type: string, format: uuid }
+        action_type:
+          enum:
+            - set_project_favorite
+            - set_project_like
+            - set_project_follow
+            - create_comment
+            - save_comparison
+            - start_submission
+        return_to: { type: string, minLength: 1, maxLength: 2048 }
+        status: { enum: [pending, consumed, cancelled, expired] }
+        expires_at: { type: string, format: date-time }
+        consumed_at: { type: [string, 'null'], format: date-time }
+        cancelled_at: { type: [string, 'null'], format: date-time }
+        cancel_reason: { type: [string, 'null'], maxLength: 128 }
+    PendingActionConsumeRequest:
+      type: object
+      additionalProperties: false
+      required: [identity_link_id, execution_receipt, client_request_id, expected_status]
+      properties:
+        identity_link_id: { type: string, format: uuid }
+        execution_receipt: { type: string, minLength: 32, maxLength: 2048 }
+        client_request_id: { type: string, format: uuid }
+        expected_status: { const: pending }
+    PendingActionCancelRequest:
+      type: object
+      additionalProperties: false
+      required: [cancel_reason, client_request_id]
+      properties:
+        identity_link_id: { type: string, format: uuid }
+        cancel_reason: { type: string, minLength: 1, maxLength: 128 }
+        client_request_id: { type: string, format: uuid }
     ComparisonPutRequest:
       type: object
       additionalProperties: false
@@ -2183,6 +2414,9 @@ components:
           type: string
           minLength: 32
           maxLength: 512
+        pending_action_id:
+          type: string
+          format: uuid
     AuthChallengeAccepted:
       type: object
       additionalProperties: false
@@ -2222,7 +2456,7 @@ components:
       oneOf:
         - type: object
           additionalProperties: false
-          required: [purpose, session, return_to, identity_links, comparison_merge]
+          required: [purpose, session, return_to, identity_links, comparison_merge, pending_action_id]
           properties:
             purpose:
               const: login
@@ -2243,6 +2477,9 @@ components:
               oneOf:
                 - $ref: '#/components/schemas/ComparisonLoginMergeProjection'
                 - type: 'null'
+            pending_action_id:
+              type: [string, 'null']
+              format: uuid
         - type: object
           additionalProperties: false
           required: [purpose, reauth_grant_id, recent_auth_at, return_to]
@@ -2327,7 +2564,7 @@ components:
           format: uuid
         purpose:
           type: string
-          enum: [query_continuation, comparison_merge]
+          enum: [pending_action_replay, query_continuation, comparison_merge]
         expires_at:
           type: string
           format: date-time

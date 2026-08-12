@@ -1,6 +1,6 @@
 # WP-03：目录与发现
 
-**状态：开发中（公共读取、关键词搜索、QuerySnapshot 生命周期、Asset 安全解析、Comparison 核心与登录同品类合并已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
+**状态：开发中（公共读取、关键词搜索、QuerySnapshot、Asset 安全解析、Comparison 与 PendingAction 服务端生命周期已实现）｜日期：2026-08-12｜前置：WP-02 / PR #1**
 
 ## 1. 本批交付
 
@@ -11,7 +11,7 @@
 - Project Version 使用 `ProjectCore + category_id + category_schema_version + category_data`，Learning 专属字段不得出现在 ProjectCore；
 - ProjectVersion、CreatorProfileVersion、Event 使用 append-only 保护；Project 当前版本在事务提交时校验所属 Project 与 Category Schema；
 - taxonomy 固定启用 `ai_learning_quiz / learning.v1` 与 `personal_site_portfolio / portfolio.v1`；配置内容哈希由数据库生成；
-- 实现目录公共读取、`OP-SEARCH` 关键词检索、`OP-QUERY-GET/LINK/UNLINK/INVALIDATE`、`OP-ASSET-RESOLVE`、`OP-COMP-GET/PUT/SAVE` 与 `OP-AUTH-MERGE-GET/RESOLVE/CANCEL`；OpenAPI 当前为 20 条路径、23 个 Operation；
+- 实现目录公共读取、`OP-SEARCH` 关键词检索、`OP-QUERY-GET/LINK/UNLINK/INVALIDATE`、`OP-ASSET-RESOLVE`、`OP-COMP-GET/PUT/SAVE`、`OP-AUTH-MERGE-GET/RESOLVE/CANCEL` 与 `OP-AUTH-PENDING-CREATE/GET/CONSUME/CANCEL`；OpenAPI 当前为 24 条路径、27 个 Operation；
 - Project Detail 内嵌仅公开、有效且未过期的 Evidence 摘要，以及已确认且两端作品均公开的 Project→Project Relation；不暴露内部记录引用、私有证据或审核人；
 - Event 使用 `event_sort.v1` 将日/月/年/估算精度映射为持久 UTC 排序锚点；默认只读当前事件头，生命周期状态由 supersedes 关系派生；
 - Asset 列表只返回可复用元数据和 `requires_resolve`，不返回 `safe_web_url/contact_uri` 原值；只有按次安全解析成功后才返回短期目标；
@@ -47,6 +47,10 @@
 | OP-AUTH-MERGE-GET | GET `/api/v1/auth/comparison-merge-conflicts/{conflict_id}` | 登录 owner 恢复被冻结的两端版本、6—10 个候选 ID 和当前仍公开的候选摘要 |
 | OP-AUTH-MERGE-RESOLVE | POST `/api/v1/auth/comparison-merge-conflicts/{conflict_id}/resolve` | 登录 owner + CSRF；校验两端版本、冲突版本、候选完整性、可见性与同品类后追加账户 ComparisonVersion |
 | OP-AUTH-MERGE-CANCEL | POST `/api/v1/auth/comparison-merge-conflicts/{conflict_id}/cancel` | 登录 owner + CSRF；终止冲突并撤销 IdentityLink，原账户/游客 Comparison 均不截断 |
+| OP-AUTH-PENDING-CREATE | POST `/api/v1/auth/pending-actions` | 签名游客或登录主体创建至多一条 15 分钟加密动作；白名单 Schema、主体和 client_request_id 幂等 |
+| OP-AUTH-PENDING-GET | GET `/api/v1/auth/pending-actions/{pending_action_id}` | 当前 owner 或持同认证流 `pending_action_replay` IdentityLink 的登录用户读取脱敏状态；不返回动作参数 |
+| OP-AUTH-PENDING-CONSUME | POST `/api/v1/auth/pending-actions/{pending_action_id}/consume` | 登录主体 + CSRF + 单用途 IdentityLink + 服务端签名领域成功回执；原子消费动作和链接并擦除密文 |
+| OP-AUTH-PENDING-CANCEL | POST `/api/v1/auth/pending-actions/{pending_action_id}/cancel` | 当前 owner 或链接后的登录主体取消；写不可回放终态、擦除密文并撤销全部活动回放链接 |
 
 公共响应允许短缓存；身份与错误响应仍为 `no-store`。查询参数未知、重复、超限或游标被修改时返回 canonical 400 错误。
 
@@ -80,14 +84,14 @@
 - AdminProjectCreationDraft 的受审计 importer 已完成；Submission/ReviewWorkItem 发布链及 64 个经审核正式档案仍未完成，当前 3 个合成 fixture 不能替代；
 - P01—P08 从 Mock 向真实 API 的分页面迁移及 route-level lazy loading；
 - 意图解析适配器、语义匹配、同类分析与搜索导航归因仍未完成；结构化 keyword/FTS 降级已完成且明确 `semantic_degraded=true`，不冒充语义结果；
-- P09 Comparison 核心、完成口径和同品类登录合并已落地；PendingAction 的 create/get/consume/cancel 及其与合并取消的可空关联仍待后续批次；
+- P09 Comparison 核心、完成口径、同品类登录合并以及 PendingAction 四操作/登录链接/比较冲突取消级联已落地；收藏、点赞、关注、评论和发布领域尚未实现，因此服务端签名 execution receipt 的真实业务写入与自动动作执行仍在对应工作包完成前保持不可触发；
 - 登录时账户活动集合与游客活动集合属于不同品类的产品处置仍待确认；当前服务端返回 `category_mismatch`、保留两端集合和短期 IdentityLink，不自动切换、不截断也不隐式创建第二个活动集合；
 - 搜索评估集、语义供应商和前端包体预算仍受 TBC-003/TBC-007/TBC-011 控制。
 
 ## 6. 下一批顺序
 
 1. 与 WorkBuddy 的 P01/P08/P14 真实 API 接入做契约联调，再实现 P05—P07 查询上下文；
-2. 接续 PendingAction 与登录回放，并把 `OP-ANALYTICS-INGEST` 可信维度可见事件接到 Comparison 内部进度服务；
+2. 实现 Interaction/Comment 领域写入后接通 PendingAction 的可信执行与一次消费，并把 `OP-ANALYTICS-INGEST` 可信维度可见事件接到 Comparison 内部进度服务；
 3. 进入 WP-04 Submission/ReviewWorkItem 发布审核链，不允许目录 importer 绕过审核直接发布。
 
 ## 7. 受审计目录 importer（WP-03 增量）
@@ -137,3 +141,14 @@
 - 同品类并集以“账户当前顺序在前、游客新增项在后”稳定去重：不超过 5 时返回 `merged/not_required`，有新增成员才递增账户版本；达到 6—10 时冻结两端版本和候选，创建 `ComparisonMergeConflict`，不消费链接、不回跳也不截断。
 - resolve 必须提交 0—5 个唯一候选 ID、两端冻结版本、冲突期望版本和 operation ID；事务内重新计算候选并校验当前公开性/Category 后，无论选择是否等于原账户集合都创建新的不可变账户版本，再把冲突写 resolved、链接写 consumed。
 - cancel 写 cancelled、撤销链接并保留两端集合；相同 operation ID/载荷返回不可变回执，不同载荷重用同一 ID 返回 409。冲突过期写 expired 并返回 410；GET 只返回仍公开候选的摘要，不泄露受限作品字段。
+
+## 12. PendingAction 登录回放生命周期（WP-03 增量）
+
+- migration `000012_pending_actions.sql` 落地 PendingAction、操作回执和 IdentityLink 绑定；逻辑 owner 映射为 `owner_user_id` 或 HMAC 匿名主体哈希且恰有一个。每主体至多一条 pending 动作，同主体 `client_request_id` 同载荷返回原对象、异载荷 409，另一活动动作不被静默覆盖。
+- P0 白名单固定为作品收藏/点赞/关注最终态、评论创建、比较保存和进入发布；历史 `decision` 不接受。每种参数使用独立运行时 Schema，评论净化后 1—2000 字，整个规范化载荷不超过 4096 字节。
+- 载荷使用身份主密钥派生的用途隔离 AES-256-GCM 密钥加密；公共 create/get/终态响应不返回参数。只有进程内可信执行入口可解密，密钥版本不可用明确 503，不降级为明文或浏览器持久化。
+- OP-AUTH-START 可绑定当前匿名 owner 的 pending_action_id；PostgreSQL 在创建 challenge 前核验主体、pending 状态和 TTL。登录成功只在对象仍有效时签发独立 purpose=`pending_action_replay` 链接，并记录 PendingAction↔IdentityLink 绑定；不得复用 query/comparison link。
+- consume 只接受当前登录用户、活动绑定链接、CSRF 与 HMAC 签名的 `pending-action-execution.v1` 成功回执；回执绑定 pending_action_id、user_id、原业务 client_request_id、result=success 和不超过 5 分钟的有效期。成功在同事务写 consumed、擦除密文、保存回执哈希、消费链接和写安全审计；客户端自造或篡改回执为 403。
+- cancel/consume 使用 `pending_action_id+operation_id` 不可变回执。相同请求返回同一终态，异载荷复用返回 409；consumed/cancelled/expired 不可回 pending。惰性过期必须先提交 expired、擦除密文并终止绑定链接，再向调用方返回 410，不能因异常回滚生命周期事实。
+- ComparisonMergeConflict 创建前校验 pending action 与 comparison link 属于同一 auth_flow/用户/匿名主体；取消冲突原子取消 PendingAction 并撤销回放链接，冲突过期原子过期 PendingAction。resolve 只消费 comparison link，PendingAction 保持 pending，待真实领域写成功后单独 consume。
+- PostgreSQL 质量门覆盖 OTP 登录签发三个独立用途链接、脱敏读取、内部解密、签名消费、回执重放、密文擦除、直接取消、惰性过期提交、不可变触发器，以及比较冲突取消对 PendingAction 的级联。

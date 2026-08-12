@@ -20,6 +20,7 @@ describe('discoverMigrations', () => {
         '000009_asset_resolution_security.sql',
         '000010_comparison_core.sql',
         '000011_comparison_merge_conflicts.sql',
+        '000012_pending_actions.sql',
       ],
     )
     for (const migration of migrations) {

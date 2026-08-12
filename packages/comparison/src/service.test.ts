@@ -288,6 +288,7 @@ describe('ComparisonService login merge commands', () => {
       anonymousSubjectId: '30000000-0000-4000-8000-000000000002',
       identityLinkId: requestId,
       operationId: eventId,
+      pendingActionId: null,
     })
     assert.equal(store.prepareMergeInput?.userId, subjectId)
     assert.equal(store.prepareMergeInput?.identityLinkId, requestId)

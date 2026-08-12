@@ -28,6 +28,11 @@ import {
 } from '@vibecheck/comparison'
 import type { ServiceConfig } from '@vibecheck/config'
 import type {
+  CancelPendingActionCommand,
+  ConsumePendingActionCommand,
+  CreatePendingActionCommand,
+  GetPendingActionCommand,
+  PendingActionProjection,
   SessionProjection,
   StartChallengeCommand,
   VerifyChallengeCommand,
@@ -41,6 +46,7 @@ import {
   type ApiAssetResolutionService,
   type ApiComparisonService,
   type ApiIdentityService,
+  type ApiPendingActionService,
   type ApiSearchService,
 } from './server.js'
 
@@ -66,6 +72,7 @@ async function start(
   search?: ApiSearchService,
   assetResolver?: ApiAssetResolutionService,
   comparison?: ApiComparisonService,
+  pendingActions?: ApiPendingActionService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -78,7 +85,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison)
+    ...((identity || search || assetResolver || comparison || pendingActions)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -92,6 +99,7 @@ async function start(
     ...(search ? { search } : {}),
     ...(assetResolver ? { assetResolver } : {}),
     ...(comparison ? { comparison } : {}),
+    ...(pendingActions ? { pendingActions } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -632,6 +640,7 @@ class FakeIdentityService implements ApiIdentityService {
       sessionToken: 'session-token-with-at-least-thirty-two-characters',
       returnTo: '/me',
       anonymousSubjectId: '77777777-7777-4777-8777-777777777777',
+      pendingActionId: null,
       identityLinks: [{
         identityLinkId: '99999999-9999-4999-8999-999999999999',
         purpose: 'query_continuation',
@@ -657,11 +666,165 @@ class FakeIdentityService implements ApiIdentityService {
   }
 }
 
+class FakePendingActionService implements ApiPendingActionService {
+  createCommand: CreatePendingActionCommand | null = null
+  getCommand: GetPendingActionCommand | null = null
+  consumeCommand: ConsumePendingActionCommand | null = null
+  cancelCommand: CancelPendingActionCommand | null = null
+
+  getConsumeCommand(): ConsumePendingActionCommand | null {
+    return this.consumeCommand
+  }
+
+  async create(command: CreatePendingActionCommand): Promise<PendingActionProjection> {
+    this.createCommand = command
+    return this.projection('pending')
+  }
+
+  async get(command: GetPendingActionCommand): Promise<PendingActionProjection> {
+    this.getCommand = command
+    return this.projection('pending')
+  }
+
+  async consume(command: ConsumePendingActionCommand): Promise<PendingActionProjection> {
+    this.consumeCommand = command
+    return this.projection('consumed')
+  }
+
+  async cancel(command: CancelPendingActionCommand): Promise<PendingActionProjection> {
+    this.cancelCommand = command
+    return this.projection('cancelled')
+  }
+
+  private projection(status: 'pending' | 'consumed' | 'cancelled'): PendingActionProjection {
+    return Object.freeze({
+      pending_action_id: '63000000-0000-4000-8000-000000000001',
+      action_type: 'set_project_favorite',
+      return_to: '/projects/63000000-0000-4000-8000-000000000002',
+      status,
+      expires_at: '2026-08-10T00:15:00.000Z',
+      consumed_at: status === 'consumed' ? '2026-08-10T00:00:00.000Z' : null,
+      cancelled_at: status === 'cancelled' ? '2026-08-10T00:00:00.000Z' : null,
+      cancel_reason: status === 'cancelled' ? 'user_cancelled' : null,
+    })
+  }
+}
+
 function cookieValue(setCookie: string, name: string): string {
   const match = setCookie.match(new RegExp(`${name}=([^;]+)`))
   assert(match?.[1])
   return decodeURIComponent(match[1])
 }
+
+test('pending actions bind an anonymous owner, hide payloads, and cancel idempotently', async () => {
+  const pending = new FakePendingActionService()
+  const runtime = await start(
+    async () => undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    pending,
+  )
+  const pendingActionId = '63000000-0000-4000-8000-000000000001'
+  try {
+    const created = await fetch(`${runtime.baseUrl}/api/v1/auth/pending-actions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify({
+        action_type: 'set_project_favorite',
+        parameters: {
+          project_id: '63000000-0000-4000-8000-000000000002',
+          state: true,
+        },
+        return_to: '/projects/63000000-0000-4000-8000-000000000002',
+        client_request_id: '63000000-0000-4000-8000-000000000003',
+      }),
+    })
+    assert.equal(created.status, 201)
+    const createdBody = await created.json() as Record<string, unknown>
+    assert.equal(createdBody.status, 'pending')
+    assert.equal('parameters' in createdBody, false)
+    const anonymousCookie = cookieValue(created.headers.get('set-cookie') ?? '', 'vc_anon')
+    assert.equal(pending.createCommand?.subject.kind, 'anonymous')
+
+    const recovered = await fetch(`${runtime.baseUrl}/api/v1/auth/pending-actions/${pendingActionId}`, {
+      headers: { cookie: `vc_anon=${encodeURIComponent(anonymousCookie)}` },
+    })
+    assert.equal(recovered.status, 200)
+    assert.equal(pending.getCommand?.identityLinkId, null)
+
+    const cancelled = await fetch(
+      `${runtime.baseUrl}/api/v1/auth/pending-actions/${pendingActionId}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://web.example',
+          cookie: `vc_anon=${encodeURIComponent(anonymousCookie)}`,
+        },
+        body: JSON.stringify({
+          cancel_reason: 'user_cancelled',
+          client_request_id: '63000000-0000-4000-8000-000000000004',
+        }),
+      },
+    )
+    assert.equal(cancelled.status, 200)
+    assert.equal((await cancelled.json() as { status: string }).status, 'cancelled')
+    assert.equal(pending.cancelCommand?.identityLinkId, null)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('pending action consumption requires session CSRF and forwards the attested receipt', async () => {
+  const pending = new FakePendingActionService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    pending,
+  )
+  const pendingActionId = '63000000-0000-4000-8000-000000000001'
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const request = (withCsrf: boolean) => fetch(
+    `${runtime.baseUrl}/api/v1/auth/pending-actions/${pendingActionId}/consume`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://web.example',
+        cookie: sessionCookie,
+        ...(withCsrf ? { 'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' } : {}),
+      },
+      body: JSON.stringify({
+        identity_link_id: '63000000-0000-4000-8000-000000000005',
+        execution_receipt: 'signed-domain-execution-receipt-with-sufficient-length',
+        client_request_id: '63000000-0000-4000-8000-000000000006',
+        expected_status: 'pending',
+      }),
+    },
+  )
+  try {
+    assert.equal((await request(false)).status, 403)
+    assert.equal(pending.consumeCommand, null)
+    const consumed = await request(true)
+    assert.equal(consumed.status, 200)
+    assert.equal((await consumed.json() as { status: string }).status, 'consumed')
+    const consumeCommand = pending.getConsumeCommand()
+    assert.ok(consumeCommand)
+    assert.equal(consumeCommand.subject.id, session.userId)
+    assert.equal(consumeCommand.expectedStatus, 'pending')
+  } finally {
+    await runtime.stop()
+  }
+})
 
 test('search binds an active authenticated session to the user subject', async () => {
   const search = new FakeSearchService()
@@ -914,6 +1077,7 @@ test('email OTP flow establishes signed browser cookies and a server session', a
     assert.match(challengeCookies, /HttpOnly/)
     assert.match(challengeCookies, /SameSite=Lax/)
     assert.equal(identity.startCommand?.email, 'user@example.com')
+    assert.equal(identity.startCommand?.pendingActionId, null)
 
     const browserBinding = cookieValue(challengeCookies, 'vc_auth_flow')
     const anonymous = cookieValue(challengeCookies, 'vc_anon')
@@ -958,6 +1122,7 @@ test('email OTP flow establishes signed browser cookies and a server session', a
       anonymousSubjectId: '77777777-7777-4777-8777-777777777777',
       identityLinkId: '99999999-9999-4999-8999-999999999998',
       operationId: '55555555-5555-4555-8555-555555555555',
+      pendingActionId: null,
     })
     assert.equal(identity.verifyCommand?.browserBindingToken, browserBinding)
     const sessionCookies = verification.headers.get('set-cookie') ?? ''

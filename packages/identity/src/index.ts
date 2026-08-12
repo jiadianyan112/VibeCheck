@@ -12,6 +12,17 @@ export { canUseReturnTo, maskEmail, normalizeEmail, normalizeReturnTo } from './
 export { permissionsFor, primaryRole } from './permissions.js'
 export { ResendEmailSender } from './resend.js'
 export { IdentityService, type IdentityServiceDependencies, type IdentityStore } from './service.js'
+export { PendingActionService, type PendingActionServiceDependencies } from './pending-action-service.js'
+export {
+  PostgresPendingActionStore,
+  type AccessPendingActionStoreInput,
+  type CancelPendingActionStoreInput,
+  type ConsumePendingActionStoreInput,
+  type CreatePendingActionStoreInput,
+  type PendingActionStore,
+  type PendingActionStoredProjection,
+  type PendingActionStoreOwner,
+} from './pending-action-store.js'
 export {
   PostgresIdentityStore,
   type ChallengeForVerification,
@@ -35,3 +46,18 @@ export type {
   VerifyChallengeCommand,
   VerifyChallengeResult,
 } from './types.js'
+export {
+  pendingActionTypes,
+  type CancelPendingActionCommand,
+  type ConsumePendingActionCommand,
+  type CreatePendingActionCommand,
+  type GetPendingActionCommand,
+  type GetPendingActionExecutionCommand,
+  type PendingActionExecutionProjection,
+  type PendingActionExecutionReceiptInput,
+  type PendingActionPayload,
+  type PendingActionProjection,
+  type PendingActionStatus,
+  type PendingActionSubject,
+  type PendingActionType,
+} from './pending-action-types.js'

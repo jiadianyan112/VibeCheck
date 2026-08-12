@@ -16,7 +16,13 @@ import {
   loadServiceConfig,
 } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
-import { IdentityService, PostgresIdentityStore, ResendEmailSender } from '@vibecheck/identity'
+import {
+  IdentityService,
+  PendingActionService,
+  PostgresIdentityStore,
+  PostgresPendingActionStore,
+  ResendEmailSender,
+} from '@vibecheck/identity'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { fileURLToPath } from 'node:url'
 
@@ -63,6 +69,10 @@ const server = createApiServer(config, {
             resendApiKey: identityConfig.resendApiKey,
             emailFrom: identityConfig.emailFrom,
           }),
+        }),
+        pendingActions: new PendingActionService({
+          config: identityConfig,
+          store: new PostgresPendingActionStore(pool),
         }),
         authCookieSecure: identityConfig.cookieSecure,
       }

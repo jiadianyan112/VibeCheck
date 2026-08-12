@@ -36,6 +36,12 @@ import {
 import type { ServiceHealth } from '@vibecheck/contracts'
 import {
   IdentityError,
+  type CancelPendingActionCommand,
+  type ConsumePendingActionCommand,
+  type CreatePendingActionCommand,
+  type GetPendingActionCommand,
+  type PendingActionProjection,
+  type PendingActionSubject,
   type SessionProjection,
   type StartChallengeCommand,
   type StartChallengeResult,
@@ -74,6 +80,13 @@ export interface ApiIdentityService {
     expectedVersion: number,
     requestId: string,
   ): Promise<void>
+}
+
+export interface ApiPendingActionService {
+  create(command: CreatePendingActionCommand): Promise<PendingActionProjection>
+  get(command: GetPendingActionCommand): Promise<PendingActionProjection>
+  consume(command: ConsumePendingActionCommand): Promise<PendingActionProjection>
+  cancel(command: CancelPendingActionCommand): Promise<PendingActionProjection>
 }
 
 export interface ApiCatalogService {
@@ -152,6 +165,7 @@ export interface ApiServerDependencies {
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
+  readonly pendingActions?: ApiPendingActionService
   readonly search?: ApiSearchService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
@@ -390,6 +404,14 @@ function booleanField(value: JsonObject, key: string): boolean {
   return field
 }
 
+function objectField(value: JsonObject, key: string): Readonly<Record<string, unknown>> {
+  const field = value[key]
+  if (field === null || typeof field !== 'object' || Array.isArray(field)) {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  return Object.freeze({ ...(field as Record<string, unknown>) })
+}
+
 function stringArrayField(
   value: JsonObject,
   key: string,
@@ -529,7 +551,9 @@ async function handleAuthRequest(
 
   if (method === 'POST' && path === startPath) {
     const body = await readJsonBody(request)
-    exactKeys(body, ['email', 'purpose', 'return_to', 'client_request_id', 'preview_token'])
+    exactKeys(body, [
+      'email', 'purpose', 'return_to', 'client_request_id', 'preview_token', 'pending_action_id',
+    ])
     const purpose = stringField(body, 'purpose', { maximum: 32 })
     if (purpose !== 'login' && purpose !== 'admin_confirm') {
       throw new IdentityError('REQUEST_PURPOSE_INVALID', 422, false)
@@ -545,6 +569,7 @@ async function handleAuthRequest(
       browserBindingToken: cookies[authCookieNames.browserBinding] ?? null,
       sessionToken: cookies[authCookieNames.session] ?? null,
       previewToken: stringField(body, 'preview_token', { minimum: 32, maximum: 512, optional: true }),
+      pendingActionId: stringField(body, 'pending_action_id', { maximum: 64, optional: true }),
       ipAddress: clientIp(request),
       userAgent: request.headers['user-agent'] ?? null,
       requestId,
@@ -595,6 +620,7 @@ async function handleAuthRequest(
           anonymousSubjectId: result.anonymousSubjectId,
           identityLinkId: mergeIdentityLink.identityLinkId,
           operationId: stringField(body, 'client_request_id', { maximum: 64 })!,
+          pendingActionId: result.pendingActionId,
         })
         : null
       const maxAgeSeconds = Math.max(
@@ -622,6 +648,7 @@ async function handleAuthRequest(
           expires_at: link.expiresAt,
         })),
         comparison_merge: comparisonMerge,
+        pending_action_id: result.pendingActionId,
       }, requestId)
     } else {
       appendCookies(response, [
@@ -670,6 +697,165 @@ async function handleAuthRequest(
     })
     response.end()
     return 204
+  }
+
+  return null
+}
+
+function requirePendingActions(dependencies: ApiServerDependencies): ApiPendingActionService {
+  if (!dependencies.pendingActions) throw new IdentityError('AUTH_SERVICE_UNAVAILABLE', 503, true)
+  return dependencies.pendingActions
+}
+
+function requireIdentityMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new IdentityError('CSRF_INVALID', 403, false)
+  }
+}
+
+async function resolvePendingActionSubject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+  createAnonymous: boolean,
+): Promise<{ readonly subject: PendingActionSubject; readonly session: SessionProjection | null }> {
+  const cookies = parseCookies(request)
+  if (cookies[authCookieNames.session]) {
+    const session = await requireIdentity(dependencies).getSession(
+      cookies[authCookieNames.session] ?? null,
+      cookies[authCookieNames.csrf] ?? null,
+    )
+    return Object.freeze({
+      subject: Object.freeze({ kind: 'user' as const, id: session.userId }),
+      session,
+    })
+  }
+  const secret = dependencies.anonymousCookieSecret ?? ''
+  if (secret.length < 32) throw new IdentityError('AUTH_SERVICE_UNAVAILABLE', 503, true)
+  const existing = verifiedAnonymousSubject(cookies[authCookieNames.anonymous], secret)
+  if (existing === null && !createAnonymous) throw new IdentityError('PENDING_ACTION_FORBIDDEN', 403, false)
+  const subjectId = existing ?? randomUUID()
+  if (existing === null) {
+    appendCookies(response, [
+      cookie(
+        authCookieNames.anonymous,
+        signAnonymousSubject(subjectId, secret),
+        dependencies.authCookieSecure ?? config.environment === 'production',
+        { httpOnly: true, maxAgeSeconds: 31_536_000 },
+      ),
+    ])
+  }
+  return Object.freeze({
+    subject: Object.freeze({ kind: 'anonymous' as const, id: subjectId }),
+    session: null,
+  })
+}
+
+async function handlePendingActionRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/auth/pending-actions'
+  const itemMatch = path.match(/^\/api\/v1\/auth\/pending-actions\/([^/]+)$/)
+  const consumeMatch = path.match(/^\/api\/v1\/auth\/pending-actions\/([^/]+)\/consume$/)
+  const cancelMatch = path.match(/^\/api\/v1\/auth\/pending-actions\/([^/]+)\/cancel$/)
+  if (path !== collectionPath && itemMatch === null && consumeMatch === null && cancelMatch === null) {
+    return null
+  }
+  const service = requirePendingActions(dependencies)
+
+  if (method === 'POST' && path === collectionPath) {
+    if (!requestOriginAllowed(request, config)) throw new IdentityError('ORIGIN_INVALID', 403, false)
+    if ([...url.searchParams.keys()].length > 0) throw new IdentityError('QUERY_PARAMETER_INVALID', 400, false)
+    const owner = await resolvePendingActionSubject(request, response, config, dependencies, true)
+    if (owner.session?.accountStatus === 'restricted') {
+      throw new IdentityError('ACCOUNT_RESTRICTED', 403, false)
+    }
+    if (owner.subject.kind === 'user') requireIdentityMutationCsrf(request)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['action_type', 'parameters', 'return_to', 'client_request_id'])
+    const result = await service.create({
+      subject: owner.subject,
+      actionType: stringField(body, 'action_type', { maximum: 32 })!,
+      parameters: objectField(body, 'parameters'),
+      returnTo: stringField(body, 'return_to', { maximum: 2_048 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
+      requestId,
+    })
+    writeJson(response, 201, result, requestId)
+    return 201
+  }
+
+  if (method === 'GET' && itemMatch !== null) {
+    for (const key of url.searchParams.keys()) {
+      if (key !== 'identity_link_id' || url.searchParams.getAll(key).length !== 1) {
+        throw new IdentityError('QUERY_PARAMETER_INVALID', 400, false)
+      }
+    }
+    const owner = await resolvePendingActionSubject(request, response, config, dependencies, false)
+    const identityLinkId = url.searchParams.get('identity_link_id')
+    const result = await service.get({
+      pendingActionId: itemMatch[1]!,
+      subject: owner.subject,
+      identityLinkId,
+      requestId,
+    })
+    writeJson(response, 200, result, requestId)
+    return 200
+  }
+
+  if (method === 'POST' && consumeMatch !== null) {
+    if (!requestOriginAllowed(request, config)) throw new IdentityError('ORIGIN_INVALID', 403, false)
+    if ([...url.searchParams.keys()].length > 0) throw new IdentityError('QUERY_PARAMETER_INVALID', 400, false)
+    const owner = await resolvePendingActionSubject(request, response, config, dependencies, false)
+    if (owner.subject.kind !== 'user') throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
+    requireIdentityMutationCsrf(request)
+    const body = await readJsonBody(request)
+    exactKeys(body, [
+      'identity_link_id', 'execution_receipt', 'client_request_id', 'expected_status',
+    ])
+    const expectedStatus = stringField(body, 'expected_status', { maximum: 16 })
+    if (expectedStatus !== 'pending') throw new IdentityError('EXPECTED_STATUS_INVALID', 422, false)
+    const result = await service.consume({
+      pendingActionId: consumeMatch[1]!,
+      subject: owner.subject,
+      identityLinkId: stringField(body, 'identity_link_id', { maximum: 64 })!,
+      executionReceipt: stringField(body, 'execution_receipt', { maximum: 2_048 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
+      expectedStatus,
+      requestId,
+    })
+    writeJson(response, 200, result, requestId)
+    return 200
+  }
+
+  if (method === 'POST' && cancelMatch !== null) {
+    if (!requestOriginAllowed(request, config)) throw new IdentityError('ORIGIN_INVALID', 403, false)
+    if ([...url.searchParams.keys()].length > 0) throw new IdentityError('QUERY_PARAMETER_INVALID', 400, false)
+    const owner = await resolvePendingActionSubject(request, response, config, dependencies, false)
+    if (owner.subject.kind === 'user') requireIdentityMutationCsrf(request)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['identity_link_id', 'cancel_reason', 'client_request_id'])
+    const result = await service.cancel({
+      pendingActionId: cancelMatch[1]!,
+      subject: owner.subject,
+      identityLinkId: stringField(body, 'identity_link_id', { maximum: 64, optional: true }),
+      cancelReason: stringField(body, 'cancel_reason', { maximum: 128 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
+      requestId,
+    })
+    writeJson(response, 200, result, requestId)
+    return 200
   }
 
   return null
@@ -1214,48 +1400,55 @@ export function createApiServer(
             if (authStatus !== null) {
               statusCode = authStatus
             } else {
-              const comparisonStatus = await handleComparisonRequest(
+              const pendingActionStatus = await handlePendingActionRequest(
                 request, response, url, path, method, requestId, config, dependencies,
               )
-              if (comparisonStatus !== null) {
-                statusCode = comparisonStatus
+              if (pendingActionStatus !== null) {
+                statusCode = pendingActionStatus
               } else {
-                const assetResolutionStatus = await handleAssetResolutionRequest(
+                const comparisonStatus = await handleComparisonRequest(
                   request, response, url, path, method, requestId, config, dependencies,
                 )
-                if (assetResolutionStatus !== null) {
-                  statusCode = assetResolutionStatus
+                if (comparisonStatus !== null) {
+                  statusCode = comparisonStatus
                 } else {
-                  const searchStatus = await handleSearchRequest(
-                    request, response, path, method, requestId, config, dependencies,
+                  const assetResolutionStatus = await handleAssetResolutionRequest(
+                    request, response, url, path, method, requestId, config, dependencies,
                   )
-                  if (searchStatus !== null) {
-                    statusCode = searchStatus
+                  if (assetResolutionStatus !== null) {
+                    statusCode = assetResolutionStatus
                   } else {
-                    const catalogStatus = await handleCatalogRequest(
-                      response, url, path, method, requestId, dependencies,
+                    const searchStatus = await handleSearchRequest(
+                      request, response, path, method, requestId, config, dependencies,
                     )
-                    if (catalogStatus !== null) {
-                      statusCode = catalogStatus
+                    if (searchStatus !== null) {
+                      statusCode = searchStatus
                     } else {
-                      const staticStatus = await handleStaticRequest(
-                        request,
-                        response,
-                        path,
-                        method,
-                        requestId,
-                        dependencies.staticDirectory,
+                      const catalogStatus = await handleCatalogRequest(
+                        response, url, path, method, requestId, dependencies,
                       )
-                      if (staticStatus !== null) {
-                        statusCode = staticStatus
+                      if (catalogStatus !== null) {
+                        statusCode = catalogStatus
                       } else {
-                        statusCode = 404
-                        writeJson(
+                        const staticStatus = await handleStaticRequest(
+                          request,
                           response,
-                          statusCode,
-                          errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                          path,
+                          method,
                           requestId,
+                          dependencies.staticDirectory,
                         )
+                        if (staticStatus !== null) {
+                          statusCode = staticStatus
+                        } else {
+                          statusCode = 404
+                          writeJson(
+                            response,
+                            statusCode,
+                            errorEnvelope('ROUTE_NOT_FOUND', requestId),
+                            requestId,
+                          )
+                        }
                       }
                     }
                   }
