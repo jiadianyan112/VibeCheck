@@ -55,7 +55,9 @@ try {
     category_id: string
     dimension_count: number
   }>(
-    `SELECT category_id,jsonb_object_length(comparison_dimension_map)::int AS dimension_count
+    `SELECT category_id,(
+       SELECT count(*)::int FROM jsonb_object_keys(comparison_dimension_map)
+     ) AS dimension_count
      FROM taxonomy.category_schema_versions
      WHERE (category_id,schema_version) IN (
        ('ai_learning_quiz','learning.v1'),
