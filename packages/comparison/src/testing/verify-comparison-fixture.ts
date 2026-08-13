@@ -73,7 +73,7 @@ async function createPortfolioProjects(count: number): Promise<readonly string[]
            snapshot_json,source_decision_type,source_decision_id,transaction_id,
            effective_at,created_at
          ) VALUES ($1,$2,1,'personal_site_portfolio','portfolio.v1',$3,
-           'admin_fact',$4,$5,$6,$6)`,
+           'admin_fact_decision',$4,$5,$6,$6)`,
         [versionId, projectId, source.rows[0].snapshot_json, randomUUID(), randomUUID(), clock],
       )
       await client.query(

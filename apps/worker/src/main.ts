@@ -9,8 +9,10 @@ import {
   requeueExpiredOutbox,
 } from '@vibecheck/database'
 import { PostgresWorkflowStore } from '@vibecheck/workflow'
+import { PostgresSubmissionPublisher } from '@vibecheck/submission'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
+import { createSubmissionPublicationHandler } from './submission-publication-handler.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
@@ -22,7 +24,10 @@ const pool = createDatabasePool({
   maxConnections: 5,
 })
 const workerId = `${config.serviceName}-${randomUUID()}`
-const handlers = new Map<string, OutboxHandler>()
+const publisher = new PostgresSubmissionPublisher(pool)
+const handlers = new Map<string, OutboxHandler>([
+  ['submission_approved', createSubmissionPublicationHandler(publisher)],
+])
 const workflowStore = new PostgresWorkflowStore(pool)
 const store: OutboxStore = {
   requeueExpired: () => requeueExpiredOutbox(pool),

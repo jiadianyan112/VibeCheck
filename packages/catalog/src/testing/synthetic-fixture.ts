@@ -369,7 +369,7 @@ async function insertProjects(client: PoolClient): Promise<void> {
       `INSERT INTO catalog.project_versions (
          version_id,project_id,version_number,category_id,category_schema_version,snapshot_json,
          source_decision_type,source_decision_id,transaction_id,effective_at,created_at
-       ) VALUES ($1,$2,1,$3,$4,$5::jsonb,'admin_fact',$6,$7,$8,$8)
+       ) VALUES ($1,$2,1,$3,$4,$5::jsonb,'admin_fact_decision',$6,$7,$8,$8)
        ON CONFLICT (version_id) DO NOTHING`,
       [
         project.versionId,

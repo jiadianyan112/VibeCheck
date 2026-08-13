@@ -1,6 +1,10 @@
 export { SubmissionError, submissionError } from './errors.js'
 export { PostgresSubmissionStore } from './postgres-store.js'
 export { SubmissionService, type SubmissionServiceConfig } from './service.js'
+export {
+  PostgresSubmissionPublisher,
+  type SubmissionPublicationProjection,
+} from './publication.js'
 export type {
   SubmissionStore,
   SubmissionUrlSafetyResolver,

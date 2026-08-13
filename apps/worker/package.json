@@ -16,6 +16,7 @@
     "@vibecheck/config": "*",
     "@vibecheck/database": "*",
     "@vibecheck/observability": "*",
+    "@vibecheck/submission": "*",
     "@vibecheck/workflow": "*"
   }
 }
