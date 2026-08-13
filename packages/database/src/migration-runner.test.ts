@@ -34,6 +34,7 @@ describe('discoverMigrations', () => {
         '000023_review_decisions.sql',
         '000024_submission_publication.sql',
         '000025_notifications.sql',
+        '000026_submission_asset_security_gate.sql',
       ],
     )
     for (const migration of migrations) {

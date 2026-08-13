@@ -528,6 +528,7 @@ export class PostgresSubmissionStore implements SubmissionStore {
       if (!sourceDraft || sourceDraft.status !== 'submitted') {
         throw submissionError('SUBMISSION_DRAFT_STATE_INVALID', 500, true)
       }
+      this.assertAssetSecurityGate(sourceDraft.asset_drafts_json)
 
       const checkResult = await client.query<UrlCheckRow>(
         'SELECT * FROM workflow.submission_url_checks WHERE check_id=$1 FOR UPDATE',
@@ -1213,6 +1214,7 @@ export class PostgresSubmissionStore implements SubmissionStore {
       })
     }
     if (draft.check_id !== input.checkId) throw submissionError('SUBMISSION_CHECK_MISMATCH', 409)
+    this.assertAssetSecurityGate(draft.asset_drafts_json)
     const checkResult = await client.query<UrlCheckRow>(
       `SELECT * FROM workflow.submission_url_checks WHERE check_id=$1 ${lockForSubmit ? 'FOR UPDATE' : 'FOR SHARE'}`,
       [input.checkId],
@@ -1335,6 +1337,15 @@ export class PostgresSubmissionStore implements SubmissionStore {
       created_at: row.created_at.toISOString(),
       updated_at: row.updated_at.toISOString(),
     })
+  }
+
+  private assertAssetSecurityGate(value: unknown): void {
+    if (!Array.isArray(value)) {
+      throw submissionError('SUBMISSION_ASSET_DRAFT_STATE_INVALID', 500, true)
+    }
+    if (value.length > 0) {
+      throw submissionError('SUBMISSION_ASSET_SECURITY_RECEIPT_REQUIRED', 422)
+    }
   }
 
   private hash(value: string): string {

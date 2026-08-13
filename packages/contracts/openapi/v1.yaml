@@ -4635,6 +4635,10 @@ components:
             format: uuid
         asset_drafts:
           type: array
+          maxItems: 0
+          description: >-
+            Frozen P0 field. It remains empty until an audited per-asset URL security receipt
+            contract is implemented; non-empty drafts cannot be previewed or submitted.
           items:
             type: object
         status:

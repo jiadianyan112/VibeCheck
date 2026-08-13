@@ -317,6 +317,9 @@ export class PostgresSubmissionPublisher {
       const evidenceDrafts = await this.evidenceDrafts(client, submission, evidenceDraftIds)
       const attachments = await this.attachments(client, evidenceDraftIds)
       const assetDrafts = parseAssetDrafts(submission.asset_drafts_json)
+      if (assetDrafts.length > 0) {
+        throw publicationError('SUBMISSION_ASSET_SECURITY_RECEIPT_REQUIRED')
+      }
       this.assertAssetEvidence(assetDrafts, evidenceDrafts)
 
       const projectId = randomUUID()

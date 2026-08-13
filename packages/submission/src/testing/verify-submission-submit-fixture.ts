@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 
 import pg from 'pg'
 
+import { SubmissionError } from '../errors.js'
 import { PostgresSubmissionStore } from '../postgres-store.js'
 import { SubmissionService } from '../service.js'
 
@@ -127,6 +128,32 @@ async function run(): Promise<void> {
   if (!existing.rows[0]) await seed()
   let submissionId = existing.rows[0]?.submission_id
   if (!submissionId) {
+    await pool.query(
+      `UPDATE workflow.submission_drafts SET asset_drafts_json=$2::jsonb WHERE draft_id=$1`,
+      [draftId, JSON.stringify([{
+        asset_draft_key: 'unsafe-unreceipted-asset',
+        safe_web_url: 'https://unreceipted-asset.example',
+      }])],
+    )
+    await assert.rejects(
+      () => service.previewDraft({
+        userId, draftId, expectedVersion: 1, checkId,
+        requestId: 'submission-submit-asset-gate-0001',
+      }),
+      (error: unknown) => error instanceof SubmissionError &&
+        error.code === 'SUBMISSION_ASSET_SECURITY_RECEIPT_REQUIRED' && error.httpStatus === 422,
+    )
+    await assert.rejects(
+      () => pool.query(
+        `UPDATE workflow.submission_drafts SET status='submitted' WHERE draft_id=$1`,
+        [draftId],
+      ),
+      /SUBMISSION_ASSET_SECURITY_RECEIPT_REQUIRED/,
+    )
+    await pool.query(
+      `UPDATE workflow.submission_drafts SET asset_drafts_json='[]'::jsonb WHERE draft_id=$1`,
+      [draftId],
+    )
     const preview = await service.previewDraft({
       userId, draftId, expectedVersion: 1, checkId, requestId: 'submission-submit-preview-0001',
     })

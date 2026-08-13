@@ -227,7 +227,7 @@ WP-04H2：建立 P0 站内 Notification 存储、用户隔离读取与幂等已�
 
 ## 当前迭代：WP-04H2 发布成功站内通知
 
-状态：实现完成；进入远端 PostgreSQL 迁移与通知事务 fixture 验证。
+状态：实现完成；GitHub Actions `31704714020` 已在 PostgreSQL 18 通过全部质量门、迁移与通知事务 fixture。
 
 ### 已实现
 
@@ -249,3 +249,25 @@ WP-04H2：建立 P0 站内 Notification 存储、用户隔离读取与幂等已�
 ### 下一步
 
 WP-04I：收紧 Submission asset_drafts 的审核前安全边界；在 safe_web_url 具备 DNS、重定向与可访问性审计收据前，生产入口不得接受非空外部资产草稿。随后进入 ProjectUpdate 与作者身份验证的独立状态机实现。
+
+## 当前迭代：WP-04I 外部资产提交安全闸门
+
+状态：实现完成；进入本地与远端质量门验证。
+
+### 已实现
+
+- `asset_drafts` 字段及后续正式能力保持冻结，但当前 OpenAPI 明确 `maxItems=0`；尚未形成逐资产安全收据前，前端和任何 API 客户端都不能把非空外部资产草稿视为可提交输入。
+- preview/submit 在读取同一锁定 Draft 快照时复检 `asset_drafts_json`：非数组是服务端事实损坏，非空数组返回 `SUBMISSION_ASSET_SECURITY_RECEIPT_REQUIRED`，不生成 preview audit、Submission、WorkItem 或 Outbox。
+- 新增迁移 `000026_submission_asset_security_gate.sql`，数据库在 Draft 推进到 submitted 的同一事务内再次拒绝非空资产草稿，避免遗漏服务层检查形成旁路。
+- changes_requested 修订链在复制旧 Draft 前执行同一闸门；含旧版未收据资产的 Submission 不会把风险输入复制到新草稿。
+- 发布 worker 对历史或内部绕过公共提交路径形成的非空资产草稿失败关闭，写 `publish_failed`，不创建 Project、Asset、Evidence、Version 或部分公开事实。
+- PostgreSQL 提交 fixture 先写入未收据外链，验证 preview 422 与数据库状态迁移拒绝，再清空字段并证明原有无资产发布流程正常完成。
+
+### 保持关闭
+
+- 本轮不创建临时的“已安全”布尔值，也不把作品 URL 的 check_id 复用于 Asset；每个 Asset 未来必须有绑定规范 URL、DNS 答案、逐跳重定向、HTTP 结果、检查时间、过期时间和输入哈希的独立不可变收据。
+- robots、版权合规、正式网络资源阈值与责任人仍按 TBC-004 待确认；确认前不开放外部资产草稿写接口，不删除冻结字段或降低最终产品需求。
+
+### 下一步
+
+WP-05A：实现 ProjectUpdate 草稿与审核入口，严格复用现有 Project 稳定 ID、Version append-only、Evidence/Media 安全边界和后台高风险确认，不允许直接覆盖当前公开 Version。
