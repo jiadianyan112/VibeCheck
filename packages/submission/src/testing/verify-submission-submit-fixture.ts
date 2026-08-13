@@ -63,7 +63,7 @@ async function seed(): Promise<void> {
        check_id,owner_user_id,category_id,category_schema_version,input_hash,canonical_url,
        canonical_url_hash,risk_result,access_result,category_result,duplicate_result,
        client_request_id,request_hash,request_id,checked_at,expires_at
-     ) VALUES ($1,$2,'personal_site_portfolio','portfolio.v1',$3,$4,digest($4,'sha256'),
+     ) VALUES ($1,$2,'personal_site_portfolio','portfolio.v1',$3,$4,digest($4::text,'sha256'),
        'allowed','accessible','matched','none','submission-submit-check-0001',$5,
        'submission-submit-request-0001',$6,$7)`,
     [checkId, userId, 'a'.repeat(64), canonicalUrl, 'b'.repeat(64), now, new Date('2026-08-13T14:30:00.000Z')],

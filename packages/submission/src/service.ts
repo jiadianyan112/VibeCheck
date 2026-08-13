@@ -7,6 +7,7 @@ import {
   submissionCategoryIds,
   type CheckSubmissionUrlCommand,
   type CreateSubmissionDraftCommand,
+  type CreateSubmissionRevisionDraftCommand,
   type GetSubmissionDraftCommand,
   type PatchSubmissionDraftCommand,
   type PreviewSubmissionDraftCommand,
@@ -136,6 +137,54 @@ export class SubmissionService {
       categoryId,
       schemaVersion,
       payloadSnapshot,
+      clientRequestId,
+      requestHash,
+      requestId: this.requestId(command.requestId),
+      now,
+      expiresAt: new Date(now.getTime() + this.dependencies.config.draftTtlSeconds * 1_000),
+    })
+  }
+
+  async createRevisionDraft(
+    command: CreateSubmissionRevisionDraftCommand,
+  ): Promise<SubmissionDraftProjection> {
+    if (!Number.isSafeInteger(command.expectedSubmissionVersion) || command.expectedSubmissionVersion < 1) {
+      throw submissionError('SUBMISSION_VERSION_INVALID', 422)
+    }
+    const userId = this.uuid(command.userId, 'SUBMISSION_USER_INVALID')
+    const submissionId = this.uuid(command.submissionId, 'SUBMISSION_ID_INVALID')
+    const baseSubmissionId = this.uuid(command.baseSubmissionId, 'SUBMISSION_ID_INVALID')
+    if (submissionId !== baseSubmissionId) throw submissionError('SUBMISSION_BASE_MISMATCH', 422)
+    const clientRequestId = this.operationId(command.clientRequestId)
+    const requestHash = this.hash(JSON.stringify({
+      base_submission_id: baseSubmissionId,
+      expected_submission_version: command.expectedSubmissionVersion,
+    }))
+    const replay = await this.dependencies.store.getRevisionDraftByRequest({ userId, clientRequestId })
+    if (replay) {
+      if (replay.requestHash !== requestHash) throw submissionError('CLIENT_REQUEST_ID_REUSED', 409)
+      return replay.projection
+    }
+    const source = await this.dependencies.store.getRevisionSource({
+      userId,
+      submissionId: baseSubmissionId,
+      expectedSubmissionVersion: command.expectedSubmissionVersion,
+    })
+    const revisionCheckRequestId = `revision-check:${this.hash(clientRequestId).slice(0, 40)}`
+    const check = await this.checkUrl({
+      userId,
+      rawUrl: source.publicUrl,
+      categoryHint: source.categoryId,
+      clientRequestId: revisionCheckRequestId,
+      requestId: command.requestId,
+    })
+    if (!check.can_create_draft) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
+    const now = this.now()
+    return this.dependencies.store.createRevisionDraft({
+      userId,
+      baseSubmissionId,
+      expectedSubmissionVersion: command.expectedSubmissionVersion,
+      checkId: check.check_id,
       clientRequestId,
       requestHash,
       requestId: this.requestId(command.requestId),

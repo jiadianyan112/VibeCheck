@@ -61,6 +61,7 @@ import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/
 import type {
   CheckSubmissionUrlCommand,
   CreateSubmissionDraftCommand,
+  CreateSubmissionRevisionDraftCommand,
   GetSubmissionDraftCommand,
   PatchSubmissionDraftCommand,
   PreviewSubmissionDraftCommand,
@@ -1054,6 +1055,7 @@ test('review work-item queue and lease mutations use staff session, CSRF and fro
 class FakeSubmissionService implements ApiSubmissionService {
   checkCommand: CheckSubmissionUrlCommand | null = null
   createCommand: CreateSubmissionDraftCommand | null = null
+  revisionCommand: CreateSubmissionRevisionDraftCommand | null = null
   getCommand: GetSubmissionDraftCommand | null = null
   patchCommand: PatchSubmissionDraftCommand | null = null
   previewCommand: PreviewSubmissionDraftCommand | null = null
@@ -1116,6 +1118,16 @@ class FakeSubmissionService implements ApiSubmissionService {
   async createDraft(command: CreateSubmissionDraftCommand) {
     this.createCommand = command
     return this.draft
+  }
+
+  async createRevisionDraft(command: CreateSubmissionRevisionDraftCommand) {
+    this.revisionCommand = command
+    return Object.freeze({
+      ...this.draft,
+      draft_revision: 2,
+      supersedes_draft_id: this.draft.draft_id,
+      base_submission_id: command.baseSubmissionId,
+    })
   }
 
   async getDraft(command: GetSubmissionDraftCommand) {
@@ -1289,6 +1301,23 @@ test('submission entry routes require the authenticated owner, same-origin CSRF 
     assert.equal(accepted.review_status, 'pending_review')
     assert.equal(accepted.project_id, undefined)
     assert.equal(submission.submitCommand?.submissionKey, 'submission-submit-request-0001')
+
+    const revision = await fetch(
+      `${runtime.baseUrl}/api/v1/submissions/84000000-0000-4000-8000-000000000006/revision-drafts`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          base_submission_id: '84000000-0000-4000-8000-000000000006',
+          expected_submission_version: 2,
+          client_request_id: 'submission-revision-request-0001',
+        }),
+      },
+    )
+    assert.equal(revision.status, 201)
+    assert.equal((await revision.json() as { draft_revision: number }).draft_revision, 2)
+    assert.equal(submission.revisionCommand?.submissionId, '84000000-0000-4000-8000-000000000006')
+    assert.equal(submission.revisionCommand?.expectedSubmissionVersion, 2)
 
     const withdrawn = await fetch(
       `${runtime.baseUrl}/api/v1/submissions/84000000-0000-4000-8000-000000000006/withdraw`,

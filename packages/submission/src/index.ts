@@ -10,6 +10,7 @@ export {
   submissionCategoryIds,
   type CheckSubmissionUrlCommand,
   type CreateSubmissionDraftCommand,
+  type CreateSubmissionRevisionDraftCommand,
   type GetSubmissionDraftCommand,
   type PatchSubmissionDraftCommand,
   type PreviewSubmissionDraftCommand,

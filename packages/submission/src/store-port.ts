@@ -24,6 +24,18 @@ export interface SubmissionUrlSafetyResolver {
 }
 
 export interface SubmissionStore {
+  getRevisionDraftByRequest(input: {
+    readonly userId: string
+    readonly clientRequestId: string
+  }): Promise<{ readonly requestHash: string; readonly projection: SubmissionDraftProjection } | null>
+  getRevisionSource(input: {
+    readonly userId: string
+    readonly submissionId: string
+    readonly expectedSubmissionVersion: number
+  }): Promise<{
+    readonly categoryId: SubmissionCategoryId
+    readonly publicUrl: string
+  }>
   getUrlCheckByRequest(input: {
     readonly userId: string
     readonly clientRequestId: string
@@ -68,6 +80,17 @@ export interface SubmissionStore {
     readonly categoryId: SubmissionCategoryId
     readonly schemaVersion: SubmissionSchemaVersion
     readonly payloadSnapshot: Readonly<Record<string, unknown>>
+    readonly clientRequestId: string
+    readonly requestHash: string
+    readonly requestId: string
+    readonly now: Date
+    readonly expiresAt: Date
+  }): Promise<SubmissionDraftProjection>
+  createRevisionDraft(input: {
+    readonly userId: string
+    readonly baseSubmissionId: string
+    readonly expectedSubmissionVersion: number
+    readonly checkId: string
     readonly clientRequestId: string
     readonly requestHash: string
     readonly requestId: string

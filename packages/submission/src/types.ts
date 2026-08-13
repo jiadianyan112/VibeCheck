@@ -115,6 +115,15 @@ export interface WithdrawSubmissionCommand {
   readonly requestId: string
 }
 
+export interface CreateSubmissionRevisionDraftCommand {
+  readonly userId: string
+  readonly submissionId: string
+  readonly baseSubmissionId: string
+  readonly expectedSubmissionVersion: number
+  readonly clientRequestId: string
+  readonly requestId: string
+}
+
 export interface SubmissionPreviewProjection {
   readonly draft_id: string
   readonly draft_version: number

@@ -56,6 +56,12 @@ const draftProjection: SubmissionDraftProjection = Object.freeze({
 })
 
 class FakeStore implements SubmissionStore {
+  revisionReplay: Awaited<ReturnType<SubmissionStore['getRevisionDraftByRequest']>> = null
+  revisionSource = Object.freeze({
+    categoryId: 'personal_site_portfolio' as const,
+    publicUrl: 'https://example.com/work',
+  })
+  createdRevisionDraft: Parameters<SubmissionStore['createRevisionDraft']>[0] | null = null
   savedCheck: Parameters<SubmissionStore['saveUrlCheck']>[0] | null = null
   createdDraft: Parameters<SubmissionStore['createDraft']>[0] | null = null
   patchedDraft: Parameters<SubmissionStore['patchDraft']>[0] | null = null
@@ -66,6 +72,17 @@ class FakeStore implements SubmissionStore {
   reusable: SubmissionUrlCheckProjection | null = null
   boundReusable: Parameters<SubmissionStore['bindReusableUrlCheck']>[0] | null = null
 
+  async getRevisionDraftByRequest() { return this.revisionReplay }
+  async getRevisionSource() { return this.revisionSource }
+  async createRevisionDraft(input: Parameters<SubmissionStore['createRevisionDraft']>[0]) {
+    this.createdRevisionDraft = input
+    return Object.freeze({
+      ...draftProjection,
+      draft_revision: 2,
+      supersedes_draft_id: draftId,
+      base_submission_id: input.baseSubmissionId,
+    })
+  }
   async getUrlCheckByRequest() { return this.replay }
   async getReusableUrlCheck() { return this.reusable }
   async bindReusableUrlCheck(input: Parameters<SubmissionStore['bindReusableUrlCheck']>[0]) {
@@ -341,6 +358,63 @@ describe('SubmissionService drafts', () => {
       requestId: 'http-request-invalid',
     }), 'DRAFT_PAYLOAD_FIELD_INVALID', 422)
     assert.equal(store.patchedDraft, null)
+  })
+
+  it('creates a revision draft from a changes-requested submission after a fresh URL check', async () => {
+    const store = new FakeStore()
+    const submissionId = '85000000-0000-4000-8000-000000000003'
+    const result = await service(store).createRevisionDraft({
+      userId,
+      submissionId,
+      baseSubmissionId: submissionId,
+      expectedSubmissionVersion: 2,
+      clientRequestId: 'revision-create-request-0001',
+      requestId: 'http-request-revision-create',
+    })
+    assert.equal(result.draft_revision, 2)
+    assert.equal(result.base_submission_id, submissionId)
+    assert.equal(store.savedCheck?.canonicalUrl, 'https://example.com/work')
+    assert.equal(store.createdRevisionDraft?.expectedSubmissionVersion, 2)
+    assert.equal(store.createdRevisionDraft?.checkId, checkId)
+    assert.match(store.createdRevisionDraft?.requestHash ?? '', /^[a-f0-9]{64}$/)
+  })
+
+  it('replays a revision request before performing another URL safety check', async () => {
+    const store = new FakeStore()
+    const submissionId = '85000000-0000-4000-8000-000000000003'
+    store.revisionReplay = Object.freeze({
+      requestHash: '4a0f1fee2f8ed500fabf110bd53dae89c1266111f77904b87303eab188994c38',
+      projection: Object.freeze({
+        ...draftProjection,
+        draft_revision: 2,
+        supersedes_draft_id: draftId,
+        base_submission_id: submissionId,
+      }),
+    })
+    const result = await service(store).createRevisionDraft({
+      userId,
+      submissionId,
+      baseSubmissionId: submissionId,
+      expectedSubmissionVersion: 2,
+      clientRequestId: 'revision-create-request-0001',
+      requestId: 'http-request-revision-replay',
+    })
+    assert.equal(result.draft_revision, 2)
+    assert.equal(store.savedCheck, null)
+    assert.equal(store.createdRevisionDraft, null)
+  })
+
+  it('rejects a mismatched path/body submission identity before storage', async () => {
+    const store = new FakeStore()
+    await failure(() => service(store).createRevisionDraft({
+      userId,
+      submissionId: '85000000-0000-4000-8000-000000000003',
+      baseSubmissionId: '85000000-0000-4000-8000-000000000004',
+      expectedSubmissionVersion: 2,
+      clientRequestId: 'revision-create-request-0002',
+      requestId: 'http-request-revision-invalid',
+    }), 'SUBMISSION_BASE_MISMATCH', 422)
+    assert.equal(store.createdRevisionDraft, null)
   })
 })
 

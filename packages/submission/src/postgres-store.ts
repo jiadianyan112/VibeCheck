@@ -78,10 +78,13 @@ interface DraftReceiptRow extends QueryResultRow {
 interface SubmissionRow extends QueryResultRow {
   readonly submission_id: string
   readonly submission_chain_id: string
+  readonly supersedes_submission_id: string | null
   readonly draft_id: string
   readonly owner_user_id: string
   readonly snapshot_version: number
+  readonly payload_snapshot: unknown
   readonly evidence_draft_ids_json: unknown
+  readonly media_reference_ids_json: unknown
   readonly media_reference_ids_json: unknown
   readonly review_status: SubmissionReviewStatus
   readonly review_work_item_id: string
@@ -117,8 +120,98 @@ interface SubmissionWorkItemRow extends QueryResultRow {
   readonly version: number
 }
 
+interface RevisionMediaRow extends QueryResultRow {
+  readonly media_reference_id: string
+  readonly media_resource_id: string
+  readonly role: string
+  readonly alt_text: string
+  readonly sort_order: number
+  readonly crop_focus_json: unknown
+  readonly variant: string | null
+  readonly resource_owner_user_id: string
+  readonly resource_status: string
+  readonly scan_result: string
+  readonly deletion_guard_job_id: string | null
+}
+
+interface RevisionEvidenceRow extends QueryResultRow {
+  readonly evidence_draft_id: string
+  readonly owner_user_id: string
+  readonly collector_actor_type: string
+  readonly parent_type: string
+  readonly parent_id: string
+  readonly final_target_kind: string
+  readonly target_asset_draft_key: string | null
+  readonly evidence_type: string
+  readonly source_channel: string
+  readonly field_path: string | null
+  readonly requested_visibility: string
+  readonly source_url: string | null
+  readonly internal_record_ref_ciphertext: Buffer | null
+  readonly internal_record_ref_key_version: string | null
+  readonly text_excerpt: string | null
+  readonly status: string
+}
+
+interface RevisionAttachmentRow extends QueryResultRow {
+  readonly attachment_draft_id: string
+  readonly evidence_draft_id: string
+  readonly media_resource_id: string
+  readonly role: string
+  readonly requested_visibility: string
+  readonly resource_owner_user_id: string
+  readonly resource_status: string
+  readonly scan_result: string
+  readonly deletion_guard_job_id: string | null
+}
+
 export class PostgresSubmissionStore implements SubmissionStore {
   constructor(private readonly pool: Pool) {}
+
+  async getRevisionDraftByRequest(
+    input: Parameters<SubmissionStore['getRevisionDraftByRequest']>[0],
+  ) {
+    const result = await this.pool.query<DraftRow>(
+      `SELECT * FROM workflow.submission_drafts
+       WHERE owner_user_id=$1 AND idempotency_key=$2`,
+      [input.userId, input.clientRequestId],
+    )
+    const row = result.rows[0]
+    return row
+      ? Object.freeze({ requestHash: row.request_hash, projection: this.draftProjection(row) })
+      : null
+  }
+
+  async getRevisionSource(input: Parameters<SubmissionStore['getRevisionSource']>[0]) {
+    const result = await this.pool.query<SubmissionRow>(
+      'SELECT * FROM workflow.submissions WHERE submission_id=$1',
+      [input.submissionId],
+    )
+    const row = result.rows[0]
+    if (!row) throw submissionError('SUBMISSION_NOT_FOUND', 404)
+    if (row.owner_user_id !== input.userId) throw submissionError('SUBMISSION_FORBIDDEN', 403)
+    if (row.version !== input.expectedSubmissionVersion) {
+      throw submissionError('SUBMISSION_VERSION_CONFLICT', 409, false, {
+        expected_version: input.expectedSubmissionVersion,
+        current_version: row.version,
+      })
+    }
+    if (row.review_status !== 'changes_requested') {
+      throw submissionError('SUBMISSION_REVISION_NOT_ALLOWED', 409)
+    }
+    const payload = validateDraftPayload(row.payload_snapshot)
+    const categoryId = payload.category_id
+    const core = payload.project_core
+    if (
+      typeof categoryId !== 'string' || !['ai_learning_quiz', 'personal_site_portfolio'].includes(categoryId) ||
+      core === null || typeof core !== 'object' || Array.isArray(core) ||
+      typeof (core as Record<string, unknown>).public_url !== 'string'
+    ) throw submissionError('SUBMISSION_STATE_INVALID', 500, true)
+    return Object.freeze({
+      categoryId: categoryId as SubmissionCategoryId,
+      publicUrl: (core as Record<string, unknown>).public_url as string,
+    })
+  }
 
   async getUrlCheckByRequest(input: {
     readonly userId: string
@@ -389,6 +482,330 @@ export class PostgresSubmissionStore implements SubmissionStore {
     }
   }
 
+  async createRevisionDraft(input: Parameters<SubmissionStore['createRevisionDraft']>[0]) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lock(client, `submission-revision:${input.userId}:${input.clientRequestId}`)
+      const replay = await client.query<DraftRow>(
+        `SELECT * FROM workflow.submission_drafts
+         WHERE owner_user_id=$1 AND idempotency_key=$2`,
+        [input.userId, input.clientRequestId],
+      )
+      if (replay.rows[0]) {
+        if (replay.rows[0].request_hash !== input.requestHash) {
+          throw submissionError('CLIENT_REQUEST_ID_REUSED', 409)
+        }
+        await client.query('COMMIT')
+        return this.draftProjection(replay.rows[0])
+      }
+
+      const sourceResult = await client.query<SubmissionRow>(
+        'SELECT * FROM workflow.submissions WHERE submission_id=$1 FOR UPDATE',
+        [input.baseSubmissionId],
+      )
+      const source = sourceResult.rows[0]
+      if (!source) throw submissionError('SUBMISSION_NOT_FOUND', 404)
+      if (source.owner_user_id !== input.userId) throw submissionError('SUBMISSION_FORBIDDEN', 403)
+      if (source.version !== input.expectedSubmissionVersion) {
+        throw submissionError('SUBMISSION_VERSION_CONFLICT', 409, false, {
+          expected_version: input.expectedSubmissionVersion,
+          current_version: source.version,
+        })
+      }
+      if (source.review_status !== 'changes_requested') {
+        throw submissionError('SUBMISSION_REVISION_NOT_ALLOWED', 409)
+      }
+      const existingRevision = await client.query<DraftRow>(
+        'SELECT * FROM workflow.submission_drafts WHERE base_submission_id=$1 FOR UPDATE',
+        [source.submission_id],
+      )
+      if (existingRevision.rows[0]) throw submissionError('SUBMISSION_REVISION_EXISTS', 409)
+      const sourceDraftResult = await client.query<DraftRow>(
+        'SELECT * FROM workflow.submission_drafts WHERE draft_id=$1 FOR SHARE',
+        [source.draft_id],
+      )
+      const sourceDraft = sourceDraftResult.rows[0]
+      if (!sourceDraft || sourceDraft.status !== 'submitted') {
+        throw submissionError('SUBMISSION_DRAFT_STATE_INVALID', 500, true)
+      }
+
+      const checkResult = await client.query<UrlCheckRow>(
+        'SELECT * FROM workflow.submission_url_checks WHERE check_id=$1 FOR UPDATE',
+        [input.checkId],
+      )
+      const check = checkResult.rows[0]
+      if (!check) throw submissionError('SUBMISSION_URL_CHECK_NOT_FOUND', 404)
+      if (check.owner_user_id !== input.userId) throw submissionError('SUBMISSION_URL_CHECK_FORBIDDEN', 403)
+      if (check.expires_at.getTime() <= input.now.getTime()) throw submissionError('SUBMISSION_URL_CHECK_EXPIRED', 410)
+      if (
+        check.category_id !== sourceDraft.category_id ||
+        check.category_schema_version !== sourceDraft.category_schema_version ||
+        check.risk_result !== 'allowed' || !['accessible', 'uncertain'].includes(check.access_result) ||
+        check.duplicate_result !== 'none' || check.canonical_url === null
+      ) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
+      const sourcePayload = validateDraftPayload(source.payload_snapshot)
+      const sourceCore = sourcePayload.project_core as Record<string, unknown>
+      if (sourceCore.public_url !== check.canonical_url) throw submissionError('SUBMISSION_PUBLIC_URL_MISMATCH', 409)
+      await this.lock(client, `submission-url:${check.canonical_url}`)
+      const duplicate = await client.query<{ readonly project_id: string } & QueryResultRow>(
+        `SELECT project_id FROM catalog.projects
+         WHERE canonical_url_hash=digest($1,'sha256') AND review_status<>'deleted'
+         LIMIT 1 FOR SHARE`,
+        [check.canonical_url],
+      )
+      if (duplicate.rows[0]) {
+        throw submissionError('SUBMISSION_DUPLICATE_FOUND', 409, false, {
+          project_id: duplicate.rows[0].project_id,
+        })
+      }
+      const activeDraft = await client.query<DraftRow>(
+        `SELECT draft.* FROM workflow.submission_drafts draft
+         JOIN workflow.submission_url_checks url_check ON url_check.check_id=draft.check_id
+         WHERE url_check.canonical_url_hash=digest($1,'sha256')
+           AND draft.status='editing' AND draft.expires_at>$2
+         ORDER BY draft.created_at,draft.draft_id LIMIT 1 FOR UPDATE OF draft`,
+        [check.canonical_url, input.now],
+      )
+      if (activeDraft.rows[0]) throw submissionError('SUBMISSION_URL_IN_PROGRESS', 409)
+
+      const frozenMediaIds = this.uniqueStringArray(
+        source.media_reference_ids_json,
+        'SUBMISSION_MEDIA_BINDING_INVALID',
+      )
+      const mediaResult = await client.query<RevisionMediaRow>(
+        `SELECT reference.media_reference_id,reference.media_resource_id,reference.role,
+           reference.alt_text,reference.sort_order,reference.crop_focus_json,reference.variant,
+           resource.owner_user_id AS resource_owner_user_id,resource.status AS resource_status,
+           resource.scan_result,resource.deletion_guard_job_id
+         FROM media.media_references reference
+         JOIN media.media_resources resource ON resource.media_resource_id=reference.media_resource_id
+         WHERE reference.media_reference_id=ANY($1::uuid[])
+           AND reference.target_type='submission_draft' AND reference.target_id=$2
+           AND reference.lifecycle_status='active'
+         ORDER BY reference.role,reference.sort_order,reference.media_reference_id
+         FOR SHARE OF reference,resource`,
+        [frozenMediaIds, source.draft_id],
+      )
+      if (mediaResult.rows.length !== frozenMediaIds.length) {
+        throw submissionError('SUBMISSION_MEDIA_BINDING_INVALID', 500, true)
+      }
+      if (mediaResult.rows.some((row) => (
+        row.resource_owner_user_id !== input.userId || row.resource_status !== 'ready' ||
+        row.scan_result !== 'clean' || row.deletion_guard_job_id !== null
+      ))) throw submissionError('SUBMISSION_REVISION_MEDIA_NOT_READY', 422)
+
+      const frozenEvidenceIds = this.uniqueStringArray(
+        source.evidence_draft_ids_json,
+        'SUBMISSION_EVIDENCE_BINDING_INVALID',
+      )
+      const evidenceResult = await client.query<RevisionEvidenceRow>(
+        `SELECT evidence_draft_id,owner_user_id,collector_actor_type,parent_type,parent_id,
+           final_target_kind,target_asset_draft_key,evidence_type,source_channel,field_path,
+           requested_visibility,source_url,internal_record_ref_ciphertext,
+           internal_record_ref_key_version,text_excerpt,status
+         FROM workflow.evidence_drafts WHERE evidence_draft_id=ANY($1::uuid[])
+         ORDER BY evidence_draft_id FOR SHARE`,
+        [frozenEvidenceIds],
+      )
+      if (
+        evidenceResult.rows.length !== frozenEvidenceIds.length ||
+        evidenceResult.rows.some((row) => (
+          row.owner_user_id !== input.userId || row.parent_type !== 'submission_draft' ||
+          row.parent_id !== source.draft_id || row.status !== 'ready'
+        ))
+      ) throw submissionError('SUBMISSION_EVIDENCE_BINDING_INVALID', 500, true)
+      const attachmentResult = await client.query<RevisionAttachmentRow>(
+        `SELECT attachment.attachment_draft_id,attachment.evidence_draft_id,
+           attachment.media_resource_id,attachment.role,attachment.requested_visibility,
+           resource.owner_user_id AS resource_owner_user_id,resource.status AS resource_status,
+           resource.scan_result,resource.deletion_guard_job_id
+         FROM workflow.evidence_attachment_drafts attachment
+         JOIN media.media_resources resource ON resource.media_resource_id=attachment.media_resource_id
+         WHERE attachment.evidence_draft_id=ANY($1::uuid[]) AND attachment.status='active'
+         ORDER BY attachment.evidence_draft_id,attachment.attachment_draft_id
+         FOR SHARE OF attachment,resource`,
+        [frozenEvidenceIds],
+      )
+      if (attachmentResult.rows.some((row) => (
+        row.resource_owner_user_id !== input.userId || row.resource_status !== 'ready' ||
+        row.scan_result !== 'clean' || row.deletion_guard_job_id !== null
+      ))) throw submissionError('SUBMISSION_REVISION_EVIDENCE_ATTACHMENT_NOT_READY', 422)
+
+      const draftId = randomUUID()
+      const mediaMappings = new Map<string, string>()
+      const newMediaIds = mediaResult.rows.map((row) => {
+        const newId = randomUUID()
+        mediaMappings.set(row.media_reference_id, newId)
+        return newId
+      })
+      const rawSourceCoverIds = sourceCore.cover_media_reference_ids
+      if (
+        rawSourceCoverIds !== undefined &&
+        (!Array.isArray(rawSourceCoverIds) || rawSourceCoverIds.some((value) => typeof value !== 'string'))
+      ) throw submissionError('SUBMISSION_COVER_MEDIA_MISMATCH', 500, true)
+      const sourceCoverIds = (rawSourceCoverIds ?? []) as string[]
+      const newCoverIds = sourceCoverIds.map((id) => mediaMappings.get(id)).filter((id): id is string => id !== undefined)
+      if (newCoverIds.length !== sourceCoverIds.length) {
+        throw submissionError('SUBMISSION_COVER_MEDIA_MISMATCH', 500, true)
+      }
+      const payloadSnapshot = validateDraftPayload({
+        ...sourcePayload,
+        project_core: { ...sourceCore, cover_media_reference_ids: newCoverIds },
+      })
+      const newEvidenceIds = evidenceResult.rows.map(() => randomUUID())
+      const inserted = await client.query<DraftRow>(
+        `INSERT INTO workflow.submission_drafts (
+           draft_id,submission_chain_id,owner_user_id,category_id,category_schema_version,
+           check_id,draft_revision,supersedes_draft_id,base_submission_id,payload_snapshot,
+           media_reference_ids_json,evidence_draft_ids_json,asset_drafts_json,status,version,
+           idempotency_key,request_hash,created_at,updated_at,saved_at,expires_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,
+           'editing',1,$14,$15,$16,$16,$16,$17) RETURNING *`,
+        [
+          draftId, source.submission_chain_id, input.userId, sourceDraft.category_id,
+          sourceDraft.category_schema_version, input.checkId, sourceDraft.draft_revision + 1,
+          source.draft_id, source.submission_id, JSON.stringify(payloadSnapshot),
+          JSON.stringify(newMediaIds), JSON.stringify(newEvidenceIds),
+          JSON.stringify(sourceDraft.asset_drafts_json), input.clientRequestId, input.requestHash,
+          input.now, input.expiresAt,
+        ],
+      )
+      for (const [index, row] of mediaResult.rows.entries()) {
+        await client.query(
+          `INSERT INTO media.media_references (
+             media_reference_id,media_resource_id,target_type,target_id,role,alt_text,
+             sort_order,crop_focus_json,variant,lifecycle_status,version,created_at,updated_at
+           ) VALUES ($1,$2,'submission_draft',$3,$4,$5,$6,$7::jsonb,$8,'active',1,$9,$9)`,
+          [
+            newMediaIds[index], row.media_resource_id, draftId, row.role, row.alt_text,
+            row.sort_order, row.crop_focus_json === null ? null : JSON.stringify(row.crop_focus_json),
+            row.variant, input.now,
+          ],
+        )
+      }
+      for (const [index, row] of evidenceResult.rows.entries()) {
+        const newEvidenceId = newEvidenceIds[index]!
+        const sourceAttachments = attachmentResult.rows.filter(
+          (attachment) => attachment.evidence_draft_id === row.evidence_draft_id,
+        )
+        const clonedAttachments = sourceAttachments.map((attachment) => Object.freeze({
+          attachment_draft_id: randomUUID(),
+          media_resource_id: attachment.media_resource_id,
+          role: attachment.role,
+          requested_visibility: attachment.requested_visibility,
+          status: 'active',
+        }))
+        const sourceHash = this.hash(canonicalJson({
+          evidence_type: row.evidence_type,
+          source_channel: row.source_channel,
+          field_path: row.field_path,
+          requested_visibility: row.requested_visibility,
+          source_url: row.source_url,
+          text_excerpt: row.text_excerpt,
+          attachments: clonedAttachments,
+        }))
+        await client.query(
+          `INSERT INTO workflow.evidence_drafts (
+             evidence_draft_id,owner_user_id,collector_actor_type,parent_type,parent_id,
+             final_target_kind,target_asset_draft_key,evidence_type,source_channel,field_path,
+             requested_visibility,source_url,internal_record_ref_ciphertext,
+             internal_record_ref_key_version,text_excerpt,status,source_hash,bound_at,
+             client_request_id,request_hash,version,created_at,updated_at
+           ) VALUES ($1,$2,$3,'submission_draft',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+             'editing',$15,$16,$17,$18,1,$16,$16)`,
+          [
+            newEvidenceId, input.userId, row.collector_actor_type, draftId,
+            row.final_target_kind, row.target_asset_draft_key, row.evidence_type,
+            row.source_channel, row.field_path, row.requested_visibility, row.source_url,
+            row.internal_record_ref_ciphertext, row.internal_record_ref_key_version,
+            row.text_excerpt, sourceHash, input.now,
+            `revision:${draftId}:evidence:${index}`,
+            this.hash(canonicalJson({ source_evidence_draft_id: row.evidence_draft_id })),
+          ],
+        )
+        for (const [attachmentIndex, attachment] of clonedAttachments.entries()) {
+          const sourceAttachment = sourceAttachments[attachmentIndex]!
+          await client.query(
+            `INSERT INTO workflow.evidence_attachment_drafts (
+               attachment_draft_id,evidence_draft_id,media_resource_id,role,
+               requested_visibility,status,version,client_request_id,request_hash,
+               created_at,updated_at
+             ) VALUES ($1,$2,$3,$4,$5,'active',1,$6,$7,$8,$8)`,
+            [
+              attachment.attachment_draft_id, newEvidenceId, attachment.media_resource_id,
+              attachment.role, attachment.requested_visibility,
+              `revision:${draftId}:attachment:${index}:${attachmentIndex}`,
+              this.hash(canonicalJson({ source_attachment_draft_id: sourceAttachment.attachment_draft_id })),
+              input.now,
+            ],
+          )
+        }
+        const snapshot = {
+          parent_type: 'submission_draft', parent_id: draftId,
+          final_target_kind: row.final_target_kind,
+          target_asset_draft_key: row.target_asset_draft_key,
+          evidence_type: row.evidence_type, source_channel: row.source_channel,
+          field_path: row.field_path, requested_visibility: row.requested_visibility,
+          source_url: row.source_url, text_excerpt: row.text_excerpt,
+          status: 'editing', bound: true, completed_at: null,
+          attachments: clonedAttachments,
+        }
+        await client.query(
+          `INSERT INTO workflow.evidence_draft_snapshots (
+             snapshot_id,evidence_draft_id,evidence_draft_version,snapshot_json,
+             source_hash,created_by_user_id,created_at
+           ) VALUES ($1,$2,1,$3::jsonb,$4,$5,$6)`,
+          [randomUUID(), newEvidenceId, JSON.stringify(snapshot), sourceHash, input.userId, input.now],
+        )
+      }
+      const transactionId = randomUUID()
+      await client.query(
+        `INSERT INTO ops.outbox_events (
+           outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
+           payload_json,transaction_id,status,next_attempt_at,created_at
+         ) VALUES ($1,$2,'submission_draft',$3,'submission_revision_draft_created',1,
+           $4::jsonb,$5,'pending',$6,$6)`,
+        [
+          randomUUID(), randomUUID(), draftId,
+          JSON.stringify({
+            base_submission_id: source.submission_id,
+            draft_id: draftId,
+            submission_chain_id: source.submission_chain_id,
+            draft_revision: sourceDraft.draft_revision + 1,
+            result: 'success',
+          }),
+          transactionId, input.now,
+        ],
+      )
+      await client.query(
+        `INSERT INTO audit.audit_logs (
+           operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+           after_hash,diff_json,reason_code,request_id,trace_id,result,created_at
+         ) VALUES ('OP-DRAFT-REVISE','user',digest($1,'sha256'),'[]'::jsonb,
+           'submission_draft',$2,$3,$4::jsonb,'submission_revision_created',$5,$6,'success',$7)`,
+        [
+          input.userId, draftId,
+          this.hash(canonicalJson({ base_submission_id: source.submission_id, draft_id: draftId })),
+          JSON.stringify({
+            supersedes_draft_id: source.draft_id,
+            base_submission_id: source.submission_id,
+            copied_media_count: newMediaIds.length,
+            copied_evidence_count: newEvidenceIds.length,
+          }),
+          input.requestId.slice(0, 64), transactionId, input.now,
+        ],
+      )
+      await client.query('COMMIT')
+      return this.draftProjection(inserted.rows[0]!)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   async getDraft(input: Parameters<SubmissionStore['getDraft']>[0]) {
     const result = await this.pool.query<DraftRow>(
       `SELECT * FROM workflow.submission_drafts WHERE draft_id=$1`,
@@ -547,10 +964,10 @@ export class PostgresSubmissionStore implements SubmissionStore {
       )
       const inserted = await client.query<SubmissionRow>(
         `INSERT INTO workflow.submissions (
-           submission_id,submission_chain_id,draft_id,owner_user_id,snapshot_version,
+           submission_id,submission_chain_id,supersedes_submission_id,draft_id,owner_user_id,snapshot_version,
            payload_snapshot,evidence_draft_ids_json,media_reference_ids_json,review_status,
            review_work_item_id,preview_hash,idempotency_key,request_hash,version,created_at,updated_at
-         ) SELECT $1,draft.submission_chain_id,draft.draft_id,draft.owner_user_id,$2,
+         ) SELECT $1,draft.submission_chain_id,draft.base_submission_id,draft.draft_id,draft.owner_user_id,$2,
              $3::jsonb,$4::jsonb,$5::jsonb,'pending_review',$6,$7,$8,$9,1,$10,$10
            FROM workflow.submission_drafts draft WHERE draft.draft_id=$11
          RETURNING *`,

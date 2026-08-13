@@ -103,7 +103,7 @@ WP-04E：先完成 owner 撤回，再实现审核退回后的新 revision；随�
 
 ## 当前迭代：WP-04E1 提交者撤回
 
-状态：实现完成；等待远端 PostgreSQL 事务 fixture。
+状态：实现完成；已提交远端 PostgreSQL 事务 fixture 验证。
 
 ### 已实现
 
@@ -113,6 +113,27 @@ WP-04E：先完成 owner 撤回，再实现审核退回后的新 revision；随�
 - 若 WorkItem 已领取，额外写内部 `review_assignment_cancelled` Outbox，供通知消费者定向通知原领取者；公共分析事件不携带该人员 ID。
 - OpenAPI 当前为 49 paths / 57 operations；迁移 `000020_submission_withdrawal.sql` 增加 append-only 语义的操作收据。
 
+## 当前迭代：WP-04E2 退回修改与修订链
+
+状态：实现完成；等待远端 PostgreSQL 事务 fixture。
+
+### 已实现
+
+- `OP-DRAFT-REVISE` 只允许 Submission owner 对 `changes_requested` 且 expected_submission_version 一致的快照创建一次后继草稿；路径与 body 的 base_submission_id 必须一致。
+- 创建前由服务端自动重跑规范 URL 的 SSRF 安全、可访问性、品类和公开作品精确查重，不复用超过 30 分钟的审核前检查；失败时不创建半成品修订草稿。
+- 新草稿沿用 submission_chain_id，revision 加一，并分别写入 supersedes_draft_id 与 base_submission_id；数据库唯一约束保证同一退回 Submission 最多产生一个后继草稿。
+- 原 Submission、原 Draft、原 MediaReference 与原 EvidenceDraft 均保持只读。媒体只复制引用并复用已扫描 Resource；封面 ID 在 payload 中原子替换为新引用 ID。
+- 证据复制为绑定新草稿的 editing EvidenceDraft，并复制活动附件引用；用户必须重新核对并完成证据，不能把旧审核快照无条件视为新提交的 ready 证据。
+- 创建事务同时写 `submission_revision_draft_created` Outbox 与 `OP-DRAFT-REVISE` 审计；client_request_id 同载荷重放返回同一草稿，异载荷复用返回 409。
+- 修订草稿再次通过 preview/submit 后生成新的 Submission；新快照写入 supersedes_submission_id 指向被退回 Submission，完整保留 chain，旧快照不覆盖。
+- OpenAPI 当前为 50 paths / 58 operations；迁移 `000021_submission_revision_drafts.sql` 增加 base_submission_id 的唯一后继约束。
+- 新增 PostgreSQL 事务 fixture，覆盖修订幂等、媒体与证据复制、封面 ID 重写、旧对象不可变、Outbox/审计唯一，以及再次提交后的 Submission 前后继关系。
+
+### 明确未开放
+
+- 审核决定写入仍未开放；本迭代 fixture 只构造已合法进入 changes_requested 的前置状态，用于验证修订事务，不提供绕过审核的公开 API。
+- `approved` 后晋级 Project、Version、Event、Evidence 与公开 MediaReference 的发布事务尚未实现。
+
 ### 下一步
 
-WP-04E2：实现 `OP-DRAFT-REVISE`。创建 revision 前由服务端自动重跑 URL 安全、可访问性和同品类查重，避免沿用已超过 30 分钟的旧 check；新 Draft 使用新 ID/revision，旧 Draft/Submission 保持只读。
+WP-04F：实现不可变 ReviewDecision 与 `OP-ADMIN-DECISION`，先覆盖 changes_requested/rejected/approved 的职责分离、原因码和并发决定边界，再进入批准后的发布 worker。

@@ -110,6 +110,7 @@ import {
   SubmissionError,
   type CheckSubmissionUrlCommand,
   type CreateSubmissionDraftCommand,
+  type CreateSubmissionRevisionDraftCommand,
   type GetSubmissionDraftCommand,
   type PatchSubmissionDraftCommand,
   type PreviewSubmissionDraftCommand,
@@ -263,6 +264,7 @@ export interface ApiCommunityService {
 export interface ApiSubmissionService {
   checkUrl(command: CheckSubmissionUrlCommand): Promise<SubmissionUrlCheckProjection>
   createDraft(command: CreateSubmissionDraftCommand): Promise<SubmissionDraftProjection>
+  createRevisionDraft(command: CreateSubmissionRevisionDraftCommand): Promise<SubmissionDraftProjection>
   getDraft(command: GetSubmissionDraftCommand): Promise<SubmissionDraftProjection>
   patchDraft(command: PatchSubmissionDraftCommand): Promise<SubmissionDraftProjection>
   previewDraft(command: PreviewSubmissionDraftCommand): Promise<SubmissionPreviewProjection>
@@ -1419,15 +1421,18 @@ async function handleSubmissionRequest(
   const draftMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)$/)
   const draftPreviewMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)\/preview$/)
   const submissionCollectionPath = '/api/v1/submissions'
+  const submissionRevisionMatch = path.match(/^\/api\/v1\/submissions\/([^/]+)\/revision-drafts$/)
   const submissionWithdrawMatch = path.match(/^\/api\/v1\/submissions\/([^/]+)\/withdraw$/)
   if (
     path !== urlCheckPath && path !== draftCollectionPath && path !== submissionCollectionPath &&
-    draftMatch === null && draftPreviewMatch === null && submissionWithdrawMatch === null
+    draftMatch === null && draftPreviewMatch === null && submissionRevisionMatch === null &&
+    submissionWithdrawMatch === null
   ) return null
   if (
     (path === urlCheckPath && method !== 'POST') ||
     (path === draftCollectionPath && method !== 'POST') ||
     (path === submissionCollectionPath && method !== 'POST') ||
+    (submissionRevisionMatch !== null && method !== 'POST') ||
     (submissionWithdrawMatch !== null && method !== 'POST') ||
     (draftPreviewMatch !== null && method !== 'POST') ||
     (draftMatch !== null && method !== 'GET' && method !== 'PATCH')
@@ -1468,6 +1473,19 @@ async function handleSubmissionRequest(
       userId: session.userId,
       checkId: stringField(body, 'check_id', { maximum: 64 })!,
       categoryId: stringField(body, 'category_id', { maximum: 64 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+  if (submissionRevisionMatch !== null) {
+    exactKeys(body, ['base_submission_id', 'expected_submission_version', 'client_request_id'])
+    const projection = await dependencies.submission.createRevisionDraft({
+      userId: session.userId,
+      submissionId: submissionRevisionMatch[1]!,
+      baseSubmissionId: stringField(body, 'base_submission_id', { maximum: 64 })!,
+      expectedSubmissionVersion: integerField(body, 'expected_submission_version', 1),
       clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
       requestId,
     })

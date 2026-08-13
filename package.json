@@ -53,6 +53,7 @@
     "search:fixture:verify": "npm run fixture:verify -w @vibecheck/search",
     "submission:fixture:verify": "npm run fixture:verify -w @vibecheck/submission",
     "submission:submit:fixture:verify": "npm run fixture:submit:verify -w @vibecheck/submission",
+    "submission:revision:fixture:verify": "npm run fixture:revision:verify -w @vibecheck/submission",
     "workflow:fixture:verify": "npm run fixture:verify -w @vibecheck/workflow",
     "media:fixture:verify": "npm run fixture:verify -w @vibecheck/media",
     "evidence:fixture:verify": "npm run fixture:verify -w @vibecheck/evidence",

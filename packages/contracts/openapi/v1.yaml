@@ -1049,6 +1049,36 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/submissions/{submission_id}/revision-drafts:
+    post:
+      tags: [Submission]
+      operationId: OP-DRAFT-REVISE
+      summary: Create one editable successor draft from a changes-requested Submission snapshot
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: submission_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmissionRevisionDraftCreateRequest' }
+      responses:
+        '201':
+          description: Idempotently created editing draft with cloned media and editable evidence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/submissions/{submission_id}/withdraw:
     post:
       tags: [Submission]
@@ -4271,6 +4301,20 @@ components:
           format: uuid
         category_id:
           $ref: '#/components/schemas/CategoryId'
+        client_request_id:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{8,128}$'
+    SubmissionRevisionDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [base_submission_id, expected_submission_version, client_request_id]
+      properties:
+        base_submission_id:
+          type: string
+          format: uuid
+        expected_submission_version:
+          type: integer
+          minimum: 1
         client_request_id:
           type: string
           pattern: '^[A-Za-z0-9._:-]{8,128}$'
