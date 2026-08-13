@@ -461,7 +461,7 @@ WP-05B2：实现隔离的 VerificationMaterial 控制面、申请人粗粒度扫
 
 ## 当前迭代：WP-05B2a VerificationMaterial 私密控制面
 
-状态：实现完成，待 GitHub Actions PostgreSQL 18 远端门禁确认；异步扫描与超时推进属于 WP-05B2b。
+状态：实现完成；GitHub Actions `31724284272` 已在 PostgreSQL 18 通过全部质量门、第 34 个迁移与私密材料控制面事务 fixture。异步扫描与超时推进属于 WP-05B2b。
 
 ### 已实现
 
