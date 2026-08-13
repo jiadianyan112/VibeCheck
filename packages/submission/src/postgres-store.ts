@@ -85,7 +85,6 @@ interface SubmissionRow extends QueryResultRow {
   readonly payload_snapshot: unknown
   readonly evidence_draft_ids_json: unknown
   readonly media_reference_ids_json: unknown
-  readonly media_reference_ids_json: unknown
   readonly review_status: SubmissionReviewStatus
   readonly review_work_item_id: string
   readonly preview_hash: string
