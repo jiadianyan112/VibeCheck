@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 
 import pg from 'pg'
 
@@ -19,6 +20,7 @@ const referenceId = '94000000-0000-4000-8000-000000000006'
 const evidenceDraftId = '94000000-0000-4000-8000-000000000007'
 const now = new Date('2026-08-13T14:00:00.000Z')
 const canonicalUrl = 'https://submission-submit-fixture.example'
+const canonicalUrlHash = createHash('sha256').update(canonicalUrl, 'utf8').digest()
 const service = new SubmissionService({
   store: new PostgresSubmissionStore(pool),
   urlSafetyResolver: { async resolve() { throw new Error('FIXTURE_RESOLVER_MUST_NOT_RUN') } },
@@ -63,10 +65,13 @@ async function seed(): Promise<void> {
        check_id,owner_user_id,category_id,category_schema_version,input_hash,canonical_url,
        canonical_url_hash,risk_result,access_result,category_result,duplicate_result,
        client_request_id,request_hash,request_id,checked_at,expires_at
-     ) VALUES ($1,$2,'personal_site_portfolio','portfolio.v1',$3,$4,digest($4::text,'sha256'),
-       'allowed','accessible','matched','none','submission-submit-check-0001',$5,
-       'submission-submit-request-0001',$6,$7)`,
-    [checkId, userId, 'a'.repeat(64), canonicalUrl, 'b'.repeat(64), now, new Date('2026-08-13T14:30:00.000Z')],
+     ) VALUES ($1,$2,'personal_site_portfolio','portfolio.v1',$3,$4,$5,
+       'allowed','accessible','matched','none','submission-submit-check-0001',$6,
+       'submission-submit-request-0001',$7,$8)`,
+    [
+      checkId, userId, 'a'.repeat(64), canonicalUrl, canonicalUrlHash, 'b'.repeat(64),
+      now, new Date('2026-08-13T14:30:00.000Z'),
+    ],
   )
   await pool.query(
     `INSERT INTO workflow.submission_drafts (
