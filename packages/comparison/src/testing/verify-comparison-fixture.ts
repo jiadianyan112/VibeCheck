@@ -52,7 +52,10 @@ async function createPortfolioProjects(count: number): Promise<readonly string[]
       const projectId = randomUUID()
       const versionId = randomUUID()
       ids.push(projectId)
-      const url = `https://merge-fixture-${projectId}.example/`
+      // Catalog canonical URLs follow the stable URL contract: the origin root
+      // has no trailing slash. Keeping the fixture canonical avoids creating a
+      // project hash that the submission URL normalizer can never reproduce.
+      const url = `https://merge-fixture-${projectId}.example`
       await client.query(
         `INSERT INTO catalog.projects (
            project_id,current_version_id,current_name,category_id,category_schema_version,
