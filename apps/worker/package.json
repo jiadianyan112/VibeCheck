@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
+    "fixture:project-updated:verify": "tsx src/testing/verify-project-updated-projection.ts",
     "start": "node dist/main.js"
   },
   "dependencies": {

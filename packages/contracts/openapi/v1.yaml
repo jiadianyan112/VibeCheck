@@ -2776,7 +2776,7 @@ components:
         updated_at: { type: string, format: date-time }
     NotificationType:
       type: string
-      enum: [submission_published]
+      enum: [submission_published, project_updated]
     NotificationProjection:
       type: object
       additionalProperties: false

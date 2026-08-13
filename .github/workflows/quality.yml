@@ -98,6 +98,8 @@ jobs:
         run: npm run workflow:review-decision:fixture:verify
       - name: Verify idempotent approved-ProjectUpdate application and atomic catalog version advancement
         run: npm run catalog:project-update:application:verify
+      - name: Verify idempotent ProjectUpdate search projection and recipient-isolated follower notifications
+        run: npm run worker:project-updated:fixture:verify
       - name: Verify idempotent approved-Submission publication and atomic catalog promotion against PostgreSQL
         run: npm run submission:publication:fixture:verify
       - name: Verify recipient-isolated immutable in-app notifications against PostgreSQL

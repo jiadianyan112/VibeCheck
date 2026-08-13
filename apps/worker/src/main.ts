@@ -4,6 +4,7 @@ import { loadServiceConfig } from '@vibecheck/config'
 import {
   PostgresPublishedProjectIndexer,
   PostgresProjectUpdateApplier,
+  PostgresUpdatedProjectIndexer,
   validateLinkPermissionProfileDeployment,
 } from '@vibecheck/catalog'
 import { PostgresNotificationStore } from '@vibecheck/community'
@@ -21,6 +22,7 @@ import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.
 import { createSubmissionPublicationHandler } from './submission-publication-handler.js'
 import { createProjectPublishedHandler } from './project-published-handler.js'
 import { createProjectUpdateApplicationHandler } from './project-update-application-handler.js'
+import { createProjectUpdatedHandler } from './project-updated-handler.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
@@ -36,11 +38,13 @@ const workerId = `${config.serviceName}-${randomUUID()}`
 const publisher = new PostgresSubmissionPublisher(pool)
 const projectUpdateApplier = new PostgresProjectUpdateApplier(pool)
 const publishedProjectIndexer = new PostgresPublishedProjectIndexer(pool)
+const updatedProjectIndexer = new PostgresUpdatedProjectIndexer(pool)
 const notificationStore = new PostgresNotificationStore(pool)
 const handlers = new Map<string, OutboxHandler>([
   ['submission_approved', createSubmissionPublicationHandler(publisher)],
   ['project_update_approved', createProjectUpdateApplicationHandler(projectUpdateApplier)],
   ['project_published', createProjectPublishedHandler(publishedProjectIndexer, notificationStore)],
+  ['project_updated', createProjectUpdatedHandler(updatedProjectIndexer, notificationStore)],
 ])
 const workflowStore = new PostgresWorkflowStore(pool)
 const store: OutboxStore = {

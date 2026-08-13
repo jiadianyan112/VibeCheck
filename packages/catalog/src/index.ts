@@ -108,6 +108,10 @@ export {
   type ProjectUpdateApplicationProjection,
 } from './project-update-application.js'
 export {
+  PostgresUpdatedProjectIndexer,
+  type UpdatedProjectIndexProjection,
+} from './updated-project-indexer.js'
+export {
   projectUpdateTypes,
   type CreateProjectUpdateCommand,
   type GetProjectUpdateCommand,

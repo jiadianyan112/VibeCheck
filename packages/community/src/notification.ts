@@ -4,7 +4,7 @@ import type { Pool, QueryResultRow } from 'pg'
 
 import { communityError } from './errors.js'
 
-export const notificationTypes = ['submission_published'] as const
+export const notificationTypes = ['submission_published', 'project_updated'] as const
 export type NotificationType = (typeof notificationTypes)[number]
 
 export interface NotificationProjection {
@@ -51,6 +51,59 @@ interface ReceiptRow extends QueryResultRow {
 
 export class PostgresNotificationStore {
   constructor(private readonly pool: Pool) {}
+
+  async createProjectUpdatedNotifications(input: Readonly<{
+    projectId: string
+    versionId: string
+    updateId: string
+    reviewDecisionId: string
+    eventId: string
+    now: Date
+  }>): Promise<number> {
+    const result = await this.pool.query<{
+      readonly source_present: boolean
+      readonly inserted_count: number
+    } & QueryResultRow>(
+      `WITH source AS (
+         SELECT project.current_name
+         FROM workflow.project_update_application_receipts receipt
+         JOIN catalog.project_updates update_record ON update_record.update_id=receipt.update_id
+         JOIN catalog.projects project ON project.project_id=receipt.project_id
+         JOIN catalog.project_versions version ON version.version_id=receipt.version_id
+         JOIN catalog.events event ON event.event_id=receipt.event_id
+         WHERE receipt.project_id=$1 AND receipt.version_id=$2 AND receipt.update_id=$3
+           AND receipt.review_decision_id=$4 AND receipt.event_id=$5
+           AND update_record.status='applied' AND update_record.project_id=project.project_id
+           AND version.project_id=project.project_id
+           AND event.project_id=project.project_id AND event.version_id=version.version_id
+           AND event.source_object_type='project_update' AND event.source_object_id=update_record.update_id
+       ), recipients AS (
+         SELECT DISTINCT interaction.user_id,source.current_name
+         FROM source
+         JOIN community.project_interactions interaction ON interaction.project_id=$1
+          AND interaction.interaction_type='follow' AND interaction.state=true
+       ), inserted AS (
+         INSERT INTO community.notifications (
+           notification_id,recipient_user_id,notification_type,title,body_summary,
+           target_type,target_id,event_id,dedup_key,created_at
+         )
+         SELECT gen_random_uuid(),recipient.user_id,'project_updated','关注的作品有更新',
+           left(recipient.current_name || ' 发布了新的作品信息。',500),
+           'project',$1,$5,$6,$7
+         FROM recipients recipient
+         ON CONFLICT (recipient_user_id,dedup_key) DO NOTHING
+         RETURNING 1
+       )
+       SELECT EXISTS (SELECT 1 FROM source) AS source_present,
+         (SELECT count(*)::int FROM inserted) AS inserted_count`,
+      [input.projectId, input.versionId, input.updateId, input.reviewDecisionId,
+        input.eventId, `project_updated:${input.updateId}`, input.now],
+    )
+    if (!result.rows[0]?.source_present) {
+      throw communityError('PROJECT_UPDATED_NOTIFICATION_SOURCE_INVALID', 409)
+    }
+    return result.rows[0].inserted_count
+  }
 
   async createProjectPublishedNotification(input: Readonly<{
     projectId: string

@@ -388,7 +388,7 @@ WP-05A6：由 worker 消费 `project_update_approved`，重新锁定批准决定
 
 ## 当前迭代：WP-05A6 ProjectUpdate 原子应用
 
-状态：本地实现与静态验证完成，待远端 PostgreSQL 18 事务 fixture 验证。
+状态：实现完成；GitHub Actions `31714707438` 已在 PostgreSQL 18 通过全部质量门、迁移、原子应用与幂等收据 fixture。
 
 ### 已实现
 
@@ -411,3 +411,26 @@ WP-05A6：由 worker 消费 `project_update_approved`，重新锁定批准决定
 ### 下一步
 
 WP-05A7：实现 `project_updated` 投影消费者，使用当前 Version 重建搜索文档，并按关注关系生成收件人隔离且幂等的作品更新通知；随后进入作者身份验证申请与 Link 创建的低频审核分支。
+
+## 当前迭代：WP-05A7 ProjectUpdate 搜索与通知回流
+
+状态：本地实现与静态验证完成，待远端 PostgreSQL 18 投影 fixture 验证。
+
+### 已实现
+
+- worker 新增 `project_updated` v2 handler；当前只接受 source_type=project_update、initiator_type=verified_author、update_type=author_content_update、result=success 的已实现作者分支，并强制 aggregate/project/version/update/decision/Event 全字段绑定。
+- 搜索投影器从不可变 ProjectUpdateApplicationReceipt 反查 applied Update、批准决定、Version 与 Event，不信任 Outbox payload 作为公开内容源；按 Version Schema 重建结构化文档和全文检索字段。
+- 搜索 upsert 只允许更高 version_number 覆盖；重复事件返回 already_current，乱序旧事件返回 already_newer，均不会把检索结果降级到旧 Version。
+- 关注通知只从 `community.project_interactions(type=follow,state=true)` 生成；每个 recipient+`project_updated:{update_id}` 唯一，重复投递不重复创建，且通知目标绑定 Project 与本次 Event。
+- NotificationType/OpenAPI 增加 `project_updated`，P16 既有归属校验、游标、未读计数与 read-state 幂等接口继续复用，不向其他账户泄露通知。
+- PostgreSQL fixture 创建明确关注者后验证搜索 Version/名称更新、单收件人单通知、未读状态和重复投递幂等；worker 单测验证先索引后通知以及跨 aggregate/非作者分支拒绝。
+
+### 明确未授权
+
+- A03 admin_project_edit 与 system_job 虽属于冻结的 project_updated v2 联合类型，但对应事实事务尚未实现；当前 handler 明确拒绝，不能伪造成作者更新。
+- service analytics v2 的 metric subject 三元组仍须 WP-06 身份桥服务完成；本轮 Outbox 不写自然人 ID，也不以 reviewer/worker 代替作者指标主体。
+- 站外邮件/短信/推送未获产品渠道与重试策略确认；本轮只创建站内通知。
+
+### 下一步
+
+WP-05B1：实现已有作品“我是作者”的 VerificationRequest/VerificationMaterial 私密申请链；申请只进入低频人工审核，不自动授予 CreatorAccountLink，也不创建重复 Project。
