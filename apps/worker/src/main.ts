@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 
 import { loadServiceConfig } from '@vibecheck/config'
-import { PostgresPublishedProjectIndexer } from '@vibecheck/catalog'
+import {
+  PostgresPublishedProjectIndexer,
+  validateLinkPermissionProfileDeployment,
+} from '@vibecheck/catalog'
 import { PostgresNotificationStore } from '@vibecheck/community'
 import {
   claimOutboxEvents,
@@ -26,6 +29,7 @@ const pool = createDatabasePool({
   applicationName: config.serviceName,
   maxConnections: 5,
 })
+await validateLinkPermissionProfileDeployment(pool)
 const workerId = `${config.serviceName}-${randomUUID()}`
 const publisher = new PostgresSubmissionPublisher(pool)
 const publishedProjectIndexer = new PostgresPublishedProjectIndexer(pool)

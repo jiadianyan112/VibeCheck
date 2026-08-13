@@ -20,6 +20,7 @@
     "asset:resolve:verify": "tsx src/testing/verify-asset-resolution.ts",
     "fixture:load": "tsx src/testing/load-synthetic-fixture.ts",
     "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
+    "profile:verify": "tsx src/testing/verify-link-permission-profiles.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },

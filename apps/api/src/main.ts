@@ -11,6 +11,7 @@ import {
   NodePinnedAssetHttpProbe,
   PostgresAssetResolutionStore,
   PostgresCatalogStore,
+  validateLinkPermissionProfileDeployment,
 } from '@vibecheck/catalog'
 import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
 import {
@@ -75,6 +76,7 @@ const pool = createDatabasePool({
   ssl: config.databaseSsl,
   applicationName: config.serviceName,
 })
+await validateLinkPermissionProfileDeployment(pool)
 const community = communityConfig.enabled
   ? new CommunityService({
       store: new PostgresCommunityStore(pool),

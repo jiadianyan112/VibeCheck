@@ -86,3 +86,13 @@ export {
   type TimePrecision,
 } from './types.js'
 export { parseProjectSnapshot } from './validation.js'
+export {
+  authorContentP0V1FieldPaths,
+  computeLinkPermissionProfileHash,
+  linkPermissionProfiles,
+  validateLinkPermissionProfileDeployment,
+  type LinkPermissionCapability,
+  type LinkPermissionProfileDefinition,
+  type LinkPermissionProfileFamily,
+  type LinkPermissionProfileId,
+} from './link-permission-profile.js'

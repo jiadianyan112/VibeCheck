@@ -252,7 +252,7 @@ WP-04I：收紧 Submission asset_drafts 的审核前安全边界；在 safe_web_
 
 ## 当前迭代：WP-04I 外部资产提交安全闸门
 
-状态：实现完成；进入本地与远端质量门验证。
+状态：实现完成；GitHub Actions `31705527131` 已在 PostgreSQL 18 通过全部质量门与安全闸门 fixture。
 
 ### 已实现
 
@@ -270,4 +270,25 @@ WP-04I：收紧 Submission asset_drafts 的审核前安全边界；在 safe_web_
 
 ### 下一步
 
-WP-05A：实现 ProjectUpdate 草稿与审核入口，严格复用现有 Project 稳定 ID、Version append-only、Evidence/Media 安全边界和后台高风险确认，不允许直接覆盖当前公开 Version。
+WP-05A1：先部署 ProjectUpdate 必需的固定 LinkPermissionProfile 并建立跨服务 fail-closed 校验；随后实现 CreatorAccountLink/AuthorRelation 授权解析，不能从前端角色或旧原型 creatorId 推断作者权限。
+
+## 当前迭代：WP-05A1 固定作者权限档案基线
+
+状态：实现完成；本地类型检查、单测、构建、部署蓝图检查与 lint 已通过，进入远端 PostgreSQL 质量门验证；尚未给任何用户授予作者权限。
+
+### 已实现
+
+- 新增迁移 `000027_link_permission_profiles.sql`，P0 只部署不可变 `OWNER_V1` 与 `MANAGER_V1` 两条记录，不提供创建、更新、停用、迁移或 V2 接口。
+- 两条 Profile 共用 PRD 冻结的 43 个 `AUTHOR_CONTENT_P0_V1` exact JSON Pointer；owner 能力固定为 ownership.view/project_update.create/project_update.submit，manager 不含 ownership.view。
+- 数据库函数、catalog 领域模块分别按五字段、数组 Unicode code point 排序去重、无空白 UTF-8 JSON 和 SHA-256 独立重算；结果必须精确等于 PRD 固定 hash，否则迁移或服务启动失败关闭。
+- API 与 worker 均在接收流量/消费事件前读取数据库并独立复核恰好两条 Profile 的 ID、family、version、集合和 hash；仅保留 hash 文本但篡改能力或字段路径同样返回 `LINK_PERMISSION_PROFILE_INVALID`。
+- PostgreSQL fixture 验证数据库重算值、43 路径和不可更新/删除触发器；单测验证数组顺序不影响规范 hash、字段或能力漂移必然阻断。
+
+### 明确未授权
+
+- 本轮没有 CreatorAccountLink 表、VerificationRequest 审批或 ProjectUpdate 写 API，因此 Profile 记录本身不能授予权限。
+- 下一步必须沿 session user→active CreatorAccountLink→exact Profile→canonical Creator→active AuthorRelation 解析，并取 Profile ceiling 与 Relation fields 交集；不得只凭 identity role=verified_author 放行。
+
+### 下一步
+
+WP-05A2：建立 CreatorAccountLink 的不可变来源、owner 条件唯一键和授权只读解析器，再为 VerificationRequest 审批与 ProjectUpdate 创建提供同一后端授权链。
