@@ -137,3 +137,26 @@ WP-04E：先完成 owner 撤回，再实现审核退回后的新 revision；随�
 ### 下一步
 
 WP-04F：实现不可变 ReviewDecision 与 `OP-ADMIN-DECISION`，先覆盖 changes_requested/rejected/approved 的职责分离、原因码和并发决定边界，再进入批准后的发布 worker。
+
+## 当前迭代：WP-04F0 后台高风险预览与确认边界
+
+状态：实现完成，进入本地 PostgreSQL/远端质量门验证；尚未开放任何审核决定或事实写入。
+
+### 已实现
+
+- `OP-ADMIN-PREVIEW` 冻结 actor、主 session 哈希、roles_version、operation_type、目标集合、expected_versions、proposed_diff、原因、可选 claim 哈希与冲突主体版本；原始 session、claim 与 preview token 不写普通日志或数据库明文。
+- 预览摘要使用稳定键序列化计算 diff/impact/confirmation SHA-256；服务端返回确定性影响摘要，preview token 为 256-bit 随机值，TTL 固定 10 分钟。
+- `OP-ADMIN-CONFIRM` 在数据库锁内复检主 session、账户状态、roles_version、预览摘要和冲突主体版本。`recent_auth_at≤5分钟` 时直接签发；否则把预览标记为 `reauth_required` 并返回 `REAUTH_REQUIRED`，不得降级执行。
+- 已被挑战的预览必须消费身份域签发且绑定同 actor、主 session、roles_version、preview 哈希的一次性 `AdminReauthGrant`；仅更新原主会话近期认证，不轮换 session。
+- confirm token 绑定服务端 confirm_grant_id，通过 HMAC 确定性恢复；数据库只存 token 哈希。TTL 固定 120 秒，同 session+preview+confirm_request_id 重放返回同一 token，异会话/角色/摘要/冲突版本失败关闭。
+- 新增 append-only 安全事件、不可删除审计、数据库形状约束和 PostgreSQL fixture；迁移为 `000022_admin_operation_security.sql`。
+- OpenAPI 当前为 52 paths / 60 operations；API 仅接受登录编辑/管理员的同源 CSRF 请求，并把真实 session cookie 只传到服务端安全域做绑定哈希。
+
+### 明确未开放
+
+- confirm token 尚不能直接改变 Submission、WorkItem、Project 或其他领域事实；后续 `OP-ADMIN-DECISION`/`OP-ADMIN-EXECUTE` 必须在其业务事务内原子校验并消费，不能先消费再写事实，也不能绕过 preview/confirm。
+- 本轮只完成通用安全控制面；ownership_case 的最新冲突集合重算、Creator Profile handoff、合并碰撞矩阵等资源专属 preview 校验仍由相应领域 handler 接入。
+
+### 下一步
+
+WP-04F1：实现 Submission 分支的不可变 `ReviewDecision v1` 与 `OP-ADMIN-DECISION`，要求有效 claim+preview+confirm，并把决定、Submission 审核态、WorkItem typed decision ref、Outbox 和审计写入同一事务。

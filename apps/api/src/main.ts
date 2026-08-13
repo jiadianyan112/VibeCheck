@@ -39,7 +39,12 @@ import {
 import { MediaService, PostgresMediaStore } from '@vibecheck/media'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submission'
-import { PostgresWorkflowStore, WorkflowService } from '@vibecheck/workflow'
+import {
+  AdminOperationSecurityService,
+  PostgresAdminOperationSecurityStore,
+  PostgresWorkflowStore,
+  WorkflowService,
+} from '@vibecheck/workflow'
 import { fileURLToPath } from 'node:url'
 
 import { close, createApiServer, listen } from './server.js'
@@ -129,12 +134,25 @@ if (workflowConfig.enabled && !identityConfig.enabled) {
 const workflow = workflowConfig.enabled
   ? new WorkflowService(new PostgresWorkflowStore(pool), workflowConfig)
   : undefined
+const adminOperations = workflowConfig.enabled
+  ? new AdminOperationSecurityService(
+      new PostgresAdminOperationSecurityStore(pool),
+      {
+        tokenSecret: workflowConfig.cursorSecret,
+        authTokenSecret: identityConfig.authTokenSecret,
+        previewTtlSeconds: 600,
+        confirmTtlSeconds: 120,
+        recentAuthWindowSeconds: 300,
+      },
+    )
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
   ...(analytics ? { analytics } : {}),
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
+  ...(adminOperations ? { adminOperations } : {}),
   ...(media ? { media } : {}),
   ...(evidence ? { evidence } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),

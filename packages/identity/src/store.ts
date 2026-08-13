@@ -659,14 +659,16 @@ export class PostgresIdentityStore {
     }
     const grant = await client.query<{ reauth_grant_id: string }>(
       `INSERT INTO iam.admin_reauth_grants (
-         user_id,primary_session_id_hash,preview_token_hash,roles_version,status,issued_at,expires_at
-       ) VALUES ($1,$2,$3,$4,'active',$5,$6)
+         user_id,primary_session_id_hash,preview_token_hash,roles_version,auth_flow_id,
+         recent_auth_at,status,issued_at,expires_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,'active',$6,$7)
        RETURNING reauth_grant_id`,
       [
         active.user_id,
         input.currentSessionHash,
         challenge.preview_token_hash,
         Number(active.roles_version),
+        challenge.auth_flow_id,
         input.now,
         input.reauthExpiresAt,
       ],

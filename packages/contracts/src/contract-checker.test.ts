@@ -55,6 +55,8 @@ describe('OpenAPI contract', () => {
       'OP-EVID-DRAFT-WITHDRAW',
       'OP-EVID-ATTACH-CREATE',
       'OP-EVID-ATTACH-DELETE',
+      'OP-ADMIN-PREVIEW',
+      'OP-ADMIN-CONFIRM',
       'OP-WORK-QUEUE',
       'OP-ADMIN-CLAIM',
       'OP-ADMIN-HEARTBEAT',
@@ -66,7 +68,7 @@ describe('OpenAPI contract', () => {
       'OP-ASSET-RESOLVE',
       'OP-CREATOR-GET',
     ])
-    assert.equal(result.pathCount, 50)
+    assert.equal(result.pathCount, 52)
   })
 
   it('rejects a dangling local schema reference', () => {

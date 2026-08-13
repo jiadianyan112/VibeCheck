@@ -124,9 +124,14 @@ import {
 } from '@vibecheck/submission'
 import {
   WorkflowError,
+  type AdminOperationConfirmProjection,
+  type AdminOperationPreviewProjection,
+  type AdminOperationTarget,
+  type ConfirmAdminOperationCommand,
   type ClaimReviewWorkItemCommand,
   type HeartbeatReviewWorkItemCommand,
   type ListReviewWorkItemsCommand,
+  type PreviewAdminOperationCommand,
   type ReleaseReviewWorkItemCommand,
   type ReviewActor,
   type ReviewClaimProjection,
@@ -279,6 +284,11 @@ export interface ApiWorkflowService {
   releaseWorkItem(command: ReleaseReviewWorkItemCommand): Promise<ReviewWorkItemProjection>
 }
 
+export interface ApiAdminOperationSecurityService {
+  preview(command: PreviewAdminOperationCommand): Promise<AdminOperationPreviewProjection>
+  confirm(command: ConfirmAdminOperationCommand): Promise<AdminOperationConfirmProjection>
+}
+
 export interface ApiMediaService {
   getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection>
   createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection>
@@ -315,6 +325,7 @@ export interface ApiServerDependencies {
   readonly search?: ApiSearchService
   readonly submission?: ApiSubmissionService
   readonly workflow?: ApiWorkflowService
+  readonly adminOperations?: ApiAdminOperationSecurityService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
   readonly staticDirectory?: string
@@ -1307,6 +1318,105 @@ function reviewActor(session: SessionProjection): ReviewActor {
     roles: Object.freeze([...session.roles]),
     permissions: Object.freeze([...session.permissions]),
   })
+}
+
+function adminOperationTargets(value: unknown): readonly AdminOperationTarget[] {
+  if (!Array.isArray(value)) throw new WorkflowError('ADMIN_OPERATION_TARGETS_INVALID', 422)
+  return Object.freeze(value.map((item) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new WorkflowError('ADMIN_OPERATION_TARGETS_INVALID', 422)
+    }
+    const object = item as Record<string, unknown>
+    exactKeys(object, ['target_type', 'target_id'])
+    return Object.freeze({
+      target_type: stringField(object, 'target_type', { maximum: 64 })!,
+      target_id: stringField(object, 'target_id', { maximum: 128 })!,
+    })
+  }))
+}
+
+async function handleAdminOperationSecurityRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const previewPath = '/api/v1/admin/operations/preview'
+  const confirmPath = '/api/v1/admin/operations/confirm'
+  if (path !== previewPath && path !== confirmPath) return null
+  if (method !== 'POST') return null
+  if (!dependencies.adminOperations) {
+    throw new WorkflowError('ADMIN_OPERATION_SECURITY_UNAVAILABLE', 503, true)
+  }
+  exactWorkflowQueryKeys(url.searchParams, [])
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  if (!session.roles.includes('admin') && !session.roles.includes('editor')) {
+    throw new WorkflowError('ADMIN_OPERATION_FORBIDDEN', 403)
+  }
+  if (session.accountStatus === 'restricted') throw new WorkflowError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new WorkflowError('ORIGIN_INVALID', 403)
+  requireWorkflowMutationCsrf(request)
+  const sessionToken = parseCookies(request)[authCookieNames.session]
+  if (!sessionToken) throw new WorkflowError('SESSION_INVALID', 401)
+  const body = await readJsonBody(request)
+  const actor = reviewActor(session)
+  if (path === previewPath) {
+    exactKeys(body, [
+      'operation_type', 'targets', 'expected_versions', 'proposed_diff', 'reason_code',
+      'claim_token', 'expected_conflict_principal_version',
+    ])
+    const claimToken = nullableStringField(body, 'claim_token', 43)
+    const rawConflictVersion = body.expected_conflict_principal_version
+    if (
+      rawConflictVersion !== undefined && rawConflictVersion !== null &&
+      (!Number.isSafeInteger(rawConflictVersion) || (rawConflictVersion as number) < 1)
+    ) throw new WorkflowError('EXPECTED_CONFLICT_PRINCIPAL_VERSION_INVALID', 422)
+    const projection = await dependencies.adminOperations.preview({
+      actor,
+      sessionToken,
+      operationType: stringField(body, 'operation_type', { maximum: 64 })!,
+      targets: adminOperationTargets(body.targets),
+      expectedVersions: objectField(body, 'expected_versions') as Readonly<Record<string, number>>,
+      proposedDiff: objectField(body, 'proposed_diff'),
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      claimToken: claimToken ?? null,
+      expectedConflictPrincipalVersion: typeof rawConflictVersion === 'number'
+        ? rawConflictVersion
+        : null,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  exactKeys(body, [
+    'preview_token', 'confirmation_summary_hash', 'confirm_request_id', 'reauth_grant_id',
+    'expected_conflict_principal_version',
+  ])
+  const rawConflictVersion = body.expected_conflict_principal_version
+  if (
+    rawConflictVersion !== undefined && rawConflictVersion !== null &&
+    (!Number.isSafeInteger(rawConflictVersion) || (rawConflictVersion as number) < 1)
+  ) throw new WorkflowError('EXPECTED_CONFLICT_PRINCIPAL_VERSION_INVALID', 422)
+  const projection = await dependencies.adminOperations.confirm({
+    actor,
+    sessionToken,
+    previewToken: stringField(body, 'preview_token', { minimum: 43, maximum: 43 })!,
+    confirmationSummaryHash: stringField(body, 'confirmation_summary_hash', {
+      minimum: 64, maximum: 64,
+    })!,
+    confirmRequestId: stringField(body, 'confirm_request_id', { maximum: 64 })!,
+    reauthGrantId: nullableStringField(body, 'reauth_grant_id', 36) ?? null,
+    expectedConflictPrincipalVersion: typeof rawConflictVersion === 'number'
+      ? rawConflictVersion
+      : null,
+    requestId,
+  })
+  writeJson(response, projection.replayed ? 200 : 201, projection, requestId)
+  return projection.replayed ? 200 : 201
 }
 
 async function handleWorkflowRequest(
@@ -2458,6 +2568,12 @@ export function createApiServer(
                       if (submissionStatus !== null) {
                         statusCode = submissionStatus
                       } else {
+                    const adminOperationStatus = await handleAdminOperationSecurityRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (adminOperationStatus !== null) {
+                      statusCode = adminOperationStatus
+                    } else {
                     const workflowStatus = await handleWorkflowRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -2517,6 +2633,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                   }

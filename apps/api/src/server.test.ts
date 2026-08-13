@@ -74,9 +74,13 @@ import type {
   SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
 import type {
+  AdminOperationConfirmProjection,
+  AdminOperationPreviewProjection,
   ClaimReviewWorkItemCommand,
+  ConfirmAdminOperationCommand,
   HeartbeatReviewWorkItemCommand,
   ListReviewWorkItemsCommand,
+  PreviewAdminOperationCommand,
   ReleaseReviewWorkItemCommand,
   ReviewClaimProjection,
   ReviewWorkItemPage,
@@ -88,6 +92,7 @@ import {
   createApiServer,
   type ApiCatalogService,
   type ApiAnalyticsService,
+  type ApiAdminOperationSecurityService,
   type ApiAssetResolutionService,
   type ApiComparisonService,
   type ApiCommunityService,
@@ -127,6 +132,7 @@ async function start(
   analytics?: ApiAnalyticsService,
   submission?: ApiSubmissionService,
   workflow?: ApiWorkflowService,
+  adminOperations?: ApiAdminOperationSecurityService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -139,7 +145,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -159,6 +165,7 @@ async function start(
     ...(analytics ? { analytics } : {}),
     ...(submission ? { submission } : {}),
     ...(workflow ? { workflow } : {}),
+    ...(adminOperations ? { adminOperations } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -983,6 +990,100 @@ class FakeWorkflowService implements ApiWorkflowService {
     return Object.freeze({ ...this.item, version: 4 })
   }
 }
+
+class FakeAdminOperationSecurityService implements ApiAdminOperationSecurityService {
+  previewCommand: PreviewAdminOperationCommand | null = null
+  confirmCommand: ConfirmAdminOperationCommand | null = null
+
+  async preview(command: PreviewAdminOperationCommand): Promise<AdminOperationPreviewProjection> {
+    this.previewCommand = command
+    return Object.freeze({
+      preview_token: 'p'.repeat(43),
+      operation_type: command.operationType,
+      targets: command.targets,
+      expected_versions: command.expectedVersions,
+      diff: command.proposedDiff,
+      impact: Object.freeze({
+        target_count: command.targets.length,
+        expected_version_count: Object.keys(command.expectedVersions).length,
+        changed_top_level_fields: Object.freeze(Object.keys(command.proposedDiff)),
+      }),
+      confirmation_summary_hash: 'a'.repeat(64),
+      expires_at: '2026-08-10T00:10:00.000Z',
+      conflict_principal_version: command.expectedConflictPrincipalVersion,
+    })
+  }
+
+  async confirm(command: ConfirmAdminOperationCommand): Promise<AdminOperationConfirmProjection> {
+    this.confirmCommand = command
+    return Object.freeze({
+      confirm_token: 'c'.repeat(43),
+      expires_at: '2026-08-10T00:02:00.000Z',
+      binding_summary: Object.freeze({
+        operation_type: 'submission_review',
+        target_count: 1,
+        confirmation_summary_hash: command.confirmationSummaryHash,
+      }),
+      assurance_source: 'recent_session',
+      conflict_principal_version: command.expectedConflictPrincipalVersion,
+      replayed: false,
+    })
+  }
+}
+
+test('admin operation preview and confirm preserve the primary session and exact security inputs', async () => {
+  const adminOperations = new FakeAdminOperationSecurityService()
+  const runtime = await start(
+    async () => undefined,
+    new StaffIdentityService(),
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined,
+    adminOperations,
+  )
+  const sessionToken = 'session-token-with-at-least-thirty-two-characters'
+  const cookie = `vc_session=${sessionToken}; vc_csrf=${session.csrfToken}`
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie,
+    'x-csrf-token': session.csrfToken,
+  }
+  try {
+    const preview = await fetch(`${runtime.baseUrl}/api/v1/admin/operations/preview`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        operation_type: 'submission_review',
+        targets: [{ target_type: 'submission', target_id: 'submission-1' }],
+        expected_versions: { work_item: 2, submission: 1 },
+        proposed_diff: { review_status: 'approved' },
+        reason_code: 'submission_approved',
+        claim_token: 'x'.repeat(43),
+        expected_conflict_principal_version: null,
+      }),
+    })
+    assert.equal(preview.status, 200)
+    const previewBody = await preview.json() as AdminOperationPreviewProjection
+    assert.equal(adminOperations.previewCommand?.sessionToken, sessionToken)
+    assert.equal(adminOperations.previewCommand?.actor.roles.includes('editor'), true)
+    assert.equal(adminOperations.previewCommand?.claimToken, 'x'.repeat(43))
+
+    const confirm = await fetch(`${runtime.baseUrl}/api/v1/admin/operations/confirm`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        preview_token: previewBody.preview_token,
+        confirmation_summary_hash: previewBody.confirmation_summary_hash,
+        confirm_request_id: 'confirm_request_0001',
+        reauth_grant_id: null,
+        expected_conflict_principal_version: null,
+      }),
+    })
+    assert.equal(confirm.status, 201)
+    assert.equal(adminOperations.confirmCommand?.sessionToken, sessionToken)
+    assert.equal(adminOperations.confirmCommand?.previewToken, previewBody.preview_token)
+  } finally {
+    await runtime.stop()
+  }
+})
 
 test('review work-item queue and lease mutations use staff session, CSRF and frozen operation shapes', async () => {
   const workflow = new FakeWorkflowService()

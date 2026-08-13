@@ -30,6 +30,7 @@ describe('discoverMigrations', () => {
         '000019_submission_preview_and_submit.sql',
         '000020_submission_withdrawal.sql',
         '000021_submission_revision_drafts.sql',
+        '000022_admin_operation_security.sql',
       ],
     )
     for (const migration of migrations) {
