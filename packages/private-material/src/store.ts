@@ -243,8 +243,9 @@ export class PostgresPrivateMaterialStore {
           `INSERT INTO ops.outbox_events (
            event_id,aggregate_type,aggregate_id,event_name,event_version,payload_json,
              transaction_id,status,next_attempt_at,created_at
-           ) VALUES ($1,'verification_material',$2,'verification_material_scan_requested',1,
-             jsonb_build_object('material_id',$2::text),$3,'pending',$4,$4)`,
+           ) VALUES ($1::uuid,'verification_material',$2::varchar,'verification_material_scan_requested',1,
+             jsonb_build_object('material_id',$2::varchar),$3::uuid,'pending',
+             $4::timestamptz,$4::timestamptz)`,
           [eventId, input.materialId, randomUUID(), input.now],
         )
       }
