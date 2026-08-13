@@ -101,3 +101,18 @@ export {
   type ProjectAuthorAuthorization,
   type ProjectAuthorGrant,
 } from './author-authorization.js'
+export { ProjectUpdateService, type AuthorAuthorizationPort, type ProjectUpdateStorePort } from './project-update-service.js'
+export { PostgresProjectUpdateStore } from './project-update-store.js'
+export {
+  projectUpdateTypes,
+  type CreateProjectUpdateCommand,
+  type GetProjectUpdateCommand,
+  type PatchProjectUpdateCommand,
+  type PreviewProjectUpdateCommand,
+  type ProjectUpdateAuthorizationSnapshot,
+  type ProjectUpdateBeforeAfter,
+  type ProjectUpdateDiffInput,
+  type ProjectUpdateProjection,
+  type ProjectUpdatePreviewProjection,
+  type ProjectUpdateType,
+} from './project-update-types.js'

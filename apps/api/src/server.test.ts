@@ -18,6 +18,12 @@ import type {
   EventPage,
   ProjectListProjection,
   ProjectProjection,
+  CreateProjectUpdateCommand,
+  GetProjectUpdateCommand,
+  PatchProjectUpdateCommand,
+  PreviewProjectUpdateCommand,
+  ProjectUpdatePreviewProjection,
+  ProjectUpdateProjection,
 } from '@vibecheck/catalog'
 import {
   ComparisonError,
@@ -105,6 +111,7 @@ import {
   type ApiIdentityService,
   type ApiPendingActionService,
   type ApiPendingActionExecutor,
+  type ApiProjectUpdateService,
   type ApiSearchService,
   type ApiSubmissionService,
   type ApiWorkflowService,
@@ -141,6 +148,7 @@ async function start(
   adminOperations?: ApiAdminOperationSecurityService,
   reviewDecisions?: ApiReviewDecisionService,
   notifications?: ApiNotificationService,
+  projectUpdates?: ApiProjectUpdateService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -153,7 +161,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -176,6 +184,7 @@ async function start(
     ...(adminOperations ? { adminOperations } : {}),
     ...(reviewDecisions ? { reviewDecisions } : {}),
     ...(notifications ? { notifications } : {}),
+    ...(projectUpdates ? { projectUpdates } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -465,6 +474,100 @@ class FakeNotificationService implements ApiNotificationService {
       read_at: '2026-08-10T00:00:00.000Z',
     })
   }
+}
+
+class FakeProjectUpdateService implements ApiProjectUpdateService {
+  createCommand: CreateProjectUpdateCommand | null = null
+  getCommand: GetProjectUpdateCommand | null = null
+  patchCommand: PatchProjectUpdateCommand | null = null
+  previewCommand: PreviewProjectUpdateCommand | null = null
+
+  getCreateCommand(): CreateProjectUpdateCommand | null { return this.createCommand }
+  getPatchCommand(): PatchProjectUpdateCommand | null { return this.patchCommand }
+
+  async create(command: CreateProjectUpdateCommand): Promise<ProjectUpdateProjection> {
+    this.createCommand = command
+    return projectUpdateProjection(command.userId, command.projectId, command.baseVersionId, 1, [])
+  }
+
+  async get(command: GetProjectUpdateCommand): Promise<ProjectUpdateProjection> {
+    this.getCommand = command
+    return projectUpdateProjection(command.userId, '62000000-0000-4000-8000-000000000001',
+      '63000000-0000-4000-8000-000000000001', 1, [])
+  }
+
+  async patch(command: PatchProjectUpdateCommand): Promise<ProjectUpdateProjection> {
+    this.patchCommand = command
+    return projectUpdateProjection(command.userId, '62000000-0000-4000-8000-000000000001',
+      '63000000-0000-4000-8000-000000000001', command.expectedVersion + 1, command.diff)
+  }
+
+  async preview(command: PreviewProjectUpdateCommand): Promise<ProjectUpdatePreviewProjection> {
+    this.previewCommand = command
+    return Object.freeze({
+      update_id: command.updateId,
+      version: command.expectedVersion,
+      preview_hash: 'a'.repeat(64),
+      base_version_id: '63000000-0000-4000-8000-000000000001',
+      current_version_id: '63000000-0000-4000-8000-000000000001',
+      before_after: Object.freeze([]),
+      authorization_snapshot: authorizationSnapshot,
+      validation: Object.freeze({
+        ready_for_submit: true,
+        changed_field_count: 1,
+        evidence_draft_count: 0,
+        media_reference_count: 0,
+      }),
+    })
+  }
+}
+
+const authorizationSnapshot = Object.freeze({
+  creator_account_link_id: '65000000-0000-4000-8000-000000000001',
+  creator_id: '66000000-0000-4000-8000-000000000001',
+  author_relation_id: '67000000-0000-4000-8000-000000000001',
+  permission_profile_id: 'MANAGER_V1' as const,
+  permission_profile_version: 1 as const,
+  permission_profile_config_hash: 'a'.repeat(64),
+  link_version: 1,
+  author_relation_version: 1,
+  capabilities: Object.freeze(['project_update.create', 'project_update.submit'] as const),
+  field_paths: Object.freeze(['/project_core/current_name']),
+})
+
+function projectUpdateProjection(
+  ownerUserId: string,
+  targetProjectId: string,
+  baseVersionId: string,
+  version: number,
+  diff: readonly Readonly<{ field_path: string; after_value: unknown }>[],
+): ProjectUpdateProjection {
+  return Object.freeze({
+    update_id: '64000000-0000-4000-8000-000000000001',
+    project_id: targetProjectId,
+    owner_user_id: ownerUserId,
+    origin_review_status: 'published_author',
+    base_version_id: baseVersionId,
+    current_version_id: baseVersionId,
+    update_type: 'description',
+    category_change_type: null,
+    payload_diff: diff,
+    before_after: Object.freeze(diff.map((item) => Object.freeze({
+      field_path: item.field_path, before_value: 'Before', after_value: item.after_value,
+    }))),
+    evidence_draft_ids: Object.freeze([]),
+    media_reference_ids: Object.freeze([]),
+    authorization_snapshot: authorizationSnapshot,
+    effective_capabilities: authorizationSnapshot.capabilities,
+    effective_field_paths: authorizationSnapshot.field_paths,
+    authorization_state: 'active',
+    status: 'editing',
+    review_work_item_id: null,
+    apply_attempt_count: 0,
+    version,
+    created_at: '2026-08-10T00:00:00.000Z',
+    updated_at: '2026-08-10T00:00:00.000Z',
+  })
 }
 
 class FakeSearchService implements ApiSearchService {
@@ -1568,6 +1671,113 @@ test('submission entry routes require the authenticated owner, same-origin CSRF 
       withdrawn_at: '2026-08-10T00:01:00.000Z',
     })
     assert.equal(submission.withdrawCommand?.reasonCode, 'owner_cancelled')
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('project update draft routes bind the session owner and never accept client authority fields', async () => {
+  const projectUpdates = new FakeProjectUpdateService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    projectUpdates,
+  )
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+  }
+  const targetProjectId = '62000000-0000-4000-8000-000000000001'
+  const baseVersionId = '63000000-0000-4000-8000-000000000001'
+  const targetUpdateId = '64000000-0000-4000-8000-000000000001'
+  try {
+    const noCsrf = await fetch(`${runtime.baseUrl}/api/v1/project-updates`, {
+      method: 'POST',
+      headers: { ...headers, 'x-csrf-token': '' },
+      body: JSON.stringify({
+        project_id: targetProjectId,
+        update_type: 'description',
+        base_version_id: baseVersionId,
+        client_request_id: 'project-update-create-0001',
+      }),
+    })
+    assert.equal(noCsrf.status, 403)
+    assert.equal(projectUpdates.createCommand, null)
+
+    const created = await fetch(`${runtime.baseUrl}/api/v1/project-updates`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        project_id: targetProjectId,
+        update_type: 'description',
+        base_version_id: baseVersionId,
+        client_request_id: 'project-update-create-0001',
+      }),
+    })
+    assert.equal(created.status, 201)
+    assert.equal(projectUpdates.getCreateCommand()?.userId, session.userId)
+
+    const loaded = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}`, {
+      headers: { cookie: headers.cookie },
+    })
+    assert.equal(loaded.status, 200)
+    assert.equal(projectUpdates.getCommand?.userId, session.userId)
+
+    const forbiddenAuthority = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        expected_version: 1,
+        diff: [{ field_path: '/project_core/current_name', after_value: 'After' }],
+        evidence_draft_ids: [],
+        media_reference_ids: [],
+        operation_id: 'project-update-patch-0001',
+        creator_id: 'client-forged',
+      }),
+    })
+    assert.equal(forbiddenAuthority.status, 422)
+    assert.equal(projectUpdates.patchCommand, null)
+
+    const patched = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        expected_version: 1,
+        diff: [{ field_path: '/project_core/current_name', after_value: 'After' }],
+        evidence_draft_ids: [],
+        media_reference_ids: [],
+        operation_id: 'project-update-patch-0001',
+      }),
+    })
+    assert.equal(patched.status, 200)
+    assert.equal(projectUpdates.getPatchCommand()?.userId, session.userId)
+    assert.deepEqual(projectUpdates.getPatchCommand()?.diff, [
+      { field_path: '/project_core/current_name', after_value: 'After' },
+    ])
+
+    const previewed = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}/preview`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ expected_version: 2 }),
+    })
+    assert.equal(previewed.status, 200)
+    assert.equal(projectUpdates.previewCommand?.expectedVersion, 2)
   } finally {
     await runtime.stop()
   }

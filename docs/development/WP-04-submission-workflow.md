@@ -295,7 +295,7 @@ WP-05A2：建立 CreatorAccountLink 的不可变来源、owner 条件唯一键�
 
 ## 当前迭代：WP-05A2 CreatorAccountLink 与作者授权解析
 
-状态：实现完成；catalog/database 单测与静态检查已通过，进入远端 PostgreSQL 约束夹具验证；没有开放 Link 写 API。
+状态：实现完成；GitHub Actions `31707544024` 已在 PostgreSQL 18 通过全部质量门、Link 约束与授权链 fixture；没有开放 Link 写 API。
 
 ### 已实现
 
@@ -315,3 +315,29 @@ WP-05A2：建立 CreatorAccountLink 的不可变来源、owner 条件唯一键�
 ### 下一步
 
 WP-05A3：实现 ProjectUpdate editing 草稿的创建、读取、字段级 PATCH 与预览，只接受 WP-05A2 授权解析器返回的 `project_update.create` 和 exact field paths；提交审核与应用事务分后续小步交付。
+
+## 当前迭代：WP-05A3 ProjectUpdate 草稿与预览
+
+状态：实现完成；catalog/contracts/API/database 定向测试已通过，进入远端 PostgreSQL 18 迁移与领域 fixture 验证。
+
+### 已实现
+
+- 新增 `catalog.project_updates` 与 append-only `project_update_operations`；状态轴完整预留，但本轮 API 只产生/修改 `editing`，不伪造 update_pending、审核决定或公开 Version。
+- `POST /api/v1/project-updates` 只从认证 session 注入 owner；要求目标为 published_author、请求 base_version 等于当前 Version，并通过 WP-05A2 完整授权链的 `project_update.create`。
+- `GET /api/v1/project-updates/{update_id}` 仅 owner 可读；权限后续失效时仍保留本人草稿投影，但 `authorization_state=revoked` 且不允许继续写或预览。
+- `PATCH /api/v1/project-updates/{update_id}` 拒绝客户端 user/creator/role/permission 输入；每个 exact JSON Pointer 必须由同一条 active Link/Profile/Relation Grant 同时覆盖，不能跨 Grant 拼接权限。
+- `before_after.before_value` 只从创建时冻结的 base Version snapshot 派生，不信任客户端 before 值；PATCH 仅保存草稿，不更新 Project、Version、Event、Asset 或公开检索。
+- EvidenceDraft 必须 owner/parent_type=project_update/parent_id=update_id 且 editing/ready；MediaReference 必须绑定同一 update_id、owner resource、active、ready+clean 且无删除 guard；预览时再次检查，阻止状态变化后的陈旧引用。
+- PATCH 使用 expected_version 乐观锁和 `update_id+owner+operation_id` 不可变 receipt；同键同载荷（含并发）回放同一结果，同键异载荷 409。创建请求同样具有并发幂等保护。
+- `POST /api/v1/project-updates/{update_id}/preview` 重检 base/current、完整当前授权链、全部字段与引用，非空草稿才返回绑定 exact draft version 的 SHA-256 preview_hash。
+- OpenAPI 增加 OP-UPD-CREATE/GET/PATCH/PREVIEW，当前为 58 paths/67 operations；API 测试覆盖 CSRF、session owner 注入和客户端伪造权限字段拒绝。
+
+### 明确未授权
+
+- 本轮没有 OP-UPD-SUBMIT/RESUME/WITHDRAW，也不创建 project_update ReviewWorkItem；preview_hash 尚不能换取审核提交。
+- 没有 approved→applying→applied worker；公开 Project.current_version_id/current_name、Event、Evidence 和 Media 正式引用保持不变。
+- 当前 update_type 仅沿用已确认 P13 原型的 version/address/status/asset/description 输入集合；具体提交谓词仍由后续 Evidence/URL/Asset 分支逐类收紧。
+
+### 下一步
+
+WP-05A4：实现 OP-UPD-SUBMIT 与 OP-UPD-WITHDRAW，原子创建/取消唯一 work_type=project_update 的 ReviewWorkItem，冻结提交快照并保证 A05 submission 队列无法混入该类型；仍不在该轮应用公开 Version。

@@ -1174,6 +1174,109 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/project-updates:
+    post:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-CREATE
+      summary: Create an authorized editing ProjectUpdate against the current public version
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdateCreateRequest' }
+      responses:
+        '201':
+          description: Idempotently created editing ProjectUpdate; public Project is unchanged.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdate' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/project-updates/{update_id}:
+    parameters:
+      - in: path
+        name: update_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-GET
+      summary: Read an owner ProjectUpdate and current server-resolved authorization state
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Owner-safe draft and current capability projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdate' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-PATCH
+      summary: Replace the editing diff after exact field-path authorization and optimistic locking
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdatePatchRequest' }
+      responses:
+        '200':
+          description: Updated or idempotently replayed editing ProjectUpdate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdate' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/project-updates/{update_id}/preview:
+    post:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-PREVIEW
+      summary: Revalidate the frozen base, active authorization chain and non-empty draft
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: update_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdatePreviewRequest' }
+      responses:
+        '200':
+          description: Deterministic preview over one exact draft version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdatePreview' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -4755,6 +4858,204 @@ components:
         work_item_status: { type: string, enum: [cancelled] }
         work_item_version: { type: integer, minimum: 2 }
         withdrawn_at: { type: string, format: date-time }
+    ProjectUpdateType:
+      type: string
+      enum: [version, address, status, asset, description]
+    ProjectUpdateDiff:
+      type: object
+      additionalProperties: false
+      required: [field_path, after_value]
+      properties:
+        field_path:
+          type: string
+          pattern: '^/(project_core|category_data)/'
+          maxLength: 240
+        after_value: {}
+    ProjectUpdateBeforeAfter:
+      type: object
+      additionalProperties: false
+      required: [field_path, before_value, after_value]
+      properties:
+        field_path:
+          type: string
+          pattern: '^/(project_core|category_data)/'
+          maxLength: 240
+        before_value: {}
+        after_value: {}
+    ProjectUpdateAuthorizationSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - creator_account_link_id
+        - creator_id
+        - author_relation_id
+        - permission_profile_id
+        - permission_profile_version
+        - permission_profile_config_hash
+        - link_version
+        - author_relation_version
+        - capabilities
+        - field_paths
+      properties:
+        creator_account_link_id: { type: string, format: uuid }
+        creator_id: { type: string, format: uuid }
+        author_relation_id: { type: string, format: uuid }
+        permission_profile_id: { type: string, enum: [OWNER_V1, MANAGER_V1] }
+        permission_profile_version: { type: integer, const: 1 }
+        permission_profile_config_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        link_version: { type: integer, minimum: 1 }
+        author_relation_version: { type: integer, minimum: 1 }
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [ownership.view, project_update.create, project_update.submit]
+        field_paths:
+          type: array
+          maxItems: 43
+          uniqueItems: true
+          items: { type: string, maxLength: 240 }
+    ProjectUpdateCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, update_type, base_version_id, client_request_id]
+      properties:
+        project_id: { type: string, format: uuid }
+        update_type: { $ref: '#/components/schemas/ProjectUpdateType' }
+        base_version_id: { type: string, format: uuid }
+        client_request_id:
+          type: string
+          pattern: '^[A-Za-z0-9:_-]{8,128}$'
+    ProjectUpdatePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, diff, evidence_draft_ids, media_reference_ids, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        diff:
+          type: array
+          maxItems: 43
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProjectUpdateDiff' }
+        evidence_draft_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        media_reference_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        operation_id:
+          type: string
+          pattern: '^[A-Za-z0-9:_-]{8,128}$'
+    ProjectUpdatePreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        - update_id
+        - project_id
+        - owner_user_id
+        - origin_review_status
+        - base_version_id
+        - current_version_id
+        - update_type
+        - category_change_type
+        - payload_diff
+        - before_after
+        - evidence_draft_ids
+        - media_reference_ids
+        - authorization_snapshot
+        - effective_capabilities
+        - effective_field_paths
+        - authorization_state
+        - status
+        - review_work_item_id
+        - apply_attempt_count
+        - version
+        - created_at
+        - updated_at
+      properties:
+        update_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        owner_user_id: { type: string, format: uuid }
+        origin_review_status: { type: string, enum: [published_author] }
+        base_version_id: { type: string, format: uuid }
+        current_version_id: { type: string, format: uuid }
+        update_type: { $ref: '#/components/schemas/ProjectUpdateType' }
+        category_change_type: { type: [string, 'null'], maxLength: 64 }
+        payload_diff:
+          type: array
+          maxItems: 43
+          items: { $ref: '#/components/schemas/ProjectUpdateDiff' }
+        before_after:
+          type: array
+          maxItems: 43
+          items: { $ref: '#/components/schemas/ProjectUpdateBeforeAfter' }
+        evidence_draft_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        media_reference_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        authorization_snapshot: { $ref: '#/components/schemas/ProjectUpdateAuthorizationSnapshot' }
+        effective_capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [ownership.view, project_update.create, project_update.submit]
+        effective_field_paths:
+          type: array
+          maxItems: 43
+          uniqueItems: true
+          items: { type: string, maxLength: 240 }
+        authorization_state: { type: string, enum: [active, revoked] }
+        status:
+          type: string
+          enum: [editing, update_pending, changes_requested, approved, applying, apply_failed, rejected, withdrawn, applied]
+        review_work_item_id: { type: [string, 'null'], format: uuid }
+        apply_attempt_count: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProjectUpdatePreview:
+      type: object
+      additionalProperties: false
+      required: [update_id, version, preview_hash, base_version_id, current_version_id, before_after, authorization_snapshot, validation]
+      properties:
+        update_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        preview_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        base_version_id: { type: string, format: uuid }
+        current_version_id: { type: string, format: uuid }
+        before_after:
+          type: array
+          minItems: 1
+          maxItems: 43
+          items: { $ref: '#/components/schemas/ProjectUpdateBeforeAfter' }
+        authorization_snapshot: { $ref: '#/components/schemas/ProjectUpdateAuthorizationSnapshot' }
+        validation:
+          type: object
+          additionalProperties: false
+          required: [ready_for_submit, changed_field_count, evidence_draft_count, media_reference_count]
+          properties:
+            ready_for_submit: { type: boolean, const: true }
+            changed_field_count: { type: integer, minimum: 1, maximum: 43 }
+            evidence_draft_count: { type: integer, minimum: 0, maximum: 50 }
+            media_reference_count: { type: integer, minimum: 0, maximum: 20 }
     AdminOperationTarget:
       type: object
       additionalProperties: false

@@ -21,6 +21,12 @@ import {
   type EventType,
   type ProjectListProjection,
   type ProjectProjection,
+  type CreateProjectUpdateCommand,
+  type GetProjectUpdateCommand,
+  type PatchProjectUpdateCommand,
+  type PreviewProjectUpdateCommand,
+  type ProjectUpdatePreviewProjection,
+  type ProjectUpdateProjection,
 } from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import {
@@ -296,6 +302,13 @@ export interface ApiSubmissionService {
   withdrawSubmission(command: WithdrawSubmissionCommand): Promise<SubmissionWithdrawalProjection>
 }
 
+export interface ApiProjectUpdateService {
+  create(command: CreateProjectUpdateCommand): Promise<ProjectUpdateProjection>
+  get(command: GetProjectUpdateCommand): Promise<ProjectUpdateProjection>
+  patch(command: PatchProjectUpdateCommand): Promise<ProjectUpdateProjection>
+  preview(command: PreviewProjectUpdateCommand): Promise<ProjectUpdatePreviewProjection>
+}
+
 export interface ApiWorkflowService {
   listWorkItems(command: ListReviewWorkItemsCommand): Promise<ReviewWorkItemPage>
   claimWorkItem(command: ClaimReviewWorkItemCommand): Promise<ReviewClaimProjection>
@@ -348,6 +361,7 @@ export interface ApiServerDependencies {
   readonly pendingActionExecutor?: ApiPendingActionExecutor
   readonly search?: ApiSearchService
   readonly submission?: ApiSubmissionService
+  readonly projectUpdates?: ApiProjectUpdateService
   readonly workflow?: ApiWorkflowService
   readonly adminOperations?: ApiAdminOperationSecurityService
   readonly reviewDecisions?: ApiReviewDecisionService
@@ -1717,6 +1731,104 @@ async function handleSubmissionRequest(
   return null
 }
 
+function projectUpdateDiffField(body: JsonObject): readonly Readonly<{
+  field_path: string
+  after_value: unknown
+}>[] {
+  const value = body.diff
+  if (!Array.isArray(value) || value.length > 43) {
+    throw new CatalogError('REQUEST_DIFF_INVALID', 422)
+  }
+  return Object.freeze(value.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new CatalogError('REQUEST_DIFF_INVALID', 422)
+    }
+    const object = item as JsonObject
+    exactKeys(object, ['field_path', 'after_value'])
+    if (!Object.hasOwn(object, 'after_value')) throw new CatalogError('REQUEST_DIFF_INVALID', 422)
+    return Object.freeze({
+      field_path: stringField(object, 'field_path', { maximum: 240 })!,
+      after_value: object.after_value,
+    })
+  }))
+}
+
+async function handleProjectUpdateRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/project-updates'
+  const itemMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)$/)
+  const previewMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)\/preview$/)
+  if (path !== collectionPath && itemMatch === null && previewMatch === null) return null
+  if (
+    (path === collectionPath && method !== 'POST') ||
+    (itemMatch !== null && method !== 'GET' && method !== 'PATCH') ||
+    (previewMatch !== null && method !== 'POST')
+  ) return null
+  if (!dependencies.projectUpdates) throw new CatalogError('PROJECT_UPDATE_SERVICE_UNAVAILABLE', 503, true)
+  exactQueryKeys(url.searchParams, [])
+  const session = await resolveAuthenticatedSession(request, dependencies)
+
+  if (itemMatch !== null && method === 'GET') {
+    const projection = await dependencies.projectUpdates.get({
+      userId: session.userId,
+      updateId: itemMatch[1]!,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (session.accountStatus === 'restricted') throw new CatalogError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new CatalogError('ORIGIN_INVALID', 403)
+  requireSubmissionMutationCsrf(request)
+  const body = await readJsonBody(request, 256 * 1024)
+  if (path === collectionPath) {
+    exactKeys(body, ['project_id', 'update_type', 'base_version_id', 'client_request_id'])
+    const projection = await dependencies.projectUpdates.create({
+      userId: session.userId,
+      projectId: stringField(body, 'project_id', { maximum: 64 })!,
+      updateType: stringField(body, 'update_type', { maximum: 32 })!,
+      baseVersionId: stringField(body, 'base_version_id', { maximum: 64 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+  if (itemMatch !== null) {
+    exactKeys(body, [
+      'expected_version', 'diff', 'evidence_draft_ids', 'media_reference_ids', 'operation_id',
+    ])
+    const projection = await dependencies.projectUpdates.patch({
+      userId: session.userId,
+      updateId: itemMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      diff: projectUpdateDiffField(body),
+      evidenceDraftIds: stringArrayField(body, 'evidence_draft_ids', 50, 64),
+      mediaReferenceIds: stringArrayField(body, 'media_reference_ids', 20, 64),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (previewMatch !== null) {
+    exactKeys(body, ['expected_version'])
+    const projection = await dependencies.projectUpdates.preview({
+      userId: session.userId,
+      updateId: previewMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  return null
+}
+
 async function handleMediaRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -2701,6 +2813,12 @@ export function createApiServer(
                       if (submissionStatus !== null) {
                         statusCode = submissionStatus
                       } else {
+                    const projectUpdateStatus = await handleProjectUpdateRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (projectUpdateStatus !== null) {
+                      statusCode = projectUpdateStatus
+                    } else {
                     const adminOperationStatus = await handleAdminOperationSecurityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -2772,6 +2890,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                     }

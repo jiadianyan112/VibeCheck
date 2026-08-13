@@ -37,6 +37,7 @@ describe('discoverMigrations', () => {
         '000026_submission_asset_security_gate.sql',
         '000027_link_permission_profiles.sql',
         '000028_creator_account_links.sql',
+        '000029_project_update_drafts.sql',
       ],
     )
     for (const migration of migrations) {

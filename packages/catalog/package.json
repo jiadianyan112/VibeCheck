@@ -22,6 +22,7 @@
     "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
     "profile:verify": "tsx src/testing/verify-link-permission-profiles.ts",
     "authorization:verify": "tsx src/testing/verify-author-authorization.ts",
+    "project-update:verify": "tsx src/testing/verify-project-update-drafts.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },

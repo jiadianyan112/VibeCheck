@@ -9,8 +9,11 @@ import {
   CatalogService,
   DefaultAssetDnsResolver,
   NodePinnedAssetHttpProbe,
+  PostgresAuthorAuthorizationResolver,
   PostgresAssetResolutionStore,
   PostgresCatalogStore,
+  PostgresProjectUpdateStore,
+  ProjectUpdateService,
   validateLinkPermissionProfileDeployment,
 } from '@vibecheck/catalog'
 import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
@@ -140,6 +143,15 @@ const evidence = evidenceConfig.enabled
       urlSafetyResolver: submissionWebResolver,
     })
   : undefined
+const authorAuthorization = catalogConfig.enabled
+  ? new PostgresAuthorAuthorizationResolver(pool)
+  : undefined
+const projectUpdates = authorAuthorization
+  ? new ProjectUpdateService({
+      store: new PostgresProjectUpdateStore(pool),
+      authorization: authorAuthorization,
+    })
+  : undefined
 if (workflowConfig.enabled && !identityConfig.enabled) {
   throw new Error('CONFIG_REVIEW_WORKFLOW_REQUIRES_IDENTITY')
 }
@@ -178,6 +190,7 @@ const server = createApiServer(config, {
   ...(reviewDecisions ? { reviewDecisions } : {}),
   ...(media ? { media } : {}),
   ...(evidence ? { evidence } : {}),
+  ...(projectUpdates ? { projectUpdates } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {
