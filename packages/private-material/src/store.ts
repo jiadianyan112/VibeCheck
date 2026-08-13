@@ -216,9 +216,10 @@ export class PostgresPrivateMaterialStore {
       const updated = await client.query<StoredMaterial>(
         `UPDATE private_material.verification_materials SET
            detected_mime=$3,upload_receipt_hash=$4,status=$5,
-           rejection_reason_code=$6,completed_at=$7,processing_deadline_at=$7+interval '30 minutes',
-           scan_queued_at=CASE WHEN $8 THEN $7 ELSE NULL END,version=version+1,
-           updated_at=GREATEST($7,updated_at+interval '1 microsecond')
+           rejection_reason_code=$6,completed_at=$7::timestamptz,
+           processing_deadline_at=$7::timestamptz+interval '30 minutes',
+           scan_queued_at=CASE WHEN $8 THEN $7::timestamptz ELSE NULL END,version=version+1,
+           updated_at=GREATEST($7::timestamptz,updated_at+interval '1 microsecond')
          WHERE material_id=$1 AND owner_user_id=$2 RETURNING *`,
         [input.materialId, input.userId, input.detectedMime, input.uploadReceiptHash,
           nextStatus, input.rejectionReason, input.now, input.accepted],
@@ -308,8 +309,8 @@ export class PostgresPrivateMaterialStore {
       const updated = await client.query<StoredMaterial>(
         `UPDATE private_material.verification_materials SET
            status='revoked',pre_terminal_scan_result=scan_result,
-           applicant_terminal_state_json=$3::jsonb,revoked_at=$4,version=version+1,
-           updated_at=GREATEST($4,updated_at+interval '1 microsecond')
+           applicant_terminal_state_json=$3::jsonb,revoked_at=$4::timestamptz,version=version+1,
+           updated_at=GREATEST($4::timestamptz,updated_at+interval '1 microsecond')
          WHERE material_id=$1 AND owner_user_id=$2 RETURNING *`,
         [input.materialId, input.userId, JSON.stringify(terminal), input.now],
       )
