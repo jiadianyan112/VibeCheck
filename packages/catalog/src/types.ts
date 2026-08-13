@@ -78,6 +78,7 @@ export interface ProjectCoreSnapshot {
   readonly ai_coding_tools: KnowledgeState<string>
   readonly tech_stack: readonly string[]
   readonly deployment_platform: string | null
+  readonly access_status: ProjectAccessStatus
   readonly maintenance_signal: 'repository_updated' | 'page_updated' | 'author_updated' | 'no_public_change' | 'unknown'
   readonly status_note: string | null
 }

@@ -9,8 +9,12 @@ import {
   type CreateSubmissionDraftCommand,
   type GetSubmissionDraftCommand,
   type PatchSubmissionDraftCommand,
+  type PreviewSubmissionDraftCommand,
+  type SubmitSubmissionDraftCommand,
   type SubmissionCategoryId,
   type SubmissionDraftProjection,
+  type SubmissionPreviewProjection,
+  type SubmissionProjection,
   type SubmissionSchemaVersion,
   type SubmissionUrlCheckProjection,
   type UrlCheckAccessResult,
@@ -162,6 +166,48 @@ export class SubmissionService {
         expected_version: command.expectedVersion,
         patch,
       })),
+      requestId: this.requestId(command.requestId),
+      now: this.now(),
+    })
+  }
+
+  async previewDraft(command: PreviewSubmissionDraftCommand): Promise<SubmissionPreviewProjection> {
+    if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion < 1) {
+      throw submissionError('SUBMISSION_DRAFT_VERSION_INVALID', 422)
+    }
+    return this.dependencies.store.previewDraft({
+      userId: this.uuid(command.userId, 'SUBMISSION_USER_INVALID'),
+      draftId: this.uuid(command.draftId, 'SUBMISSION_DRAFT_ID_INVALID'),
+      expectedVersion: command.expectedVersion,
+      checkId: this.uuid(command.checkId, 'SUBMISSION_CHECK_ID_INVALID'),
+      requestId: this.requestId(command.requestId),
+      now: this.now(),
+    })
+  }
+
+  async submitDraft(command: SubmitSubmissionDraftCommand): Promise<SubmissionProjection> {
+    if (!Number.isSafeInteger(command.draftVersion) || command.draftVersion < 1) {
+      throw submissionError('SUBMISSION_DRAFT_VERSION_INVALID', 422)
+    }
+    const draftId = this.uuid(command.draftId, 'SUBMISSION_DRAFT_ID_INVALID')
+    const checkId = this.uuid(command.checkId, 'SUBMISSION_CHECK_ID_INVALID')
+    const previewHash = command.previewHash.trim().toLowerCase()
+    if (!/^[a-f0-9]{64}$/.test(previewHash)) throw submissionError('SUBMISSION_PREVIEW_HASH_INVALID', 422)
+    const submissionKey = this.operationId(command.submissionKey)
+    const requestHash = this.hash(JSON.stringify({
+      draft_id: draftId,
+      draft_version: command.draftVersion,
+      check_id: checkId,
+      preview_hash: previewHash,
+    }))
+    return this.dependencies.store.submitDraft({
+      userId: this.uuid(command.userId, 'SUBMISSION_USER_INVALID'),
+      draftId,
+      draftVersion: command.draftVersion,
+      checkId,
+      previewHash,
+      submissionKey,
+      requestHash,
       requestId: this.requestId(command.requestId),
       now: this.now(),
     })

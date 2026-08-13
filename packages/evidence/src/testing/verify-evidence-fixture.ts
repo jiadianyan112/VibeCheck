@@ -105,13 +105,13 @@ async function run(): Promise<void> {
         WHERE media_resource_id=$3 AND lifecycle_status='active') AS active_reference_count,
        (SELECT evidence_draft_ids_json FROM workflow.submission_drafts WHERE draft_id=$4) AS parent_ids,
        (SELECT status FROM workflow.evidence_attachment_drafts
-        WHERE attachment_draft_id=$2) AS attachment_status`,
+        WHERE attachment_draft_id=$2::uuid) AS attachment_status`,
     [evidenceDraftId, attachment.attachment_draft_id, resourceId, draftId],
   )
   assert.equal(verified.rows[0]?.snapshot_count, 6)
   assert.equal(verified.rows[0]?.audit_count, 6)
   assert.equal(verified.rows[0]?.active_reference_count, 0)
-  assert.deepEqual(verified.rows[0]?.parent_ids, [evidenceDraftId])
+  assert.deepEqual(verified.rows[0]?.parent_ids, [])
   assert.equal(verified.rows[0]?.attachment_status, 'withdrawn')
 }
 

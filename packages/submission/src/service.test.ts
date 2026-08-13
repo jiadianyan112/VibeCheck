@@ -59,6 +59,8 @@ class FakeStore implements SubmissionStore {
   savedCheck: Parameters<SubmissionStore['saveUrlCheck']>[0] | null = null
   createdDraft: Parameters<SubmissionStore['createDraft']>[0] | null = null
   patchedDraft: Parameters<SubmissionStore['patchDraft']>[0] | null = null
+  previewedDraft: Parameters<SubmissionStore['previewDraft']>[0] | null = null
+  submittedDraft: Parameters<SubmissionStore['submitDraft']>[0] | null = null
   replay: Awaited<ReturnType<SubmissionStore['getUrlCheckByRequest']>> = null
   reusable: SubmissionUrlCheckProjection | null = null
   boundReusable: Parameters<SubmissionStore['bindReusableUrlCheck']>[0] | null = null
@@ -90,6 +92,37 @@ class FakeStore implements SubmissionStore {
   async patchDraft(input: Parameters<SubmissionStore['patchDraft']>[0]) {
     this.patchedDraft = input
     return Object.freeze({ ...draftProjection, version: 2 })
+  }
+  async previewDraft(input: Parameters<SubmissionStore['previewDraft']>[0]) {
+    this.previewedDraft = input
+    return Object.freeze({
+      draft_id: input.draftId,
+      draft_version: input.expectedVersion,
+      check_id: input.checkId,
+      preview_hash: 'a'.repeat(64),
+      payload_snapshot: draftProjection.payload_snapshot,
+      media_reference_ids: Object.freeze(['85000000-0000-4000-8000-000000000001']),
+      evidence_draft_ids: Object.freeze(['85000000-0000-4000-8000-000000000002']),
+      validation: Object.freeze({ valid: true as const, issue_count: 0 as const }),
+      generated_at: now.toISOString(),
+    })
+  }
+  async submitDraft(input: Parameters<SubmissionStore['submitDraft']>[0]) {
+    this.submittedDraft = input
+    return Object.freeze({
+      submission_id: '85000000-0000-4000-8000-000000000003',
+      submission_chain_id: draftProjection.submission_chain_id,
+      draft_id: input.draftId,
+      snapshot_version: input.draftVersion,
+      review_status: 'pending_review' as const,
+      review_work_item_id: '85000000-0000-4000-8000-000000000004',
+      media_reference_ids: Object.freeze(['85000000-0000-4000-8000-000000000001']),
+      evidence_draft_ids: Object.freeze(['85000000-0000-4000-8000-000000000002']),
+      preview_hash: input.previewHash,
+      version: 1,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    })
   }
 }
 
@@ -295,5 +328,46 @@ describe('SubmissionService drafts', () => {
       requestId: 'http-request-invalid',
     }), 'DRAFT_PAYLOAD_FIELD_INVALID', 422)
     assert.equal(store.patchedDraft, null)
+  })
+})
+
+describe('SubmissionService preview and submit', () => {
+  it('binds preview and idempotent submission inputs to stable hashes', async () => {
+    const store = new FakeStore()
+    const preview = await service(store).previewDraft({
+      userId,
+      draftId,
+      expectedVersion: 3,
+      checkId,
+      requestId: 'http-request-preview',
+    })
+    assert.equal(preview.preview_hash, 'a'.repeat(64))
+    assert.equal(store.previewedDraft?.expectedVersion, 3)
+
+    const submitted = await service(store).submitDraft({
+      userId,
+      draftId,
+      draftVersion: 3,
+      checkId,
+      previewHash: preview.preview_hash,
+      submissionKey: 'submission-request-0001',
+      requestId: 'http-request-submit',
+    })
+    assert.equal(submitted.review_status, 'pending_review')
+    assert.match(store.submittedDraft?.requestHash ?? '', /^[a-f0-9]{64}$/)
+  })
+
+  it('rejects malformed preview hashes before persistence', async () => {
+    const store = new FakeStore()
+    await failure(() => service(store).submitDraft({
+      userId,
+      draftId,
+      draftVersion: 1,
+      checkId,
+      previewHash: 'invalid',
+      submissionKey: 'submission-request-0002',
+      requestId: 'http-request-submit-invalid',
+    }), 'SUBMISSION_PREVIEW_HASH_INVALID', 422)
+    assert.equal(store.submittedDraft, null)
   })
 })

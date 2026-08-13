@@ -3,6 +3,8 @@ import type {
   SubmissionDraftProjection,
   SubmissionDuplicateCandidate,
   SubmissionSchemaVersion,
+  SubmissionPreviewProjection,
+  SubmissionProjection,
   SubmissionUrlCheckProjection,
   UrlCheckAccessResult,
   UrlCheckRiskResult,
@@ -86,4 +88,23 @@ export interface SubmissionStore {
     readonly requestId: string
     readonly now: Date
   }): Promise<SubmissionDraftProjection>
+  previewDraft(input: {
+    readonly userId: string
+    readonly draftId: string
+    readonly expectedVersion: number
+    readonly checkId: string
+    readonly requestId: string
+    readonly now: Date
+  }): Promise<SubmissionPreviewProjection>
+  submitDraft(input: {
+    readonly userId: string
+    readonly draftId: string
+    readonly draftVersion: number
+    readonly checkId: string
+    readonly previewHash: string
+    readonly submissionKey: string
+    readonly requestHash: string
+    readonly requestId: string
+    readonly now: Date
+  }): Promise<SubmissionProjection>
 }

@@ -112,7 +112,11 @@ import {
   type CreateSubmissionDraftCommand,
   type GetSubmissionDraftCommand,
   type PatchSubmissionDraftCommand,
+  type PreviewSubmissionDraftCommand,
+  type SubmitSubmissionDraftCommand,
   type SubmissionDraftProjection,
+  type SubmissionPreviewProjection,
+  type SubmissionProjection,
   type SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
 import {
@@ -259,6 +263,8 @@ export interface ApiSubmissionService {
   createDraft(command: CreateSubmissionDraftCommand): Promise<SubmissionDraftProjection>
   getDraft(command: GetSubmissionDraftCommand): Promise<SubmissionDraftProjection>
   patchDraft(command: PatchSubmissionDraftCommand): Promise<SubmissionDraftProjection>
+  previewDraft(command: PreviewSubmissionDraftCommand): Promise<SubmissionPreviewProjection>
+  submitDraft(command: SubmitSubmissionDraftCommand): Promise<SubmissionProjection>
 }
 
 export interface ApiWorkflowService {
@@ -1408,10 +1414,17 @@ async function handleSubmissionRequest(
   const urlCheckPath = '/api/v1/submission-url-checks'
   const draftCollectionPath = '/api/v1/submission-drafts'
   const draftMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)$/)
-  if (path !== urlCheckPath && path !== draftCollectionPath && draftMatch === null) return null
+  const draftPreviewMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)\/preview$/)
+  const submissionCollectionPath = '/api/v1/submissions'
+  if (
+    path !== urlCheckPath && path !== draftCollectionPath && path !== submissionCollectionPath &&
+    draftMatch === null && draftPreviewMatch === null
+  ) return null
   if (
     (path === urlCheckPath && method !== 'POST') ||
     (path === draftCollectionPath && method !== 'POST') ||
+    (path === submissionCollectionPath && method !== 'POST') ||
+    (draftPreviewMatch !== null && method !== 'POST') ||
     (draftMatch !== null && method !== 'GET' && method !== 'PATCH')
   ) return null
   if (!dependencies.submission) throw new SubmissionError('SUBMISSION_SERVICE_UNAVAILABLE', 503, true)
@@ -1468,6 +1481,32 @@ async function handleSubmissionRequest(
     })
     writeJson(response, 200, projection, requestId)
     return 200
+  }
+  if (draftPreviewMatch !== null) {
+    exactKeys(body, ['expected_version', 'check_id'])
+    const projection = await dependencies.submission.previewDraft({
+      userId: session.userId,
+      draftId: draftPreviewMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      checkId: stringField(body, 'check_id', { maximum: 64 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (path === submissionCollectionPath) {
+    exactKeys(body, ['draft_id', 'draft_version', 'check_id', 'preview_hash', 'submission_key'])
+    const projection = await dependencies.submission.submitDraft({
+      userId: session.userId,
+      draftId: stringField(body, 'draft_id', { maximum: 64 })!,
+      draftVersion: integerField(body, 'draft_version', 1),
+      checkId: stringField(body, 'check_id', { maximum: 64 })!,
+      previewHash: stringField(body, 'preview_hash', { minimum: 64, maximum: 64 })!,
+      submissionKey: stringField(body, 'submission_key', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 202, projection, requestId)
+    return 202
   }
   return null
 }

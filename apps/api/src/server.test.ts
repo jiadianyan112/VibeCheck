@@ -63,7 +63,11 @@ import type {
   CreateSubmissionDraftCommand,
   GetSubmissionDraftCommand,
   PatchSubmissionDraftCommand,
+  PreviewSubmissionDraftCommand,
+  SubmitSubmissionDraftCommand,
   SubmissionDraftProjection,
+  SubmissionPreviewProjection,
+  SubmissionProjection,
   SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
 import type {
@@ -1050,6 +1054,8 @@ class FakeSubmissionService implements ApiSubmissionService {
   createCommand: CreateSubmissionDraftCommand | null = null
   getCommand: GetSubmissionDraftCommand | null = null
   patchCommand: PatchSubmissionDraftCommand | null = null
+  previewCommand: PreviewSubmissionDraftCommand | null = null
+  submitCommand: SubmitSubmissionDraftCommand | null = null
 
   getCheckCommand(): CheckSubmissionUrlCommand | null { return this.checkCommand }
   getCreateCommand(): CreateSubmissionDraftCommand | null { return this.createCommand }
@@ -1117,6 +1123,39 @@ class FakeSubmissionService implements ApiSubmissionService {
   async patchDraft(command: PatchSubmissionDraftCommand) {
     this.patchCommand = command
     return Object.freeze({ ...this.draft, version: 2 })
+  }
+
+  async previewDraft(command: PreviewSubmissionDraftCommand): Promise<SubmissionPreviewProjection> {
+    this.previewCommand = command
+    return Object.freeze({
+      draft_id: command.draftId,
+      draft_version: command.expectedVersion,
+      check_id: command.checkId,
+      preview_hash: 'a'.repeat(64),
+      payload_snapshot: this.draft.payload_snapshot,
+      media_reference_ids: Object.freeze(['84000000-0000-4000-8000-000000000004']),
+      evidence_draft_ids: Object.freeze(['84000000-0000-4000-8000-000000000005']),
+      validation: Object.freeze({ valid: true, issue_count: 0 }),
+      generated_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async submitDraft(command: SubmitSubmissionDraftCommand): Promise<SubmissionProjection> {
+    this.submitCommand = command
+    return Object.freeze({
+      submission_id: '84000000-0000-4000-8000-000000000006',
+      submission_chain_id: this.draft.submission_chain_id,
+      draft_id: command.draftId,
+      snapshot_version: command.draftVersion,
+      review_status: 'pending_review',
+      review_work_item_id: '84000000-0000-4000-8000-000000000007',
+      media_reference_ids: Object.freeze(['84000000-0000-4000-8000-000000000004']),
+      evidence_draft_ids: Object.freeze(['84000000-0000-4000-8000-000000000005']),
+      preview_hash: command.previewHash,
+      version: 1,
+      created_at: '2026-08-10T00:00:00.000Z',
+      updated_at: '2026-08-10T00:00:00.000Z',
+    })
   }
 }
 
@@ -1205,6 +1244,35 @@ test('submission entry routes require the authenticated owner, same-origin CSRF 
     assert.deepEqual(submission.getPatchCommand()?.patch, {
       project_core: { current_name: 'Portfolio' },
     })
+
+    const previewed = await fetch(
+      `${runtime.baseUrl}/api/v1/submission-drafts/${submission.draft.draft_id}/preview`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ expected_version: 2, check_id: submission.check.check_id }),
+      },
+    )
+    assert.equal(previewed.status, 200)
+    const preview = await previewed.json() as { preview_hash: string }
+    assert.equal(submission.previewCommand?.expectedVersion, 2)
+
+    const submitted = await fetch(`${runtime.baseUrl}/api/v1/submissions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        draft_id: submission.draft.draft_id,
+        draft_version: 2,
+        check_id: submission.check.check_id,
+        preview_hash: preview.preview_hash,
+        submission_key: 'submission-submit-request-0001',
+      }),
+    })
+    assert.equal(submitted.status, 202)
+    const accepted = await submitted.json() as { review_status: string; project_id?: string }
+    assert.equal(accepted.review_status, 'pending_review')
+    assert.equal(accepted.project_id, undefined)
+    assert.equal(submission.submitCommand?.submissionKey, 'submission-submit-request-0001')
   } finally {
     await runtime.stop()
   }
@@ -2152,6 +2220,7 @@ class FakeCatalogService implements ApiCatalogService {
         ai_coding_tools: projectCard.ai_coding_tools,
         tech_stack: Object.freeze([]),
         deployment_platform: null,
+        access_status: 'normal',
         maintenance_signal: 'unknown',
         status_note: null,
       }),

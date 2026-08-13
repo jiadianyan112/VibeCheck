@@ -541,6 +541,19 @@ export class PostgresEvidenceStore implements EvidenceStore {
         await client.query('COMMIT')
         return projection
       }
+      const parentIdentity = await client.query<Pick<DraftRow, 'parent_type' | 'parent_id'>>(
+        `SELECT parent_type,parent_id FROM workflow.evidence_drafts WHERE evidence_draft_id=$1`,
+        [input.evidenceDraftId],
+      )
+      if (!parentIdentity.rows[0]) throw evidenceError('EVIDENCE_DRAFT_NOT_FOUND', 404)
+      await this.authorizeParent(
+        client,
+        parentIdentity.rows[0].parent_type,
+        parentIdentity.rows[0].parent_id,
+        input.actor.userId,
+        input.now,
+        true,
+      )
       const before = await this.lockDraft(client, input.evidenceDraftId)
       this.authorizeOwner(before, input.actor)
       if (before.status === 'promoted') throw evidenceError('EVIDENCE_DRAFT_PROMOTED', 409)
@@ -565,6 +578,15 @@ export class PostgresEvidenceStore implements EvidenceStore {
       )
       const row = result.rows[0]
       if (!row) throw evidenceError('EVIDENCE_DRAFT_VERSION_CONFLICT', 409)
+      await client.query(
+        `UPDATE workflow.submission_drafts SET evidence_draft_ids_json=COALESCE((
+           SELECT jsonb_agg(value ORDER BY ordinality)
+           FROM jsonb_array_elements(evidence_draft_ids_json) WITH ORDINALITY entry(value,ordinality)
+           WHERE value <> to_jsonb($2::text)
+         ),'[]'::jsonb),version=version+1,updated_at=$3,saved_at=$3
+         WHERE draft_id=$1 AND evidence_draft_ids_json @> jsonb_build_array($2::text)`,
+        [before.parent_id, before.evidence_draft_id, input.now],
+      )
       const attachments = await this.allAttachments(client, row.evidence_draft_id)
       await this.snapshot(client, row, attachments, input.actor.userId, input.now)
       const projection = await this.draftProjection(client, row, attachments)

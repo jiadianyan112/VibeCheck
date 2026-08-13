@@ -64,7 +64,7 @@ function projectCore(value: unknown): ProjectCoreSnapshot {
   exact(record, [
     'current_name', 'public_url', 'repository_url', 'original_platform',
     'cover_media_reference_ids', 'one_line_definition', 'ai_coding_tools',
-    'tech_stack', 'deployment_platform', 'maintenance_signal', 'status_note',
+    'tech_stack', 'deployment_platform', 'access_status', 'maintenance_signal', 'status_note',
   ], 'CATALOG_SNAPSHOT_INVALID')
   return Object.freeze({
     current_name: text(record.current_name, 1, 80, 'CATALOG_SNAPSHOT_INVALID'),
@@ -76,6 +76,10 @@ function projectCore(value: unknown): ProjectCoreSnapshot {
     ai_coding_tools: knowledgeState(record.ai_coding_tools),
     tech_stack: Object.freeze(strings(record.tech_stack, 0, 30, 50, 'CATALOG_SNAPSHOT_INVALID')),
     deployment_platform: nullableText(record.deployment_platform, 120, 'CATALOG_SNAPSHOT_INVALID'),
+    access_status: oneOf(record.access_status, [
+      'normal', 'login_required', 'partial_abnormal', 'link_unavailable',
+      'suspected_migration', 'paused', 'ended', 'unknown',
+    ], 'CATALOG_SNAPSHOT_INVALID'),
     maintenance_signal: oneOf(record.maintenance_signal, ['repository_updated', 'page_updated', 'author_updated', 'no_public_change', 'unknown'], 'CATALOG_SNAPSHOT_INVALID'),
     status_note: nullableText(record.status_note, 500, 'CATALOG_SNAPSHOT_INVALID'),
   })

@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
 import { submissionError } from './errors.js'
 import { assertDraftIdentity, mergeDraftPayload, validateDraftPayload } from './payload.js'
+import { canonicalJson, validateSubmissionReadySnapshot } from './submission-ready.js'
 import type { SubmissionStore } from './store-port.js'
 import type {
   SubmissionCategoryId,
@@ -11,6 +12,8 @@ import type {
   SubmissionDraftStatus,
   SubmissionDuplicateCandidate,
   SubmissionSchemaVersion,
+  SubmissionProjection,
+  SubmissionReviewStatus,
   SubmissionUrlCheckProjection,
   UrlCheckAccessResult,
   UrlCheckDuplicateResult,
@@ -69,6 +72,33 @@ interface DuplicateRow extends QueryResultRow {
 interface DraftReceiptRow extends QueryResultRow {
   readonly request_hash: string
   readonly response_json: unknown
+}
+
+interface SubmissionRow extends QueryResultRow {
+  readonly submission_id: string
+  readonly submission_chain_id: string
+  readonly draft_id: string
+  readonly owner_user_id: string
+  readonly snapshot_version: number
+  readonly evidence_draft_ids_json: unknown
+  readonly media_reference_ids_json: unknown
+  readonly review_status: SubmissionReviewStatus
+  readonly review_work_item_id: string
+  readonly preview_hash: string
+  readonly request_hash: string
+  readonly version: number
+  readonly created_at: Date
+  readonly updated_at: Date
+}
+
+interface ReadyReferenceRow extends QueryResultRow {
+  readonly media_reference_id: string
+  readonly role: string
+  readonly sort_order: number
+  readonly resource_owner_user_id: string
+  readonly resource_status: string
+  readonly scan_result: string
+  readonly deletion_guard_job_id: string | null
 }
 
 export class PostgresSubmissionStore implements SubmissionStore {
@@ -426,6 +456,299 @@ export class PostgresSubmissionStore implements SubmissionStore {
     }
   }
 
+  async previewDraft(input: Parameters<SubmissionStore['previewDraft']>[0]) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const ready = await this.readReadySnapshot(client, input, false)
+      const previewHash = this.hash(canonicalJson(ready.previewHashInput))
+      const generatedAt = input.now.toISOString()
+      await client.query(
+        `INSERT INTO workflow.submission_preview_audits (
+           draft_id,owner_user_id,draft_version,check_id,preview_hash,validation_hash,created_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          input.draftId, input.userId, input.expectedVersion, input.checkId, previewHash,
+          this.hash(canonicalJson({ valid: true, issue_count: 0 })), input.now,
+        ],
+      )
+      await client.query('COMMIT')
+      return Object.freeze({
+        draft_id: input.draftId,
+        draft_version: input.expectedVersion,
+        check_id: input.checkId,
+        preview_hash: previewHash,
+        payload_snapshot: ready.payloadSnapshot,
+        media_reference_ids: ready.mediaReferenceIds,
+        evidence_draft_ids: ready.evidenceDraftIds,
+        validation: Object.freeze({ valid: true as const, issue_count: 0 as const }),
+        generated_at: generatedAt,
+      })
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async submitDraft(input: Parameters<SubmissionStore['submitDraft']>[0]): Promise<SubmissionProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lock(client, `submission-submit:${input.userId}:${input.submissionKey}`)
+      const replay = await client.query<SubmissionRow>(
+        `SELECT * FROM workflow.submissions WHERE owner_user_id=$1 AND idempotency_key=$2`,
+        [input.userId, input.submissionKey],
+      )
+      if (replay.rows[0]) {
+        if (replay.rows[0].request_hash !== input.requestHash) {
+          throw submissionError('SUBMISSION_KEY_REUSED', 409)
+        }
+        await client.query('COMMIT')
+        return this.submissionProjection(replay.rows[0])
+      }
+
+      const ready = await this.readReadySnapshot(client, {
+        ...input,
+        expectedVersion: input.draftVersion,
+      }, true)
+      const currentPreviewHash = this.hash(canonicalJson(ready.previewHashInput))
+      if (currentPreviewHash !== input.previewHash) {
+        throw submissionError('SUBMISSION_PREVIEW_STALE', 409, false, {
+          current_preview_hash: currentPreviewHash,
+        })
+      }
+
+      const submissionId = randomUUID()
+      const workItemId = randomUUID()
+      const transactionId = randomUUID()
+      await client.query(
+        `INSERT INTO workflow.review_work_items (
+           work_item_id,work_type,target_type,target_id,status,version,created_at,updated_at
+         ) VALUES ($1,'submission','submission',$2,'queued',1,$3,$3)`,
+        [workItemId, submissionId, input.now],
+      )
+      const inserted = await client.query<SubmissionRow>(
+        `INSERT INTO workflow.submissions (
+           submission_id,submission_chain_id,draft_id,owner_user_id,snapshot_version,
+           payload_snapshot,evidence_draft_ids_json,media_reference_ids_json,review_status,
+           review_work_item_id,preview_hash,idempotency_key,request_hash,version,created_at,updated_at
+         ) SELECT $1,draft.submission_chain_id,draft.draft_id,draft.owner_user_id,$2,
+             $3::jsonb,$4::jsonb,$5::jsonb,'pending_review',$6,$7,$8,$9,1,$10,$10
+           FROM workflow.submission_drafts draft WHERE draft.draft_id=$11
+         RETURNING *`,
+        [
+          submissionId, input.draftVersion, JSON.stringify(ready.payloadSnapshot),
+          JSON.stringify(ready.evidenceDraftIds), JSON.stringify(ready.mediaReferenceIds),
+          workItemId, currentPreviewHash, input.submissionKey, input.requestHash, input.now,
+          input.draftId,
+        ],
+      )
+      if (!inserted.rows[0]) throw submissionError('SUBMISSION_DRAFT_NOT_FOUND', 404)
+      await client.query(
+        `INSERT INTO workflow.review_work_item_conflict_principals (
+           work_item_id,principal_user_id,source_type,source_id,principal_version,created_at
+         ) VALUES ($1,$2,'submission_owner',$3,1,$4)`,
+        [workItemId, input.userId, submissionId, input.now],
+      )
+      await client.query(
+        `UPDATE workflow.submission_drafts
+         SET status='submitted',version=version+1,updated_at=$2,saved_at=$2
+         WHERE draft_id=$1`,
+        [input.draftId, input.now],
+      )
+      const outboxId = randomUUID()
+      await client.query(
+        `INSERT INTO ops.outbox_events (
+           outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
+           payload_json,transaction_id,status,next_attempt_at,created_at
+         ) VALUES ($1,$2,'submission',$3,'project_submitted',1,$4::jsonb,$5,'pending',$6,$6)`,
+        [
+          outboxId, randomUUID(), submissionId,
+          JSON.stringify({
+            draft_id: input.draftId,
+            submission_id: submissionId,
+            submission_chain_id: inserted.rows[0].submission_chain_id,
+            category_id: (ready.payloadSnapshot as Record<string, unknown>).category_id,
+            result: 'success',
+          }),
+          transactionId, input.now,
+        ],
+      )
+      await client.query(
+        `INSERT INTO audit.audit_logs (
+           operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+           after_hash,reason_code,request_id,trace_id,result,created_at
+         ) VALUES ('submission_submit','user',digest($1,'sha256'),'[]'::jsonb,'submission',$2,
+           $3,'submission_created',$4,$5,'success',$6)`,
+        [input.userId, submissionId, this.hash(canonicalJson(ready.previewHashInput)), input.requestId, transactionId, input.now],
+      )
+      await client.query('COMMIT')
+      return this.submissionProjection(inserted.rows[0])
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  private async readReadySnapshot(
+    client: PoolClient,
+    input: Readonly<{
+      userId: string
+      draftId: string
+      expectedVersion: number
+      checkId: string
+      now: Date
+    }>,
+    lockForSubmit: boolean,
+  ) {
+    const draftResult = await client.query<DraftRow>(
+      `SELECT * FROM workflow.submission_drafts WHERE draft_id=$1 ${lockForSubmit ? 'FOR UPDATE' : 'FOR SHARE'}`,
+      [input.draftId],
+    )
+    const draft = draftResult.rows[0]
+    if (!draft) throw submissionError('SUBMISSION_DRAFT_NOT_FOUND', 404)
+    if (draft.owner_user_id !== input.userId) throw submissionError('SUBMISSION_DRAFT_FORBIDDEN', 403)
+    if (draft.status !== 'editing') throw submissionError('SUBMISSION_DRAFT_READ_ONLY', 409)
+    if (draft.expires_at.getTime() <= input.now.getTime()) throw submissionError('SUBMISSION_DRAFT_EXPIRED', 410)
+    if (draft.version !== input.expectedVersion) {
+      throw submissionError('SUBMISSION_DRAFT_VERSION_CONFLICT', 409, false, {
+        expected_version: input.expectedVersion,
+        current_version: draft.version,
+      })
+    }
+    if (draft.check_id !== input.checkId) throw submissionError('SUBMISSION_CHECK_MISMATCH', 409)
+    const checkResult = await client.query<UrlCheckRow>(
+      `SELECT * FROM workflow.submission_url_checks WHERE check_id=$1 ${lockForSubmit ? 'FOR UPDATE' : 'FOR SHARE'}`,
+      [input.checkId],
+    )
+    const check = checkResult.rows[0]
+    if (!check) throw submissionError('SUBMISSION_URL_CHECK_NOT_FOUND', 404)
+    if (check.owner_user_id !== input.userId) throw submissionError('SUBMISSION_URL_CHECK_FORBIDDEN', 403)
+    if (check.expires_at.getTime() <= input.now.getTime()) throw submissionError('SUBMISSION_URL_CHECK_EXPIRED', 410)
+    if (
+      check.category_id !== draft.category_id || check.category_schema_version !== draft.category_schema_version ||
+      check.risk_result !== 'allowed' || check.access_result !== 'accessible' ||
+      check.duplicate_result !== 'none' || check.canonical_url === null
+    ) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
+    const duplicate = await client.query<{ readonly project_id: string } & QueryResultRow>(
+      `SELECT project_id FROM catalog.projects
+       WHERE canonical_url_hash=digest($1,'sha256') AND review_status<>'deleted'
+       LIMIT 1 FOR SHARE`,
+      [check.canonical_url],
+    )
+    if (duplicate.rows[0]) {
+      throw submissionError('SUBMISSION_DUPLICATE_FOUND', 409, false, { project_id: duplicate.rows[0].project_id })
+    }
+
+    const boundMediaIds = this.uniqueStringArray(
+      draft.media_reference_ids_json,
+      'SUBMISSION_MEDIA_BINDING_INVALID',
+    )
+    const mediaResult = await client.query<ReadyReferenceRow>(
+      `SELECT reference.media_reference_id,reference.role,reference.sort_order,
+              resource.owner_user_id AS resource_owner_user_id,
+              resource.status AS resource_status,resource.scan_result,resource.deletion_guard_job_id
+       FROM media.media_references reference
+       JOIN media.media_resources resource ON resource.media_resource_id=reference.media_resource_id
+       WHERE reference.target_type='submission_draft' AND reference.target_id=$1
+         AND reference.lifecycle_status='active'
+       ORDER BY reference.role,reference.sort_order,reference.media_reference_id
+       ${lockForSubmit ? 'FOR SHARE OF reference,resource' : ''}`,
+      [input.draftId],
+    )
+    const activeMediaIds = mediaResult.rows.map((row) => row.media_reference_id)
+    if (!this.sameStringSet(boundMediaIds, activeMediaIds)) {
+      throw submissionError('SUBMISSION_MEDIA_BINDING_INVALID', 500, true)
+    }
+    if (mediaResult.rows.some((row) => (
+      row.resource_owner_user_id !== input.userId || row.resource_status !== 'ready' ||
+      row.scan_result !== 'clean' || row.deletion_guard_job_id !== null
+    ))) throw submissionError('SUBMISSION_MEDIA_NOT_READY', 422)
+    const mediaIds = activeMediaIds
+    const coverIds = mediaResult.rows.filter((row) => row.role === 'cover')
+      .sort((left, right) => left.sort_order - right.sort_order || left.media_reference_id.localeCompare(right.media_reference_id))
+      .map((row) => row.media_reference_id)
+
+    const boundEvidenceIds = this.uniqueStringArray(
+      draft.evidence_draft_ids_json,
+      'SUBMISSION_EVIDENCE_BINDING_INVALID',
+    )
+    const evidenceResult = await client.query<{
+      readonly evidence_draft_id: string
+      readonly owner_user_id: string
+      readonly parent_type: string
+      readonly parent_id: string
+      readonly status: string
+    } & QueryResultRow>(
+      `SELECT evidence_draft_id,owner_user_id,parent_type,parent_id,status
+       FROM workflow.evidence_drafts
+       WHERE evidence_draft_id=ANY($1::uuid[])
+       ORDER BY evidence_draft_id ${lockForSubmit ? 'FOR SHARE' : ''}`,
+      [boundEvidenceIds],
+    )
+    if (
+      evidenceResult.rows.length !== boundEvidenceIds.length ||
+      evidenceResult.rows.some((row) => (
+        row.owner_user_id !== input.userId || row.parent_type !== 'submission_draft' ||
+        row.parent_id !== input.draftId
+      ))
+    ) throw submissionError('SUBMISSION_EVIDENCE_BINDING_INVALID', 500, true)
+    if (evidenceResult.rows.some((row) => row.status !== 'ready')) {
+      throw submissionError('SUBMISSION_EVIDENCE_NOT_READY', 422)
+    }
+    const evidenceIds = evidenceResult.rows.map((row) => row.evidence_draft_id)
+    const invalidAttachment = await client.query<QueryResultRow>(
+      `SELECT 1 FROM workflow.evidence_attachment_drafts attachment
+       JOIN workflow.evidence_drafts draft ON draft.evidence_draft_id=attachment.evidence_draft_id
+       JOIN media.media_resources resource ON resource.media_resource_id=attachment.media_resource_id
+       WHERE draft.evidence_draft_id=ANY($2::uuid[])
+         AND attachment.status='active'
+         AND (resource.owner_user_id<>$1 OR resource.status<>'ready' OR resource.scan_result<>'clean'
+           OR resource.deletion_guard_job_id IS NOT NULL)
+       LIMIT 1`,
+      [input.userId, boundEvidenceIds],
+    )
+    if (invalidAttachment.rows[0]) throw submissionError('SUBMISSION_EVIDENCE_ATTACHMENT_NOT_READY', 422)
+    return validateSubmissionReadySnapshot({
+      payloadSnapshot: draft.payload_snapshot,
+      categoryId: draft.category_id,
+      schemaVersion: draft.category_schema_version,
+      canonicalUrl: check.canonical_url,
+      mediaReferenceIds: mediaIds,
+      coverMediaReferenceIds: coverIds,
+      evidenceDraftIds: evidenceIds,
+      draftId: input.draftId,
+      draftVersion: input.expectedVersion,
+      checkId: input.checkId,
+      checkInputHash: check.input_hash,
+    })
+  }
+
+  private submissionProjection(row: SubmissionRow): SubmissionProjection {
+    return Object.freeze({
+      submission_id: row.submission_id,
+      submission_chain_id: row.submission_chain_id,
+      draft_id: row.draft_id,
+      snapshot_version: row.snapshot_version,
+      review_status: row.review_status,
+      review_work_item_id: row.review_work_item_id,
+      media_reference_ids: Object.freeze(this.stringArray(row.media_reference_ids_json, 'SUBMISSION_STATE_INVALID')),
+      evidence_draft_ids: Object.freeze(this.stringArray(row.evidence_draft_ids_json, 'SUBMISSION_STATE_INVALID')),
+      preview_hash: row.preview_hash,
+      version: row.version,
+      created_at: row.created_at.toISOString(),
+      updated_at: row.updated_at.toISOString(),
+    })
+  }
+
+  private hash(value: string): string {
+    return createHash('sha256').update(value, 'utf8').digest('hex')
+  }
+
   private urlCheckProjection(row: UrlCheckRow): SubmissionUrlCheckProjection {
     const redirectChain = this.stringArray(row.redirect_chain_json, 'SUBMISSION_URL_CHECK_STATE_INVALID')
     const duplicateCandidates = this.duplicateCandidates(row.duplicate_candidates_json)
@@ -525,6 +848,18 @@ export class PostgresSubmissionStore implements SubmissionStore {
       throw submissionError(code, 500, true)
     }
     return [...value]
+  }
+
+  private uniqueStringArray(value: unknown, code: string): string[] {
+    const values = this.stringArray(value, code)
+    if (new Set(values).size !== values.length) throw submissionError(code, 500, true)
+    return values
+  }
+
+  private sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+    if (left.length !== right.length) return false
+    const rightSet = new Set(right)
+    return left.every((value) => rightSet.has(value))
   }
 
   private async lock(client: PoolClient, key: string): Promise<void> {

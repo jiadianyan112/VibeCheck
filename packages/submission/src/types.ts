@@ -9,6 +9,7 @@ export type UrlCheckRiskResult = 'allowed' | 'blocked' | 'uncertain'
 export type UrlCheckAccessResult = 'accessible' | 'unavailable' | 'uncertain' | 'not_checked'
 export type UrlCheckDuplicateResult = 'none' | 'exact' | 'candidate'
 export type SubmissionDraftStatus = 'editing' | 'submitted' | 'closed' | 'expired'
+export type SubmissionReviewStatus = 'pending_review' | 'changes_requested' | 'rejected' | 'withdrawn' | 'approved' | 'publishing' | 'publish_failed' | 'published'
 
 export interface SubmissionDuplicateCandidate {
   readonly project_id: string
@@ -85,4 +86,52 @@ export interface PatchSubmissionDraftCommand {
   readonly patch: Readonly<Record<string, unknown>>
   readonly operationId: string
   readonly requestId: string
+}
+
+export interface PreviewSubmissionDraftCommand {
+  readonly userId: string
+  readonly draftId: string
+  readonly expectedVersion: number
+  readonly checkId: string
+  readonly requestId: string
+}
+
+export interface SubmitSubmissionDraftCommand {
+  readonly userId: string
+  readonly draftId: string
+  readonly draftVersion: number
+  readonly checkId: string
+  readonly previewHash: string
+  readonly submissionKey: string
+  readonly requestId: string
+}
+
+export interface SubmissionPreviewProjection {
+  readonly draft_id: string
+  readonly draft_version: number
+  readonly check_id: string
+  readonly preview_hash: string
+  readonly payload_snapshot: Readonly<Record<string, unknown>>
+  readonly media_reference_ids: readonly string[]
+  readonly evidence_draft_ids: readonly string[]
+  readonly validation: Readonly<{
+    readonly valid: true
+    readonly issue_count: 0
+  }>
+  readonly generated_at: string
+}
+
+export interface SubmissionProjection {
+  readonly submission_id: string
+  readonly submission_chain_id: string
+  readonly draft_id: string
+  readonly snapshot_version: number
+  readonly review_status: SubmissionReviewStatus
+  readonly review_work_item_id: string
+  readonly media_reference_ids: readonly string[]
+  readonly evidence_draft_ids: readonly string[]
+  readonly preview_hash: string
+  readonly version: number
+  readonly created_at: string
+  readonly updated_at: string
 }

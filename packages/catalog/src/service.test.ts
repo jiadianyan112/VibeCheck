@@ -37,6 +37,7 @@ function learningSnapshot(name: string) {
       },
       tech_stack: [],
       deployment_platform: null,
+      access_status: 'normal',
       maintenance_signal: 'unknown',
       status_note: null,
     },

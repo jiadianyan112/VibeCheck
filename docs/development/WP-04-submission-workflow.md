@@ -54,7 +54,7 @@
 
 ## 当前迭代：WP-04C MediaReference 与 EvidenceDraft 晋级前置
 
-状态：控制面实现完成；等待远端 PostgreSQL 质量门禁。对象存储上传面在供应商、安全扫描与 SLA 确认前保持关闭。
+状态：控制面实现完成；首轮远端门禁确认迁移与 Media fixture 通过，Evidence fixture 的 UUID/text 测试 SQL 类型错误已修复并等待复验。对象存储上传面在供应商、安全扫描与 SLA 确认前保持关闭。
 
 ### 已实现
 
@@ -74,6 +74,29 @@
 - 当前没有网页正文抓取、自动截图、OCR 或自动证据提取；这些能力继续受 TBC-004 的合规与供应商决定约束。
 - 尚未创建 Submission、审核工作项或公开 Project；EvidenceDraft/MediaReference 只是 WP-04D 提交事务可校验的正式前置对象。
 
+## 当前迭代：WP-04D 预览冻结与提交审核事务
+
+状态：实现完成；等待远端 PostgreSQL 事务 fixture 复验。
+
+### 已实现
+
+- `OP-DRAFT-PREVIEW`：按 owner、草稿版本和 check_id 生成服务端预览；预览不依赖客户端计算，哈希绑定 draft/version/check/input_hash、规范 ProjectSnapshot、权威 MediaReference ID 和 EvidenceDraft ID。
+- 双品类提交均复用版本化 Catalog Schema 做严格字段校验；Portfolio 仅在 15 个必填字段类型完整时通过，`navigation_pattern` 与 `homepage_sequence` 保持可空/可空数组；ProjectCore 将冻结字段 `access_status` 纳入版本快照契约。
+- 预览与提交都实时复检 URL check 未过期、风险允许、页面可访问、当前无规范 URL 重复；超时后不可沿用旧 preview_hash。
+- MediaReference 使用关系查询而非草稿 JSON 作为权威来源；所有活动引用必须解析到 owner 的 `ready+clean+guard=null` Resource，且至少一项有序 role=cover，与 payload 的封面 ID 完全一致。
+- EvidenceDraft 使用关系查询作为权威来源；至少一项且全部为 ready；活动附件必须属于 owner 且 Resource 仍为 `ready+clean+guard=null`。
+- `OP-SUBMIT` 要求 draft_version、check_id、preview_hash 与 submission_key；同 owner+submission_key 同载荷重放返回同一 Submission，异载荷复用返回 409。
+- 提交在一个 PostgreSQL 事务内锁定所有前置对象，创建 `Submission/pending_review`、唯一 `ReviewWorkItem/queued`、`submission_owner` 冲突主体、`project_submitted` Outbox 和审计，然后把原 Draft 置为 submitted 只读。
+- `project_submitted` payload 只含 draft_id、submission_id、submission_chain_id、category_id、result，不含 project_id 或自然人 ID；提交响应也不返回 project_id。
+- 新增迁移 `000019_submission_preview_and_submit.sql`，Submission 冻结 media_reference_ids 与 preview_hash；OpenAPI 当前为 48 paths / 56 operations。
+- 新增 PostgreSQL 事务 fixture，明确断言一次幂等提交只产生 1 个 Submission、1 个审核项、1 个 Outbox、0 个 Project，并验证提交者不能领取自己的审核项所需的冲突主体已经落库。
+
+### 明确未开放
+
+- 当前提交仅进入人工审核，不创建 Project、Version、Event、正式 Evidence、正式 MediaReference 或 AuthorRelation。
+- `OP-SUB-WITHDRAW`、changes_requested 后的 `OP-DRAFT-REVISE`、审核决定与 approved 后发布事务尚未开放。
+- Media 上传面仍关闭时，生产环境不能凭空构造 ready Resource；本迭代只完成对真实前置对象的提交消费事务。
+
 ### 下一迭代
 
-WP-04D：实现服务端预览与冻结哈希；提交时在单事务内复检草稿、URL、MediaReference、EvidenceDraft 和 owner 版本，创建 `Submission/pending_review`、`ReviewWorkItem/queued`、冲突主体与 `project_submitted` Outbox。随后实现 owner 撤回及退回后的新 revision，不在旧 draft 上重开。
+WP-04E：实现 owner 撤回与审核退回后的新 revision；随后进入审核决定和批准后发布事务，旧 Draft/Submission 保持不可变，不在旧对象上重开。

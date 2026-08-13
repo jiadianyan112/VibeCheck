@@ -19,6 +19,7 @@ const core = {
   },
   tech_stack: ['React'],
   deployment_platform: 'Render',
+  access_status: 'normal',
   maintenance_signal: 'author_updated',
   status_note: null,
 }
