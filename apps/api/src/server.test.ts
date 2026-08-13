@@ -78,10 +78,12 @@ import type {
   AdminOperationPreviewProjection,
   ClaimReviewWorkItemCommand,
   ConfirmAdminOperationCommand,
+  DecideSubmissionReviewCommand,
   HeartbeatReviewWorkItemCommand,
   ListReviewWorkItemsCommand,
   PreviewAdminOperationCommand,
   ReleaseReviewWorkItemCommand,
+  ReviewDecisionProjection,
   ReviewClaimProjection,
   ReviewWorkItemPage,
   ReviewWorkItemProjection,
@@ -93,6 +95,7 @@ import {
   type ApiCatalogService,
   type ApiAnalyticsService,
   type ApiAdminOperationSecurityService,
+  type ApiReviewDecisionService,
   type ApiAssetResolutionService,
   type ApiComparisonService,
   type ApiCommunityService,
@@ -133,6 +136,7 @@ async function start(
   submission?: ApiSubmissionService,
   workflow?: ApiWorkflowService,
   adminOperations?: ApiAdminOperationSecurityService,
+  reviewDecisions?: ApiReviewDecisionService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -145,7 +149,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -166,6 +170,7 @@ async function start(
     ...(submission ? { submission } : {}),
     ...(workflow ? { workflow } : {}),
     ...(adminOperations ? { adminOperations } : {}),
+    ...(reviewDecisions ? { reviewDecisions } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -1080,6 +1085,81 @@ test('admin operation preview and confirm preserve the primary session and exact
     assert.equal(confirm.status, 201)
     assert.equal(adminOperations.confirmCommand?.sessionToken, sessionToken)
     assert.equal(adminOperations.confirmCommand?.previewToken, previewBody.preview_token)
+  } finally {
+    await runtime.stop()
+  }
+})
+
+class FakeReviewDecisionService implements ApiReviewDecisionService {
+  command: DecideSubmissionReviewCommand | null = null
+
+  async decideSubmission(command: DecideSubmissionReviewCommand): Promise<ReviewDecisionProjection> {
+    this.command = command
+    return Object.freeze({
+      review_decision_id: '10000000-0000-4000-8000-000000000011',
+      work_item_id: command.workItemId,
+      work_type: 'submission',
+      target_type: 'submission',
+      target_id: '10000000-0000-4000-8000-000000000012',
+      decision: 'approve',
+      project_id: null,
+      base_version_id: null,
+      resulting_status: 'approved',
+      work_item_status: 'decided',
+      work_item_decision_ref_type: 'review_decision',
+      transaction_id: '10000000-0000-4000-8000-000000000013',
+      committed_at: '2026-08-10T00:00:00.000Z',
+      schema_version: 'review_decision.v1',
+      domain_status: 'approved',
+      outbox_status: 'pending',
+    })
+  }
+}
+
+test('submission review decision forwards exact claim, preview, confirm and idempotency inputs', async () => {
+  const decisions = new FakeReviewDecisionService()
+  const runtime = await start(
+    async () => undefined,
+    new StaffIdentityService(),
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined,
+    new FakeWorkflowService(),
+    undefined,
+    decisions,
+  )
+  const sessionToken = 'session-token-with-at-least-thirty-two-characters'
+  const cookie = `vc_session=${sessionToken}; vc_csrf=${session.csrfToken}`
+  try {
+    const response = await fetch(
+      `${runtime.baseUrl}/api/v1/admin/work-items/10000000-0000-4000-8000-000000000010/decision`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://web.example',
+          cookie,
+          'x-csrf-token': session.csrfToken,
+        },
+        body: JSON.stringify({
+          preview_token: 'p'.repeat(43),
+          claim_token: 'c'.repeat(43),
+          confirm_token: 'f'.repeat(43),
+          decision: 'approve',
+          reason_code: 'submission_approved',
+          field_paths: [],
+          decision_evidence_refs: [],
+          expected_version: 2,
+          decision_request_id: 'decision_request_0001',
+          decision_payload: {},
+        }),
+      },
+    )
+    assert.equal(response.status, 200)
+    assert.equal(decisions.command?.sessionToken, sessionToken)
+    assert.equal(decisions.command?.claimToken, 'c'.repeat(43))
+    assert.equal(decisions.command?.confirmToken, 'f'.repeat(43))
+    assert.equal(decisions.command?.expectedVersion, 2)
+    assert.equal(decisions.command?.decisionRequestId, 'decision_request_0001')
   } finally {
     await runtime.stop()
   }

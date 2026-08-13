@@ -128,11 +128,13 @@ import {
   type AdminOperationPreviewProjection,
   type AdminOperationTarget,
   type ConfirmAdminOperationCommand,
+  type DecideSubmissionReviewCommand,
   type ClaimReviewWorkItemCommand,
   type HeartbeatReviewWorkItemCommand,
   type ListReviewWorkItemsCommand,
   type PreviewAdminOperationCommand,
   type ReleaseReviewWorkItemCommand,
+  type ReviewDecisionProjection,
   type ReviewActor,
   type ReviewClaimProjection,
   type ReviewWorkItemPage,
@@ -289,6 +291,10 @@ export interface ApiAdminOperationSecurityService {
   confirm(command: ConfirmAdminOperationCommand): Promise<AdminOperationConfirmProjection>
 }
 
+export interface ApiReviewDecisionService {
+  decideSubmission(command: DecideSubmissionReviewCommand): Promise<ReviewDecisionProjection>
+}
+
 export interface ApiMediaService {
   getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection>
   createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection>
@@ -326,6 +332,7 @@ export interface ApiServerDependencies {
   readonly submission?: ApiSubmissionService
   readonly workflow?: ApiWorkflowService
   readonly adminOperations?: ApiAdminOperationSecurityService
+  readonly reviewDecisions?: ApiReviewDecisionService
   readonly authCookieSecure?: boolean
   readonly anonymousCookieSecret?: string
   readonly staticDirectory?: string
@@ -1433,15 +1440,17 @@ async function handleWorkflowRequest(
   const claimMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/claim$/)
   const heartbeatMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/heartbeat$/)
   const releaseMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/release$/)
+  const decisionMatch = path.match(/^\/api\/v1\/admin\/work-items\/([^/]+)\/decision$/)
   if (
     path !== collectionPath && claimMatch === null &&
-    heartbeatMatch === null && releaseMatch === null
+    heartbeatMatch === null && releaseMatch === null && decisionMatch === null
   ) return null
   if (
     (path === collectionPath && method !== 'GET') ||
     (claimMatch !== null && method !== 'POST') ||
     (heartbeatMatch !== null && method !== 'POST') ||
-    (releaseMatch !== null && method !== 'POST')
+    (releaseMatch !== null && method !== 'POST') ||
+    (decisionMatch !== null && method !== 'POST')
   ) return null
   if (!dependencies.workflow) throw new WorkflowError('WORKFLOW_SERVICE_UNAVAILABLE', 503, true)
   const session = await resolveAuthenticatedSession(request, dependencies)
@@ -1471,6 +1480,36 @@ async function handleWorkflowRequest(
   if (!requestOriginAllowed(request, config)) throw new WorkflowError('ORIGIN_INVALID', 403)
   requireWorkflowMutationCsrf(request)
   const body = await readJsonBody(request)
+  if (decisionMatch !== null) {
+    if (!dependencies.reviewDecisions) {
+      throw new WorkflowError('REVIEW_DECISION_SERVICE_UNAVAILABLE', 503, true)
+    }
+    const sessionToken = parseCookies(request)[authCookieNames.session]
+    if (!sessionToken) throw new WorkflowError('SESSION_INVALID', 401)
+    exactKeys(body, [
+      'preview_token', 'claim_token', 'confirm_token', 'decision', 'reason_code',
+      'field_paths', 'decision_evidence_refs', 'expected_version', 'decision_request_id',
+      'decision_payload',
+    ])
+    const projection = await dependencies.reviewDecisions.decideSubmission({
+      actor,
+      sessionToken,
+      workItemId: decisionMatch[1]!,
+      previewToken: stringField(body, 'preview_token', { minimum: 43, maximum: 43 })!,
+      claimToken: stringField(body, 'claim_token', { minimum: 43, maximum: 43 })!,
+      confirmToken: stringField(body, 'confirm_token', { minimum: 43, maximum: 43 })!,
+      decision: stringField(body, 'decision', { maximum: 64 })!,
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      fieldPaths: stringArrayField(body, 'field_paths', 50, 512),
+      decisionEvidenceRefs: stringArrayField(body, 'decision_evidence_refs', 50, 36),
+      expectedVersion: integerField(body, 'expected_version', 1),
+      decisionRequestId: stringField(body, 'decision_request_id', { maximum: 64 })!,
+      decisionPayload: objectField(body, 'decision_payload'),
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
   if (claimMatch !== null) {
     exactKeys(body, ['expected_version', 'expected_conflict_principal_version'])
     const rawPrincipalVersion = body.expected_conflict_principal_version

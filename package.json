@@ -56,6 +56,7 @@
     "submission:revision:fixture:verify": "npm run fixture:revision:verify -w @vibecheck/submission",
     "workflow:fixture:verify": "npm run fixture:verify -w @vibecheck/workflow",
     "workflow:admin-security:fixture:verify": "npm run fixture:admin-security:verify -w @vibecheck/workflow",
+    "workflow:review-decision:fixture:verify": "npm run fixture:review-decision:verify -w @vibecheck/workflow",
     "media:fixture:verify": "npm run fixture:verify -w @vibecheck/media",
     "evidence:fixture:verify": "npm run fixture:verify -w @vibecheck/evidence",
     "deployment:check": "npm run check:deployment -w @vibecheck/contracts",

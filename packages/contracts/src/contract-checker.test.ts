@@ -61,6 +61,7 @@ describe('OpenAPI contract', () => {
       'OP-ADMIN-CLAIM',
       'OP-ADMIN-HEARTBEAT',
       'OP-ADMIN-RELEASE',
+      'OP-ADMIN-DECISION',
       'OP-PROJ-LIST',
       'OP-PROJ-GET',
       'OP-EVENT-LIST',
@@ -68,7 +69,7 @@ describe('OpenAPI contract', () => {
       'OP-ASSET-RESOLVE',
       'OP-CREATOR-GET',
     ])
-    assert.equal(result.pathCount, 52)
+    assert.equal(result.pathCount, 53)
   })
 
   it('rejects a dangling local schema reference', () => {

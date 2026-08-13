@@ -160,3 +160,27 @@ WP-04F：实现不可变 ReviewDecision 与 `OP-ADMIN-DECISION`，先覆盖 chan
 ### 下一步
 
 WP-04F1：实现 Submission 分支的不可变 `ReviewDecision v1` 与 `OP-ADMIN-DECISION`，要求有效 claim+preview+confirm，并把决定、Submission 审核态、WorkItem typed decision ref、Outbox 和审计写入同一事务。
+
+## 当前迭代：WP-04F1 Submission 审核决定
+
+状态：实现完成；进入远端 PostgreSQL 事务 fixture 验证。
+
+### 已实现
+
+- 新增迁移 `000023_review_decisions.sql` 与唯一不可变 `ReviewDecision v1`。决定按 WorkItem 唯一，另以 actor+work_item+decision_request_id 幂等；相同请求同载荷返回原决定，异载荷复用返回 409。
+- `OP-ADMIN-DECISION` 首个正式 handler 仅开放 `work_type=submission,target_type=submission`，只接受 `approve|changes_requested|reject`；Submission 分支强制 `project_id/base_version_id=null`，branch-specific `decision_payload` 必须为空对象。
+- `changes_requested` 必须给至少一个 JSON Pointer field_path；field_paths 与 decision_evidence_refs 规范化、去重并参与 decision_payload_hash，引用的正式 Evidence 必须存在。
+- 提交事务先锁并重检当前 session/roles_version、WorkItem expected_version、领取者、60 秒 lease、claim 哈希、职责冲突、Submission pending_review、preview 目标/版本/差异/原因绑定和 confirm 绑定/TTL。
+- `approve` 额外重检冻结的 EvidenceDraft 仍为 ready，MediaReference 仍 active 且 Resource ready+clean、无 deletion guard；任何失败均不消费 token、不写部分决定。
+- 成功事务原子创建 ReviewDecision，把 Submission 写为 approved/changes_requested/rejected，把 WorkItem 写为 decided 并反指 typed decision ref，同时消费 confirm+preview、追加安全事件/WorkItemEvent/审计与单一 Outbox。
+- approve 只发出 `submission_approved` 发布任务，不创建 Project、Version、Event、正式 Evidence 或正式 MediaReference。OpenAPI 当前为 53 paths / 61 operations。
+- PostgreSQL fixture 覆盖决定唯一性、同载荷回放、异载荷冲突、决定不可更新、token 一次消费、Outbox/事件/审计唯一，以及 Project 数量不变。
+
+### 明确未开放
+
+- `approved` 后的 Project/Version/Event/Evidence/MediaReference 发布事务仍未实现；公共目录不会因审核批准立即出现作品。
+- ProjectUpdate、Verification、Ownership、Evidence、Recheck、Relation、Community 和 CreatorProfile 的 ReviewDecision 分支仍关闭，不能通过 Submission handler 传入其他 target/decision/payload。
+
+### 下一步
+
+WP-04G：实现批准后的 Submission 发布 worker，在独立幂等事务中创建 Project V1、Version、Event，晋级 Evidence/MediaReference，并把 Submission 从 approved 推进到 publishing/published 或 publish_failed。

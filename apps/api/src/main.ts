@@ -42,7 +42,9 @@ import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submissio
 import {
   AdminOperationSecurityService,
   PostgresAdminOperationSecurityStore,
+  PostgresReviewDecisionStore,
   PostgresWorkflowStore,
+  ReviewDecisionService,
   WorkflowService,
 } from '@vibecheck/workflow'
 import { fileURLToPath } from 'node:url'
@@ -146,6 +148,15 @@ const adminOperations = workflowConfig.enabled
       },
     )
   : undefined
+const reviewDecisions = workflowConfig.enabled
+  ? new ReviewDecisionService(
+      new PostgresReviewDecisionStore(pool),
+      {
+        tokenSecret: workflowConfig.cursorSecret,
+        authTokenSecret: identityConfig.authTokenSecret,
+      },
+    )
+  : undefined
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
@@ -153,6 +164,7 @@ const server = createApiServer(config, {
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
   ...(adminOperations ? { adminOperations } : {}),
+  ...(reviewDecisions ? { reviewDecisions } : {}),
   ...(media ? { media } : {}),
   ...(evidence ? { evidence } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),

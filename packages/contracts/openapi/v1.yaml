@@ -1673,6 +1673,36 @@ paths:
           $ref: '#/components/responses/Error'
         '422':
           $ref: '#/components/responses/Error'
+  /api/v1/admin/work-items/{work_item_id}/decision:
+    post:
+      tags: [Workflow]
+      operationId: OP-ADMIN-DECISION
+      summary: Commit one immutable Submission review decision and consume its bound claim, preview and confirmation
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/WorkItemId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionReviewDecisionRequest'
+      responses:
+        '200':
+          description: Newly committed decision or an identical idempotent replay. Publication remains asynchronous.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionReviewDecision'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/projects:
     get:
       tags: [Catalog]
@@ -4845,6 +4875,107 @@ components:
         reason_code:
           type: string
           pattern: '^[a-z][a-z0-9_]{0,63}$'
+    SubmissionReviewDecisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - preview_token
+        - claim_token
+        - confirm_token
+        - decision
+        - reason_code
+        - field_paths
+        - decision_evidence_refs
+        - expected_version
+        - decision_request_id
+        - decision_payload
+      properties:
+        preview_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        claim_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        confirm_token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        decision:
+          type: string
+          enum: [approve, changes_requested, reject]
+        reason_code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+        field_paths:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          description: Must contain at least one JSON Pointer when decision is changes_requested.
+          items:
+            type: string
+            minLength: 1
+            maxLength: 512
+            pattern: '^/'
+        decision_evidence_refs:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        expected_version:
+          type: integer
+          minimum: 1
+          description: Version of the claimed ReviewWorkItem; the Submission version is frozen in the preview.
+        decision_request_id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{8,64}$'
+        decision_payload:
+          type: object
+          additionalProperties: false
+          description: Submission v1 has no branch-specific fields and therefore requires an empty object.
+    SubmissionReviewDecision:
+      type: object
+      additionalProperties: false
+      required:
+        - review_decision_id
+        - work_item_id
+        - work_type
+        - target_type
+        - target_id
+        - decision
+        - project_id
+        - base_version_id
+        - resulting_status
+        - work_item_status
+        - work_item_decision_ref_type
+        - transaction_id
+        - committed_at
+        - schema_version
+        - domain_status
+        - outbox_status
+      properties:
+        review_decision_id: { type: string, format: uuid }
+        work_item_id: { type: string, format: uuid }
+        work_type: { type: string, const: submission }
+        target_type: { type: string, const: submission }
+        target_id: { type: string, format: uuid }
+        decision:
+          type: string
+          enum: [approve, changes_requested, reject]
+        project_id: { type: 'null' }
+        base_version_id: { type: 'null' }
+        resulting_status:
+          type: string
+          enum: [approved, changes_requested, rejected]
+        work_item_status: { type: string, const: decided }
+        work_item_decision_ref_type: { type: string, const: review_decision }
+        transaction_id: { type: string, format: uuid }
+        committed_at: { type: string, format: date-time }
+        schema_version: { type: string, const: review_decision.v1 }
+        domain_status:
+          type: string
+          enum: [approved, changes_requested, rejected]
+        outbox_status: { type: string, const: pending }
     ReviewClaimProjection:
       type: object
       additionalProperties: false
