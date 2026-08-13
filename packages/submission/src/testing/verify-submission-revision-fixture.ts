@@ -148,8 +148,8 @@ async function seed(): Promise<void> {
        'submission-revision-source-submission',$10,2,$11,$11,$11)`,
     [
       sourceSubmissionId, chainId, sourceDraftId, userId, JSON.stringify(payload),
-      JSON.stringify([sourceEvidenceId]), JSON.stringify([sourceReferenceId]), '9'.repeat(64),
-      'a'.repeat(64), now,
+      JSON.stringify([sourceEvidenceId]), JSON.stringify([sourceReferenceId]), sourceWorkItemId,
+      '9'.repeat(64), 'a'.repeat(64), now,
     ],
   )
 }
