@@ -119,7 +119,8 @@ export class PostgresPrivateMaterialStore {
            material_id,verification_id,owner_user_id,storage_key_ciphertext,storage_key_nonce,
            storage_key_auth_tag,storage_key_version,declared_mime,byte_size,checksum_sha256,
            status,scan_result,idempotency_key,request_hash,created_at,updated_at,upload_expires_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'prepared','not_scanned',$11,$12,$13,$13,$13+interval '30 minutes')
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'prepared','not_scanned',$11,$12,
+           $13::timestamptz,$13::timestamptz,$13::timestamptz+interval '30 minutes')
          RETURNING *`,
         [input.materialId, input.verificationId, input.userId, input.storageKey.ciphertext,
           input.storageKey.nonce, input.storageKey.authTag, input.storageKey.keyVersion,
