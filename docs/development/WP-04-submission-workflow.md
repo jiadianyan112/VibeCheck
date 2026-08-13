@@ -437,7 +437,7 @@ WP-05B1：实现已有作品“我是作者”的 VerificationRequest/Verificati
 
 ## 当前迭代：WP-05B1 VerificationRequest 私密草稿链
 
-状态：本地实现、契约与静态验证完成；待远端 PostgreSQL 18 迁移与事务 fixture 验证。
+状态：实现完成；GitHub Actions `31717355151` 已在 PostgreSQL 18 通过全部质量门、迁移与 VerificationRequest 事务 fixture。
 
 ### 已实现
 

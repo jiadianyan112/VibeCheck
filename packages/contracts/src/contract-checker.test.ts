@@ -51,7 +51,7 @@ describe('OpenAPI contract', () => {
       'OP-UPD-SUBMIT',
       'OP-UPD-WITHDRAW',
       'OP-VER-DRAFT-CREATE',
-      'OP-VER-DRAFT-GET',
+      'OP-VER-GET',
       'OP-VER-DRAFT-PATCH',
       'OP-MEDIA-STATUS',
       'OP-MEDIA-REF-LIST',

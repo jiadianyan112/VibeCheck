@@ -1371,7 +1371,7 @@ paths:
         schema: { type: string, format: uuid }
     get:
       tags: [AuthorVerification]
-      operationId: OP-VER-DRAFT-GET
+      operationId: OP-VER-GET
       summary: Read the current applicant's safe verification draft projection
       security:
         - sessionCookie: []
