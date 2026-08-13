@@ -184,3 +184,43 @@ WP-04F1：实现 Submission 分支的不可变 `ReviewDecision v1` 与 `OP-ADMIN
 ### 下一步
 
 WP-04G：实现批准后的 Submission 发布 worker，在独立幂等事务中创建 Project V1、Version、Event，晋级 Evidence/MediaReference，并把 Submission 从 approved 推进到 publishing/published 或 publish_failed。
+
+## 当前迭代：WP-04G 审核通过后的正式发布事务
+
+状态：实现完成；GitHub Actions `31673662696` 已在 PostgreSQL 18 通过全部质量门与事务 fixture。
+
+### 已实现
+
+- worker 只消费绑定 `aggregate_type=submission` 的 `submission_approved`，并复核 payload 的 submission_id 与 aggregate_id 完全一致；畸形或跨 aggregate 事件不进入领域事务。
+- 发布先把 `approved/publish_failed` 推进为 `publishing` 并累加 attempt；worker 崩溃后可从 publishing 恢复。领域失败单独写 `publish_failed+last_error_code`，不会遗留半成品公开事实。
+- 成功事务重新锁定 Submission、不可变 approve ReviewDecision、decided WorkItem、submitted Draft、URL check、全部 EvidenceDraft/附件及 MediaReference/Resource；审核后被撤销、感染、进入删除 guard 或版本错位的依赖会使整个事务回滚。
+- 单一事务创建 `published_platform`、`record_source=user_submission`、`author_link_status=unlinked` 的 Project，显式 V1、first_published Event、正式 Evidence/附件及只读 project_version MediaReference；封面 ID 在 Version snapshot 中替换为正式引用 ID。
+- EvidenceDraft 按稳定 ID 顺序一对一晋级并绑定同一 ReviewDecision；project/version/event/asset 目标在事务内解析。资产必须存在对应 asset_draft_key Evidence，关系目标在 Submission 发布分支拒绝。
+- `submission_publication_receipts` 以 submission_id 唯一、不可更新/删除；重复 Outbox 投递返回同一 Project/Version/Event/transaction，不重复写 Project、证据、媒体、事件或 `project_published` Outbox。
+- 发布成功后 Submission 原子写入 published、resulting_project_id、promoted_evidence_ids 和 published_at；不创建 Creator、AuthorRelation 或作者权限，已有档案作者关联仍只走低频人工验证。
+- 迁移 `000024_submission_publication.sql` 同时把历史 Version decision type 从旧原型枚举收敛为 `review_decision|admin_fact_decision|system_fact_decision`；现有 fixture 已迁移到正式枚举。
+- PostgreSQL fixture 验证单一 Project/V1/Event/Evidence/Attachment/正式媒体/收据/Outbox、封面 ID 重写、零 AuthorRelation、同决定幂等回放和异决定冲突；worker 单测覆盖事件 aggregate 绑定。
+
+### 后续边界
+
+- `project_published` 的搜索文档刷新、站内通知和可观测消费收据进入下一工作包；正式事实发布不依赖这些异步投影成功。
+- asset safe_web_url 的审核前 DNS/重定向安全收据尚未形成独立草稿能力；在该入口开放前不得把人工构造的 asset_drafts 当作受信输入。
+- ProjectUpdate、作者验证、Ownership、关系与社区等其余 ReviewDecision 分支继续关闭，不能复用 Submission 发布器绕过各自状态机。
+
+## 当前迭代：WP-04H1 发布后的搜索投影
+
+状态：实现完成；进入远端 PostgreSQL 投影 fixture 验证。
+
+### 已实现
+
+- worker 新增独立 `project_published` handler，强制 `aggregate_type=project` 且 aggregate_id 与 payload project_id 一致；事件必须同时携带 project/version/submission/review_decision 四个稳定 ID。
+- 索引事务从 `submission_publication_receipts` 回查发布来源，并复核 Submission 已 published、Project 仍公开、ReviewDecision 为 approve；不能用客户端事件载荷单独构造搜索文档。
+- 搜索结构化字段和全文文本统一调用 catalog 的版本化 ProjectSnapshot validator 与 `buildSearchDocument`，不在 worker 复制第二套字段规则，也不扩写资料中不存在的事实。
+- `search.project_documents` 按 Project 幂等 UPSERT；同版本重放不重写，延迟旧事件会读取并索引 Project 当前 Version，版本号 CAS 禁止旧投影覆盖更新版本。
+- 同一投影事务初始化可重建的 project_interaction_counters；已存在计数绝不归零或覆盖。
+- 搜索投影失败只让 `project_published` Outbox 重试，不回滚或降级已发布 Project。worker 统一沿用 60 秒处理租约、最多 8 次指数退避和 dead-letter 边界。
+- 发布 PostgreSQL fixture 已扩展为搜索文档/正式 Version 一致性、互动计数唯一和同版本投影回放验证；worker 单测覆盖跨 Project aggregate 拒绝。
+
+### 下一步
+
+WP-04H2：建立 P0 站内 Notification 存储、用户隔离读取与幂等已读最终态，再让 `project_published` 为 Submission owner 写发布成功通知；站外邮件不进入 P0。

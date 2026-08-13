@@ -13,6 +13,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@vibecheck/catalog": "*",
     "@vibecheck/config": "*",
     "@vibecheck/database": "*",
     "@vibecheck/observability": "*",

@@ -29,6 +29,11 @@ export {
 } from './admin-importer.js'
 export { CatalogService, type CatalogServiceDependencies } from './service.js'
 export {
+  PostgresPublishedProjectIndexer,
+  type PublishedProjectIndexProjection,
+} from './published-project-indexer.js'
+export { buildSearchDocument, type CatalogSearchDocument } from './search-document.js'
+export {
   PostgresCatalogStore,
   type CatalogStore,
   type ListStoredAssetsInput,

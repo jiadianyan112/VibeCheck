@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
 import pg from 'pg'
+import { PostgresPublishedProjectIndexer } from '@vibecheck/catalog'
 
 import { PostgresSubmissionPublisher } from '../publication.js'
 
@@ -26,6 +27,7 @@ const reviewTransactionId = '96000000-0000-4000-8000-000000000013'
 const now = new Date('2026-08-13T16:00:00.000Z')
 const canonicalUrl = 'https://submission-publication-fixture.example'
 const publisher = new PostgresSubmissionPublisher(pool, () => now)
+const indexer = new PostgresPublishedProjectIndexer(pool, () => now)
 
 const payload = Object.freeze({
   project_core: Object.freeze({
@@ -173,6 +175,21 @@ async function run(): Promise<void> {
   const published = await publisher.publishApprovedSubmission(submissionId, reviewDecisionId)
   const replay = await publisher.publishApprovedSubmission(submissionId, reviewDecisionId)
   assert.deepEqual(replay, published)
+  const indexed = await indexer.indexPublishedProject({
+    projectId: published.project_id,
+    versionId: published.version_id,
+    submissionId,
+    reviewDecisionId,
+  })
+  const indexReplay = await indexer.indexPublishedProject({
+    projectId: published.project_id,
+    versionId: published.version_id,
+    submissionId,
+    reviewDecisionId,
+  })
+  assert.equal(indexReplay.project_id, indexed.project_id)
+  assert.equal(indexReplay.version_id, indexed.version_id)
+  assert.equal(indexReplay.index_status, 'already_current')
   await assert.rejects(
     () => publisher.publishApprovedSubmission(
       submissionId, '96000000-0000-4000-8000-000000000099',
@@ -198,6 +215,8 @@ async function run(): Promise<void> {
     readonly receipt_count: number
     readonly outbox_count: number
     readonly cover_ids: string[]
+    readonly search_document_count: number
+    readonly counter_count: number
   }>(
     `SELECT submission.review_status,submission.resulting_project_id,submission.publish_attempt_count,
        project.review_status AS project_status,project.record_source,project.author_link_status,
@@ -217,6 +236,11 @@ async function run(): Promise<void> {
           WHERE submission_id=submission.submission_id) AS receipt_count,
        (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_type='project'
           AND aggregate_id=project.project_id::text AND event_name='project_published') AS outbox_count,
+       (SELECT count(*)::int FROM search.project_documents document
+          WHERE document.project_id=project.project_id AND document.version_id=version.version_id
+            AND document.visibility='public') AS search_document_count,
+       (SELECT count(*)::int FROM catalog.project_interaction_counters counter
+          WHERE counter.project_id=project.project_id) AS counter_count,
        ARRAY(SELECT jsonb_array_elements_text(version.snapshot_json->'project_core'->'cover_media_reference_ids')) AS cover_ids
      FROM workflow.submissions submission
      JOIN catalog.projects project ON project.project_id=submission.resulting_project_id
@@ -240,6 +264,8 @@ async function run(): Promise<void> {
   assert.equal(row.author_relation_count, 0)
   assert.equal(row.receipt_count, 1)
   assert.equal(row.outbox_count, 1)
+  assert.equal(row.search_document_count, 1)
+  assert.equal(row.counter_count, 1)
   assert.equal(row.cover_ids.length, 1)
   assert.notEqual(row.cover_ids[0], referenceId)
 }
