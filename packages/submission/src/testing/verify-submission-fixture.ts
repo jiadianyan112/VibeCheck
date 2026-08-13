@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 
 import pg from 'pg'
 
@@ -14,8 +15,9 @@ const pool = new Pool({ connectionString: databaseUrl })
 const userId = '82000000-0000-4000-8000-000000000001'
 const fixtureUrl = 'https://submission-fixture.example/work'
 const now = new Date('2026-08-13T10:00:00.000Z')
+const store = new PostgresSubmissionStore(pool)
 const service = new SubmissionService({
-  store: new PostgresSubmissionStore(pool),
+  store,
   urlSafetyResolver: Object.freeze({
     async resolve(rawUrl: string) {
       return Object.freeze({
@@ -175,6 +177,28 @@ async function run(): Promise<void> {
      ORDER BY project_id LIMIT 1`,
   )
   assert.ok(existingProject.rows[0])
+  const duplicateHash = createHash('sha256')
+    .update(existingProject.rows[0]!.canonical_public_url, 'utf8')
+    .digest()
+  const hashProbe = await pool.query<{
+    readonly stored_hash: string
+    readonly database_url_hash: string
+    readonly supplied_url_hash: string
+  }>(
+    `SELECT encode(canonical_url_hash,'hex') AS stored_hash,
+       encode(digest(canonical_public_url::text,'sha256'),'hex') AS database_url_hash,
+       encode(digest($2::text,'sha256'),'hex') AS supplied_url_hash
+     FROM catalog.projects WHERE project_id=$1`,
+    [existingProject.rows[0]!.project_id, existingProject.rows[0]!.canonical_public_url],
+  )
+  assert.equal(hashProbe.rows[0]?.stored_hash, hashProbe.rows[0]?.database_url_hash)
+  assert.equal(hashProbe.rows[0]?.stored_hash, hashProbe.rows[0]?.supplied_url_hash)
+  assert.equal(hashProbe.rows[0]?.stored_hash, duplicateHash.toString('hex'))
+  const directDuplicates = await store.findDuplicateCandidates({
+    canonicalUrlHash: duplicateHash,
+    categoryId: 'personal_site_portfolio',
+  })
+  assert.equal(directDuplicates[0]?.project_id, existingProject.rows[0]!.project_id)
   const duplicate = await service.checkUrl({
     userId,
     rawUrl: existingProject.rows[0]!.canonical_public_url,
