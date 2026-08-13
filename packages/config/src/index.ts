@@ -98,6 +98,14 @@ export interface WorkflowConfig {
   readonly queuePageSize: number
 }
 
+export interface MediaConfig {
+  readonly enabled: boolean
+}
+
+export interface EvidenceConfig {
+  readonly enabled: boolean
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -505,5 +513,17 @@ export function loadWorkflowConfig(
     queuePageSize: parseInteger(
       'REVIEW_WORKFLOW_QUEUE_PAGE_SIZE', env.REVIEW_WORKFLOW_QUEUE_PAGE_SIZE, 25, 1, 50,
     ),
+  })
+}
+
+export function loadMediaConfig(env: NodeJS.ProcessEnv = process.env): MediaConfig {
+  return Object.freeze({
+    enabled: parseBoolean('MEDIA_ENABLED', env.MEDIA_ENABLED, false),
+  })
+}
+
+export function loadEvidenceConfig(env: NodeJS.ProcessEnv = process.env): EvidenceConfig {
+  return Object.freeze({
+    enabled: parseBoolean('EVIDENCE_ENABLED', env.EVIDENCE_ENABLED, false),
   })
 }

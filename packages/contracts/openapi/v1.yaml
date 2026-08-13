@@ -18,6 +18,8 @@ tags:
   - name: Analytics
   - name: Submission
   - name: Workflow
+  - name: Media
+  - name: Evidence
 paths:
   /health/live:
     get:
@@ -991,6 +993,364 @@ paths:
           $ref: '#/components/responses/Error'
         '422':
           $ref: '#/components/responses/Error'
+  /api/v1/media-resources/{media_resource_id}:
+    get:
+      tags: [Media]
+      operationId: OP-MEDIA-STATUS
+      summary: Read an owner-bound media resource status without exposing storage coordinates
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: media_resource_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Owner-safe media resource projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaResource' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/media-references:
+    get:
+      tags: [Media]
+      operationId: OP-MEDIA-REF-LIST
+      summary: List active references for one authorized draft target
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: target_type
+          required: true
+          schema: { $ref: '#/components/schemas/MediaTargetType' }
+        - in: query
+          name: target_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: role
+          required: false
+          schema: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+      responses:
+        '200':
+          description: Authorized target reference page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaReferencePage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Media]
+      operationId: OP-MEDIA-REF-CREATE
+      summary: Create one idempotent draft reference from a ready clean owner resource
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MediaReferenceCreateRequest' }
+      responses:
+        '201':
+          description: New or idempotently replayed draft reference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaReference' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/media-references/{media_reference_id}:
+    parameters:
+      - in: path
+        name: media_reference_id
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Media]
+      operationId: OP-MEDIA-REF-PATCH
+      summary: Replace editable presentation metadata with optimistic concurrency
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MediaReferencePatchRequest' }
+      responses:
+        '200':
+          description: Updated or idempotently replayed draft reference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaReference' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Media]
+      operationId: OP-MEDIA-REF-DELETE
+      summary: Idempotently unlink one draft reference without deleting its resource
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionedOperationRequest' }
+      responses:
+        '204': { description: Reference unlinked or original receipt replayed. }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts:
+    post:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-CREATE
+      summary: Create one owner-bound, single-target evidence draft shell
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceDraftCreateRequest' }
+      responses:
+        '201':
+          description: New or idempotently replayed evidence draft.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts/{evidence_draft_id}:
+    parameters:
+      - in: path
+        name: evidence_draft_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-GET
+      summary: Read one owner evidence draft and its attachment projections
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Owner-safe evidence draft projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-PATCH
+      summary: Patch an editing evidence draft and append a version snapshot
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceDraftPatchRequest' }
+      responses:
+        '200':
+          description: Updated or idempotently replayed draft.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts/{evidence_draft_id}/binding:
+    post:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-BIND
+      summary: Bind one evidence draft into its exact parent aggregate once
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: evidence_draft_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceDraftBindRequest' }
+      responses:
+        '200':
+          description: Parent and evidence versions after binding.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceBinding' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts/{evidence_draft_id}/complete:
+    post:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-COMPLETE
+      summary: Freeze a deterministic final-field preview after all source guards pass
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: evidence_draft_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionedOperationRequest' }
+      responses:
+        '200':
+          description: Ready evidence draft with deterministic final-field preview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts/{evidence_draft_id}/withdraw:
+    post:
+      tags: [Evidence]
+      operationId: OP-EVID-DRAFT-WITHDRAW
+      summary: Withdraw a non-promoted evidence draft without deleting its history
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: evidence_draft_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceDraftWithdrawRequest' }
+      responses:
+        '200':
+          description: Withdrawn draft projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-drafts/{evidence_draft_id}/attachments:
+    post:
+      tags: [Evidence]
+      operationId: OP-EVID-ATTACH-CREATE
+      summary: Attach one ready clean owner resource under evidence-specific ACL
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: evidence_draft_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceAttachmentCreateRequest' }
+      responses:
+        '201':
+          description: Evidence attachment draft; no MediaReference is created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceAttachmentDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/evidence-attachment-drafts/{attachment_draft_id}:
+    delete:
+      tags: [Evidence]
+      operationId: OP-EVID-ATTACH-DELETE
+      summary: Withdraw one active attachment draft before its parent is completed
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: attachment_draft_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionedOperationRequest' }
+      responses:
+        '200':
+          description: Withdrawn attachment draft projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceAttachmentDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/admin/work-items:
     get:
       tags: [Workflow]
@@ -1425,6 +1785,13 @@ components:
         type: string
         minLength: 32
         maxLength: 128
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._:-]{8,128}$'
   responses:
     Error:
       description: Stable error envelope.
@@ -1433,6 +1800,340 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    MediaTargetType:
+      enum:
+        - submission_draft
+        - admin_project_creation_draft
+        - admin_project_edit_draft
+        - project_update
+        - creator_profile_draft
+        - project_version
+        - creator_profile_version
+    MediaResource:
+      type: object
+      additionalProperties: false
+      required:
+        - media_resource_id
+        - declared_mime
+        - detected_mime
+        - byte_size
+        - width
+        - height
+        - duration_ms
+        - checksum_sha256
+        - source
+        - status
+        - scan_result
+        - rejection_reason_code
+        - scan_attempt_count
+        - next_scan_at
+        - exif_removed
+        - deletion_guard_active
+        - version
+        - created_at
+        - updated_at
+      properties:
+        media_resource_id: { type: string, format: uuid }
+        declared_mime: { type: string, maxLength: 128 }
+        detected_mime: { type: [string, 'null'], maxLength: 128 }
+        byte_size: { type: integer, minimum: 1 }
+        width: { type: [integer, 'null'], minimum: 1 }
+        height: { type: [integer, 'null'], minimum: 1 }
+        duration_ms: { type: [integer, 'null'], minimum: 0 }
+        checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        source: { enum: [upload, migration] }
+        status: { enum: [created, uploading, uploaded, scanning, processing, ready, rejected, deleted] }
+        scan_result: { enum: [not_scanned, clean, malicious, unscannable] }
+        rejection_reason_code: { type: [string, 'null'], maxLength: 64 }
+        scan_attempt_count: { type: integer, minimum: 0 }
+        next_scan_at: { type: [string, 'null'], format: date-time }
+        exif_removed: { type: boolean }
+        deletion_guard_active: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MediaReference:
+      type: object
+      additionalProperties: false
+      required:
+        - media_reference_id
+        - media_resource_id
+        - target_type
+        - target_id
+        - role
+        - alt_text
+        - sort_order
+        - crop_focus
+        - variant
+        - source_media_reference_id
+        - version
+        - created_at
+        - updated_at
+      properties:
+        media_reference_id: { type: string, format: uuid }
+        media_resource_id: { type: string, format: uuid }
+        target_type: { $ref: '#/components/schemas/MediaTargetType' }
+        target_id: { type: string, format: uuid }
+        role: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        alt_text: { type: string, minLength: 1, maxLength: 200 }
+        sort_order: { type: integer, minimum: 0, maximum: 999 }
+        crop_focus:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [x, y]
+              properties:
+                x: { type: number, minimum: 0, maximum: 1 }
+                y: { type: number, minimum: 0, maximum: 1 }
+        variant: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9._-]{0,127}$' }
+        source_media_reference_id: { type: [string, 'null'], format: uuid }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MediaReferencePage:
+      type: object
+      additionalProperties: false
+      required: [items, total_count]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MediaReference' }
+        total_count: { type: integer, minimum: 0 }
+    MediaReferenceCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - media_resource_id
+        - target_type
+        - target_id
+        - role
+        - alt_text
+        - sort_order
+        - crop_focus
+        - variant
+        - client_request_id
+      properties:
+        media_resource_id: { type: string, format: uuid }
+        target_type: { $ref: '#/components/schemas/MediaTargetType' }
+        target_id: { type: string, format: uuid }
+        role: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        alt_text: { type: string, minLength: 1, maxLength: 200 }
+        sort_order: { type: integer, minimum: 0, maximum: 999 }
+        crop_focus:
+          oneOf:
+            - type: 'null'
+            - type: object
+        variant: { type: [string, 'null'], maxLength: 128 }
+        client_request_id: { type: string, minLength: 8, maxLength: 128 }
+    MediaReferencePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, alt_text, sort_order, crop_focus, variant]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        alt_text: { type: string, minLength: 1, maxLength: 200 }
+        sort_order: { type: integer, minimum: 0, maximum: 999 }
+        crop_focus:
+          oneOf:
+            - type: 'null'
+            - type: object
+        variant: { type: [string, 'null'], maxLength: 128 }
+    VersionedOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        operation_id: { type: string, minLength: 8, maxLength: 128 }
+    EvidenceParentType:
+      enum:
+        - submission_draft
+        - admin_project_creation_draft
+        - admin_project_edit_draft
+        - project_update
+        - relation_candidate
+    EvidenceFinalTargetKind:
+      enum: [project, version, event, asset, relation]
+    EvidenceType:
+      enum: [platform_verified_fact, verified_author_statement, trusted_external_source, system_inference]
+    EvidenceSourceChannel:
+      enum: [official_site, repository, release_note, media_report, author_statement, platform_check]
+    EvidenceVisibility:
+      enum: [public, reviewer_only, private]
+    EvidenceFinalFieldPreview:
+      type: object
+      additionalProperties: false
+      required: [source_summary, captured_at, collected_by, confidence, source_channel]
+      properties:
+        source_summary: { type: string, minLength: 1, maxLength: 2000 }
+        captured_at: { type: string, format: date-time }
+        collected_by: { enum: [system, platform_editor, verified_author, user] }
+        confidence: { enum: [high, medium, low] }
+        source_channel: { $ref: '#/components/schemas/EvidenceSourceChannel' }
+    EvidenceAttachmentDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - attachment_draft_id
+        - evidence_draft_id
+        - media_resource_id
+        - role
+        - requested_visibility
+        - status
+        - version
+        - evidence_draft_version
+        - created_at
+        - updated_at
+      properties:
+        attachment_draft_id: { type: string, format: uuid }
+        evidence_draft_id: { type: string, format: uuid }
+        media_resource_id: { type: string, format: uuid }
+        role: { enum: [supporting_document, supporting_image] }
+        requested_visibility: { $ref: '#/components/schemas/EvidenceVisibility' }
+        status: { enum: [active, withdrawn, promoted, expired] }
+        version: { type: integer, minimum: 1 }
+        evidence_draft_version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EvidenceDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - evidence_draft_id
+        - collector_actor_type
+        - parent_type
+        - parent_id
+        - final_target_kind
+        - target_asset_draft_key
+        - evidence_type
+        - source_channel
+        - field_path
+        - requested_visibility
+        - source_url
+        - text_excerpt
+        - attachment_drafts
+        - status
+        - bound
+        - source_hash
+        - final_field_preview
+        - completed_at
+        - promoted_evidence_id
+        - version
+        - created_at
+        - updated_at
+      properties:
+        evidence_draft_id: { type: string, format: uuid }
+        collector_actor_type: { enum: [system, platform_editor, verified_author, user] }
+        parent_type: { $ref: '#/components/schemas/EvidenceParentType' }
+        parent_id: { type: string, format: uuid }
+        final_target_kind: { $ref: '#/components/schemas/EvidenceFinalTargetKind' }
+        target_asset_draft_key: { type: [string, 'null'], maxLength: 128 }
+        evidence_type: { $ref: '#/components/schemas/EvidenceType' }
+        source_channel: { $ref: '#/components/schemas/EvidenceSourceChannel' }
+        field_path: { type: [string, 'null'], maxLength: 240 }
+        requested_visibility: { $ref: '#/components/schemas/EvidenceVisibility' }
+        source_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        text_excerpt: { type: [string, 'null'], maxLength: 2000 }
+        attachment_drafts:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/EvidenceAttachmentDraft' }
+        status: { enum: [editing, ready, withdrawn, promoted, expired] }
+        bound: { type: boolean }
+        source_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        final_field_preview:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/EvidenceFinalFieldPreview'
+        completed_at: { type: [string, 'null'], format: date-time }
+        promoted_evidence_id: { type: [string, 'null'], format: uuid }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EvidenceDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - parent_type
+        - parent_id
+        - final_target_kind
+        - requested_visibility
+        - evidence_type
+        - source_channel
+        - client_request_id
+      properties:
+        parent_type: { $ref: '#/components/schemas/EvidenceParentType' }
+        parent_id: { type: string, format: uuid }
+        final_target_kind: { $ref: '#/components/schemas/EvidenceFinalTargetKind' }
+        target_asset_draft_key: { type: [string, 'null'], maxLength: 128 }
+        field_path: { type: [string, 'null'], maxLength: 240 }
+        requested_visibility: { $ref: '#/components/schemas/EvidenceVisibility' }
+        evidence_type: { $ref: '#/components/schemas/EvidenceType' }
+        source_channel: { $ref: '#/components/schemas/EvidenceSourceChannel' }
+        client_request_id: { type: string, minLength: 8, maxLength: 128 }
+    EvidenceDraftPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      minProperties: 2
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        source_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        internal_record_ref: { type: [string, 'null'], maxLength: 240 }
+        text_excerpt: { type: [string, 'null'], maxLength: 2000 }
+        field_path: { type: [string, 'null'], maxLength: 240 }
+        requested_visibility: { $ref: '#/components/schemas/EvidenceVisibility' }
+    EvidenceDraftBindRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_type, parent_id, expected_parent_version, operation_id]
+      properties:
+        parent_type: { $ref: '#/components/schemas/EvidenceParentType' }
+        parent_id: { type: string, format: uuid }
+        expected_parent_version: { type: integer, minimum: 1 }
+        operation_id: { type: string, minLength: 8, maxLength: 128 }
+    EvidenceBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - parent_type
+        - parent_id
+        - evidence_draft_ids
+        - parent_version
+        - evidence_draft_version
+      properties:
+        parent_type: { $ref: '#/components/schemas/EvidenceParentType' }
+        parent_id: { type: string, format: uuid }
+        evidence_draft_ids:
+          type: array
+          maxItems: 50
+          items: { type: string, format: uuid }
+        parent_version: { type: integer, minimum: 1 }
+        evidence_draft_version: { type: integer, minimum: 1 }
+    EvidenceDraftWithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason_code, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        operation_id: { type: string, minLength: 8, maxLength: 128 }
+    EvidenceAttachmentCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - media_resource_id
+        - role
+        - requested_visibility
+        - client_request_id
+        - expected_draft_version
+      properties:
+        media_resource_id: { type: string, format: uuid }
+        role: { enum: [supporting_document, supporting_image] }
+        requested_visibility: { $ref: '#/components/schemas/EvidenceVisibility' }
+        client_request_id: { type: string, minLength: 8, maxLength: 128 }
+        expected_draft_version: { type: integer, minimum: 1 }
     PendingActionCreateRequest:
       oneOf:
         - $ref: '#/components/schemas/PendingActionProjectStateRequest'

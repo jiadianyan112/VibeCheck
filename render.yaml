@@ -85,6 +85,10 @@ services:
         value: "900"
       - key: REVIEW_WORKFLOW_QUEUE_PAGE_SIZE
         value: "25"
+      - key: MEDIA_ENABLED
+        value: "false"
+      - key: EVIDENCE_ENABLED
+        value: "false"
 
   - type: worker
     name: vibecheck-worker

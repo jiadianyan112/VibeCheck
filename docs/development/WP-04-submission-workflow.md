@@ -32,7 +32,7 @@
 
 ## 当前迭代：WP-04B 审核工作项队列与租约底座
 
-状态：实现完成，等待远端 PostgreSQL 质量门禁。
+状态：实现完成；远端 PostgreSQL 质量门禁已通过（commit `1113dc9`）。
 
 ### 已实现
 
@@ -52,6 +52,28 @@
 - Submission、Verification、Ownership、Evidence、Relation、Recheck、Creator Profile 的工作项创建器与领域摘要由对应后续迭代接入；当前通用权限和枚举契约不代表这些审核业务已经完成。
 - 未实现任何后台前端页面；WorkBuddy 可在接口稳定后消费队列与租约 API，但不得绕过服务端鉴权或在浏览器保存 claim token 到持久存储。
 
+## 当前迭代：WP-04C MediaReference 与 EvidenceDraft 晋级前置
+
+状态：控制面实现完成；等待远端 PostgreSQL 质量门禁。对象存储上传面在供应商、安全扫描与 SLA 确认前保持关闭。
+
+### 已实现
+
+- 新增 `MediaResource`、分片记录、`MediaReference`、`EvidenceDraft`、证据附件草稿、不可变快照和幂等 receipt 的逻辑模型与数据库约束；不把草稿对象提前写成公开 `Asset` 或 `Evidence`。
+- 冻结媒体状态与扫描结果矩阵。只有 `ready + clean` 且没有删除保护原因的 owner 资源可被草稿引用或作为证据附件。
+- `OP-MEDIA-STATUS` 与 MediaReference 列表、创建、修改、删除已接入真实数据库；当前仅开放 `submission_draft` 父对象，其余 PRD 目标类型明确返回能力未开放，避免伪造成功。
+- `MediaReference` 创建、排序修改和解除引用同步维护草稿的 `media_reference_ids_json` 与乐观版本；删除语义为 `unlinked`，不物理删除资源或历史记录。
+- EvidenceDraft 已实现创建、读取、修改、字段绑定、证据附件、完成和撤回。EvidenceDraft 身份、目标与来源类型创建后不可改，内容修改均形成 append-only snapshot。
+- 普通用户首期只可声明 `trusted_external_source`；平台事实仅平台编辑/管理员可创建；`verified_author_statement` 在作者身份关联能力真正上线前明确关闭。
+- 外部证据 URL 复用 SSRF 防护解析器；完成时生成确定性摘要和置信度，并复检附件可用性与可见性边界。
+- MediaReference 与 EvidenceDraft 的写操作均要求登录、同源、CSRF、账号可写、owner 鉴权、幂等键和数据库审计。
+- 新增迁移 `000018_media_and_evidence_drafts.sql`，OpenAPI 当前为 46 paths / 54 operations；PostgreSQL fixture 覆盖引用重放、排序、解除引用、证据绑定、附件隔离、完成、撤回、快照和审计。
+
+### 明确未开放
+
+- `OP-MEDIA-CREATE`、分片上传和上传完成尚未连接真实对象存储及恶意文件扫描服务；Render 的 `MEDIA_ENABLED`、`EVIDENCE_ENABLED` 默认均为 `false`，不得把控制面存在解释为生产上传能力已经可用。
+- 当前没有网页正文抓取、自动截图、OCR 或自动证据提取；这些能力继续受 TBC-004 的合规与供应商决定约束。
+- 尚未创建 Submission、审核工作项或公开 Project；EvidenceDraft/MediaReference 只是 WP-04D 提交事务可校验的正式前置对象。
+
 ### 下一迭代
 
-WP-04C：EvidenceDraft/MediaResource 最小晋级前置；完成后再开放 Submission 冻结快照，同事务创建 `Submission/pending_review`、`ReviewWorkItem/queued`、冲突主体和 `project_submitted` Outbox。随后实现 owner 撤回及退回后的新 revision，不在旧 draft 上重开。
+WP-04D：实现服务端预览与冻结哈希；提交时在单事务内复检草稿、URL、MediaReference、EvidenceDraft 和 owner 版本，创建 `Submission/pending_review`、`ReviewWorkItem/queued`、冲突主体与 `project_submitted` Outbox。随后实现 owner 撤回及退回后的新 revision，不在旧 draft 上重开。

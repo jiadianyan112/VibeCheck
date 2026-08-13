@@ -5,7 +5,9 @@ import {
   loadCatalogConfig,
   loadComparisonConfig,
   loadCommunityConfig,
+  loadEvidenceConfig,
   loadIdentityConfig,
+  loadMediaConfig,
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
@@ -222,5 +224,13 @@ describe('loadServiceConfig', () => {
       () => loadWorkflowConfig({ REVIEW_WORKFLOW_LEASE_SECONDS: '120' }),
       /CONFIG_REVIEW_WORKFLOW_LEASE_SECONDS_INVALID/,
     )
+  })
+
+  it('keeps media and evidence control planes disabled until explicitly enabled', () => {
+    assert.equal(loadMediaConfig({}).enabled, false)
+    assert.equal(loadEvidenceConfig({}).enabled, false)
+    assert.equal(loadMediaConfig({ MEDIA_ENABLED: 'true' }).enabled, true)
+    assert.equal(loadEvidenceConfig({ EVIDENCE_ENABLED: 'true' }).enabled, true)
+    assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'yes' }), /CONFIG_MEDIA_ENABLED_INVALID/)
   })
 })

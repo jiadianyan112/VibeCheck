@@ -26,6 +26,7 @@ describe('discoverMigrations', () => {
         '000015_analytics_client_ingest.sql',
         '000016_submission_entry_and_drafts.sql',
         '000017_review_work_item_leases.sql',
+        '000018_media_and_evidence_drafts.sql',
       ],
     )
     for (const migration of migrations) {

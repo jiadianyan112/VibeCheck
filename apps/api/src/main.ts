@@ -19,13 +19,16 @@ import {
   loadCatalogConfig,
   loadCommunityConfig,
   loadComparisonConfig,
+  loadEvidenceConfig,
   loadIdentityConfig,
+  loadMediaConfig,
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
   loadWorkflowConfig,
 } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
+import { EvidenceService, PostgresEvidenceStore } from '@vibecheck/evidence'
 import {
   IdentityService,
   PendingActionService,
@@ -33,6 +36,7 @@ import {
   PostgresPendingActionStore,
   ResendEmailSender,
 } from '@vibecheck/identity'
+import { MediaService, PostgresMediaStore } from '@vibecheck/media'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submission'
 import { PostgresWorkflowStore, WorkflowService } from '@vibecheck/workflow'
@@ -50,6 +54,8 @@ const communityConfig = loadCommunityConfig()
 const analyticsConfig = loadAnalyticsConfig()
 const submissionConfig = loadSubmissionConfig()
 const workflowConfig = loadWorkflowConfig()
+const mediaConfig = loadMediaConfig()
+const evidenceConfig = loadEvidenceConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -102,6 +108,21 @@ const submission = submissionConfig.enabled
       config: submissionConfig,
     })
   : undefined
+if ((mediaConfig.enabled || evidenceConfig.enabled) && !identityConfig.enabled) {
+  throw new Error('CONFIG_MEDIA_EVIDENCE_REQUIRES_IDENTITY')
+}
+if (evidenceConfig.enabled && !submissionConfig.enabled) {
+  throw new Error('CONFIG_EVIDENCE_REQUIRES_SUBMISSION')
+}
+const media = mediaConfig.enabled
+  ? new MediaService(new PostgresMediaStore(pool))
+  : undefined
+const evidence = evidenceConfig.enabled
+  ? new EvidenceService({
+      store: new PostgresEvidenceStore(pool),
+      urlSafetyResolver: submissionWebResolver,
+    })
+  : undefined
 if (workflowConfig.enabled && !identityConfig.enabled) {
   throw new Error('CONFIG_REVIEW_WORKFLOW_REQUIRES_IDENTITY')
 }
@@ -114,6 +135,8 @@ const server = createApiServer(config, {
   ...(analytics ? { analytics } : {}),
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
+  ...(media ? { media } : {}),
+  ...(evidence ? { evidence } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

@@ -54,6 +54,20 @@ import {
 } from '@vibecheck/community'
 import type { ServiceHealth } from '@vibecheck/contracts'
 import {
+  EvidenceError,
+  type BindEvidenceDraftCommand,
+  type CompleteEvidenceDraftCommand,
+  type CreateEvidenceAttachmentCommand,
+  type CreateEvidenceDraftCommand,
+  type DeleteEvidenceAttachmentCommand,
+  type EvidenceAttachmentDraftProjection,
+  type EvidenceBindingProjection,
+  type EvidenceDraftProjection,
+  type GetEvidenceDraftCommand,
+  type PatchEvidenceDraftCommand,
+  type WithdrawEvidenceDraftCommand,
+} from '@vibecheck/evidence'
+import {
   IdentityError,
   type CancelPendingActionCommand,
   type CompletePendingActionExecutionCommand,
@@ -70,6 +84,17 @@ import {
   type VerifyChallengeResult,
 } from '@vibecheck/identity'
 import { redactRecord, withSpan } from '@vibecheck/observability'
+import {
+  MediaError,
+  type CreateMediaReferenceCommand,
+  type DeleteMediaReferenceCommand,
+  type GetMediaResourceCommand,
+  type ListMediaReferencesCommand,
+  type MediaReferencePage,
+  type MediaReferenceProjection,
+  type MediaResourceProjection,
+  type PatchMediaReferenceCommand,
+} from '@vibecheck/media'
 import {
   SearchError,
   type QueryInvalidationCommand,
@@ -243,6 +268,25 @@ export interface ApiWorkflowService {
   releaseWorkItem(command: ReleaseReviewWorkItemCommand): Promise<ReviewWorkItemProjection>
 }
 
+export interface ApiMediaService {
+  getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection>
+  createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection>
+  listReferences(command: ListMediaReferencesCommand): Promise<MediaReferencePage>
+  patchReference(command: PatchMediaReferenceCommand): Promise<MediaReferenceProjection>
+  deleteReference(command: DeleteMediaReferenceCommand): Promise<void>
+}
+
+export interface ApiEvidenceService {
+  createDraft(command: CreateEvidenceDraftCommand): Promise<EvidenceDraftProjection>
+  getDraft(command: GetEvidenceDraftCommand): Promise<EvidenceDraftProjection>
+  patchDraft(command: PatchEvidenceDraftCommand): Promise<EvidenceDraftProjection>
+  bindDraft(command: BindEvidenceDraftCommand): Promise<EvidenceBindingProjection>
+  completeDraft(command: CompleteEvidenceDraftCommand): Promise<EvidenceDraftProjection>
+  createAttachment(command: CreateEvidenceAttachmentCommand): Promise<EvidenceAttachmentDraftProjection>
+  deleteAttachment(command: DeleteEvidenceAttachmentCommand): Promise<EvidenceAttachmentDraftProjection>
+  withdrawDraft(command: WithdrawEvidenceDraftCommand): Promise<EvidenceDraftProjection>
+}
+
 export interface ApiServerDependencies {
   readonly checkReadiness: () => Promise<void>
   readonly analytics?: ApiAnalyticsService
@@ -253,6 +297,8 @@ export interface ApiServerDependencies {
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
+  readonly evidence?: ApiEvidenceService
+  readonly media?: ApiMediaService
   readonly pendingActions?: ApiPendingActionService
   readonly pendingActionExecutor?: ApiPendingActionExecutor
   readonly search?: ApiSearchService
@@ -505,6 +551,40 @@ function objectField(value: JsonObject, key: string): Readonly<Record<string, un
     throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
   }
   return Object.freeze({ ...(field as Record<string, unknown>) })
+}
+
+function nullableStringField(
+  value: JsonObject,
+  key: string,
+  maximum: number,
+): string | null | undefined {
+  if (!Object.hasOwn(value, key)) return undefined
+  const field = value[key]
+  if (field === null) return null
+  if (typeof field !== 'string' || field.length > maximum) {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  return field
+}
+
+function nullableObjectField(
+  value: JsonObject,
+  key: string,
+): Readonly<Record<string, unknown>> | null {
+  const field = value[key]
+  if (field === null) return null
+  if (typeof field !== 'object' || Array.isArray(field)) {
+    throw new IdentityError(`REQUEST_${key.toUpperCase()}_INVALID`, 422, false)
+  }
+  return Object.freeze({ ...(field as Record<string, unknown>) })
+}
+
+function idempotencyKey(request: IncomingMessage): string {
+  const value = request.headers['idempotency-key']
+  if (typeof value !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/.test(value)) {
+    throw new IdentityError('IDEMPOTENCY_KEY_INVALID', 422, false)
+  }
+  return value
 }
 
 function stringArrayField(
@@ -1183,6 +1263,24 @@ function requireWorkflowMutationCsrf(request: IncomingMessage): void {
   }
 }
 
+function requireMediaMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new MediaError('CSRF_INVALID', 403)
+  }
+}
+
+function requireEvidenceMutationCsrf(request: IncomingMessage): void {
+  const cookies = parseCookies(request)
+  const csrfHeader = request.headers['x-csrf-token']
+  const csrfCookie = cookies[authCookieNames.csrf]
+  if (typeof csrfHeader !== 'string' || !csrfCookie || csrfHeader !== csrfCookie) {
+    throw new EvidenceError('CSRF_INVALID', 403)
+  }
+}
+
 function exactWorkflowQueryKeys(searchParams: URLSearchParams, allowed: readonly string[]): void {
   const allowedSet = new Set(allowed)
   for (const key of searchParams.keys()) {
@@ -1365,6 +1463,313 @@ async function handleSubmissionRequest(
       draftId: draftMatch[1]!,
       expectedVersion: integerField(body, 'expected_version', 1),
       patch: objectField(body, 'patch'),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  return null
+}
+
+async function handleMediaRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const resourceMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)$/)
+  const referenceCollection = '/api/v1/media-references'
+  const referenceMatch = path.match(/^\/api\/v1\/media-references\/([^/]+)$/)
+  if (resourceMatch === null && path !== referenceCollection && referenceMatch === null) return null
+  if (!dependencies.media) throw new MediaError('MEDIA_SERVICE_UNAVAILABLE', 503, true)
+  const session = await resolveAuthenticatedSession(request, dependencies)
+
+  if (resourceMatch !== null && method === 'GET') {
+    exactQueryKeys(url.searchParams, [])
+    const projection = await dependencies.media.getResource({
+      userId: session.userId,
+      mediaResourceId: resourceMatch[1]!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (path === referenceCollection && method === 'GET') {
+    exactQueryKeys(url.searchParams, ['target_type', 'target_id', 'role'])
+    const targetType = url.searchParams.get('target_type')
+    const targetId = url.searchParams.get('target_id')
+    const role = url.searchParams.get('role')
+    if (!targetType || !targetId) throw new MediaError('MEDIA_REFERENCE_FILTER_REQUIRED', 422)
+    const projection = await dependencies.media.listReferences({
+      userId: session.userId,
+      targetType,
+      targetId,
+      role,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (
+    !((path === referenceCollection && method === 'POST') ||
+      (referenceMatch !== null && ['PATCH', 'DELETE'].includes(method)))
+  ) return null
+  if (session.accountStatus === 'restricted') throw new MediaError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new MediaError('ORIGIN_INVALID', 403)
+  requireMediaMutationCsrf(request)
+  const body = await readJsonBody(request)
+
+  if (path === referenceCollection) {
+    exactKeys(body, [
+      'media_resource_id', 'target_type', 'target_id', 'role', 'alt_text', 'sort_order',
+      'crop_focus', 'variant', 'client_request_id',
+    ])
+    const projection = await dependencies.media.createReference({
+      userId: session.userId,
+      mediaResourceId: stringField(body, 'media_resource_id', { maximum: 64 })!,
+      targetType: stringField(body, 'target_type', { maximum: 64 })!,
+      targetId: stringField(body, 'target_id', { maximum: 64 })!,
+      role: stringField(body, 'role', { maximum: 64 })!,
+      altText: stringField(body, 'alt_text', { maximum: 200 })!,
+      sortOrder: integerField(body, 'sort_order', 0),
+      cropFocus: nullableObjectField(body, 'crop_focus'),
+      variant: nullableStringField(body, 'variant', 128) ?? null,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+
+  if (referenceMatch !== null && method === 'PATCH') {
+    exactKeys(body, ['expected_version', 'alt_text', 'sort_order', 'crop_focus', 'variant'])
+    const projection = await dependencies.media.patchReference({
+      userId: session.userId,
+      mediaReferenceId: referenceMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      altText: stringField(body, 'alt_text', { maximum: 200 })!,
+      sortOrder: integerField(body, 'sort_order', 0),
+      cropFocus: nullableObjectField(body, 'crop_focus'),
+      variant: nullableStringField(body, 'variant', 128) ?? null,
+      operationId: idempotencyKey(request),
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (referenceMatch !== null && method === 'DELETE') {
+    exactKeys(body, ['expected_version', 'operation_id'])
+    await dependencies.media.deleteReference({
+      userId: session.userId,
+      mediaReferenceId: referenceMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
+    response.end()
+    return 204
+  }
+  return null
+}
+
+async function handleEvidenceRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/evidence-drafts'
+  const draftMatch = path.match(/^\/api\/v1\/evidence-drafts\/([^/]+)$/)
+  const bindMatch = path.match(/^\/api\/v1\/evidence-drafts\/([^/]+)\/binding$/)
+  const completeMatch = path.match(/^\/api\/v1\/evidence-drafts\/([^/]+)\/complete$/)
+  const withdrawMatch = path.match(/^\/api\/v1\/evidence-drafts\/([^/]+)\/withdraw$/)
+  const attachmentCollectionMatch = path.match(/^\/api\/v1\/evidence-drafts\/([^/]+)\/attachments$/)
+  const attachmentMatch = path.match(/^\/api\/v1\/evidence-attachment-drafts\/([^/]+)$/)
+  if (
+    path !== collectionPath && draftMatch === null && bindMatch === null && completeMatch === null &&
+    withdrawMatch === null && attachmentCollectionMatch === null && attachmentMatch === null
+  ) return null
+  if (!dependencies.evidence) throw new EvidenceError('EVIDENCE_SERVICE_UNAVAILABLE', 503, true)
+  exactQueryKeys(url.searchParams, [])
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  const actor = Object.freeze({ userId: session.userId, roles: session.roles })
+
+  if (
+    draftMatch !== null && bindMatch === null && completeMatch === null && withdrawMatch === null &&
+    attachmentCollectionMatch === null && method === 'GET'
+  ) {
+    const projection = await dependencies.evidence.getDraft({
+      actor,
+      evidenceDraftId: draftMatch[1]!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  const isMutation =
+    (path === collectionPath && method === 'POST') ||
+    (draftMatch !== null && method === 'PATCH') ||
+    (bindMatch !== null && method === 'POST') ||
+    (completeMatch !== null && method === 'POST') ||
+    (withdrawMatch !== null && method === 'POST') ||
+    (attachmentCollectionMatch !== null && method === 'POST') ||
+    (attachmentMatch !== null && method === 'DELETE')
+  if (!isMutation) return null
+  if (session.accountStatus === 'restricted') throw new EvidenceError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new EvidenceError('ORIGIN_INVALID', 403)
+  requireEvidenceMutationCsrf(request)
+  const body = await readJsonBody(request)
+
+  if (path === collectionPath) {
+    if (Object.hasOwn(body, 'requested_evidence_type') || Object.hasOwn(body, 'visibility')) {
+      throw new EvidenceError('UNKNOWN_FIELD', 422, false, {
+        field_errors: Object.keys(body).filter((key) => ['requested_evidence_type', 'visibility'].includes(key)),
+      })
+    }
+    exactKeys(body, [
+      'parent_type', 'parent_id', 'final_target_kind', 'target_asset_draft_key', 'field_path',
+      'requested_visibility', 'evidence_type', 'source_channel', 'client_request_id',
+    ])
+    const projection = await dependencies.evidence.createDraft({
+      actor,
+      parentType: stringField(body, 'parent_type', { maximum: 64 })!,
+      parentId: stringField(body, 'parent_id', { maximum: 64 })!,
+      finalTargetKind: stringField(body, 'final_target_kind', { maximum: 16 })!,
+      targetAssetDraftKey: nullableStringField(body, 'target_asset_draft_key', 128) ?? null,
+      fieldPath: nullableStringField(body, 'field_path', 240) ?? null,
+      requestedVisibility: stringField(body, 'requested_visibility', { maximum: 16 })!,
+      evidenceType: stringField(body, 'evidence_type', { maximum: 64 })!,
+      sourceChannel: stringField(body, 'source_channel', { maximum: 32 })!,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+
+  if (draftMatch !== null && method === 'PATCH') {
+    exactKeys(body, [
+      'expected_version', 'source_url', 'internal_record_ref', 'text_excerpt', 'field_path',
+      'requested_visibility',
+    ])
+    const patch: {
+      sourceUrl?: string | null
+      internalRecordRef?: string | null
+      textExcerpt?: string | null
+      fieldPath?: string | null
+      requestedVisibility?: string
+    } = {}
+    if (Object.hasOwn(body, 'source_url')) {
+      patch.sourceUrl = nullableStringField(body, 'source_url', 2_048) ?? null
+    }
+    if (Object.hasOwn(body, 'internal_record_ref')) {
+      patch.internalRecordRef = nullableStringField(body, 'internal_record_ref', 240) ?? null
+    }
+    if (Object.hasOwn(body, 'text_excerpt')) {
+      patch.textExcerpt = nullableStringField(body, 'text_excerpt', 2_000) ?? null
+    }
+    if (Object.hasOwn(body, 'field_path')) {
+      patch.fieldPath = nullableStringField(body, 'field_path', 240) ?? null
+    }
+    if (Object.hasOwn(body, 'requested_visibility')) {
+      patch.requestedVisibility = stringField(body, 'requested_visibility', { maximum: 16 })!
+    }
+    const projection = await dependencies.evidence.patchDraft({
+      actor,
+      evidenceDraftId: draftMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      patch: Object.freeze(patch),
+      operationId: idempotencyKey(request),
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (bindMatch !== null) {
+    exactKeys(body, ['parent_type', 'parent_id', 'expected_parent_version', 'operation_id'])
+    const projection = await dependencies.evidence.bindDraft({
+      actor,
+      evidenceDraftId: bindMatch[1]!,
+      parentType: stringField(body, 'parent_type', { maximum: 64 })!,
+      parentId: stringField(body, 'parent_id', { maximum: 64 })!,
+      expectedParentVersion: integerField(body, 'expected_parent_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (completeMatch !== null) {
+    exactKeys(body, ['expected_version', 'operation_id'])
+    const projection = await dependencies.evidence.completeDraft({
+      actor,
+      evidenceDraftId: completeMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (withdrawMatch !== null) {
+    exactKeys(body, ['expected_version', 'reason_code', 'operation_id'])
+    const projection = await dependencies.evidence.withdrawDraft({
+      actor,
+      evidenceDraftId: withdrawMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (attachmentCollectionMatch !== null) {
+    if (Object.hasOwn(body, 'visibility')) {
+      throw new EvidenceError('UNKNOWN_FIELD', 422, false, { field_errors: ['visibility'] })
+    }
+    exactKeys(body, [
+      'media_resource_id', 'role', 'requested_visibility', 'client_request_id',
+      'expected_draft_version',
+    ])
+    const projection = await dependencies.evidence.createAttachment({
+      actor,
+      evidenceDraftId: attachmentCollectionMatch[1]!,
+      mediaResourceId: stringField(body, 'media_resource_id', { maximum: 64 })!,
+      role: stringField(body, 'role', { maximum: 32 })!,
+      requestedVisibility: stringField(body, 'requested_visibility', { maximum: 16 })!,
+      expectedDraftVersion: integerField(body, 'expected_draft_version', 1),
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+
+  if (attachmentMatch !== null) {
+    exactKeys(body, ['expected_version', 'operation_id'])
+    const projection = await dependencies.evidence.deleteAttachment({
+      actor,
+      attachmentDraftId: attachmentMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
       operationId: stringField(body, 'operation_id', { maximum: 128 })!,
       requestId,
     })
@@ -1957,12 +2362,24 @@ export function createApiServer(
                 if (analyticsStatus !== null) {
                   statusCode = analyticsStatus
                 } else {
-                  const submissionStatus = await handleSubmissionRequest(
+                  const evidenceStatus = await handleEvidenceRequest(
                     request, response, url, path, method, requestId, config, dependencies,
                   )
-                if (submissionStatus !== null) {
-                  statusCode = submissionStatus
-                } else {
+                  if (evidenceStatus !== null) {
+                    statusCode = evidenceStatus
+                  } else {
+                    const mediaStatus = await handleMediaRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (mediaStatus !== null) {
+                      statusCode = mediaStatus
+                    } else {
+                      const submissionStatus = await handleSubmissionRequest(
+                        request, response, url, path, method, requestId, config, dependencies,
+                      )
+                      if (submissionStatus !== null) {
+                        statusCode = submissionStatus
+                      } else {
                     const workflowStatus = await handleWorkflowRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -2025,6 +2442,8 @@ export function createApiServer(
                     }
                     }
                   }
+                    }
+                  }
                 }
               }
             }
@@ -2033,7 +2452,8 @@ export function createApiServer(
           const apiError = error instanceof IdentityError || error instanceof CatalogError ||
             error instanceof SearchError || error instanceof ComparisonError ||
             error instanceof CommunityError || error instanceof AnalyticsError ||
-            error instanceof SubmissionError || error instanceof WorkflowError
+            error instanceof SubmissionError || error instanceof WorkflowError ||
+            error instanceof MediaError || error instanceof EvidenceError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
@@ -2051,7 +2471,8 @@ export function createApiServer(
                   ? {}
                   : { retryAfterSeconds }),
                 ...((apiError instanceof ComparisonError || apiError instanceof CommunityError ||
-                    apiError instanceof SubmissionError || apiError instanceof WorkflowError) &&
+                    apiError instanceof SubmissionError || apiError instanceof WorkflowError ||
+                    apiError instanceof MediaError || apiError instanceof EvidenceError) &&
                     apiError.details !== undefined
                   ? { details: apiError.details }
                   : {}),
