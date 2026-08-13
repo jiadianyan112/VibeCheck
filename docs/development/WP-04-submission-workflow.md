@@ -458,3 +458,28 @@ WP-05B1：实现已有作品“我是作者”的 VerificationRequest/Verificati
 ### 下一步
 
 WP-05B2：实现隔离的 VerificationMaterial 控制面、申请人粗粒度扫描投影、prepare/complete/revoke 与过期/扫描 worker；材料只绑定已存在的 draft verification_id，长期申请对象只引用稳定 material_id。
+
+## 当前迭代：WP-05B2a VerificationMaterial 私密控制面
+
+状态：实现完成，待 GitHub Actions PostgreSQL 18 远端门禁确认；异步扫描与超时推进属于 WP-05B2b。
+
+### 已实现
+
+- 新增 `POST /api/v1/verification-materials`、`GET /api/v1/verification-materials/{material_id}`、`POST .../complete` 与 `POST .../revoke`；全部绑定真实 Session owner，写操作要求同源与 CSRF，客户端不能提交 owner、存储坐标或扫描结论。
+- 新增独立 `@vibecheck/private-material` 边界与 `PrivateMaterialStorage` 端口。私密材料不进入通用 `media.media_resources`、浏览器持久存储或公开目录；稳定 storage key 使用 AES-256-GCM 加密后才写数据库。
+- prepare 只允许 PDF/JPEG/PNG、单件 10 MiB、单申请最多 5 件且声明总量最多 30 MiB；上传地址固定 30 分钟过期，申请人作用域幂等键同载荷重放、异载荷冲突。
+- complete 重新读取对象存储的 MIME、字节数和 SHA-256；声明不一致在同一事务持久化 rejected，合法对象只推进 uploaded、写一次 `verification_material_scan_requested` Outbox，并返回 pending，不伪造 clean/ready。
+- complete/revoke 使用不可变操作收据；即使后续 worker 改变材料状态，重试仍回放首次申请人安全响应。revoke 先提交数据库终态再通知存储网关拒绝读取，网关失败返回可重试 503 且不回滚撤销事实。
+- 申请人投影仅包含 material_id、verification_id、pending/accepted/rejected、稳定 reason/next_action、上传期限和版本；不返回加密存储键、detected MIME、原始扫描结果、重试次数或审核访问记录。
+- 新增迁移 `000034_verification_material_control_plane.sql`，包含材料、不可变操作回执和不可变访问日志；数据库触发器限制状态迁移、终态写入与身份字段修改。
+- OpenAPI 增至 66 paths/76 operations；单测覆盖安全投影、完成回执、MIME 拒绝和撤销失败，PostgreSQL fixture 覆盖 prepare/complete/revoke 幂等、单次扫描 Outbox、拒绝持久化与零通用媒体写入。
+
+### 明确未授权与部署门
+
+- 本轮不选择对象存储、签名上传或恶意文件扫描供应商；生产 `main` 不注入存储适配器，因此四个路由在未配置正式隔离网关前 fail closed 为 503，不能退回本地磁盘、公开媒体或仅凭浏览器 MIME 判断。
+- 本轮不消费 `verification_material_scan_requested`，不产生 clean/ready；重试、三次上限、30 分钟处理截止、prepared 过期与内容保留删除由 WP-05B2b worker 实现。
+- 本轮不提供审核员 read-grant/content-read，不提交 VerificationRequest、不创建 ReviewWorkItem，也不授予 CreatorAccountLink 或公开事实权限。
+
+### 下一步
+
+WP-05B2b：实现可租约、可重放的扫描/过期 worker 与存储隔离适配器配置；只有可信 scanner clean 回执可以推进 ready，超时和重试耗尽统一映射申请人 `processing_unavailable`。

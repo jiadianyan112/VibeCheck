@@ -24,6 +24,7 @@
     "@vibecheck/identity": "*",
     "@vibecheck/media": "*",
     "@vibecheck/observability": "*",
+    "@vibecheck/private-material": "*",
     "@vibecheck/search": "*",
     "@vibecheck/submission": "*",
     "@vibecheck/workflow": "*"

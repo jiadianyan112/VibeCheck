@@ -67,6 +67,16 @@ import {
   type StartChallengeCommand,
   type VerifyChallengeCommand,
 } from '@vibecheck/identity'
+import type {
+  ApplicantMaterialSummary,
+  CompleteMaterialCommand,
+  CompleteMaterialProjection,
+  GetMaterialCommand,
+  PrepareMaterialCommand,
+  PrepareMaterialProjection,
+  RevokeMaterialCommand,
+  RevokeMaterialProjection,
+} from '@vibecheck/private-material'
 import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
 import type {
   CheckSubmissionUrlCommand,
@@ -119,6 +129,7 @@ import {
   type ApiPendingActionExecutor,
   type ApiProjectUpdateService,
   type ApiVerificationRequestService,
+  type ApiPrivateMaterialService,
   type ApiSearchService,
   type ApiSubmissionService,
   type ApiWorkflowService,
@@ -157,6 +168,7 @@ async function start(
   notifications?: ApiNotificationService,
   projectUpdates?: ApiProjectUpdateService,
   verificationRequests?: ApiVerificationRequestService,
+  privateMaterials?: ApiPrivateMaterialService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -169,7 +181,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests || privateMaterials)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -194,6 +206,7 @@ async function start(
     ...(notifications ? { notifications } : {}),
     ...(projectUpdates ? { projectUpdates } : {}),
     ...(verificationRequests ? { verificationRequests } : {}),
+    ...(privateMaterials ? { privateMaterials } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -617,6 +630,54 @@ function verificationProjection(version: number): VerificationRequestProjection 
     version,
     created_at: '2026-08-10T00:00:00.000Z',
     updated_at: '2026-08-10T00:00:00.000Z',
+  })
+}
+
+class FakePrivateMaterialService implements ApiPrivateMaterialService {
+  prepareCommand: PrepareMaterialCommand | null = null
+  getCommand: GetMaterialCommand | null = null
+  completeCommand: CompleteMaterialCommand | null = null
+  revokeCommand: RevokeMaterialCommand | null = null
+
+  getPrepareCommand() { return this.prepareCommand }
+  getGetCommand() { return this.getCommand }
+  getCompleteCommand() { return this.completeCommand }
+  getRevokeCommand() { return this.revokeCommand }
+
+  async prepare(command: PrepareMaterialCommand): Promise<PrepareMaterialProjection> {
+    this.prepareCommand = command
+    return Object.freeze({
+      material: materialSummary('pending', 1),
+      upload_url: 'https://private.example/upload-token',
+      upload_expires_at: '2026-08-10T00:30:00.000Z',
+    })
+  }
+
+  async get(command: GetMaterialCommand): Promise<ApplicantMaterialSummary> {
+    this.getCommand = command
+    return materialSummary('pending', 1)
+  }
+
+  async complete(command: CompleteMaterialCommand): Promise<CompleteMaterialProjection> {
+    this.completeCommand = command
+    return Object.freeze({ material: materialSummary('pending', 2), scan_queued: true })
+  }
+
+  async revoke(command: RevokeMaterialCommand): Promise<RevokeMaterialProjection> {
+    this.revokeCommand = command
+    return Object.freeze({ material: materialSummary('pending', 3), revoked_at: '2026-08-10T00:01:00.000Z' })
+  }
+}
+
+function materialSummary(state: ApplicantMaterialSummary['applicant_scan_state'], version: number): ApplicantMaterialSummary {
+  return Object.freeze({
+    material_id: '6a000000-0000-4000-8000-000000000001',
+    verification_id: '69000000-0000-4000-8000-000000000001',
+    applicant_scan_state: state,
+    reason_key: null,
+    next_action: state==='pending' ? 'wait' : 'continue_submission',
+    upload_expires_at: null,
+    version,
   })
 }
 
@@ -1999,6 +2060,82 @@ test('verification draft routes bind the applicant, require CSRF, and keep ident
     assert.equal(patched.status, 200)
     assert.equal(verificationRequests.getPatchCommand()?.userId, session.userId)
     assert.equal(verificationRequests.getPatchCommand()?.operationId, 'verification-patch-0001')
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('private verification material routes bind ownership and return only applicant-safe projections', async () => {
+  const privateMaterials = new FakePrivateMaterialService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, privateMaterials,
+  )
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+  }
+  const materialId = '6a000000-0000-4000-8000-000000000001'
+  try {
+    const noCsrf = await fetch(`${runtime.baseUrl}/api/v1/verification-materials`, {
+      method: 'POST',
+      headers: { ...headers, 'x-csrf-token': '' },
+      body: JSON.stringify({
+        verification_id: '69000000-0000-4000-8000-000000000001',
+        declared_mime: 'application/pdf', byte_size: 4, checksum: 'a'.repeat(64),
+        idempotency_key: 'material-prepare-0001',
+      }),
+    })
+    assert.equal(noCsrf.status, 403)
+    assert.equal(privateMaterials.prepareCommand, null)
+
+    const prepared = await fetch(`${runtime.baseUrl}/api/v1/verification-materials`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        verification_id: '69000000-0000-4000-8000-000000000001',
+        declared_mime: 'application/pdf', byte_size: 4, checksum: 'a'.repeat(64),
+        idempotency_key: 'material-prepare-0001',
+      }),
+    })
+    assert.equal(prepared.status, 201)
+    assert.equal(privateMaterials.getPrepareCommand()?.userId, session.userId)
+    const preparedBody = await prepared.json() as Record<string, unknown>
+    assert.equal(Object.hasOwn(preparedBody, 'storage_key'), false)
+    assert.equal(Object.hasOwn(preparedBody, 'scan_result'), false)
+
+    const loaded = await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}`, {
+      headers: { cookie: headers.cookie },
+    })
+    assert.equal(loaded.status, 200)
+    assert.equal(privateMaterials.getGetCommand()?.userId, session.userId)
+    const loadedBody = await loaded.json() as Record<string, unknown>
+    assert.deepEqual(Object.keys(loadedBody).sort(), [
+      'applicant_scan_state','material_id','next_action','reason_key',
+      'upload_expires_at','verification_id','version',
+    ])
+
+    const completed = await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}/complete`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        checksum: 'a'.repeat(64), upload_receipt: 'upload-receipt-0001',
+        operation_id: 'material-complete-0001',
+      }),
+    })
+    assert.equal(completed.status, 202)
+    assert.equal(privateMaterials.getCompleteCommand()?.userId, session.userId)
+
+    const revoked = await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}/revoke`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        expected_version: 2, reason_code: 'user_removed', operation_id: 'material-revoke-0001',
+      }),
+    })
+    assert.equal(revoked.status, 200)
+    assert.equal(privateMaterials.getRevokeCommand()?.userId, session.userId)
   } finally {
     await runtime.stop()
   }

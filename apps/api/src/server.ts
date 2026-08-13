@@ -97,6 +97,17 @@ import {
 } from '@vibecheck/identity'
 import { redactRecord, withSpan } from '@vibecheck/observability'
 import {
+  PrivateMaterialError,
+  type CompleteMaterialCommand,
+  type CompleteMaterialProjection,
+  type GetMaterialCommand,
+  type ApplicantMaterialSummary,
+  type PrepareMaterialCommand,
+  type PrepareMaterialProjection,
+  type RevokeMaterialCommand,
+  type RevokeMaterialProjection,
+} from '@vibecheck/private-material'
+import {
   MediaError,
   type CreateMediaReferenceCommand,
   type DeleteMediaReferenceCommand,
@@ -325,6 +336,13 @@ export interface ApiVerificationRequestService {
   patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection>
 }
 
+export interface ApiPrivateMaterialService {
+  prepare(command: PrepareMaterialCommand): Promise<PrepareMaterialProjection>
+  get(command: GetMaterialCommand): Promise<ApplicantMaterialSummary>
+  complete(command: CompleteMaterialCommand): Promise<CompleteMaterialProjection>
+  revoke(command: RevokeMaterialCommand): Promise<RevokeMaterialProjection>
+}
+
 export interface ApiWorkflowService {
   listWorkItems(command: ListReviewWorkItemsCommand): Promise<ReviewWorkItemPage>
   claimWorkItem(command: ClaimReviewWorkItemCommand): Promise<ReviewClaimProjection>
@@ -379,6 +397,7 @@ export interface ApiServerDependencies {
   readonly submission?: ApiSubmissionService
   readonly projectUpdates?: ApiProjectUpdateService
   readonly verificationRequests?: ApiVerificationRequestService
+  readonly privateMaterials?: ApiPrivateMaterialService
   readonly workflow?: ApiWorkflowService
   readonly adminOperations?: ApiAdminOperationSecurityService
   readonly reviewDecisions?: ApiReviewDecisionService
@@ -1953,6 +1972,82 @@ async function handleVerificationRequest(
   return 200
 }
 
+async function handlePrivateMaterialRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/verification-materials'
+  const itemMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)$/)
+  const completeMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)\/complete$/)
+  const revokeMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)\/revoke$/)
+  const recognized = path===collectionPath || itemMatch!==null || completeMatch!==null || revokeMatch!==null
+  if (!recognized) return null
+  if ((path===collectionPath && method!=='POST') || (itemMatch!==null && method!=='GET') ||
+      (completeMatch!==null && method!=='POST') || (revokeMatch!==null && method!=='POST')) return null
+  if (!dependencies.privateMaterials) {
+    throw new PrivateMaterialError('PRIVATE_MATERIAL_SERVICE_UNAVAILABLE', 503, true)
+  }
+  exactWorkflowQueryKeys(url.searchParams, [])
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  if (itemMatch!==null) {
+    const projection = await dependencies.privateMaterials.get({
+      userId: session.userId,
+      materialId: itemMatch[1]!,
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (session.accountStatus==='restricted') throw new PrivateMaterialError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new PrivateMaterialError('ORIGIN_INVALID', 403)
+  requireWorkflowMutationCsrf(request)
+  const body = await readJsonBody(request)
+  if (path===collectionPath) {
+    exactKeys(body, ['verification_id','declared_mime','byte_size','checksum','idempotency_key'])
+    const projection = await dependencies.privateMaterials.prepare({
+      userId: session.userId,
+      verificationId: stringField(body, 'verification_id', { maximum: 64 })!,
+      declaredMime: stringField(body, 'declared_mime', { maximum: 64 })!,
+      byteSize: integerField(body, 'byte_size', 1),
+      checksum: stringField(body, 'checksum', { minimum: 64, maximum: 64 })!,
+      idempotencyKey: stringField(body, 'idempotency_key', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+  if (completeMatch!==null) {
+    exactKeys(body, ['checksum','upload_receipt','operation_id'])
+    const projection = await dependencies.privateMaterials.complete({
+      userId: session.userId,
+      materialId: completeMatch[1]!,
+      checksum: stringField(body, 'checksum', { minimum: 64, maximum: 64 })!,
+      uploadReceipt: stringField(body, 'upload_receipt', { maximum: 4_096 })!,
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 202, projection, requestId)
+    return 202
+  }
+  exactKeys(body, ['expected_version','reason_code','operation_id'])
+  const projection = await dependencies.privateMaterials.revoke({
+    userId: session.userId,
+    materialId: revokeMatch![1]!,
+    expectedVersion: integerField(body, 'expected_version', 1),
+    reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+    operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+    requestId,
+  })
+  writeJson(response, 200, projection, requestId)
+  return 200
+}
+
 async function handleMediaRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -2949,6 +3044,12 @@ export function createApiServer(
                     if (verificationStatus !== null) {
                       statusCode = verificationStatus
                     } else {
+                    const privateMaterialStatus = await handlePrivateMaterialRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (privateMaterialStatus !== null) {
+                      statusCode = privateMaterialStatus
+                    } else {
                     const adminOperationStatus = await handleAdminOperationSecurityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -3026,6 +3127,7 @@ export function createApiServer(
                     }
                     }
                     }
+                    }
                   }
                     }
                   }
@@ -3038,7 +3140,8 @@ export function createApiServer(
             error instanceof SearchError || error instanceof ComparisonError ||
             error instanceof CommunityError || error instanceof AnalyticsError ||
             error instanceof SubmissionError || error instanceof WorkflowError ||
-            error instanceof MediaError || error instanceof EvidenceError
+            error instanceof MediaError || error instanceof EvidenceError ||
+            error instanceof PrivateMaterialError
             ? error
             : new IdentityError('INTERNAL_ERROR', 500, true)
           statusCode = apiError.httpStatus
@@ -3057,7 +3160,8 @@ export function createApiServer(
                   : { retryAfterSeconds }),
                 ...((apiError instanceof ComparisonError || apiError instanceof CommunityError ||
                     apiError instanceof SubmissionError || apiError instanceof WorkflowError ||
-                    apiError instanceof MediaError || apiError instanceof EvidenceError) &&
+                    apiError instanceof MediaError || apiError instanceof EvidenceError ||
+                    apiError instanceof PrivateMaterialError) &&
                     apiError.details !== undefined
                   ? { details: apiError.details }
                   : {}),

@@ -1411,6 +1411,120 @@ paths:
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-materials:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-PREPARE
+      summary: Prepare one private direct upload without exposing its storage coordinate
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationMaterialPrepareRequest' }
+      responses:
+        '201':
+          description: Owner-bound applicant projection and short-lived private upload URL.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationMaterialPrepareProjection' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-materials/{material_id}:
+    parameters:
+      - in: path
+        name: material_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-GET
+      summary: Read an owner-bound applicant-safe material summary
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Summary excludes storage keys, detected MIME, raw scanner results and reviewer data.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-materials/{material_id}/complete:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-COMPLETE
+      summary: Verify a completed direct upload and enqueue asynchronous malware scanning once
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: material_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationMaterialCompleteRequest' }
+      responses:
+        '202':
+          description: Immutable completion receipt; scan remains pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationMaterialCompleteProjection' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-materials/{material_id}/revoke:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-REVOKE
+      summary: Revoke applicant access and deny subsequent storage reads idempotently
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: material_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationMaterialRevokeRequest' }
+      responses:
+        '200':
+          description: Immutable revocation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationMaterialRevokeProjection' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -5369,6 +5483,76 @@ components:
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    VerificationMaterialMime:
+      type: string
+      enum: [application/pdf, image/jpeg, image/png]
+    VerificationMaterialPrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [verification_id, declared_mime, byte_size, checksum, idempotency_key]
+      properties:
+        verification_id: { type: string, format: uuid }
+        declared_mime: { $ref: '#/components/schemas/VerificationMaterialMime' }
+        byte_size: { type: integer, minimum: 1, maximum: 10485760 }
+        checksum: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+        idempotency_key: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
+    VerificationMaterialCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [checksum, upload_receipt, operation_id]
+      properties:
+        checksum: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+        upload_receipt: { type: string, minLength: 8, maxLength: 4096 }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
+    VerificationMaterialRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason_code, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
+    ApplicantVerificationMaterialSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - material_id
+        - verification_id
+        - applicant_scan_state
+        - reason_key
+        - next_action
+        - upload_expires_at
+        - version
+      properties:
+        material_id: { type: string, format: uuid }
+        verification_id: { type: string, format: uuid }
+        applicant_scan_state: { type: string, enum: [pending, accepted, rejected] }
+        reason_key: { type: [string, 'null'], enum: [upload_expired, file_rejected, processing_unavailable, null] }
+        next_action: { type: string, enum: [complete_upload, wait, continue_submission, upload_new_material, none] }
+        upload_expires_at: { type: [string, 'null'], format: date-time }
+        version: { type: integer, minimum: 1 }
+    VerificationMaterialPrepareProjection:
+      type: object
+      additionalProperties: false
+      required: [material, upload_url, upload_expires_at]
+      properties:
+        material: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+        upload_url: { type: string, format: uri, pattern: '^https://' }
+        upload_expires_at: { type: string, format: date-time }
+    VerificationMaterialCompleteProjection:
+      type: object
+      additionalProperties: false
+      required: [material, scan_queued]
+      properties:
+        material: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+        scan_queued: { type: boolean, const: true }
+    VerificationMaterialRevokeProjection:
+      type: object
+      additionalProperties: false
+      required: [material, revoked_at]
+      properties:
+        material: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+        revoked_at: { type: string, format: date-time }
     AdminOperationTarget:
       type: object
       additionalProperties: false
