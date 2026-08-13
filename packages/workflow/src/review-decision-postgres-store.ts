@@ -219,8 +219,8 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
             [submission.submission_id, input.resultingStatus, input.now, submission.version],
           )
         : await client.query(
-            `UPDATE catalog.project_updates SET status=$2,version=version+1,
-               approved_at=CASE WHEN $2='approved' THEN $3 ELSE approved_at END,updated_at=$3
+            `UPDATE catalog.project_updates SET status=$2::varchar,version=version+1,
+               approved_at=CASE WHEN $2::varchar='approved' THEN $3 ELSE approved_at END,updated_at=$3
              WHERE update_id=$1 AND status='update_pending' AND version=$4`,
             [projectUpdate!.update_id, input.resultingStatus, input.now, targetVersion],
           )
