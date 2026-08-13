@@ -41,6 +41,7 @@ describe('discoverMigrations', () => {
         '000030_project_update_review_entry.sql',
         '000031_project_update_review_decisions.sql',
         '000032_project_update_application.sql',
+        '000033_verification_request_drafts.sql',
       ],
     )
     for (const migration of migrations) {

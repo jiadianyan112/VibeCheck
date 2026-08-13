@@ -14,6 +14,7 @@
     "fixture:verify": "tsx src/testing/verify-workflow-fixture.ts",
     "fixture:admin-security:verify": "tsx src/testing/verify-admin-operation-security-fixture.ts",
     "fixture:review-decision:verify": "tsx src/testing/verify-review-decision-fixture.ts",
+    "fixture:verification-request:verify": "tsx src/testing/verify-verification-request-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },

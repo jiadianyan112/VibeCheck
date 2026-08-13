@@ -151,6 +151,10 @@ import {
   type ReviewClaimProjection,
   type ReviewWorkItemPage,
   type ReviewWorkItemProjection,
+  type CreateVerificationRequestCommand,
+  type GetVerificationRequestCommand,
+  type PatchVerificationRequestCommand,
+  type VerificationRequestProjection,
 } from '@vibecheck/workflow'
 
 const serviceVersion = '0.1.0'
@@ -315,6 +319,12 @@ export interface ApiProjectUpdateService {
   withdraw(command: WithdrawProjectUpdateCommand): Promise<ProjectUpdateWithdrawalProjection>
 }
 
+export interface ApiVerificationRequestService {
+  create(command: CreateVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection>
+  get(command: GetVerificationRequestCommand): Promise<VerificationRequestProjection>
+  patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection>
+}
+
 export interface ApiWorkflowService {
   listWorkItems(command: ListReviewWorkItemsCommand): Promise<ReviewWorkItemPage>
   claimWorkItem(command: ClaimReviewWorkItemCommand): Promise<ReviewClaimProjection>
@@ -368,6 +378,7 @@ export interface ApiServerDependencies {
   readonly search?: ApiSearchService
   readonly submission?: ApiSubmissionService
   readonly projectUpdates?: ApiProjectUpdateService
+  readonly verificationRequests?: ApiVerificationRequestService
   readonly workflow?: ApiWorkflowService
   readonly adminOperations?: ApiAdminOperationSecurityService
   readonly reviewDecisions?: ApiReviewDecisionService
@@ -1867,6 +1878,81 @@ async function handleProjectUpdateRequest(
   return null
 }
 
+async function handleVerificationRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const collectionPath = '/api/v1/verification-requests'
+  const itemMatch = path.match(/^\/api\/v1\/verification-requests\/([^/]+)$/)
+  if (path !== collectionPath && itemMatch === null) return null
+  if ((path === collectionPath && method !== 'POST') ||
+      (itemMatch !== null && method !== 'GET' && method !== 'PATCH')) return null
+  if (!dependencies.verificationRequests) {
+    throw new WorkflowError('VERIFICATION_SERVICE_UNAVAILABLE', 503, true)
+  }
+  exactWorkflowQueryKeys(url.searchParams, [])
+  const session = await resolveAuthenticatedSession(request, dependencies)
+  if (itemMatch !== null && method === 'GET') {
+    const projection = await dependencies.verificationRequests.get({
+      userId: session.userId,
+      verificationId: itemMatch[1]!,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (session.accountStatus === 'restricted') throw new WorkflowError('ACCOUNT_WRITE_RESTRICTED', 403)
+  if (!requestOriginAllowed(request, config)) throw new WorkflowError('ORIGIN_INVALID', 403)
+  requireWorkflowMutationCsrf(request)
+  const body = await readJsonBody(request)
+  if (path === collectionPath) {
+    exactKeys(body, [
+      'project_id','supersedes_verification_id','creator_resolution_mode',
+      'creator_account_link_id','target_creator_id','new_creator_profile_input',
+      'requested_link_role','idempotency_key',
+    ])
+    const projection = await dependencies.verificationRequests.create({
+      userId: session.userId,
+      projectId: stringField(body, 'project_id', { maximum: 64 })!,
+      supersedesVerificationId: nullableStringField(body, 'supersedes_verification_id', 64) ?? null,
+      creatorResolutionMode: stringField(body, 'creator_resolution_mode', { maximum: 32 })!,
+      creatorAccountLinkId: nullableStringField(body, 'creator_account_link_id', 64) ?? null,
+      targetCreatorId: nullableStringField(body, 'target_creator_id', 64) ?? null,
+      newCreatorProfileInput: body.new_creator_profile_input ?? null,
+      requestedLinkRole: nullableStringField(body, 'requested_link_role', 16) ?? null,
+      idempotencyKey: stringField(body, 'idempotency_key', { maximum: 128 })!,
+      requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+  exactKeys(body, [
+    'expected_version','creator_resolution_mode','creator_account_link_id','target_creator_id',
+    'new_creator_profile_input','requested_link_role','method','public_summary',
+  ])
+  const projection = await dependencies.verificationRequests.patch({
+    userId: session.userId,
+    verificationId: itemMatch![1]!,
+    expectedVersion: integerField(body, 'expected_version', 1),
+    creatorResolutionMode: stringField(body, 'creator_resolution_mode', { maximum: 32 })!,
+    creatorAccountLinkId: nullableStringField(body, 'creator_account_link_id', 64) ?? null,
+    targetCreatorId: nullableStringField(body, 'target_creator_id', 64) ?? null,
+    newCreatorProfileInput: body.new_creator_profile_input ?? null,
+    requestedLinkRole: nullableStringField(body, 'requested_link_role', 16) ?? null,
+    method: nullableStringField(body, 'method', 64) ?? null,
+    publicSummary: nullableStringField(body, 'public_summary', 1000) ?? null,
+    operationId: idempotencyKey(request),
+    requestId,
+  })
+  writeJson(response, 200, projection, requestId)
+  return 200
+}
+
 async function handleMediaRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -2857,6 +2943,12 @@ export function createApiServer(
                     if (projectUpdateStatus !== null) {
                       statusCode = projectUpdateStatus
                     } else {
+                    const verificationStatus = await handleVerificationRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (verificationStatus !== null) {
+                      statusCode = verificationStatus
+                    } else {
                     const adminOperationStatus = await handleAdminOperationSecurityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -2928,6 +3020,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                     }

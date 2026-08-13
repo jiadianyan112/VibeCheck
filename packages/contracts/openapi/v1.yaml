@@ -1337,6 +1337,80 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-requests:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-DRAFT-CREATE
+      summary: Create one owner-isolated author-verification draft without changing public facts or permissions
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationRequestCreateRequest' }
+      responses:
+        '201':
+          description: Created or idempotently replayed applicant-safe draft projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequestDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-requests/{verification_id}:
+    parameters:
+      - in: path
+        name: verification_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-VER-DRAFT-GET
+      summary: Read the current applicant's safe verification draft projection
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Applicant-safe projection with no applicant ID or private-material internals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequestDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [AuthorVerification]
+      operationId: OP-VER-DRAFT-PATCH
+      summary: Idempotently autosave a complete creator-resolution selection with optimistic locking
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationRequestPatchRequest' }
+      responses:
+        '200':
+          description: Updated or idempotently replayed applicant-safe draft projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequestDraft' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -5155,6 +5229,146 @@ components:
         review_work_item_id: { type: [string, 'null'], format: uuid }
         work_item_status: { type: [string, 'null'], enum: [cancelled, null] }
         withdrawn_at: { type: string, format: date-time }
+    CreatorResolutionMode:
+      type: string
+      enum: [use_existing_link, create_new_creator, claim_existing_creator]
+    NewCreatorProfileInput:
+      type: object
+      additionalProperties: false
+      required: [display_name]
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 80 }
+        bio: { type: string, maxLength: 1000 }
+    VerificationRequestCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, creator_resolution_mode, idempotency_key]
+      properties:
+        project_id: { type: string, format: uuid }
+        supersedes_verification_id: { type: [string, 'null'], format: uuid }
+        creator_resolution_mode: { $ref: '#/components/schemas/CreatorResolutionMode' }
+        creator_account_link_id: { type: [string, 'null'], format: uuid }
+        target_creator_id: { type: [string, 'null'], format: uuid }
+        new_creator_profile_input:
+          oneOf:
+            - $ref: '#/components/schemas/NewCreatorProfileInput'
+            - type: 'null'
+        requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        idempotency_key: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
+    VerificationRequestPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, creator_resolution_mode]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        creator_resolution_mode: { $ref: '#/components/schemas/CreatorResolutionMode' }
+        creator_account_link_id: { type: [string, 'null'], format: uuid }
+        target_creator_id: { type: [string, 'null'], format: uuid }
+        new_creator_profile_input:
+          oneOf:
+            - $ref: '#/components/schemas/NewCreatorProfileInput'
+            - type: 'null'
+        requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        method: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        public_summary: { type: [string, 'null'], minLength: 10, maxLength: 1000 }
+    PermissionProfileExactRef:
+      type: object
+      additionalProperties: false
+      required: [profile_id, profile_version, config_hash]
+      properties:
+        profile_id: { type: string, enum: [OWNER_V1, MANAGER_V1] }
+        profile_version: { type: integer, const: 1 }
+        config_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+    ProvisionalLinkPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - policy_version
+        - target_creator_aggregate_version
+        - owner_link_set_version
+        - allowed_link_roles
+        - default_link_role
+        - allowed_permission_profile_refs
+      properties:
+        policy_version: { type: string, const: creator_link.v1 }
+        target_creator_aggregate_version: { type: [integer, 'null'], minimum: 1 }
+        owner_link_set_version: { type: [integer, 'null'], minimum: 1 }
+        allowed_link_roles:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string, enum: [owner, manager] }
+        default_link_role: { type: string, enum: [owner, manager] }
+        allowed_permission_profile_refs:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: { $ref: '#/components/schemas/PermissionProfileExactRef' }
+    VerificationStatusHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [status, at]
+      properties:
+        status: { type: string, enum: [draft, changes_requested] }
+        at: { type: string, format: date-time }
+    VerificationRequestDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - verification_id
+        - project_id
+        - creator_resolution_mode
+        - creator_account_link_id
+        - target_creator_id
+        - new_creator_profile_input
+        - requested_link_role
+        - provisional_link_policy
+        - link_policy_snapshot
+        - method
+        - public_summary
+        - material_summaries
+        - status
+        - status_history
+        - latest_public_review_message
+        - supersedes_verification_id
+        - resulting_creator_id
+        - resulting_link_id
+        - resulting_author_relation_id
+        - resulting_profile_version_id
+        - version
+        - created_at
+        - updated_at
+      properties:
+        verification_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        creator_resolution_mode: { $ref: '#/components/schemas/CreatorResolutionMode' }
+        creator_account_link_id: { type: [string, 'null'], format: uuid }
+        target_creator_id: { type: [string, 'null'], format: uuid }
+        new_creator_profile_input:
+          oneOf:
+            - $ref: '#/components/schemas/NewCreatorProfileInput'
+            - type: 'null'
+        requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        provisional_link_policy: { $ref: '#/components/schemas/ProvisionalLinkPolicy' }
+        link_policy_snapshot: { type: 'null' }
+        method: { type: [string, 'null'], minLength: 1, maxLength: 64 }
+        public_summary: { type: [string, 'null'], minLength: 10, maxLength: 1000 }
+        material_summaries: { type: array, maxItems: 0 }
+        status: { type: string, enum: [draft, changes_requested] }
+        status_history:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/VerificationStatusHistoryItem' }
+        latest_public_review_message: { type: 'null' }
+        supersedes_verification_id: { type: [string, 'null'], format: uuid }
+        resulting_creator_id: { type: 'null' }
+        resulting_link_id: { type: 'null' }
+        resulting_author_relation_id: { type: 'null' }
+        resulting_profile_version_id: { type: 'null' }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     AdminOperationTarget:
       type: object
       additionalProperties: false

@@ -97,6 +97,10 @@ import type {
   ReviewClaimProjection,
   ReviewWorkItemPage,
   ReviewWorkItemProjection,
+  CreateVerificationRequestCommand,
+  GetVerificationRequestCommand,
+  PatchVerificationRequestCommand,
+  VerificationRequestProjection,
 } from '@vibecheck/workflow'
 
 import {
@@ -114,6 +118,7 @@ import {
   type ApiPendingActionService,
   type ApiPendingActionExecutor,
   type ApiProjectUpdateService,
+  type ApiVerificationRequestService,
   type ApiSearchService,
   type ApiSubmissionService,
   type ApiWorkflowService,
@@ -151,6 +156,7 @@ async function start(
   reviewDecisions?: ApiReviewDecisionService,
   notifications?: ApiNotificationService,
   projectUpdates?: ApiProjectUpdateService,
+  verificationRequests?: ApiVerificationRequestService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -163,7 +169,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -187,6 +193,7 @@ async function start(
     ...(reviewDecisions ? { reviewDecisions } : {}),
     ...(notifications ? { notifications } : {}),
     ...(projectUpdates ? { projectUpdates } : {}),
+    ...(verificationRequests ? { verificationRequests } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -549,6 +556,68 @@ class FakeProjectUpdateService implements ApiProjectUpdateService {
       withdrawn_at: '2026-08-10T00:01:00.000Z',
     })
   }
+}
+
+class FakeVerificationRequestService implements ApiVerificationRequestService {
+  createCommand: (CreateVerificationRequestCommand & { readonly requestId?: string }) | null = null
+  getCommand: GetVerificationRequestCommand | null = null
+  patchCommand: (PatchVerificationRequestCommand & { readonly requestId?: string }) | null = null
+
+  getCreateCommand() { return this.createCommand }
+  getGetCommand() { return this.getCommand }
+  getPatchCommand() { return this.patchCommand }
+
+  async create(command: CreateVerificationRequestCommand & { readonly requestId?: string }) {
+    this.createCommand = command
+    return verificationProjection(1)
+  }
+
+  async get(command: GetVerificationRequestCommand) {
+    this.getCommand = command
+    return verificationProjection(1)
+  }
+
+  async patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }) {
+    this.patchCommand = command
+    return verificationProjection(command.expectedVersion + 1)
+  }
+}
+
+function verificationProjection(version: number): VerificationRequestProjection {
+  return Object.freeze({
+    verification_id: '69000000-0000-4000-8000-000000000001',
+    project_id: '62000000-0000-4000-8000-000000000001',
+    creator_resolution_mode: 'create_new_creator',
+    creator_account_link_id: null,
+    target_creator_id: null,
+    new_creator_profile_input: Object.freeze({ display_name: 'Creator' }),
+    requested_link_role: 'owner',
+    provisional_link_policy: Object.freeze({
+      policy_version: 'creator_link.v1',
+      target_creator_aggregate_version: null,
+      owner_link_set_version: null,
+      allowed_link_roles: Object.freeze(['owner'] as const),
+      default_link_role: 'owner',
+      allowed_permission_profile_refs: Object.freeze([Object.freeze({
+        profile_id: 'OWNER_V1', profile_version: 1 as const, config_hash: 'a'.repeat(64),
+      })]),
+    }),
+    link_policy_snapshot: null,
+    method: version === 1 ? null : 'official_domain_control',
+    public_summary: version === 1 ? null : 'I control the official project domain.',
+    material_summaries: Object.freeze([]),
+    status: 'draft',
+    status_history: Object.freeze([Object.freeze({ status: 'draft', at: '2026-08-10T00:00:00.000Z' })]),
+    latest_public_review_message: null,
+    supersedes_verification_id: null,
+    resulting_creator_id: null,
+    resulting_link_id: null,
+    resulting_author_relation_id: null,
+    resulting_profile_version_id: null,
+    version,
+    created_at: '2026-08-10T00:00:00.000Z',
+    updated_at: '2026-08-10T00:00:00.000Z',
+  })
 }
 
 const authorizationSnapshot = Object.freeze({
@@ -1832,6 +1901,104 @@ test('project update draft routes bind the session owner and never accept client
     })
     assert.equal(withdrawn.status, 200)
     assert.equal(projectUpdates.withdrawCommand?.reasonCode, 'owner_cancelled')
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('verification draft routes bind the applicant, require CSRF, and keep identity fields server-authoritative', async () => {
+  const verificationRequests = new FakeVerificationRequestService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    verificationRequests,
+  )
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+  }
+  const verificationId = '69000000-0000-4000-8000-000000000001'
+  try {
+    const noCsrf = await fetch(`${runtime.baseUrl}/api/v1/verification-requests`, {
+      method: 'POST',
+      headers: { ...headers, 'x-csrf-token': '' },
+      body: JSON.stringify({
+        project_id: '62000000-0000-4000-8000-000000000001',
+        creator_resolution_mode: 'create_new_creator',
+        new_creator_profile_input: { display_name: 'Creator' },
+        idempotency_key: 'verification-create-0001',
+      }),
+    })
+    assert.equal(noCsrf.status, 403)
+    assert.equal(verificationRequests.createCommand, null)
+
+    const forged = await fetch(`${runtime.baseUrl}/api/v1/verification-requests`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        project_id: '62000000-0000-4000-8000-000000000001',
+        creator_resolution_mode: 'create_new_creator',
+        new_creator_profile_input: { display_name: 'Creator' },
+        idempotency_key: 'verification-create-0001',
+        applicant_user_id: 'client-forged',
+      }),
+    })
+    assert.equal(forged.status, 422)
+    assert.equal(verificationRequests.createCommand, null)
+
+    const created = await fetch(`${runtime.baseUrl}/api/v1/verification-requests`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        project_id: '62000000-0000-4000-8000-000000000001',
+        creator_resolution_mode: 'create_new_creator',
+        new_creator_profile_input: { display_name: 'Creator' },
+        idempotency_key: 'verification-create-0001',
+      }),
+    })
+    assert.equal(created.status, 201)
+    assert.equal(verificationRequests.getCreateCommand()?.userId, session.userId)
+    const createdBody = await created.json() as Record<string, unknown>
+    assert.equal(Object.hasOwn(createdBody, 'applicant_user_id'), false)
+
+    const loaded = await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}`, {
+      headers: { cookie: headers.cookie },
+    })
+    assert.equal(loaded.status, 200)
+    assert.equal(verificationRequests.getGetCommand()?.userId, session.userId)
+
+    const patched = await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'idempotency-key': 'verification-patch-0001' },
+      body: JSON.stringify({
+        expected_version: 1,
+        creator_resolution_mode: 'create_new_creator',
+        new_creator_profile_input: { display_name: 'Creator' },
+        requested_link_role: 'owner',
+        method: 'official_domain_control',
+        public_summary: 'I control the official project domain.',
+      }),
+    })
+    assert.equal(patched.status, 200)
+    assert.equal(verificationRequests.getPatchCommand()?.userId, session.userId)
+    assert.equal(verificationRequests.getPatchCommand()?.operationId, 'verification-patch-0001')
   } finally {
     await runtime.stop()
   }

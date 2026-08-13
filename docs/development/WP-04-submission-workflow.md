@@ -414,7 +414,7 @@ WP-05A7：实现 `project_updated` 投影消费者，使用当前 Version 重建
 
 ## 当前迭代：WP-05A7 ProjectUpdate 搜索与通知回流
 
-状态：本地实现与静态验证完成，待远端 PostgreSQL 18 投影 fixture 验证。
+状态：实现完成；GitHub Actions `31715633531` 已在 PostgreSQL 18 通过全部质量门、搜索投影与收件人隔离通知 fixture。
 
 ### 已实现
 
@@ -434,3 +434,27 @@ WP-05A7：实现 `project_updated` 投影消费者，使用当前 Version 重建
 ### 下一步
 
 WP-05B1：实现已有作品“我是作者”的 VerificationRequest/VerificationMaterial 私密申请链；申请只进入低频人工审核，不自动授予 CreatorAccountLink，也不创建重复 Project。
+
+## 当前迭代：WP-05B1 VerificationRequest 私密草稿链
+
+状态：本地实现、契约与静态验证完成；待远端 PostgreSQL 18 迁移与事务 fixture 验证。
+
+### 已实现
+
+- 新增 `POST /api/v1/verification-requests`、`GET/PATCH /api/v1/verification-requests/{verification_id}`，只返回申请人安全投影，不返回 applicant_user_id、材料内部状态、存储引用或审核令牌。
+- 创建草稿按 applicant+project 取得数据库事务锁，同一申请链只允许一个 draft/pending/changes_requested；首次必须 supersedes=null，未来 failed/withdrawn 重提必须显式指向最新终态，verified 阻止新建。
+- 创建和自动保存分别使用申请人作用域幂等键与不可变操作收据；同键同载荷回放原结果，同键异载荷 409；PATCH 使用 expected_version 乐观锁。
+- 三种 Creator 解析严格互斥：use_existing_link 只接受当前用户 active Link；create_new_creator 要求 1–80 字 display_name 并固定 owner/OWNER_V1；claim_existing_creator 只接受公开 canonical Creator、拒绝本人已有 active Link，并按 owner 集合计算 owner/manager provisional policy。
+- provisional policy 只引用部署基线中的 OWNER_V1/MANAGER_V1 exact ref；本轮不冻结 submit policy，不创建 Creator、CreatorProfileVersion、CreatorAccountLink 或 AuthorRelation。
+- 新增迁移 `000033_verification_request_drafts.sql`，包含 VerificationRequest、草稿操作收据、active-chain/幂等/supersedes 唯一约束、终态不可变和状态迁移触发器。
+- OpenAPI 增至 62 paths/72 operations；Workflow 单测覆盖安全投影、输入校验和先鉴权后解析，PostgreSQL fixture 覆盖创建/重放/自动保存/越权/活动链唯一及零公开事实写入。
+
+### 明确未授权
+
+- 本轮不提供 VerificationMaterial prepare/complete/read-grant，不允许浏览器或通用媒体服务保存私密身份材料。
+- 本轮不提供 OP-VER-SUBMIT/补充/撤回，也不创建 verification ReviewWorkItem、ReviewDecision 或业务埋点 `author_verification_started`；该事件只在后续成功提交 pending 时产生。
+- 创建或保存草稿不会改变 Project.review_status/author_link_status/current_version_id，不会自动授予任何作品管理权限，也不会创建重复 Project。
+
+### 下一步
+
+WP-05B2：实现隔离的 VerificationMaterial 控制面、申请人粗粒度扫描投影、prepare/complete/revoke 与过期/扫描 worker；材料只绑定已存在的 draft verification_id，长期申请对象只引用稳定 material_id。

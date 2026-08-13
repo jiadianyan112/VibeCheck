@@ -53,7 +53,9 @@ import {
   PostgresAdminOperationSecurityStore,
   PostgresReviewDecisionStore,
   PostgresWorkflowStore,
+  PostgresVerificationRequestStore,
   ReviewDecisionService,
+  VerificationRequestService,
   WorkflowService,
 } from '@vibecheck/workflow'
 import { fileURLToPath } from 'node:url'
@@ -158,6 +160,9 @@ if (workflowConfig.enabled && !identityConfig.enabled) {
 const workflow = workflowConfig.enabled
   ? new WorkflowService(new PostgresWorkflowStore(pool), workflowConfig)
   : undefined
+const verificationRequests = workflowConfig.enabled
+  ? new VerificationRequestService(new PostgresVerificationRequestStore(pool))
+  : undefined
 const adminOperations = workflowConfig.enabled
   ? new AdminOperationSecurityService(
       new PostgresAdminOperationSecurityStore(pool),
@@ -186,6 +191,7 @@ const server = createApiServer(config, {
   ...(analytics ? { analytics } : {}),
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
+  ...(verificationRequests ? { verificationRequests } : {}),
   ...(adminOperations ? { adminOperations } : {}),
   ...(reviewDecisions ? { reviewDecisions } : {}),
   ...(media ? { media } : {}),
