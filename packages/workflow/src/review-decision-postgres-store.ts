@@ -40,7 +40,7 @@ interface ProjectUpdateRow extends QueryResultRow {
   readonly base_version_id: string
   readonly status: string
   readonly review_work_item_id: string
-  readonly version: number
+  readonly version: string
 }
 
 interface PreviewRow extends QueryResultRow {
@@ -166,9 +166,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       if (target.owner_user_id === input.actor.userId) {
         throw workflowError('CONFLICT_OF_INTEREST', 403)
       }
+      const targetVersion = this.targetVersion(target)
 
       const preview = await this.preview(client, input.previewTokenHash)
-      this.assertPreview(preview, input, workItem, target, activeRolesVersion)
+      this.assertPreview(preview, input, workItem, target, targetVersion, activeRolesVersion)
       const confirm = await this.confirm(client, input.confirmTokenHash)
       this.assertConfirm(confirm, preview, input)
       await this.assertEvidenceRefs(client, input.decisionEvidenceRefs)
@@ -221,7 +222,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
             `UPDATE catalog.project_updates SET status=$2,version=version+1,
                approved_at=CASE WHEN $2='approved' THEN $3 ELSE approved_at END,updated_at=$3
              WHERE update_id=$1 AND status='update_pending' AND version=$4`,
-            [projectUpdate!.update_id, input.resultingStatus, input.now, projectUpdate!.version],
+            [projectUpdate!.update_id, input.resultingStatus, input.now, targetVersion],
           )
       if (updatedTarget.rowCount !== 1) throw workflowError('REVIEW_TARGET_STATE_CONFLICT', 409)
 
@@ -254,6 +255,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
         workItem,
         decidedWorkItem,
         target,
+        targetVersion,
         workType: workItem.work_type as 'submission' | 'project_update',
         reviewDecisionId,
         transactionId,
@@ -328,6 +330,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     input: StoredReviewDecisionInput,
     workItem: WorkItemRow,
     target: SubmissionRow | ProjectUpdateRow,
+    targetVersion: number,
     activeRolesVersion: number,
   ): void {
     if (preview.expires_at <= input.now || preview.status === 'expired') {
@@ -354,8 +357,8 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       : (target as ProjectUpdateRow).update_id
     const targets = [{ target_type: workItem.work_type, target_id: targetId }]
     const expectedVersions = isSubmission
-      ? { submission: target.version, work_item: workItem.version }
-      : { project_update: target.version, work_item: workItem.version }
+      ? { submission: targetVersion, work_item: workItem.version }
+      : { project_update: targetVersion, work_item: workItem.version }
     const diff = isSubmission
       ? { review_status: input.resultingStatus }
       : { status: input.resultingStatus }
@@ -451,6 +454,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       readonly workItem: WorkItemRow
       readonly decidedWorkItem: WorkItemRow
       readonly target: SubmissionRow | ProjectUpdateRow
+      readonly targetVersion: number
       readonly workType: 'submission' | 'project_update'
       readonly reviewDecisionId: string
       readonly transactionId: string
@@ -459,7 +463,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     },
   ): Promise<void> {
     const {
-      input, workItem, decidedWorkItem, target, workType, reviewDecisionId,
+      input, workItem, decidedWorkItem, target, targetVersion, workType, reviewDecisionId,
       transactionId, preview, confirm,
     } = context
     await client.query(
@@ -491,7 +495,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
          outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
          payload_json,transaction_id,status,next_attempt_at,created_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending',$9,$9)`,
-      [randomUUID(), randomUUID(), workType, targetId, eventName, target.version + 1,
+      [randomUUID(), randomUUID(), workType, targetId, eventName, targetVersion + 1,
         JSON.stringify({
           review_decision_id: reviewDecisionId,
           [`${workType}_id`]: targetId,
@@ -507,9 +511,9 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       [randomUUID(), input.actor.roles.includes('admin') ? 'admin' : 'platform_editor',
         createHash('sha256').update(input.actor.userId).digest(), JSON.stringify(input.actor.roles),
         workType, targetId,
-        this.hash(this.canonicalJson({ [statusField]: beforeStatus, version: target.version })),
+        this.hash(this.canonicalJson({ [statusField]: beforeStatus, version: targetVersion })),
         this.hash(this.canonicalJson({
-          [statusField]: input.resultingStatus, version: target.version + 1,
+          [statusField]: input.resultingStatus, version: targetVersion + 1,
         })),
         JSON.stringify({
           [statusField]: input.resultingStatus, review_decision_id: reviewDecisionId,
@@ -544,6 +548,14 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       throw workflowError('REVIEW_TARGET_STATE_INVALID', 500, true)
     }
     return value as readonly string[]
+  }
+
+  private targetVersion(target: SubmissionRow | ProjectUpdateRow): number {
+    const version = Number(target.version)
+    if (!Number.isSafeInteger(version) || version < 1) {
+      throw workflowError('REVIEW_TARGET_STATE_INVALID', 500, true)
+    }
+    return version
   }
 
   private canonicalJson(value: unknown): string {
