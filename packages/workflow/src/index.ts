@@ -20,9 +20,12 @@ export type {
 } from './admin-operation-types.js'
 export {
   submissionReviewDecisions,
+  type DecideReviewCommand,
   type DecideSubmissionReviewCommand,
   type ReviewDecisionProjection,
   type StoredSubmissionReviewDecisionInput,
+  type StoredReviewDecisionInput,
+  type ReviewDecisionWorkType,
   type SubmissionReviewDecision,
 } from './review-decision-types.js'
 export {

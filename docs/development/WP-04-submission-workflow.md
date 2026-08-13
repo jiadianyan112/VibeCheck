@@ -344,7 +344,7 @@ WP-05A4：实现 OP-UPD-SUBMIT 与 OP-UPD-WITHDRAW，原子创建/取消唯一 w
 
 ## 当前迭代：WP-05A4 ProjectUpdate 提交与撤回
 
-状态：实现完成；catalog/contracts/API/database 定向测试已通过，进入远端 PostgreSQL 18 事务 fixture 验证。
+状态：实现完成；GitHub Actions `31710438007` 已在 PostgreSQL 18 通过全部质量门与提交/撤回事务 fixture。
 
 ### 已实现
 
@@ -365,3 +365,23 @@ WP-05A4：实现 OP-UPD-SUBMIT 与 OP-UPD-WITHDRAW，原子创建/取消唯一 w
 ### 下一步
 
 WP-05A5：扩展 ReviewDecisionService 的 project_update 分支，只允许无利益冲突且持有效 claim/preview/confirm 的编辑或管理员执行 changes_requested/reject/approve；决定事务不直接创建 Version。
+
+## 当前迭代：WP-05A5 ProjectUpdate 审核决定
+
+状态：实现完成，待远端 PostgreSQL 18 事务 fixture 验证。
+
+### 已实现
+
+- 既有 `POST /api/v1/admin/work-items/{work_item_id}/decision` 已扩展为 Submission/ProjectUpdate 共用入口；服务端从锁定 WorkItem 决定分支，不接受客户端 work_type、project_id 或 base_version_id 作为权限来源。
+- ProjectUpdate 只接受 `(work_type=project_update,target_type=project_update)`、`update_pending` 且 `review_work_item_id` 完全匹配的目标；提交者 conflict principal 与 owner 复核形成双重利益冲突阻断。
+- approve、changes_requested、reject 分别原子推进为 approved、changes_requested、rejected；changes_requested 仍强制至少一个 JSON Pointer，决定 payload 在 V1 必须为空对象。
+- 审核决定继续复用 claimed WorkItem、未过期 lease、一次性 preview、recent-auth/step-up confirm 和同 session/actor/roles_version 绑定；ProjectUpdate preview 固定为 `project_update_review`、目标 update_id、Update/WorkItem 双版本和最终状态 diff。
+- 同一事务写不可变 ReviewDecision、领域状态、decided WorkItem、WorkItem event、confirm-consumed security event、Outbox 与审计日志，并消费 preview/confirm；任何一步失败全部回滚。
+- 新增迁移 `000031_project_update_review_decisions.sql`，数据库要求 ProjectUpdate 决定携带从服务端事实读取的 project_id/base_version_id，并限制决定与 resulting_status 的精确映射。
+- approve 只把 Update 置为 approved 并产生 `project_update_approved` Outbox；本轮不创建 Version、不修改 Project.current_version_id/current_name，也不启动应用事务。
+- OpenAPI 仍为 60 paths/69 operations；响应现在按工作类型返回 nullable project_id/base_version_id，Submission 分支保持 null。
+- PostgreSQL fixture 同时验证 Submission 与 ProjectUpdate 决定、令牌消费、不可变记录、ProjectUpdate 的 project/base 绑定，以及批准前后公开 Version 数量和 current_version_id 不变。
+
+### 下一步
+
+WP-05A6：由 worker 消费 `project_update_approved`，重新锁定批准决定、Update、base/current Version 和全部依赖，按乐观并发规则创建新 Version/Event 并切换 Project 当前版本；失败进入 apply_failed，重复投递必须返回同一应用收据。

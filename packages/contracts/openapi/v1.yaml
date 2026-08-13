@@ -1905,7 +1905,7 @@ paths:
     post:
       tags: [Workflow]
       operationId: OP-ADMIN-DECISION
-      summary: Commit one immutable Submission review decision and consume its bound claim, preview and confirmation
+      summary: Commit one immutable Submission or ProjectUpdate review decision and consume its bound claim, preview and confirmation
       security:
         - sessionCookie: []
       parameters:
@@ -1916,14 +1916,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmissionReviewDecisionRequest'
+              $ref: '#/components/schemas/ReviewDecisionRequest'
       responses:
         '200':
-          description: Newly committed decision or an identical idempotent replay. Publication remains asynchronous.
+          description: Newly committed decision or an identical idempotent replay. Publication or update application remains asynchronous.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmissionReviewDecision'
+                $ref: '#/components/schemas/ReviewDecision'
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
@@ -5427,7 +5427,7 @@ components:
         reason_code:
           type: string
           pattern: '^[a-z][a-z0-9_]{0,63}$'
-    SubmissionReviewDecisionRequest:
+    ReviewDecisionRequest:
       type: object
       additionalProperties: false
       required:
@@ -5477,15 +5477,15 @@ components:
         expected_version:
           type: integer
           minimum: 1
-          description: Version of the claimed ReviewWorkItem; the Submission version is frozen in the preview.
+          description: Version of the claimed ReviewWorkItem; the Submission or ProjectUpdate version is frozen in the preview.
         decision_request_id:
           type: string
           pattern: '^[A-Za-z0-9_-]{8,64}$'
         decision_payload:
           type: object
           additionalProperties: false
-          description: Submission v1 has no branch-specific fields and therefore requires an empty object.
-    SubmissionReviewDecision:
+          description: Submission and ProjectUpdate v1 have no client-authoritative branch fields and require an empty object.
+    ReviewDecision:
       type: object
       additionalProperties: false
       required:
@@ -5508,14 +5508,14 @@ components:
       properties:
         review_decision_id: { type: string, format: uuid }
         work_item_id: { type: string, format: uuid }
-        work_type: { type: string, const: submission }
-        target_type: { type: string, const: submission }
+        work_type: { type: string, enum: [submission, project_update] }
+        target_type: { type: string, enum: [submission, project_update] }
         target_id: { type: string, format: uuid }
         decision:
           type: string
           enum: [approve, changes_requested, reject]
-        project_id: { type: 'null' }
-        base_version_id: { type: 'null' }
+        project_id: { type: [string, 'null'], format: uuid }
+        base_version_id: { type: [string, 'null'], format: uuid }
         resulting_status:
           type: string
           enum: [approved, changes_requested, rejected]

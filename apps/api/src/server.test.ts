@@ -88,7 +88,7 @@ import type {
   AdminOperationPreviewProjection,
   ClaimReviewWorkItemCommand,
   ConfirmAdminOperationCommand,
-  DecideSubmissionReviewCommand,
+  DecideReviewCommand,
   HeartbeatReviewWorkItemCommand,
   ListReviewWorkItemsCommand,
   PreviewAdminOperationCommand,
@@ -1264,9 +1264,9 @@ test('admin operation preview and confirm preserve the primary session and exact
 })
 
 class FakeReviewDecisionService implements ApiReviewDecisionService {
-  command: DecideSubmissionReviewCommand | null = null
+  command: DecideReviewCommand | null = null
 
-  async decideSubmission(command: DecideSubmissionReviewCommand): Promise<ReviewDecisionProjection> {
+  async decideReview(command: DecideReviewCommand): Promise<ReviewDecisionProjection> {
     this.command = command
     return Object.freeze({
       review_decision_id: '10000000-0000-4000-8000-000000000011',
@@ -1289,7 +1289,7 @@ class FakeReviewDecisionService implements ApiReviewDecisionService {
   }
 }
 
-test('submission review decision forwards exact claim, preview, confirm and idempotency inputs', async () => {
+test('review decision forwards exact claim, preview, confirm and idempotency inputs', async () => {
   const decisions = new FakeReviewDecisionService()
   const runtime = await start(
     async () => undefined,

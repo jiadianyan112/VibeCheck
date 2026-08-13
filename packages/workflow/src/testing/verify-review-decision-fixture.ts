@@ -33,6 +33,125 @@ const pool = new Pool({ connectionString: databaseUrl })
 const sessionHash = createHmac('sha256', authSecret).update(sessionToken).digest()
 const clock = new Date('2026-08-13T15:00:00.000Z')
 
+async function verifyProjectUpdateDecision(): Promise<void> {
+  const updateId = '95000000-0000-4000-8000-000000000001'
+  const updateWorkItemId = '95000000-0000-4000-8000-000000000002'
+  const updateOwnerId = '51000000-0000-4000-8000-000000000001'
+  const projectId = '10000000-0000-4000-8000-000000000001'
+  const baseVersionId = '11000000-0000-4000-8000-000000000001'
+  const updateCreatedAt = new Date(clock.getTime() - 60_000)
+  const existing = await pool.query<{ readonly count: number }>(
+    'SELECT count(*)::int AS count FROM workflow.review_decisions WHERE work_item_id=$1',
+    [updateWorkItemId],
+  )
+  if (existing.rows[0]?.count === 1) return
+
+  const publicBefore = await pool.query<{ readonly current_version_id: string; readonly version_count: number }>(
+    `SELECT project.current_version_id,
+       (SELECT count(*)::int FROM catalog.project_versions WHERE project_id=project.project_id) AS version_count
+     FROM catalog.projects project WHERE project.project_id=$1`,
+    [projectId],
+  )
+  assert.ok(publicBefore.rows[0])
+  await pool.query(
+    `INSERT INTO workflow.review_work_items (
+       work_item_id,work_type,target_type,target_id,status,version,created_at,updated_at
+     ) VALUES ($1,'project_update','project_update',$2,'queued',1,$3,$3)`,
+    [updateWorkItemId, updateId, clock],
+  )
+  await pool.query(
+    `INSERT INTO catalog.project_updates (
+       update_id,owner_user_id,project_id,origin_review_status,base_version_id,update_type,
+       payload_diff_json,before_after_json,evidence_draft_ids_json,media_reference_ids_json,
+       authorization_snapshot_json,status,review_work_item_id,client_request_id,request_hash,
+       version,created_at,updated_at,submitted_at
+     ) VALUES ($1,$2,$3,'published_author',$4,'description',$5::jsonb,$6::jsonb,'[]'::jsonb,
+       '[]'::jsonb,$7::jsonb,'update_pending',$8,'review-decision-update-fixture',$9,1,$10,$10,$10)`,
+    [updateId, updateOwnerId, projectId, baseVersionId,
+      JSON.stringify([{ field_path: '/project_core/current_name', after_value: 'Reviewed update' }]),
+      JSON.stringify([{
+        field_path: '/project_core/current_name', before_value: 'Recall Garden',
+        after_value: 'Reviewed update',
+      }]),
+      JSON.stringify({ profile_code: 'OWNER_V1', authorized_field_paths: ['/project_core/current_name'] }),
+      updateWorkItemId, 'e'.repeat(64), updateCreatedAt],
+  )
+  await pool.query(
+    `INSERT INTO workflow.review_work_item_conflict_principals (
+       work_item_id,principal_user_id,source_type,source_id,principal_version,created_at
+     ) VALUES ($1,$2,'project_update_owner',$3,1,$4)`,
+    [updateWorkItemId, updateOwnerId, updateId, updateCreatedAt],
+  )
+
+  const workflow = new WorkflowService(new PostgresWorkflowStore(pool), {
+    cursorSecret: tokenSecret, leaseSeconds: 60, maximumClaimSeconds: 3_600, queuePageSize: 25,
+  }, () => clock)
+  const claim = await workflow.claimWorkItem({
+    actor: claimActor, workItemId: updateWorkItemId, expectedVersion: 1,
+    expectedConflictPrincipalVersion: null, requestId: 'update_review_fixture_claim',
+  })
+  const adminSecurity = new AdminOperationSecurityService(
+    new PostgresAdminOperationSecurityStore(pool),
+    {
+      tokenSecret, authTokenSecret: authSecret, previewTtlSeconds: 600,
+      confirmTtlSeconds: 120, recentAuthWindowSeconds: 300,
+    },
+    () => clock,
+  )
+  const preview = await adminSecurity.preview({
+    actor: claimActor, sessionToken, operationType: 'project_update_review',
+    targets: [{ target_type: 'project_update', target_id: updateId }],
+    expectedVersions: { project_update: 1, work_item: claim.version },
+    proposedDiff: { status: 'approved' }, reasonCode: 'project_update_approved',
+    claimToken: claim.claim_token, expectedConflictPrincipalVersion: null,
+    requestId: 'update_review_fixture_preview',
+  })
+  const confirm = await adminSecurity.confirm({
+    actor: claimActor, sessionToken, previewToken: preview.preview_token,
+    confirmationSummaryHash: preview.confirmation_summary_hash,
+    confirmRequestId: 'update_review_fixture_confirm', reauthGrantId: null,
+    expectedConflictPrincipalVersion: null, requestId: 'update_review_fixture_confirm_1',
+  })
+  const decisions = new ReviewDecisionService(
+    new PostgresReviewDecisionStore(pool), { tokenSecret, authTokenSecret: authSecret }, () => clock,
+  )
+  const decided = await decisions.decideReview({
+    actor: claimActor, sessionToken, workItemId: updateWorkItemId,
+    previewToken: preview.preview_token, claimToken: claim.claim_token,
+    confirmToken: confirm.confirm_token, decision: 'approve',
+    reasonCode: 'project_update_approved', fieldPaths: [], decisionEvidenceRefs: [],
+    expectedVersion: claim.version, decisionRequestId: 'update_review_fixture_decision',
+    decisionPayload: {}, requestId: 'update_review_fixture_decision_1',
+  })
+  assert.equal(decided.work_type, 'project_update')
+  assert.equal(decided.project_id, projectId)
+  assert.equal(decided.base_version_id, baseVersionId)
+
+  const verified = await pool.query<{
+    readonly update_status: string
+    readonly work_item_status: string
+    readonly project_id: string
+    readonly base_version_id: string
+    readonly current_version_id: string
+    readonly version_count: number
+  }>(
+    `SELECT update.status AS update_status,item.status AS work_item_status,
+       decision.project_id,decision.base_version_id,project.current_version_id,
+       (SELECT count(*)::int FROM catalog.project_versions WHERE project_id=project.project_id) AS version_count
+     FROM catalog.project_updates update
+     JOIN workflow.review_work_items item ON item.work_item_id=update.review_work_item_id
+     JOIN workflow.review_decisions decision ON decision.work_item_id=item.work_item_id
+     JOIN catalog.projects project ON project.project_id=update.project_id
+     WHERE update.update_id=$1`,
+    [updateId],
+  )
+  assert.deepEqual(verified.rows[0], {
+    update_status: 'approved', work_item_status: 'decided', project_id: projectId,
+    base_version_id: baseVersionId, current_version_id: publicBefore.rows[0]!.current_version_id,
+    version_count: publicBefore.rows[0]!.version_count,
+  })
+}
+
 try {
   const existing = await pool.query<{
     readonly count: number
@@ -271,7 +390,8 @@ try {
     )
   }
 
-  process.stdout.write('review_decision_fixture_ok\n')
+  await verifyProjectUpdateDecision()
+  process.stdout.write('review_decision_fixture_ok submission=approved project_update=approved public_fact_unchanged=ok\n')
 } finally {
   await pool.end()
 }

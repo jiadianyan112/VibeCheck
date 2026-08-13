@@ -1,8 +1,8 @@
 import type {
   ReviewDecisionProjection,
-  StoredSubmissionReviewDecisionInput,
+  StoredReviewDecisionInput,
 } from './review-decision-types.js'
 
 export interface ReviewDecisionStore {
-  decideSubmission(input: StoredSubmissionReviewDecisionInput): Promise<ReviewDecisionProjection>
+  decideReview(input: StoredReviewDecisionInput): Promise<ReviewDecisionProjection>
 }

@@ -140,7 +140,7 @@ import {
   type AdminOperationPreviewProjection,
   type AdminOperationTarget,
   type ConfirmAdminOperationCommand,
-  type DecideSubmissionReviewCommand,
+  type DecideReviewCommand,
   type ClaimReviewWorkItemCommand,
   type HeartbeatReviewWorkItemCommand,
   type ListReviewWorkItemsCommand,
@@ -328,7 +328,7 @@ export interface ApiAdminOperationSecurityService {
 }
 
 export interface ApiReviewDecisionService {
-  decideSubmission(command: DecideSubmissionReviewCommand): Promise<ReviewDecisionProjection>
+  decideReview(command: DecideReviewCommand): Promise<ReviewDecisionProjection>
 }
 
 export interface ApiMediaService {
@@ -1529,7 +1529,7 @@ async function handleWorkflowRequest(
       'field_paths', 'decision_evidence_refs', 'expected_version', 'decision_request_id',
       'decision_payload',
     ])
-    const projection = await dependencies.reviewDecisions.decideSubmission({
+    const projection = await dependencies.reviewDecisions.decideReview({
       actor,
       sessionToken,
       workItemId: decisionMatch[1]!,

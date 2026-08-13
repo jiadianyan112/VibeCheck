@@ -5,7 +5,7 @@ import type { ReviewDecisionStore } from './review-decision-store.js'
 import { ReviewDecisionService } from './review-decision-service.js'
 import type {
   ReviewDecisionProjection,
-  StoredSubmissionReviewDecisionInput,
+  StoredReviewDecisionInput,
 } from './review-decision-types.js'
 
 const actor = Object.freeze({
@@ -15,9 +15,9 @@ const actor = Object.freeze({
 })
 
 class FakeStore implements ReviewDecisionStore {
-  input: StoredSubmissionReviewDecisionInput | null = null
+  input: StoredReviewDecisionInput | null = null
 
-  async decideSubmission(input: StoredSubmissionReviewDecisionInput): Promise<ReviewDecisionProjection> {
+  async decideReview(input: StoredReviewDecisionInput): Promise<ReviewDecisionProjection> {
     this.input = input
     return Object.freeze({
       review_decision_id: '10000000-0000-4000-8000-000000000002',
@@ -94,7 +94,23 @@ describe('ReviewDecisionService', () => {
     )
   })
 
-  it('rejects non-submission decisions and branch-specific payload fields', async () => {
+  it('maps every allowed decision to its immutable resulting status', async () => {
+    for (const [decision, expected] of [
+      ['approve', 'approved'],
+      ['changes_requested', 'changes_requested'],
+      ['reject', 'rejected'],
+    ] as const) {
+      const store = new FakeStore()
+      await service(store).decideReview(command({
+        decision,
+        reasonCode: `project_update_${expected}`,
+        fieldPaths: decision === 'changes_requested' ? ['/project_core/current_name'] : [],
+      }))
+      assert.equal(store.input?.resultingStatus, expected)
+    }
+  })
+
+  it('rejects unknown decisions and client-authoritative branch payload fields', async () => {
     await assert.rejects(
       () => service(new FakeStore()).decideSubmission(command({ decision: 'publish' })),
       (error: unknown) => typeof error === 'object' && error !== null &&

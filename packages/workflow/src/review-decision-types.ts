@@ -7,15 +7,17 @@ export const submissionReviewDecisions = Object.freeze([
 ] as const)
 export type SubmissionReviewDecision = typeof submissionReviewDecisions[number]
 
+export type ReviewDecisionWorkType = 'submission' | 'project_update'
+
 export interface ReviewDecisionProjection {
   readonly review_decision_id: string
   readonly work_item_id: string
-  readonly work_type: 'submission'
-  readonly target_type: 'submission'
+  readonly work_type: ReviewDecisionWorkType
+  readonly target_type: ReviewDecisionWorkType
   readonly target_id: string
   readonly decision: SubmissionReviewDecision
-  readonly project_id: null
-  readonly base_version_id: null
+  readonly project_id: string | null
+  readonly base_version_id: string | null
   readonly resulting_status: 'approved' | 'changes_requested' | 'rejected'
   readonly work_item_status: 'decided'
   readonly work_item_decision_ref_type: 'review_decision'
@@ -26,7 +28,7 @@ export interface ReviewDecisionProjection {
   readonly outbox_status: 'pending'
 }
 
-export interface DecideSubmissionReviewCommand {
+export interface DecideReviewCommand {
   readonly actor: ReviewActor
   readonly sessionToken: string
   readonly workItemId: string
@@ -43,7 +45,9 @@ export interface DecideSubmissionReviewCommand {
   readonly requestId: string
 }
 
-export interface StoredSubmissionReviewDecisionInput {
+export type DecideSubmissionReviewCommand = DecideReviewCommand
+
+export interface StoredReviewDecisionInput {
   readonly actor: ReviewActor
   readonly primarySessionIdHash: Buffer
   readonly workItemId: string
@@ -62,3 +66,5 @@ export interface StoredSubmissionReviewDecisionInput {
   readonly now: Date
   readonly requestId: string
 }
+
+export type StoredSubmissionReviewDecisionInput = StoredReviewDecisionInput

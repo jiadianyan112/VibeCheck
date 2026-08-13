@@ -4,7 +4,7 @@ import { workflowError } from './errors.js'
 import type { ReviewDecisionStore } from './review-decision-store.js'
 import {
   submissionReviewDecisions,
-  type DecideSubmissionReviewCommand,
+  type DecideReviewCommand,
   type ReviewDecisionProjection,
   type SubmissionReviewDecision,
 } from './review-decision-types.js'
@@ -26,8 +26,8 @@ export class ReviewDecisionService {
     }
   }
 
-  async decideSubmission(
-    command: DecideSubmissionReviewCommand,
+  async decideReview(
+    command: DecideReviewCommand,
   ): Promise<ReviewDecisionProjection> {
     const actor = this.actor(command.actor)
     const decision = this.decision(command.decision)
@@ -55,7 +55,7 @@ export class ReviewDecisionService {
       reason_code: reasonCode,
       work_item_id: workItemId,
     }))
-    return this.store.decideSubmission({
+    return this.store.decideReview({
       actor,
       primarySessionIdHash: this.authHash(this.sessionToken(command.sessionToken)),
       workItemId,
@@ -74,6 +74,10 @@ export class ReviewDecisionService {
       now: this.now(),
       requestId: this.requestId(command.requestId, 'REQUEST_ID_INVALID'),
     })
+  }
+
+  async decideSubmission(command: DecideReviewCommand): Promise<ReviewDecisionProjection> {
+    return this.decideReview(command)
   }
 
   private actor(value: ReviewActor): ReviewActor {
