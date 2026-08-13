@@ -28,6 +28,7 @@ describe('discoverMigrations', () => {
         '000017_review_work_item_leases.sql',
         '000018_media_and_evidence_drafts.sql',
         '000019_submission_preview_and_submit.sql',
+        '000020_submission_withdrawal.sql',
       ],
     )
     for (const migration of migrations) {

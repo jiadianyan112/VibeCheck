@@ -14,6 +14,7 @@ import type {
   SubmissionSchemaVersion,
   SubmissionProjection,
   SubmissionReviewStatus,
+  SubmissionWithdrawalProjection,
   SubmissionUrlCheckProjection,
   UrlCheckAccessResult,
   UrlCheckDuplicateResult,
@@ -99,6 +100,21 @@ interface ReadyReferenceRow extends QueryResultRow {
   readonly resource_status: string
   readonly scan_result: string
   readonly deletion_guard_job_id: string | null
+}
+
+interface SubmissionOperationReceiptRow extends QueryResultRow {
+  readonly request_hash: string
+  readonly response_json: unknown
+}
+
+interface SubmissionWorkItemRow extends QueryResultRow {
+  readonly work_item_id: string
+  readonly work_type: string
+  readonly target_type: string
+  readonly target_id: string
+  readonly status: 'queued' | 'claimed' | 'decided' | 'cancelled'
+  readonly assignee_user_id: string | null
+  readonly version: number
 }
 
 export class PostgresSubmissionStore implements SubmissionStore {
@@ -582,10 +598,170 @@ export class PostgresSubmissionStore implements SubmissionStore {
            after_hash,reason_code,request_id,trace_id,result,created_at
          ) VALUES ('submission_submit','user',digest($1,'sha256'),'[]'::jsonb,'submission',$2,
            $3,'submission_created',$4,$5,'success',$6)`,
-        [input.userId, submissionId, this.hash(canonicalJson(ready.previewHashInput)), input.requestId, transactionId, input.now],
+        [input.userId, submissionId, this.hash(canonicalJson(ready.previewHashInput)), input.requestId.slice(0, 64), transactionId, input.now],
       )
       await client.query('COMMIT')
       return this.submissionProjection(inserted.rows[0])
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async withdrawSubmission(
+    input: Parameters<SubmissionStore['withdrawSubmission']>[0],
+  ): Promise<SubmissionWithdrawalProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lock(client, `submission-withdraw:${input.userId}:${input.operationId}`)
+      const receipt = await client.query<SubmissionOperationReceiptRow>(
+        `SELECT request_hash,response_json FROM workflow.submission_operation_receipts
+         WHERE owner_user_id=$1 AND operation_id=$2`,
+        [input.userId, input.operationId],
+      )
+      if (receipt.rows[0]) {
+        if (receipt.rows[0].request_hash !== input.requestHash) {
+          throw submissionError('OPERATION_ID_REUSED', 409)
+        }
+        const projection = this.withdrawalProjectionFromJson(receipt.rows[0].response_json)
+        await client.query('COMMIT')
+        return projection
+      }
+
+      const current = await client.query<SubmissionRow>(
+        'SELECT * FROM workflow.submissions WHERE submission_id=$1 FOR UPDATE',
+        [input.submissionId],
+      )
+      const submission = current.rows[0]
+      if (!submission) throw submissionError('SUBMISSION_NOT_FOUND', 404)
+      if (submission.owner_user_id !== input.userId) throw submissionError('SUBMISSION_FORBIDDEN', 403)
+      if (submission.version !== input.expectedVersion) {
+        throw submissionError('SUBMISSION_VERSION_CONFLICT', 409, false, {
+          expected_version: input.expectedVersion,
+          current_version: submission.version,
+        })
+      }
+      if (submission.review_status !== 'pending_review') {
+        throw submissionError('SUBMISSION_NOT_WITHDRAWABLE', 409)
+      }
+      const workItemResult = await client.query<SubmissionWorkItemRow>(
+        'SELECT * FROM workflow.review_work_items WHERE work_item_id=$1 FOR UPDATE',
+        [submission.review_work_item_id],
+      )
+      const workItem = workItemResult.rows[0]
+      if (
+        !workItem || workItem.work_type !== 'submission' || workItem.target_type !== 'submission' ||
+        workItem.target_id !== submission.submission_id
+      ) throw submissionError('SUBMISSION_WORK_ITEM_STATE_INVALID', 500, true)
+      if (!['queued', 'claimed'].includes(workItem.status)) {
+        throw submissionError('SUBMISSION_NOT_WITHDRAWABLE', 409)
+      }
+
+      const updatedWorkItem = await client.query<SubmissionWorkItemRow>(
+        `UPDATE workflow.review_work_items SET status='cancelled',assignee_user_id=NULL,
+           claim_token_hash=NULL,lease_expires_at=NULL,last_heartbeat_at=NULL,
+           conflict_principal_version_at_claim=NULL,cancel_reason='submission_withdrawn',
+           version=version+1,updated_at=$2
+         WHERE work_item_id=$1 AND status IN ('queued','claimed') AND version=$3
+         RETURNING *`,
+        [workItem.work_item_id, input.now, workItem.version],
+      )
+      const cancelled = updatedWorkItem.rows[0]
+      if (!cancelled) throw submissionError('SUBMISSION_WORK_ITEM_CONFLICT', 409)
+      await client.query(
+        `INSERT INTO workflow.review_work_item_events (
+           event_id,work_item_id,event_type,actor_user_id,from_status,to_status,
+           work_item_version,reason_code,metadata_json,occurred_at
+         ) VALUES ($1,$2,'cancelled',$3,$4,'cancelled',$5,'submission_withdrawn',$6::jsonb,$7)`,
+        [
+          randomUUID(), workItem.work_item_id, input.userId, workItem.status, cancelled.version,
+          JSON.stringify({ submission_id: submission.submission_id }), input.now,
+        ],
+      )
+      const updatedSubmission = await client.query<SubmissionRow>(
+        `UPDATE workflow.submissions SET review_status='withdrawn',version=version+1,
+           decided_at=$2,updated_at=$2
+         WHERE submission_id=$1 AND review_status='pending_review' AND version=$3
+         RETURNING *`,
+        [submission.submission_id, input.now, input.expectedVersion],
+      )
+      const withdrawn = updatedSubmission.rows[0]
+      if (!withdrawn) throw submissionError('SUBMISSION_VERSION_CONFLICT', 409)
+      const projection: SubmissionWithdrawalProjection = Object.freeze({
+        submission_id: withdrawn.submission_id,
+        review_status: 'withdrawn',
+        submission_version: withdrawn.version,
+        review_work_item_id: cancelled.work_item_id,
+        work_item_status: 'cancelled',
+        work_item_version: cancelled.version,
+        withdrawn_at: input.now.toISOString(),
+      })
+      await client.query(
+        `INSERT INTO workflow.submission_operation_receipts (
+           owner_user_id,operation_id,operation_type,request_hash,submission_id,response_json,created_at
+         ) VALUES ($1,$2,'withdraw',$3,$4,$5::jsonb,$6)`,
+        [
+          input.userId, input.operationId, input.requestHash, submission.submission_id,
+          JSON.stringify(projection), input.now,
+        ],
+      )
+      const transactionId = randomUUID()
+      await client.query(
+        `INSERT INTO ops.outbox_events (
+           outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
+           payload_json,transaction_id,status,next_attempt_at,created_at
+         ) VALUES ($1,$2,'submission',$3,'submission_withdrawn',1,$4::jsonb,$5,'pending',$6,$6)`,
+        [
+          randomUUID(), randomUUID(), withdrawn.submission_id,
+          JSON.stringify({
+            submission_id: withdrawn.submission_id,
+            submission_chain_id: withdrawn.submission_chain_id,
+            result: 'success',
+          }),
+          transactionId, input.now,
+        ],
+      )
+      if (workItem.assignee_user_id !== null) {
+        await client.query(
+          `INSERT INTO ops.outbox_events (
+             outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
+             payload_json,transaction_id,status,next_attempt_at,created_at
+           ) VALUES ($1,$2,'review_work_item',$3,'review_assignment_cancelled',1,
+             $4::jsonb,$5,'pending',$6,$6)`,
+          [
+            randomUUID(), randomUUID(), workItem.work_item_id,
+            JSON.stringify({
+              work_item_id: workItem.work_item_id,
+              recipient_user_id: workItem.assignee_user_id,
+              reason_code: 'submission_withdrawn',
+            }),
+            transactionId, input.now,
+          ],
+        )
+      }
+      await client.query(
+        `INSERT INTO audit.audit_logs (
+           operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+           before_hash,after_hash,diff_json,reason_code,request_id,trace_id,result,created_at
+         ) VALUES ('OP-SUB-WITHDRAW','user',digest($1,'sha256'),'[]'::jsonb,'submission',$2,
+           $3,$4,$5::jsonb,$6,$7,$8,'success',$9)`,
+        [
+          input.userId, withdrawn.submission_id,
+          this.hash(canonicalJson({ review_status: submission.review_status, version: submission.version })),
+          this.hash(canonicalJson({ review_status: withdrawn.review_status, version: withdrawn.version })),
+          JSON.stringify({
+            review_status: { from: submission.review_status, to: withdrawn.review_status },
+            work_item_status: { from: workItem.status, to: cancelled.status },
+            owner_reason_code: input.reasonCode,
+          }),
+          'submission_owner_withdrawn', input.requestId.slice(0, 64), transactionId, input.now,
+        ],
+      )
+      await client.query('COMMIT')
+      return projection
     } catch (error) {
       await client.query('ROLLBACK')
       throw error
@@ -860,6 +1036,20 @@ export class PostgresSubmissionStore implements SubmissionStore {
     if (left.length !== right.length) return false
     const rightSet = new Set(right)
     return left.every((value) => rightSet.has(value))
+  }
+
+  private withdrawalProjectionFromJson(value: unknown): SubmissionWithdrawalProjection {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw submissionError('SUBMISSION_RECEIPT_INVALID', 500, true)
+    }
+    const record = value as Record<string, unknown>
+    if (
+      typeof record.submission_id !== 'string' || record.review_status !== 'withdrawn' ||
+      !Number.isSafeInteger(record.submission_version) || typeof record.review_work_item_id !== 'string' ||
+      record.work_item_status !== 'cancelled' || !Number.isSafeInteger(record.work_item_version) ||
+      typeof record.withdrawn_at !== 'string'
+    ) throw submissionError('SUBMISSION_RECEIPT_INVALID', 500, true)
+    return Object.freeze(record) as unknown as SubmissionWithdrawalProjection
   }
 
   private async lock(client: PoolClient, key: string): Promise<void> {

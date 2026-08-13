@@ -137,10 +137,23 @@ async function run(): Promise<void> {
     assert.equal(replay.submission_id, submitted.submission_id)
     submissionId = submitted.submission_id
   }
+  const withdrawn = await service.withdrawSubmission({
+    userId, submissionId, expectedVersion: 1,
+    operationId: 'submission-withdraw-operation-0001', reasonCode: 'fixture_withdrawal',
+    requestId: 'submission-withdraw-request-0001',
+  })
+  const withdrawalReplay = await service.withdrawSubmission({
+    userId, submissionId, expectedVersion: 1,
+    operationId: 'submission-withdraw-operation-0001', reasonCode: 'fixture_withdrawal',
+    requestId: 'submission-withdraw-request-0002',
+  })
+  assert.deepEqual(withdrawalReplay, withdrawn)
   const verified = await pool.query<{
     readonly review_status: string; readonly draft_status: string; readonly draft_version: number
     readonly work_status: string; readonly principal_count: number; readonly outbox_count: number
     readonly project_count: number; readonly payload: Record<string, unknown>
+    readonly withdrawal_outbox_count: number; readonly withdrawal_receipt_count: number
+    readonly cancellation_event_count: number
   }>(
     `SELECT submission.review_status,draft.status AS draft_status,draft.version AS draft_version,
        work.status AS work_status,
@@ -148,6 +161,12 @@ async function run(): Promise<void> {
         WHERE work_item_id=work.work_item_id AND principal_user_id=$2) AS principal_count,
        (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_type='submission'
         AND aggregate_id=submission.submission_id::text AND event_name='project_submitted') AS outbox_count,
+       (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_type='submission'
+        AND aggregate_id=submission.submission_id::text AND event_name='submission_withdrawn') AS withdrawal_outbox_count,
+       (SELECT count(*)::int FROM workflow.submission_operation_receipts
+        WHERE submission_id=submission.submission_id AND operation_type='withdraw') AS withdrawal_receipt_count,
+       (SELECT count(*)::int FROM workflow.review_work_item_events
+        WHERE work_item_id=work.work_item_id AND event_type='cancelled') AS cancellation_event_count,
        (SELECT count(*)::int FROM catalog.projects WHERE canonical_url_hash=digest($3,'sha256')) AS project_count,
        (SELECT payload_json FROM ops.outbox_events WHERE aggregate_id=submission.submission_id::text
         AND event_name='project_submitted' LIMIT 1) AS payload
@@ -157,19 +176,22 @@ async function run(): Promise<void> {
      WHERE submission.submission_id=$1`,
     [submissionId, userId, canonicalUrl],
   )
-  assert.equal(verified.rows[0]?.review_status, 'pending_review')
+  assert.equal(verified.rows[0]?.review_status, 'withdrawn')
   assert.equal(verified.rows[0]?.draft_status, 'submitted')
   assert.equal(verified.rows[0]?.draft_version, 2)
-  assert.equal(verified.rows[0]?.work_status, 'queued')
+  assert.equal(verified.rows[0]?.work_status, 'cancelled')
   assert.equal(verified.rows[0]?.principal_count, 1)
   assert.equal(verified.rows[0]?.outbox_count, 1)
+  assert.equal(verified.rows[0]?.withdrawal_outbox_count, 1)
+  assert.equal(verified.rows[0]?.withdrawal_receipt_count, 1)
+  assert.equal(verified.rows[0]?.cancellation_event_count, 1)
   assert.equal(verified.rows[0]?.project_count, 0)
   assert.equal('project_id' in (verified.rows[0]?.payload ?? {}), false)
 }
 
 try {
   await run()
-  process.stdout.write('submission_submit_fixture_ok submissions=1 work_items=1 outbox=1 projects=0\n')
+  process.stdout.write('submission_submit_fixture_ok submissions=1 work_items=1 withdrawal=1 projects=0\n')
 } finally {
   await pool.end()
 }

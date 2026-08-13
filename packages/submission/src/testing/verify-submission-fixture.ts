@@ -171,7 +171,8 @@ async function run(): Promise<void> {
     readonly project_id: string
   }>(
     `SELECT canonical_public_url,project_id FROM catalog.projects
-     WHERE review_status<>'deleted' ORDER BY project_id LIMIT 1`,
+     WHERE review_status<>'deleted' AND category_id='personal_site_portfolio'
+     ORDER BY project_id LIMIT 1`,
   )
   assert.ok(existingProject.rows[0])
   const duplicate = await service.checkUrl({

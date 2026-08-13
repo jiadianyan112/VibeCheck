@@ -11,10 +11,12 @@ import {
   type PatchSubmissionDraftCommand,
   type PreviewSubmissionDraftCommand,
   type SubmitSubmissionDraftCommand,
+  type WithdrawSubmissionCommand,
   type SubmissionCategoryId,
   type SubmissionDraftProjection,
   type SubmissionPreviewProjection,
   type SubmissionProjection,
+  type SubmissionWithdrawalProjection,
   type SubmissionSchemaVersion,
   type SubmissionUrlCheckProjection,
   type UrlCheckAccessResult,
@@ -213,6 +215,29 @@ export class SubmissionService {
     })
   }
 
+  async withdrawSubmission(command: WithdrawSubmissionCommand): Promise<SubmissionWithdrawalProjection> {
+    if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion < 1) {
+      throw submissionError('SUBMISSION_VERSION_INVALID', 422)
+    }
+    const submissionId = this.uuid(command.submissionId, 'SUBMISSION_ID_INVALID')
+    const operationId = this.operationId(command.operationId)
+    const reasonCode = command.reasonCode === null ? null : this.reasonCode(command.reasonCode)
+    return this.dependencies.store.withdrawSubmission({
+      userId: this.uuid(command.userId, 'SUBMISSION_USER_INVALID'),
+      submissionId,
+      expectedVersion: command.expectedVersion,
+      operationId,
+      reasonCode,
+      requestHash: this.hash(JSON.stringify({
+        submission_id: submissionId,
+        expected_version: command.expectedVersion,
+        reason_code: reasonCode,
+      })),
+      requestId: this.requestId(command.requestId),
+      now: this.now(),
+    })
+  }
+
   private classifySafety(
     result: 'allowed' | 'uncertain' | 'blocked',
     reasonCode: string | null,
@@ -293,6 +318,14 @@ export class SubmissionService {
   private requestId(value: string): string {
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value)) throw submissionError('REQUEST_ID_INVALID', 422)
     return value
+  }
+
+  private reasonCode(value: string): string {
+    const normalized = value.trim().toLowerCase()
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(normalized)) {
+      throw submissionError('SUBMISSION_REASON_CODE_INVALID', 422)
+    }
+    return normalized
   }
 
   private hash(value: string): string {

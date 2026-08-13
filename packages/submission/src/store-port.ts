@@ -5,6 +5,7 @@ import type {
   SubmissionSchemaVersion,
   SubmissionPreviewProjection,
   SubmissionProjection,
+  SubmissionWithdrawalProjection,
   SubmissionUrlCheckProjection,
   UrlCheckAccessResult,
   UrlCheckRiskResult,
@@ -107,4 +108,14 @@ export interface SubmissionStore {
     readonly requestId: string
     readonly now: Date
   }): Promise<SubmissionProjection>
+  withdrawSubmission(input: {
+    readonly userId: string
+    readonly submissionId: string
+    readonly expectedVersion: number
+    readonly operationId: string
+    readonly reasonCode: string | null
+    readonly requestHash: string
+    readonly requestId: string
+    readonly now: Date
+  }): Promise<SubmissionWithdrawalProjection>
 }

@@ -1049,6 +1049,36 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/submissions/{submission_id}/withdraw:
+    post:
+      tags: [Submission]
+      operationId: OP-SUB-WITHDRAW
+      summary: Atomically withdraw an undecided Submission and cancel its review lease
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: submission_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmissionWithdrawRequest' }
+      responses:
+        '200':
+          description: Idempotent withdrawal receipt with the atomically cancelled work item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionWithdrawal' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -4416,6 +4446,28 @@ components:
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    SubmissionWithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        operation_id: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason_code:
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+    SubmissionWithdrawal:
+      type: object
+      additionalProperties: false
+      required: [submission_id, review_status, submission_version, review_work_item_id, work_item_status, work_item_version, withdrawn_at]
+      properties:
+        submission_id: { type: string, format: uuid }
+        review_status: { type: string, enum: [withdrawn] }
+        submission_version: { type: integer, minimum: 2 }
+        review_work_item_id: { type: string, format: uuid }
+        work_item_status: { type: string, enum: [cancelled] }
+        work_item_version: { type: integer, minimum: 2 }
+        withdrawn_at: { type: string, format: date-time }
     ReviewWorkType:
       type: string
       enum:

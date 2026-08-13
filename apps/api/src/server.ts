@@ -114,9 +114,11 @@ import {
   type PatchSubmissionDraftCommand,
   type PreviewSubmissionDraftCommand,
   type SubmitSubmissionDraftCommand,
+  type WithdrawSubmissionCommand,
   type SubmissionDraftProjection,
   type SubmissionPreviewProjection,
   type SubmissionProjection,
+  type SubmissionWithdrawalProjection,
   type SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
 import {
@@ -265,6 +267,7 @@ export interface ApiSubmissionService {
   patchDraft(command: PatchSubmissionDraftCommand): Promise<SubmissionDraftProjection>
   previewDraft(command: PreviewSubmissionDraftCommand): Promise<SubmissionPreviewProjection>
   submitDraft(command: SubmitSubmissionDraftCommand): Promise<SubmissionProjection>
+  withdrawSubmission(command: WithdrawSubmissionCommand): Promise<SubmissionWithdrawalProjection>
 }
 
 export interface ApiWorkflowService {
@@ -1416,14 +1419,16 @@ async function handleSubmissionRequest(
   const draftMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)$/)
   const draftPreviewMatch = path.match(/^\/api\/v1\/submission-drafts\/([^/]+)\/preview$/)
   const submissionCollectionPath = '/api/v1/submissions'
+  const submissionWithdrawMatch = path.match(/^\/api\/v1\/submissions\/([^/]+)\/withdraw$/)
   if (
     path !== urlCheckPath && path !== draftCollectionPath && path !== submissionCollectionPath &&
-    draftMatch === null && draftPreviewMatch === null
+    draftMatch === null && draftPreviewMatch === null && submissionWithdrawMatch === null
   ) return null
   if (
     (path === urlCheckPath && method !== 'POST') ||
     (path === draftCollectionPath && method !== 'POST') ||
     (path === submissionCollectionPath && method !== 'POST') ||
+    (submissionWithdrawMatch !== null && method !== 'POST') ||
     (draftPreviewMatch !== null && method !== 'POST') ||
     (draftMatch !== null && method !== 'GET' && method !== 'PATCH')
   ) return null
@@ -1507,6 +1512,22 @@ async function handleSubmissionRequest(
     })
     writeJson(response, 202, projection, requestId)
     return 202
+  }
+  if (submissionWithdrawMatch !== null) {
+    exactKeys(body, ['expected_version', 'operation_id', 'reason_code'])
+    const reasonValue = body.reason_code
+    const projection = await dependencies.submission.withdrawSubmission({
+      userId: session.userId,
+      submissionId: submissionWithdrawMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      reasonCode: reasonValue === undefined || reasonValue === null
+        ? null
+        : stringField(body, 'reason_code', { maximum: 64 }),
+      requestId,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
   }
   return null
 }

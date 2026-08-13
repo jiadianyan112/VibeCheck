@@ -106,6 +106,15 @@ export interface SubmitSubmissionDraftCommand {
   readonly requestId: string
 }
 
+export interface WithdrawSubmissionCommand {
+  readonly userId: string
+  readonly submissionId: string
+  readonly expectedVersion: number
+  readonly operationId: string
+  readonly reasonCode: string | null
+  readonly requestId: string
+}
+
 export interface SubmissionPreviewProjection {
   readonly draft_id: string
   readonly draft_version: number
@@ -134,4 +143,14 @@ export interface SubmissionProjection {
   readonly version: number
   readonly created_at: string
   readonly updated_at: string
+}
+
+export interface SubmissionWithdrawalProjection {
+  readonly submission_id: string
+  readonly review_status: 'withdrawn'
+  readonly submission_version: number
+  readonly review_work_item_id: string
+  readonly work_item_status: 'cancelled'
+  readonly work_item_version: number
+  readonly withdrawn_at: string
 }

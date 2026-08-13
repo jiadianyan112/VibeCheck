@@ -65,9 +65,11 @@ import type {
   PatchSubmissionDraftCommand,
   PreviewSubmissionDraftCommand,
   SubmitSubmissionDraftCommand,
+  WithdrawSubmissionCommand,
   SubmissionDraftProjection,
   SubmissionPreviewProjection,
   SubmissionProjection,
+  SubmissionWithdrawalProjection,
   SubmissionUrlCheckProjection,
 } from '@vibecheck/submission'
 import type {
@@ -1056,6 +1058,7 @@ class FakeSubmissionService implements ApiSubmissionService {
   patchCommand: PatchSubmissionDraftCommand | null = null
   previewCommand: PreviewSubmissionDraftCommand | null = null
   submitCommand: SubmitSubmissionDraftCommand | null = null
+  withdrawCommand: WithdrawSubmissionCommand | null = null
 
   getCheckCommand(): CheckSubmissionUrlCommand | null { return this.checkCommand }
   getCreateCommand(): CreateSubmissionDraftCommand | null { return this.createCommand }
@@ -1155,6 +1158,19 @@ class FakeSubmissionService implements ApiSubmissionService {
       version: 1,
       created_at: '2026-08-10T00:00:00.000Z',
       updated_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async withdrawSubmission(command: WithdrawSubmissionCommand): Promise<SubmissionWithdrawalProjection> {
+    this.withdrawCommand = command
+    return Object.freeze({
+      submission_id: '84000000-0000-4000-8000-000000000006',
+      review_status: 'withdrawn',
+      submission_version: 2,
+      review_work_item_id: '84000000-0000-4000-8000-000000000007',
+      work_item_status: 'cancelled',
+      work_item_version: 2,
+      withdrawn_at: '2026-08-10T00:01:00.000Z',
     })
   }
 }
@@ -1273,6 +1289,34 @@ test('submission entry routes require the authenticated owner, same-origin CSRF 
     assert.equal(accepted.review_status, 'pending_review')
     assert.equal(accepted.project_id, undefined)
     assert.equal(submission.submitCommand?.submissionKey, 'submission-submit-request-0001')
+
+    const withdrawn = await fetch(
+      `${runtime.baseUrl}/api/v1/submissions/84000000-0000-4000-8000-000000000006/withdraw`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          expected_version: 1,
+          operation_id: 'submission-withdraw-request-0001',
+          reason_code: 'owner_cancelled',
+        }),
+      },
+    )
+    assert.equal(withdrawn.status, 200)
+    const cancellation = await withdrawn.json() as {
+      review_status: string
+      work_item_status: string
+    }
+    assert.deepEqual(cancellation, {
+      submission_id: '84000000-0000-4000-8000-000000000006',
+      review_status: 'withdrawn',
+      submission_version: 2,
+      review_work_item_id: '84000000-0000-4000-8000-000000000007',
+      work_item_status: 'cancelled',
+      work_item_version: 2,
+      withdrawn_at: '2026-08-10T00:01:00.000Z',
+    })
+    assert.equal(submission.withdrawCommand?.reasonCode, 'owner_cancelled')
   } finally {
     await runtime.stop()
   }

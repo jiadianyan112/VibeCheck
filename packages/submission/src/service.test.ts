@@ -61,6 +61,7 @@ class FakeStore implements SubmissionStore {
   patchedDraft: Parameters<SubmissionStore['patchDraft']>[0] | null = null
   previewedDraft: Parameters<SubmissionStore['previewDraft']>[0] | null = null
   submittedDraft: Parameters<SubmissionStore['submitDraft']>[0] | null = null
+  withdrawnSubmission: Parameters<SubmissionStore['withdrawSubmission']>[0] | null = null
   replay: Awaited<ReturnType<SubmissionStore['getUrlCheckByRequest']>> = null
   reusable: SubmissionUrlCheckProjection | null = null
   boundReusable: Parameters<SubmissionStore['bindReusableUrlCheck']>[0] | null = null
@@ -122,6 +123,18 @@ class FakeStore implements SubmissionStore {
       version: 1,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
+    })
+  }
+  async withdrawSubmission(input: Parameters<SubmissionStore['withdrawSubmission']>[0]) {
+    this.withdrawnSubmission = input
+    return Object.freeze({
+      submission_id: input.submissionId,
+      review_status: 'withdrawn' as const,
+      submission_version: input.expectedVersion + 1,
+      review_work_item_id: '85000000-0000-4000-8000-000000000004',
+      work_item_status: 'cancelled' as const,
+      work_item_version: 2,
+      withdrawn_at: now.toISOString(),
     })
   }
 }
@@ -369,5 +382,43 @@ describe('SubmissionService preview and submit', () => {
       requestId: 'http-request-submit-invalid',
     }), 'SUBMISSION_PREVIEW_HASH_INVALID', 422)
     assert.equal(store.submittedDraft, null)
+  })
+})
+
+describe('SubmissionService withdrawal', () => {
+  it('normalizes an optional reason and binds optimistic state to the operation receipt', async () => {
+    const store = new FakeStore()
+    const result = await service(store).withdrawSubmission({
+      userId,
+      submissionId: '85000000-0000-4000-8000-000000000003',
+      expectedVersion: 1,
+      operationId: 'submission-withdraw-0001',
+      reasonCode: ' Owner_Cancelled ',
+      requestId: 'http-request-withdraw',
+    })
+    assert.equal(result.review_status, 'withdrawn')
+    assert.equal(store.withdrawnSubmission?.reasonCode, 'owner_cancelled')
+    assert.match(store.withdrawnSubmission?.requestHash ?? '', /^[a-f0-9]{64}$/)
+  })
+
+  it('rejects stale versions and unbounded free-text reasons before storage', async () => {
+    const store = new FakeStore()
+    await failure(() => service(store).withdrawSubmission({
+      userId,
+      submissionId: '85000000-0000-4000-8000-000000000003',
+      expectedVersion: 0,
+      operationId: 'submission-withdraw-0002',
+      reasonCode: null,
+      requestId: 'http-request-withdraw',
+    }), 'SUBMISSION_VERSION_INVALID', 422)
+    await failure(() => service(store).withdrawSubmission({
+      userId,
+      submissionId: '85000000-0000-4000-8000-000000000003',
+      expectedVersion: 1,
+      operationId: 'submission-withdraw-0003',
+      reasonCode: 'free text is not a reason code',
+      requestId: 'http-request-withdraw',
+    }), 'SUBMISSION_REASON_CODE_INVALID', 422)
+    assert.equal(store.withdrawnSubmission, null)
   })
 })

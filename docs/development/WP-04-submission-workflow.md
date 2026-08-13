@@ -76,15 +76,15 @@
 
 ## 当前迭代：WP-04D 预览冻结与提交审核事务
 
-状态：实现完成；等待远端 PostgreSQL 事务 fixture 复验。
+状态：实现完成；远端已执行到 Submission entry fixture。失败原因是 fixture 选择了不同品类的首个 Project，却按 Portfolio 检查精确重复；领域实现未失败，fixture 已增加同品类过滤并等待复验。
 
 ### 已实现
 
 - `OP-DRAFT-PREVIEW`：按 owner、草稿版本和 check_id 生成服务端预览；预览不依赖客户端计算，哈希绑定 draft/version/check/input_hash、规范 ProjectSnapshot、权威 MediaReference ID 和 EvidenceDraft ID。
 - 双品类提交均复用版本化 Catalog Schema 做严格字段校验；Portfolio 仅在 15 个必填字段类型完整时通过，`navigation_pattern` 与 `homepage_sequence` 保持可空/可空数组；ProjectCore 将冻结字段 `access_status` 纳入版本快照契约。
 - 预览与提交都实时复检 URL check 未过期、风险允许、页面可访问、当前无规范 URL 重复；超时后不可沿用旧 preview_hash。
-- MediaReference 使用关系查询而非草稿 JSON 作为权威来源；所有活动引用必须解析到 owner 的 `ready+clean+guard=null` Resource，且至少一项有序 role=cover，与 payload 的封面 ID 完全一致。
-- EvidenceDraft 使用关系查询作为权威来源；至少一项且全部为 ready；活动附件必须属于 owner 且 Resource 仍为 `ready+clean+guard=null`。
+- MediaReference 以活动关系记录为权威事实，并与草稿绑定 ID 投影逐项对账；所有活动引用必须解析到 owner 的 `ready+clean+guard=null` Resource，且至少一项有序 role=cover，与 payload 的封面 ID 完全一致。
+- EvidenceDraft 以草稿绑定 ID 集合作为提交边界，再逐项核对 parent/owner/status；至少一项且全部为 ready；活动附件必须属于 owner 且 Resource 仍为 `ready+clean+guard=null`。撤回证据会从父草稿原子解除绑定，避免残留 ID 永久阻塞提交。
 - `OP-SUBMIT` 要求 draft_version、check_id、preview_hash 与 submission_key；同 owner+submission_key 同载荷重放返回同一 Submission，异载荷复用返回 409。
 - 提交在一个 PostgreSQL 事务内锁定所有前置对象，创建 `Submission/pending_review`、唯一 `ReviewWorkItem/queued`、`submission_owner` 冲突主体、`project_submitted` Outbox 和审计，然后把原 Draft 置为 submitted 只读。
 - `project_submitted` payload 只含 draft_id、submission_id、submission_chain_id、category_id、result，不含 project_id 或自然人 ID；提交响应也不返回 project_id。
@@ -94,9 +94,25 @@
 ### 明确未开放
 
 - 当前提交仅进入人工审核，不创建 Project、Version、Event、正式 Evidence、正式 MediaReference 或 AuthorRelation。
-- `OP-SUB-WITHDRAW`、changes_requested 后的 `OP-DRAFT-REVISE`、审核决定与 approved 后发布事务尚未开放。
+- changes_requested 后的 `OP-DRAFT-REVISE`、审核决定与 approved 后发布事务尚未开放。
 - Media 上传面仍关闭时，生产环境不能凭空构造 ready Resource；本迭代只完成对真实前置对象的提交消费事务。
 
 ### 下一迭代
 
-WP-04E：实现 owner 撤回与审核退回后的新 revision；随后进入审核决定和批准后发布事务，旧 Draft/Submission 保持不可变，不在旧对象上重开。
+WP-04E：先完成 owner 撤回，再实现审核退回后的新 revision；随后进入审核决定和批准后发布事务，旧 Draft/Submission 保持不可变，不在旧对象上重开。
+
+## 当前迭代：WP-04E1 提交者撤回
+
+状态：实现完成；等待远端 PostgreSQL 事务 fixture。
+
+### 已实现
+
+- `OP-SUB-WITHDRAW` 只允许 Submission owner 对 `pending_review` 且 WorkItem 仍为 queued/claimed 的快照执行；approved、decided、rejected、changes_requested、withdrawn、publishing、publish_failed、published 均返回状态冲突，不猜测 `publish_failed` 是否开放给用户终止。
+- expected_version 与 operation_id 同时参与幂等收据；相同 operation_id/相同载荷返回同一撤回结果，不同载荷复用返回 409。
+- 单一事务把 Submission 写为 withdrawn、WorkItem 写为 cancelled、清理 claim/lease、追加 WorkItem cancelled 事件、写 `submission_withdrawn` Outbox 与审计；原 Draft、Submission payload、媒体和证据快照均不删除、不重开。
+- 若 WorkItem 已领取，额外写内部 `review_assignment_cancelled` Outbox，供通知消费者定向通知原领取者；公共分析事件不携带该人员 ID。
+- OpenAPI 当前为 49 paths / 57 operations；迁移 `000020_submission_withdrawal.sql` 增加 append-only 语义的操作收据。
+
+### 下一步
+
+WP-04E2：实现 `OP-DRAFT-REVISE`。创建 revision 前由服务端自动重跑 URL 安全、可访问性和同品类查重，避免沿用已超过 30 分钟的旧 check；新 Draft 使用新 ID/revision，旧 Draft/Submission 保持只读。
