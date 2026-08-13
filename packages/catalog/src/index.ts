@@ -104,6 +104,10 @@ export {
 export { ProjectUpdateService, type AuthorAuthorizationPort, type ProjectUpdateStorePort } from './project-update-service.js'
 export { PostgresProjectUpdateStore } from './project-update-store.js'
 export {
+  PostgresProjectUpdateApplier,
+  type ProjectUpdateApplicationProjection,
+} from './project-update-application.js'
+export {
   projectUpdateTypes,
   type CreateProjectUpdateCommand,
   type GetProjectUpdateCommand,

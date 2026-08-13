@@ -368,7 +368,7 @@ WP-05A5：扩展 ReviewDecisionService 的 project_update 分支，只允许无�
 
 ## 当前迭代：WP-05A5 ProjectUpdate 审核决定
 
-状态：实现完成，待远端 PostgreSQL 18 事务 fixture 验证。
+状态：实现完成；GitHub Actions `31713919359` 已在 PostgreSQL 18 通过全部质量门与 Submission/ProjectUpdate 决定事务 fixture。
 
 ### 已实现
 
@@ -385,3 +385,29 @@ WP-05A5：扩展 ReviewDecisionService 的 project_update 分支，只允许无�
 ### 下一步
 
 WP-05A6：由 worker 消费 `project_update_approved`，重新锁定批准决定、Update、base/current Version 和全部依赖，按乐观并发规则创建新 Version/Event 并切换 Project 当前版本；失败进入 apply_failed，重复投递必须返回同一应用收据。
+
+## 当前迭代：WP-05A6 ProjectUpdate 原子应用
+
+状态：本地实现与静态验证完成，待远端 PostgreSQL 18 事务 fixture 验证。
+
+### 已实现
+
+- worker 新增 `project_update_approved` handler，只接受 aggregate_type/project_update、aggregate_id、payload.update_id 与 review_decision_id 完全一致的内部事件；事件不能携带客户端自定 Project/base/权限事实。
+- 应用器先按 update_id 取得数据库 advisory lock，再分别执行 approved/apply_failed→applying 和 applying→applied；同一 Update 的并发及重复投递串行化，已存在不可变收据时返回同一结果，决定 ID 不同则拒绝。
+- 应用事务重新锁定并交叉校验 ReviewDecision、decided WorkItem、ProjectUpdate、Project.current_version_id 和 base Version；任一 target/project/base/work item/decision/status 不一致即 fail closed。
+- 应用时重新解析当前 active CreatorAccountLink、固定 LinkPermissionProfile、canonical Creator 与 AuthorRelation exact refs；Link/Relation/Profile 版本变化、撤销或字段/能力交集失效均拒绝，不信任提交时快照继续授权。
+- 非空 diff 使用冻结 base snapshot 重验 before/after 和 JSON Pointer，再按原品类 Schema 验证完整新快照；本轮 URL 改动在缺正式安全收据时 fail closed，不以简单字符串替换改变 canonical URL。
+- 同一事务创建不可变 ProjectVersion（source_decision=ReviewDecision）、派生 version_updated Event、正式 project_version MediaReference、最终 Evidence/Attachment，切换 Project.current_version_id/current_name/access_status，推进 Update=applied，并写不可变应用收据、project_updated Outbox 与审计日志。
+- 任一步失败时应用事务全部回滚，不留下半 Version/Event/Evidence/Media/Project 指针；外层把仍为 applying 的 Update 推进为 apply_failed 并记录稳定错误码，允许按同一批准决定安全重试。
+- 新增迁移 `000032_project_update_application.sql`，补充应用错误字段、不可变应用收据，并用数据库触发器校验 ReviewDecision→WorkItem→ProjectUpdate→Project/base Version 的 typed source chain。
+- PostgreSQL fixture 覆盖新版本与 Project 指针原子切换、旧 Version 不变、收据不可变、重复投递幂等、错误决定拒绝、Event/Outbox 唯一以及公开名称更新；worker 单测覆盖事件与 aggregate 绑定。
+
+### 明确未授权
+
+- 本轮不开放任何“直接应用”HTTP API；作者、编辑和管理员均不能绕过批准决定调用应用器。
+- address 更新仍需后续 URL 安全收据链；asset/relation 目标的 Evidence 与 ReusableAsset 变更继续 fail closed，不以不完整对象上线。
+- `project_updated` 的搜索重建、关注者通知与 service analytics v2 投影由后续异步消费者完成；应用事务只提交可重放 Outbox，不在事务内调用外部服务。
+
+### 下一步
+
+WP-05A7：实现 `project_updated` 投影消费者，使用当前 Version 重建搜索文档，并按关注关系生成收件人隔离且幂等的作品更新通知；随后进入作者身份验证申请与 Link 创建的低频审核分支。

@@ -53,6 +53,49 @@ async function verifyProjectUpdateDecision(): Promise<void> {
     [projectId],
   )
   assert.ok(publicBefore.rows[0])
+  const authorization = await pool.query<{
+    readonly creator_account_link_id: string
+    readonly creator_id: string
+    readonly author_relation_id: string
+    readonly permission_profile_id: string
+    readonly permission_profile_version: number
+    readonly permission_profile_config_hash: string
+    readonly link_version: string
+    readonly author_relation_version: string
+    readonly capabilities_json: unknown
+    readonly field_paths_json: unknown
+  }>(
+    `SELECT link.creator_account_link_id,link.creator_id,relation.author_relation_id,
+       link.permission_profile_id,link.permission_profile_version,
+       link.permission_profile_config_hash,link.version AS link_version,
+       relation.version AS author_relation_version,profile.capabilities_json,
+       (SELECT jsonb_agg(item.field_path ORDER BY item.field_path)
+          FROM jsonb_array_elements_text(profile.field_path_ceiling_json) AS item(field_path)
+          WHERE relation.field_permissions_json ? item.field_path) AS field_paths_json
+     FROM catalog.creator_account_links link
+     JOIN catalog.link_permission_profiles profile
+       ON profile.profile_id=link.permission_profile_id
+      AND profile.profile_version=link.permission_profile_version
+      AND profile.config_hash=link.permission_profile_config_hash
+     JOIN catalog.author_relations relation
+       ON relation.creator_id=link.creator_id AND relation.project_id=$2 AND relation.status='active'
+     WHERE link.user_id=$1 AND link.status='active'`,
+    [updateOwnerId, projectId],
+  )
+  assert.ok(authorization.rows[0])
+  const grant = authorization.rows[0]!
+  const authorizationSnapshot = {
+    creator_account_link_id: grant.creator_account_link_id,
+    creator_id: grant.creator_id,
+    author_relation_id: grant.author_relation_id,
+    permission_profile_id: grant.permission_profile_id,
+    permission_profile_version: grant.permission_profile_version,
+    permission_profile_config_hash: grant.permission_profile_config_hash,
+    link_version: Number(grant.link_version),
+    author_relation_version: Number(grant.author_relation_version),
+    capabilities: grant.capabilities_json,
+    field_paths: grant.field_paths_json,
+  }
   await pool.query(
     `INSERT INTO workflow.review_work_items (
        work_item_id,work_type,target_type,target_id,status,version,created_at,updated_at
@@ -73,7 +116,7 @@ async function verifyProjectUpdateDecision(): Promise<void> {
         field_path: '/project_core/current_name', before_value: 'Recall Garden',
         after_value: 'Reviewed update',
       }]),
-      JSON.stringify({ profile_code: 'OWNER_V1', authorized_field_paths: ['/project_core/current_name'] }),
+       JSON.stringify(authorizationSnapshot),
       updateWorkItemId, 'e'.repeat(64), updateCreatedAt],
   )
   await pool.query(

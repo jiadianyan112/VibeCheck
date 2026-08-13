@@ -46,6 +46,7 @@
     "catalog:profile:verify": "npm run profile:verify -w @vibecheck/catalog",
     "catalog:authorization:verify": "npm run authorization:verify -w @vibecheck/catalog",
     "catalog:project-update:verify": "npm run project-update:verify -w @vibecheck/catalog",
+    "catalog:project-update:application:verify": "npm run project-update:application:verify -w @vibecheck/catalog",
     "catalog:admin:import": "npm run admin:import -w @vibecheck/catalog",
     "catalog:admin:import:verify": "npm run admin:import:verify -w @vibecheck/catalog",
     "catalog:asset:resolve:verify": "npm run asset:resolve:verify -w @vibecheck/catalog",
