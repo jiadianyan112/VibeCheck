@@ -274,7 +274,7 @@ WP-05A1：先部署 ProjectUpdate 必需的固定 LinkPermissionProfile 并建�
 
 ## 当前迭代：WP-05A1 固定作者权限档案基线
 
-状态：实现完成；本地类型检查、单测、构建、部署蓝图检查与 lint 已通过，进入远端 PostgreSQL 质量门验证；尚未给任何用户授予作者权限。
+状态：实现完成；GitHub Actions `31706829447` 已在 PostgreSQL 18 通过全部质量门与 Profile 部署校验；尚未给任何用户授予作者权限。
 
 ### 已实现
 
@@ -292,3 +292,26 @@ WP-05A1：先部署 ProjectUpdate 必需的固定 LinkPermissionProfile 并建�
 ### 下一步
 
 WP-05A2：建立 CreatorAccountLink 的不可变来源、owner 条件唯一键和授权只读解析器，再为 VerificationRequest 审批与 ProjectUpdate 创建提供同一后端授权链。
+
+## 当前迭代：WP-05A2 CreatorAccountLink 与作者授权解析
+
+状态：实现完成；catalog/database 单测与静态检查已通过，进入远端 PostgreSQL 约束夹具验证；没有开放 Link 写 API。
+
+### 已实现
+
+- 新增 `catalog.creator_account_links`，Link 的 user、canonical Creator、role、固定 Profile exact ref 与来源验证 ID 创建后不可改；terminated 为不可恢复终态且记录不可删除。
+- `user+canonical creator` 最多一条 active/suspended Link；同 canonical Creator 最多一条 active/suspended owner Link，suspended 仍占 owner 唯一集合，防止争议期间旁路提权。
+- Link role 必须与 Profile family 一致，Profile ID/version/config_hash 使用数据库外键精确绑定；merged Creator 不能接收新 Link。
+- 新增只读 `PostgresAuthorAuthorizationResolver`：仅连接 active Link、数据库固定 Profile、canonical Creator 和目标作品 active AuthorRelation；不读取或信任 `verified_author` 角色、前端 creatorId 或前端权限数组。
+- 每条授权 Grant 分别返回 Link/Relation 版本；有效字段只取 Profile `field_path_ceiling` 与 Relation `field_permissions_json` 的 exact JSON Pointer 交集，能力也必须来自同一条完整 Grant，不能跨 Creator 拼接提权。
+- PostgreSQL fixture 验证完整 active 链、字段交集、owner 条件唯一键与 role/Profile 不匹配拒绝；领域单测验证无完整链 403 和配置漂移 503。
+
+### 明确未授权
+
+- Link 仅允许未来 VerificationRequest approve 领域事务内部创建；本轮没有公共/作者/后台 Link POST/PATCH/DELETE。
+- 本轮不创建测试之外的生产用户授权；`verified_author` IAM role 单独存在时仍无 P13 写权限。
+- Link suspend/restore/terminate 的服务入口留给 OwnershipCase 裁定事务，不能用通用 CRUD 绕过。
+
+### 下一步
+
+WP-05A3：实现 ProjectUpdate editing 草稿的创建、读取、字段级 PATCH 与预览，只接受 WP-05A2 授权解析器返回的 `project_update.create` 和 exact field paths；提交审核与应用事务分后续小步交付。

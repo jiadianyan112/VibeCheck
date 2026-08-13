@@ -413,7 +413,7 @@ async function insertProjects(client: PoolClient): Promise<void> {
       `INSERT INTO catalog.author_relations (
          author_relation_id,project_id,creator_id,status,author_role,field_permissions_json,
          source_verification_id,created_at,updated_at
-       ) VALUES ($1,$2,$3,'active','creator','["project_core","category_data"]'::jsonb,$4,$5,$5)
+       ) VALUES ($1,$2,$3,'active','creator','["/project_core/current_name","/category_data/core_problem"]'::jsonb,$4,$5,$5)
        ON CONFLICT (author_relation_id) DO NOTHING`,
       [project.authorRelationId, project.projectId, project.creatorId, project.verificationId, fixtureTimestamp],
     )

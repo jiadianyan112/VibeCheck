@@ -96,3 +96,8 @@ export {
   type LinkPermissionProfileFamily,
   type LinkPermissionProfileId,
 } from './link-permission-profile.js'
+export {
+  PostgresAuthorAuthorizationResolver,
+  type ProjectAuthorAuthorization,
+  type ProjectAuthorGrant,
+} from './author-authorization.js'

@@ -44,6 +44,7 @@
     "catalog:fixture:load": "npm run fixture:load -w @vibecheck/catalog",
     "catalog:fixture:verify": "npm run fixture:verify -w @vibecheck/catalog",
     "catalog:profile:verify": "npm run profile:verify -w @vibecheck/catalog",
+    "catalog:authorization:verify": "npm run authorization:verify -w @vibecheck/catalog",
     "catalog:admin:import": "npm run admin:import -w @vibecheck/catalog",
     "catalog:admin:import:verify": "npm run admin:import:verify -w @vibecheck/catalog",
     "catalog:asset:resolve:verify": "npm run asset:resolve:verify -w @vibecheck/catalog",

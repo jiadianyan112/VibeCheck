@@ -54,7 +54,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 27) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 28) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify synthetic catalog fixture and PostgreSQL projections
         run: |
           npm run catalog:fixture:load
@@ -62,6 +62,8 @@ jobs:
           npm run catalog:fixture:verify
       - name: Verify immutable LinkPermissionProfile deployment baseline against PostgreSQL
         run: npm run catalog:profile:verify
+      - name: Verify CreatorAccountLink constraints and author authorization chain
+        run: npm run catalog:authorization:verify
       - name: Verify audited admin project importer does not publish catalog facts
         run: npm run catalog:admin:import:verify
       - name: Verify SSRF-safe asset resolution receipts against PostgreSQL
