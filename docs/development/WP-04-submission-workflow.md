@@ -318,7 +318,7 @@ WP-05A3：实现 ProjectUpdate editing 草稿的创建、读取、字段级 PATC
 
 ## 当前迭代：WP-05A3 ProjectUpdate 草稿与预览
 
-状态：实现完成；catalog/contracts/API/database 定向测试已通过，进入远端 PostgreSQL 18 迁移与领域 fixture 验证。
+状态：实现完成；GitHub Actions `31709324032` 已在 PostgreSQL 18 通过全部质量门、草稿授权与公开事实隔离 fixture。
 
 ### 已实现
 
@@ -341,3 +341,27 @@ WP-05A3：实现 ProjectUpdate editing 草稿的创建、读取、字段级 PATC
 ### 下一步
 
 WP-05A4：实现 OP-UPD-SUBMIT 与 OP-UPD-WITHDRAW，原子创建/取消唯一 work_type=project_update 的 ReviewWorkItem，冻结提交快照并保证 A05 submission 队列无法混入该类型；仍不在该轮应用公开 Version。
+
+## 当前迭代：WP-05A4 ProjectUpdate 提交与撤回
+
+状态：实现完成；catalog/contracts/API/database 定向测试已通过，进入远端 PostgreSQL 18 事务 fixture 验证。
+
+### 已实现
+
+- 新增 `POST /api/v1/project-updates/{update_id}/submit`：先以 exact version 重新生成并比对 preview_hash，再要求同一完整 Grant 同时具有 `project_update.submit` 与全部字段权限。
+- submit 在同一数据库事务内把 Update 从 editing 迁移到 update_pending、冻结最新授权快照、创建唯一 `(work_type=project_update,target_type=project_update,target_id=update_id)` queued WorkItem，并写提交者 conflict principal。
+- 提交者因此无法领取/审核自己的更新；A05 以 work_type 过滤，submission 队列不会返回 ProjectUpdate 工作项。
+- 新增 `POST /api/v1/project-updates/{update_id}/withdraw`：editing 可直接撤回；update_pending/changes_requested/apply_failed 按状态机撤回；如存在 queued/claimed 未决定 WorkItem，同事务清空 lease 并取消。
+- submit/withdraw 都使用不可变 operation receipt；同键同载荷回放原结果，同键异载荷 409。已决定工作项不能被作者撤回覆盖。
+- PostgreSQL fixture 覆盖 pending 工作项类型、提交者冲突主体、撤回取消和全过程公开 Project.current_name/current_version_id 不变。
+- OpenAPI 当前为 60 paths/69 operations；本轮仍未提供审核决定后的 Version 应用能力。
+
+### 明确未授权
+
+- submit 只排队，不创建 ReviewDecision、Version、Event、正式 Evidence/Media 或 project_updated。
+- 审核批准仍须后续 WP-05A5 复用现有 ReviewDecision 安全令牌链；批准后应用事务另由 WP-05A6 worker 完成。
+- 普通作者不能通过 withdraw 取消已经 decided 的工作项或回滚 applied 更新。
+
+### 下一步
+
+WP-05A5：扩展 ReviewDecisionService 的 project_update 分支，只允许无利益冲突且持有效 claim/preview/confirm 的编辑或管理员执行 changes_requested/reject/approve；决定事务不直接创建 Version。

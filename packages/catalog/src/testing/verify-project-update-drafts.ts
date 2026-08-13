@@ -76,11 +76,47 @@ async function run(): Promise<void> {
   )
   assert.equal(publicFact.rows[0]?.current_name, 'Recall Garden')
   assert.equal(publicFact.rows[0]?.current_version_id, versionId)
+  const preview = await service.preview({
+    userId,
+    updateId: created.update_id,
+    expectedVersion: patched.version,
+  })
+  const submitted = await service.submit({
+    userId,
+    updateId: created.update_id,
+    version: patched.version,
+    previewHash: preview.preview_hash,
+    submissionKey: 'project-update-fixture-submit-v1',
+  })
+  assert.equal(submitted.work_item_status, 'queued')
+  const queueShape = await pool.query<{ work_type: string; target_type: string; principal_count: number }>(
+    `SELECT item.work_type,item.target_type,
+       (SELECT count(*)::int FROM workflow.review_work_item_conflict_principals principal
+         WHERE principal.work_item_id=item.work_item_id AND principal.principal_user_id=$2
+           AND principal.revoked_at IS NULL) AS principal_count
+     FROM workflow.review_work_items item WHERE item.work_item_id=$1`,
+    [submitted.review_work_item_id, userId],
+  )
+  assert.deepEqual(queueShape.rows[0], {
+    work_type: 'project_update', target_type: 'project_update', principal_count: 1,
+  })
+  const withdrawn = await service.withdraw({
+    userId,
+    updateId: created.update_id,
+    expectedVersion: submitted.version,
+    operationId: 'project-update-fixture-withdraw-v1',
+    reasonCode: 'fixture_owner_cancelled',
+  })
+  assert.equal(withdrawn.work_item_status, 'cancelled')
+  const finalPublicFact = await pool.query<{ current_name: string; current_version_id: string }>(
+    `SELECT current_name,current_version_id FROM catalog.projects WHERE project_id=$1`, [projectId],
+  )
+  assert.deepEqual(finalPublicFact.rows[0], publicFact.rows[0])
 }
 
 try {
   await run()
-  process.stdout.write('project_update_draft_fixture_ok create=1 patch_replay=ok public_fact_unchanged=ok\n')
+  process.stdout.write('project_update_review_entry_fixture_ok submit=queued withdraw=cancelled public_fact_unchanged=ok\n')
 } finally {
   await pool.end()
 }

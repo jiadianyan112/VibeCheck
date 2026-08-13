@@ -2,6 +2,8 @@ import type { Pool, QueryResultRow } from 'pg'
 
 import { catalogError } from './errors.js'
 import type {
+  ProjectUpdateSubmissionProjection,
+  ProjectUpdateWithdrawalProjection,
   ProjectUpdateAuthorizationSnapshot,
   ProjectUpdateBeforeAfter,
   ProjectUpdateDiffInput,
@@ -236,6 +238,181 @@ export class PostgresProjectUpdateStore {
       )
       await client.query('COMMIT')
       return row
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async submit(input: Readonly<{
+    userId: string
+    updateId: string
+    expectedVersion: number
+    submissionKey: string
+    requestHash: string
+    authorizationSnapshot: ProjectUpdateAuthorizationSnapshot
+    now: Date
+  }>): Promise<ProjectUpdateSubmissionProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const receipt = await client.query<{ request_hash: string; response_json: unknown }>(
+        `SELECT request_hash,response_json FROM catalog.project_update_operations
+         WHERE update_id=$1 AND owner_user_id=$2 AND operation_id=$3`,
+        [input.updateId, input.userId, input.submissionKey],
+      )
+      if (receipt.rows[0]) {
+        if (receipt.rows[0].request_hash !== input.requestHash) {
+          throw catalogError('PROJECT_UPDATE_OPERATION_REUSED', 409)
+        }
+        await client.query('COMMIT')
+        return receipt.rows[0].response_json as ProjectUpdateSubmissionProjection
+      }
+      const locked = await client.query<ProjectUpdateRow>(
+        `${updateSelect} WHERE update_row.update_id=$1 AND update_row.owner_user_id=$2 FOR UPDATE OF update_row`,
+        [input.updateId, input.userId],
+      )
+      const row = locked.rows[0]
+      if (!row) throw catalogError('PROJECT_UPDATE_NOT_FOUND', 404)
+      if (positiveInteger(row.version) !== input.expectedVersion) throw catalogError('PROJECT_UPDATE_VERSION_CONFLICT', 409)
+      if (row.status !== 'editing') throw catalogError('PROJECT_UPDATE_NOT_SUBMITTABLE', 409)
+      if (row.current_version_id !== row.base_version_id) throw catalogError('PROJECT_UPDATE_BASE_CONFLICT', 409)
+      const workItem = await client.query<{ work_item_id: string }>(
+        `INSERT INTO workflow.review_work_items (
+           work_type,target_type,target_id,status,version,created_at,updated_at
+         ) VALUES ('project_update','project_update',$1,'queued',1,$2,$2)
+         RETURNING work_item_id`,
+        [input.updateId, input.now],
+      )
+      const workItemId = workItem.rows[0]!.work_item_id
+      await client.query(
+        `INSERT INTO workflow.review_work_item_conflict_principals (
+           work_item_id,principal_user_id,source_type,source_id,principal_version,created_at
+         ) VALUES ($1,$2,'project_update_owner',$3,1,$4)`,
+        [workItemId, input.userId, input.updateId, input.now],
+      )
+      const updated = await client.query<{ version: string; submitted_at: Date }>(
+        `UPDATE catalog.project_updates
+            SET status='update_pending',review_work_item_id=$2,
+                authorization_snapshot_json=$3::jsonb,submitted_at=$4,
+                version=version+1,updated_at=GREATEST($4,updated_at+interval '1 microsecond')
+          WHERE update_id=$1 RETURNING version,submitted_at`,
+        [input.updateId, workItemId, JSON.stringify(input.authorizationSnapshot), input.now],
+      )
+      const projection: ProjectUpdateSubmissionProjection = Object.freeze({
+        update_id: input.updateId,
+        status: 'update_pending',
+        version: positiveInteger(updated.rows[0]!.version),
+        review_work_item_id: workItemId,
+        work_item_status: 'queued',
+        submitted_at: updated.rows[0]!.submitted_at.toISOString(),
+      })
+      await client.query(
+        `INSERT INTO catalog.project_update_operations (
+           update_id,owner_user_id,operation_id,operation_type,request_hash,resulting_version,response_json,created_at
+         ) VALUES ($1,$2,$3,'submit',$4,$5,$6::jsonb,$7)`,
+        [input.updateId, input.userId, input.submissionKey, input.requestHash,
+          projection.version, JSON.stringify(projection), input.now],
+      )
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async withdraw(input: Readonly<{
+    userId: string
+    updateId: string
+    expectedVersion: number
+    operationId: string
+    requestHash: string
+    reasonCode: string
+    now: Date
+  }>): Promise<ProjectUpdateWithdrawalProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const receipt = await client.query<{ request_hash: string; response_json: unknown }>(
+        `SELECT request_hash,response_json FROM catalog.project_update_operations
+         WHERE update_id=$1 AND owner_user_id=$2 AND operation_id=$3`,
+        [input.updateId, input.userId, input.operationId],
+      )
+      if (receipt.rows[0]) {
+        if (receipt.rows[0].request_hash !== input.requestHash) {
+          throw catalogError('PROJECT_UPDATE_OPERATION_REUSED', 409)
+        }
+        await client.query('COMMIT')
+        return receipt.rows[0].response_json as ProjectUpdateWithdrawalProjection
+      }
+      const locked = await client.query<ProjectUpdateRow>(
+        `${updateSelect} WHERE update_row.update_id=$1 AND update_row.owner_user_id=$2 FOR UPDATE OF update_row`,
+        [input.updateId, input.userId],
+      )
+      const row = locked.rows[0]
+      if (!row) throw catalogError('PROJECT_UPDATE_NOT_FOUND', 404)
+      if (positiveInteger(row.version) !== input.expectedVersion) throw catalogError('PROJECT_UPDATE_VERSION_CONFLICT', 409)
+      if (!['editing','update_pending','changes_requested','apply_failed'].includes(row.status)) {
+        throw catalogError('PROJECT_UPDATE_NOT_WITHDRAWABLE', 409)
+      }
+      let workItemStatus: 'cancelled' | null = null
+      if (row.review_work_item_id) {
+        const reviewBefore = await client.query<{ status: 'queued' | 'claimed' | 'decided' | 'cancelled' }>(
+          `SELECT status FROM workflow.review_work_items WHERE work_item_id=$1 FOR UPDATE`,
+          [row.review_work_item_id],
+        )
+        if (!reviewBefore.rows[0] || !['queued','claimed'].includes(reviewBefore.rows[0].status)) {
+          throw catalogError('PROJECT_UPDATE_REVIEW_ALREADY_DECIDED', 409)
+        }
+        const cancelled = await client.query<{ version: number }>(
+          `UPDATE workflow.review_work_items
+              SET status='cancelled',assignee_user_id=NULL,claim_token_hash=NULL,
+                  lease_expires_at=NULL,last_heartbeat_at=NULL,conflict_principal_version_at_claim=NULL,
+                  cancel_reason=$2,version=version+1,updated_at=$3
+            WHERE work_item_id=$1 AND status IN ('queued','claimed') RETURNING version`,
+          [row.review_work_item_id, input.reasonCode, input.now],
+        )
+        if (!cancelled.rows[0]) throw catalogError('PROJECT_UPDATE_REVIEW_ALREADY_DECIDED', 409)
+        workItemStatus = 'cancelled'
+        await client.query(
+          `INSERT INTO workflow.review_work_item_events (
+             work_item_id,event_type,actor_user_id,from_status,to_status,work_item_version,
+             reason_code,metadata_json,occurred_at
+           ) VALUES ($1,'cancelled',$2,$3,'cancelled',$4,$5,'{}'::jsonb,$6)`,
+          [row.review_work_item_id, input.userId,
+            reviewBefore.rows[0].status, cancelled.rows[0].version,
+            input.reasonCode, input.now],
+        )
+      }
+      const updated = await client.query<{ version: string; updated_at: Date }>(
+        `UPDATE catalog.project_updates SET status='withdrawn',version=version+1,
+           updated_at=GREATEST($2,updated_at+interval '1 microsecond')
+         WHERE update_id=$1 RETURNING version,updated_at`,
+        [input.updateId, input.now],
+      )
+      const projection: ProjectUpdateWithdrawalProjection = Object.freeze({
+        update_id: input.updateId,
+        from_status: row.status as ProjectUpdateWithdrawalProjection['from_status'],
+        status: 'withdrawn',
+        version: positiveInteger(updated.rows[0]!.version),
+        review_work_item_id: row.review_work_item_id,
+        work_item_status: workItemStatus,
+        withdrawn_at: updated.rows[0]!.updated_at.toISOString(),
+      })
+      await client.query(
+        `INSERT INTO catalog.project_update_operations (
+           update_id,owner_user_id,operation_id,operation_type,request_hash,resulting_version,response_json,created_at
+         ) VALUES ($1,$2,$3,'withdraw',$4,$5,$6::jsonb,$7)`,
+        [input.updateId, input.userId, input.operationId, input.requestHash,
+          projection.version, JSON.stringify(projection), input.now],
+      )
+      await client.query('COMMIT')
+      return projection
     } catch (error) {
       await client.query('ROLLBACK')
       throw error

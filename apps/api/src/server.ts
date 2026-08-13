@@ -27,6 +27,10 @@ import {
   type PreviewProjectUpdateCommand,
   type ProjectUpdatePreviewProjection,
   type ProjectUpdateProjection,
+  type ProjectUpdateSubmissionProjection,
+  type ProjectUpdateWithdrawalProjection,
+  type SubmitProjectUpdateCommand,
+  type WithdrawProjectUpdateCommand,
 } from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import {
@@ -307,6 +311,8 @@ export interface ApiProjectUpdateService {
   get(command: GetProjectUpdateCommand): Promise<ProjectUpdateProjection>
   patch(command: PatchProjectUpdateCommand): Promise<ProjectUpdateProjection>
   preview(command: PreviewProjectUpdateCommand): Promise<ProjectUpdatePreviewProjection>
+  submit(command: SubmitProjectUpdateCommand): Promise<ProjectUpdateSubmissionProjection>
+  withdraw(command: WithdrawProjectUpdateCommand): Promise<ProjectUpdateWithdrawalProjection>
 }
 
 export interface ApiWorkflowService {
@@ -1766,11 +1772,16 @@ async function handleProjectUpdateRequest(
   const collectionPath = '/api/v1/project-updates'
   const itemMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)$/)
   const previewMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)\/preview$/)
-  if (path !== collectionPath && itemMatch === null && previewMatch === null) return null
+  const submitMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)\/submit$/)
+  const withdrawMatch = path.match(/^\/api\/v1\/project-updates\/([^/]+)\/withdraw$/)
+  if (path !== collectionPath && itemMatch === null && previewMatch === null &&
+      submitMatch === null && withdrawMatch === null) return null
   if (
     (path === collectionPath && method !== 'POST') ||
     (itemMatch !== null && method !== 'GET' && method !== 'PATCH') ||
-    (previewMatch !== null && method !== 'POST')
+    (previewMatch !== null && method !== 'POST') ||
+    (submitMatch !== null && method !== 'POST') ||
+    (withdrawMatch !== null && method !== 'POST')
   ) return null
   if (!dependencies.projectUpdates) throw new CatalogError('PROJECT_UPDATE_SERVICE_UNAVAILABLE', 503, true)
   exactQueryKeys(url.searchParams, [])
@@ -1822,6 +1833,33 @@ async function handleProjectUpdateRequest(
       userId: session.userId,
       updateId: previewMatch[1]!,
       expectedVersion: integerField(body, 'expected_version', 1),
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+  if (submitMatch !== null) {
+    exactKeys(body, ['version', 'preview_hash', 'submission_key'])
+    const projection = await dependencies.projectUpdates.submit({
+      userId: session.userId,
+      updateId: submitMatch[1]!,
+      version: integerField(body, 'version', 1),
+      previewHash: stringField(body, 'preview_hash', { minimum: 64, maximum: 64 })!,
+      submissionKey: stringField(body, 'submission_key', { maximum: 128 })!,
+    })
+    writeJson(response, 202, projection, requestId)
+    return 202
+  }
+  if (withdrawMatch !== null) {
+    exactKeys(body, ['expected_version', 'operation_id', 'reason_code'])
+    const reasonValue = body.reason_code
+    const projection = await dependencies.projectUpdates.withdraw({
+      userId: session.userId,
+      updateId: withdrawMatch[1]!,
+      expectedVersion: integerField(body, 'expected_version', 1),
+      operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+      reasonCode: reasonValue === undefined || reasonValue === null
+        ? null
+        : stringField(body, 'reason_code', { maximum: 64 }),
     })
     writeJson(response, 200, projection, requestId)
     return 200

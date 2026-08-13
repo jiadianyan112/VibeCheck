@@ -97,3 +97,38 @@ export interface ProjectUpdatePreviewProjection {
     readonly media_reference_count: number
   }>
 }
+
+export interface SubmitProjectUpdateCommand {
+  readonly userId: string
+  readonly updateId: string
+  readonly version: number
+  readonly previewHash: string
+  readonly submissionKey: string
+}
+
+export interface ProjectUpdateSubmissionProjection {
+  readonly update_id: string
+  readonly status: 'update_pending'
+  readonly version: number
+  readonly review_work_item_id: string
+  readonly work_item_status: 'queued'
+  readonly submitted_at: string
+}
+
+export interface WithdrawProjectUpdateCommand {
+  readonly userId: string
+  readonly updateId: string
+  readonly expectedVersion: number
+  readonly operationId: string
+  readonly reasonCode: string | null
+}
+
+export interface ProjectUpdateWithdrawalProjection {
+  readonly update_id: string
+  readonly from_status: 'editing' | 'update_pending' | 'changes_requested' | 'apply_failed'
+  readonly status: 'withdrawn'
+  readonly version: number
+  readonly review_work_item_id: string | null
+  readonly work_item_status: 'cancelled' | null
+  readonly withdrawn_at: string
+}

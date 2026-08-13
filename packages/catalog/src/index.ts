@@ -114,5 +114,9 @@ export {
   type ProjectUpdateDiffInput,
   type ProjectUpdateProjection,
   type ProjectUpdatePreviewProjection,
+  type ProjectUpdateSubmissionProjection,
+  type ProjectUpdateWithdrawalProjection,
   type ProjectUpdateType,
+  type SubmitProjectUpdateCommand,
+  type WithdrawProjectUpdateCommand,
 } from './project-update-types.js'

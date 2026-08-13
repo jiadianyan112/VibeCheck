@@ -22,6 +22,8 @@ import type {
   GetProjectUpdateCommand,
   PatchProjectUpdateCommand,
   PreviewProjectUpdateCommand,
+  SubmitProjectUpdateCommand,
+  WithdrawProjectUpdateCommand,
   ProjectUpdatePreviewProjection,
   ProjectUpdateProjection,
 } from '@vibecheck/catalog'
@@ -481,6 +483,8 @@ class FakeProjectUpdateService implements ApiProjectUpdateService {
   getCommand: GetProjectUpdateCommand | null = null
   patchCommand: PatchProjectUpdateCommand | null = null
   previewCommand: PreviewProjectUpdateCommand | null = null
+  submitCommand: SubmitProjectUpdateCommand | null = null
+  withdrawCommand: WithdrawProjectUpdateCommand | null = null
 
   getCreateCommand(): CreateProjectUpdateCommand | null { return this.createCommand }
   getPatchCommand(): PatchProjectUpdateCommand | null { return this.patchCommand }
@@ -518,6 +522,31 @@ class FakeProjectUpdateService implements ApiProjectUpdateService {
         evidence_draft_count: 0,
         media_reference_count: 0,
       }),
+    })
+  }
+
+  async submit(command: SubmitProjectUpdateCommand) {
+    this.submitCommand = command
+    return Object.freeze({
+      update_id: command.updateId,
+      status: 'update_pending' as const,
+      version: command.version + 1,
+      review_work_item_id: '68000000-0000-4000-8000-000000000001',
+      work_item_status: 'queued' as const,
+      submitted_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async withdraw(command: WithdrawProjectUpdateCommand) {
+    this.withdrawCommand = command
+    return Object.freeze({
+      update_id: command.updateId,
+      from_status: 'update_pending' as const,
+      status: 'withdrawn' as const,
+      version: command.expectedVersion + 1,
+      review_work_item_id: '68000000-0000-4000-8000-000000000001',
+      work_item_status: 'cancelled' as const,
+      withdrawn_at: '2026-08-10T00:01:00.000Z',
     })
   }
 }
@@ -1778,6 +1807,31 @@ test('project update draft routes bind the session owner and never accept client
     })
     assert.equal(previewed.status, 200)
     assert.equal(projectUpdates.previewCommand?.expectedVersion, 2)
+    const previewBody = await previewed.json() as { preview_hash: string }
+
+    const submitted = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}/submit`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        version: 2,
+        preview_hash: previewBody.preview_hash,
+        submission_key: 'project-update-submit-0001',
+      }),
+    })
+    assert.equal(submitted.status, 202)
+    assert.equal(projectUpdates.submitCommand?.userId, session.userId)
+
+    const withdrawn = await fetch(`${runtime.baseUrl}/api/v1/project-updates/${targetUpdateId}/withdraw`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        expected_version: 3,
+        operation_id: 'project-update-withdraw-0001',
+        reason_code: 'owner_cancelled',
+      }),
+    })
+    assert.equal(withdrawn.status, 200)
+    assert.equal(projectUpdates.withdrawCommand?.reasonCode, 'owner_cancelled')
   } finally {
     await runtime.stop()
   }

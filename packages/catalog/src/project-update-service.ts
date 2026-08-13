@@ -21,6 +21,10 @@ import {
   type ProjectUpdateDiffInput,
   type ProjectUpdateProjection,
   type ProjectUpdatePreviewProjection,
+  type ProjectUpdateSubmissionProjection,
+  type ProjectUpdateWithdrawalProjection,
+  type SubmitProjectUpdateCommand,
+  type WithdrawProjectUpdateCommand,
   type ProjectUpdateType,
 } from './project-update-types.js'
 
@@ -45,6 +49,8 @@ export interface ProjectUpdateStorePort {
   create: PostgresProjectUpdateStore['create']
   getOwned: PostgresProjectUpdateStore['getOwned']
   patch: PostgresProjectUpdateStore['patch']
+  submit: PostgresProjectUpdateStore['submit']
+  withdraw: PostgresProjectUpdateStore['withdraw']
 }
 
 export class ProjectUpdateService {
@@ -229,6 +235,63 @@ export class ProjectUpdateService {
     })
   }
 
+  async submit(command: SubmitProjectUpdateCommand): Promise<ProjectUpdateSubmissionProjection> {
+    const userId = uuid(command.userId, 'PROJECT_UPDATE_USER_INVALID')
+    const updateId = uuid(command.updateId, 'PROJECT_UPDATE_ID_INVALID')
+    if (!Number.isSafeInteger(command.version) || command.version < 1) {
+      throw catalogError('PROJECT_UPDATE_VERSION_INVALID', 422)
+    }
+    if (typeof command.previewHash !== 'string' || !/^[a-f0-9]{64}$/.test(command.previewHash)) {
+      throw catalogError('PROJECT_UPDATE_PREVIEW_HASH_INVALID', 422)
+    }
+    const submissionKey = operationId(command.submissionKey)
+    const preview = await this.preview({ userId, updateId, expectedVersion: command.version })
+    if (preview.preview_hash !== command.previewHash) throw catalogError('PROJECT_UPDATE_PREVIEW_STALE', 409)
+    const authorization = await this.dependencies.authorization.requireCapability({
+      userId,
+      projectId: (await this.requiredOwned(userId, updateId)).project_id,
+      capability: 'project_update.submit',
+      fieldPaths: preview.before_after.map((item) => item.field_path),
+    })
+    const grant = selectGrant(
+      authorization,
+      'project_update.submit',
+      preview.before_after.map((item) => item.field_path),
+    )
+    const requestHash = hashJson({
+      version: command.version,
+      preview_hash: command.previewHash,
+    })
+    return this.dependencies.store.submit({
+      userId,
+      updateId,
+      expectedVersion: command.version,
+      submissionKey,
+      requestHash,
+      authorizationSnapshot: snapshot(grant),
+      now: this.now(),
+    })
+  }
+
+  async withdraw(command: WithdrawProjectUpdateCommand): Promise<ProjectUpdateWithdrawalProjection> {
+    const userId = uuid(command.userId, 'PROJECT_UPDATE_USER_INVALID')
+    const updateId = uuid(command.updateId, 'PROJECT_UPDATE_ID_INVALID')
+    if (!Number.isSafeInteger(command.expectedVersion) || command.expectedVersion < 1) {
+      throw catalogError('PROJECT_UPDATE_VERSION_INVALID', 422)
+    }
+    const operation = operationId(command.operationId)
+    const reasonCode = command.reasonCode === null ? 'owner_withdrawn' : reason(command.reasonCode)
+    return this.dependencies.store.withdraw({
+      userId,
+      updateId,
+      expectedVersion: command.expectedVersion,
+      operationId: operation,
+      reasonCode,
+      requestHash: hashJson({ expected_version: command.expectedVersion, reason_code: reasonCode }),
+      now: this.now(),
+    })
+  }
+
   private async withCurrentAuthorization(
     row: Awaited<ReturnType<PostgresProjectUpdateStore['getOwned']>> & object,
     userId: string,
@@ -241,6 +304,12 @@ export class ProjectUpdateService {
       candidate.capabilities.includes('project_update.create')
     ))
     return projectUpdateProjection(row, grant ? snapshot(grant) : null)
+  }
+
+  private async requiredOwned(userId: string, updateId: string) {
+    const row = await this.dependencies.store.getOwned(userId, updateId)
+    if (!row) throw catalogError('PROJECT_UPDATE_NOT_FOUND', 404)
+    return row
   }
 
   private updateType(value: string): ProjectUpdateType {
@@ -341,6 +410,13 @@ function uuid(value: string, code: string): string {
 function operationId(value: string): string {
   if (typeof value !== 'string' || value.length < 8 || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) {
     throw catalogError('PROJECT_UPDATE_OPERATION_ID_INVALID', 422)
+  }
+  return value
+}
+
+function reason(value: string): string {
+  if (typeof value !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(value)) {
+    throw catalogError('PROJECT_UPDATE_REASON_INVALID', 422)
   }
   return value
 }

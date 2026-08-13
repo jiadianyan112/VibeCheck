@@ -1277,6 +1277,66 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/project-updates/{update_id}/submit:
+    post:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-SUBMIT
+      summary: Atomically freeze an authorized draft and enqueue a project_update review item
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: update_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdateSubmitRequest' }
+      responses:
+        '202':
+          description: Update is pending review; public Project and Version remain unchanged.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdateSubmission' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/project-updates/{update_id}/withdraw:
+    post:
+      tags: [ProjectUpdate]
+      operationId: OP-UPD-WITHDRAW
+      summary: Atomically withdraw an eligible update and cancel its undecided review item
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: update_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdateWithdrawRequest' }
+      responses:
+        '200':
+          description: Idempotent withdrawal and optional review cancellation receipt.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectUpdateWithdrawal' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -5056,6 +5116,45 @@ components:
             changed_field_count: { type: integer, minimum: 1, maximum: 43 }
             evidence_draft_count: { type: integer, minimum: 0, maximum: 50 }
             media_reference_count: { type: integer, minimum: 0, maximum: 20 }
+    ProjectUpdateSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [version, preview_hash, submission_key]
+      properties:
+        version: { type: integer, minimum: 1 }
+        preview_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        submission_key: { type: string, pattern: '^[A-Za-z0-9:_-]{8,128}$' }
+    ProjectUpdateSubmission:
+      type: object
+      additionalProperties: false
+      required: [update_id, status, version, review_work_item_id, work_item_status, submitted_at]
+      properties:
+        update_id: { type: string, format: uuid }
+        status: { type: string, const: update_pending }
+        version: { type: integer, minimum: 2 }
+        review_work_item_id: { type: string, format: uuid }
+        work_item_status: { type: string, const: queued }
+        submitted_at: { type: string, format: date-time }
+    ProjectUpdateWithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9:_-]{8,128}$' }
+        reason_code: { type: [string, 'null'], pattern: '^[a-z][a-z0-9_]{0,63}$' }
+    ProjectUpdateWithdrawal:
+      type: object
+      additionalProperties: false
+      required: [update_id, from_status, status, version, review_work_item_id, work_item_status, withdrawn_at]
+      properties:
+        update_id: { type: string, format: uuid }
+        from_status: { type: string, enum: [editing, update_pending, changes_requested, apply_failed] }
+        status: { type: string, const: withdrawn }
+        version: { type: integer, minimum: 2 }
+        review_work_item_id: { type: [string, 'null'], format: uuid }
+        work_item_status: { type: [string, 'null'], enum: [cancelled, null] }
+        withdrawn_at: { type: string, format: date-time }
     AdminOperationTarget:
       type: object
       additionalProperties: false

@@ -68,6 +68,35 @@ describe('ProjectUpdateService', () => {
     })
     assert.equal(preview.validation.ready_for_submit, true)
     assert.equal(preview.preview_hash.length, 64)
+    const submitted = await service.submit({
+      userId,
+      updateId,
+      version: projection.version,
+      previewHash: preview.preview_hash,
+      submissionKey: 'submit-0001',
+    })
+    assert.equal(submitted.status, 'update_pending')
+    assert.equal(submitted.work_item_status, 'queued')
+  })
+
+  it('allows the owner to withdraw an editing draft without requiring live author authority', async () => {
+    const store = new FakeStore()
+    const service = new ProjectUpdateService({
+      store,
+      authorization: {
+        async resolveProjectAuthorization() { return { user_id: userId, project_id: projectId, grants: [] } },
+        async requireCapability() { throw new CatalogError('AUTHOR_CAPABILITY_FORBIDDEN', 403) },
+      },
+      now: () => now,
+    })
+    const withdrawn = await service.withdraw({
+      userId,
+      updateId,
+      expectedVersion: 1,
+      operationId: 'withdraw-0001',
+      reasonCode: null,
+    })
+    assert.equal(withdrawn.status, 'withdrawn')
   })
 
   it('rejects a field that is outside every single active grant', async () => {
@@ -119,6 +148,29 @@ class FakeStore implements ProjectUpdateStorePort {
       updated_at: input.now,
     }
     return this.row
+  }
+
+  async submit(input: Parameters<ProjectUpdateStorePort['submit']>[0]) {
+    return {
+      update_id: input.updateId,
+      status: 'update_pending' as const,
+      version: input.expectedVersion + 1,
+      review_work_item_id: '68000000-0000-4000-8000-000000000001',
+      work_item_status: 'queued' as const,
+      submitted_at: input.now.toISOString(),
+    }
+  }
+
+  async withdraw(input: Parameters<ProjectUpdateStorePort['withdraw']>[0]) {
+    return {
+      update_id: input.updateId,
+      from_status: 'editing' as const,
+      status: 'withdrawn' as const,
+      version: input.expectedVersion + 1,
+      review_work_item_id: null,
+      work_item_status: null,
+      withdrawn_at: input.now.toISOString(),
+    }
   }
 }
 
