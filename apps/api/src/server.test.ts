@@ -38,6 +38,8 @@ import type {
   CommentReportProjection,
   CreateCommentCommand,
   ListCommentsCommand,
+  NotificationPage,
+  NotificationReadProjection,
   ProjectInteractionProjection,
   ReportCommentCommand,
   SetProjectInteractionCommand,
@@ -99,6 +101,7 @@ import {
   type ApiAssetResolutionService,
   type ApiComparisonService,
   type ApiCommunityService,
+  type ApiNotificationService,
   type ApiIdentityService,
   type ApiPendingActionService,
   type ApiPendingActionExecutor,
@@ -137,6 +140,7 @@ async function start(
   workflow?: ApiWorkflowService,
   adminOperations?: ApiAdminOperationSecurityService,
   reviewDecisions?: ApiReviewDecisionService,
+  notifications?: ApiNotificationService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -149,7 +153,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -171,6 +175,7 @@ async function start(
     ...(workflow ? { workflow } : {}),
     ...(adminOperations ? { adminOperations } : {}),
     ...(reviewDecisions ? { reviewDecisions } : {}),
+    ...(notifications ? { notifications } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -422,6 +427,42 @@ class FakeCommunityService implements ApiCommunityService {
       created_at: '2026-08-10T00:00:00.000Z',
       updated_at: '2026-08-10T00:00:00.000Z',
       author_withdrawn_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+}
+
+class FakeNotificationService implements ApiNotificationService {
+  listInput: Parameters<ApiNotificationService['list']>[0] | null = null
+  readInput: Parameters<ApiNotificationService['setRead']>[0] | null = null
+
+  async list(input: Parameters<ApiNotificationService['list']>[0]): Promise<NotificationPage> {
+    this.listInput = input
+    return Object.freeze({
+      items: Object.freeze([Object.freeze({
+        notification_id: '74000000-0000-4000-8000-000000000001',
+        type: 'submission_published' as const,
+        title: '作品已发布',
+        body_summary: '测试作品 已通过审核并公开。',
+        target_type: 'project' as const,
+        target_id: '10000000-0000-4000-8000-000000000001',
+        event_id: '75000000-0000-4000-8000-000000000001',
+        read_at: null,
+        created_at: '2026-08-10T00:00:00.000Z',
+      })]),
+      next_cursor: null,
+      unread_count: 1,
+    })
+  }
+
+  async setRead(
+    input: Parameters<ApiNotificationService['setRead']>[0],
+  ): Promise<NotificationReadProjection> {
+    this.readInput = input
+    return Object.freeze({
+      read: true,
+      changed_count: input.notificationIds === null ? 2 : input.notificationIds.length,
+      unread_count: 0,
+      read_at: '2026-08-10T00:00:00.000Z',
     })
   }
 }
@@ -2003,6 +2044,80 @@ test('project interaction requires login, writable account and matching CSRF bef
     assert.deepEqual((await written.json() as ProjectInteractionProjection).states, {
       favorite: true, like: false, follow: true,
     })
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('notifications are authenticated, recipient-bound and use idempotent final read state', async () => {
+  const notifications = new FakeNotificationService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    notifications,
+  )
+  const cookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const headers = {
+    'content-type': 'application/json',
+    origin: 'https://web.example',
+    cookie,
+  }
+  try {
+    const listed = await fetch(
+      `${runtime.baseUrl}/api/v1/notifications?type=submission_published&unread_only=true&limit=12`,
+      { headers: { cookie } },
+    )
+    assert.equal(listed.status, 200)
+    assert.deepEqual(notifications.listInput, {
+      userId: session.userId,
+      type: 'submission_published',
+      unreadOnly: true,
+      cursor: null,
+      limit: 12,
+    })
+    assert.equal((await listed.json() as NotificationPage).unread_count, 1)
+
+    const missingCsrf = await fetch(`${runtime.baseUrl}/api/v1/notifications/read-state`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        notification_ids: ['74000000-0000-4000-8000-000000000001'],
+        read: true,
+        operation_id: 'notification-read-0001',
+      }),
+    })
+    assert.equal(missingCsrf.status, 403)
+    assert.equal(notifications.readInput, null)
+
+    const marked = await fetch(`${runtime.baseUrl}/api/v1/notifications/read-state`, {
+      method: 'PUT',
+      headers: { ...headers, 'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' },
+      body: JSON.stringify({
+        notification_ids: ['74000000-0000-4000-8000-000000000001'],
+        read: true,
+        operation_id: 'notification-read-0001',
+      }),
+    })
+    assert.equal(marked.status, 200)
+    assert.deepEqual(notifications.readInput, {
+      userId: session.userId,
+      notificationIds: ['74000000-0000-4000-8000-000000000001'],
+      operationId: 'notification-read-0001',
+    })
+    assert.equal((await marked.json() as NotificationReadProjection).changed_count, 1)
   } finally {
     await runtime.stop()
   }

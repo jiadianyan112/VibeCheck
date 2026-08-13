@@ -13,7 +13,12 @@ import {
   PostgresCatalogStore,
 } from '@vibecheck/catalog'
 import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
-import { CommunityService, PostgresCommunityStore } from '@vibecheck/community'
+import {
+  CommunityService,
+  NotificationService,
+  PostgresCommunityStore,
+  PostgresNotificationStore,
+} from '@vibecheck/community'
 import {
   loadAnalyticsConfig,
   loadCatalogConfig,
@@ -75,6 +80,9 @@ const community = communityConfig.enabled
       store: new PostgresCommunityStore(pool),
       config: communityConfig,
     })
+  : undefined
+const notifications = communityConfig.enabled
+  ? new NotificationService(new PostgresNotificationStore(pool), communityConfig.cursorSecret)
   : undefined
 const comparison = comparisonConfig.enabled
   ? new ComparisonService({
@@ -160,6 +168,7 @@ const reviewDecisions = workflowConfig.enabled
 const server = createApiServer(config, {
   checkReadiness: () => checkDatabase(pool),
   ...(community ? { community } : {}),
+  ...(notifications ? { notifications } : {}),
   ...(analytics ? { analytics } : {}),
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),

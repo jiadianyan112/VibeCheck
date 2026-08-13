@@ -473,6 +473,71 @@ paths:
           $ref: '#/components/responses/Error'
         '503':
           $ref: '#/components/responses/Error'
+  /api/v1/notifications:
+    get:
+      tags: [Community]
+      operationId: OP-NOTIFICATION-LIST
+      summary: List the authenticated recipient's notifications with unread items first
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema: { $ref: '#/components/schemas/NotificationType' }
+        - in: query
+          name: unread_only
+          required: false
+          schema: { type: boolean, default: false }
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        '200':
+          description: Recipient-isolated stable page and the recipient's current global unread count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/notifications/read-state:
+    put:
+      tags: [Community]
+      operationId: OP-NOTIFICATION-READ-SET
+      summary: Irreversibly mark selected or all recipient notifications as read
+      description: >-
+        Read state is final. Replaying the same operation_id and body returns the original
+        receipt; reusing the operation_id for different notification IDs returns a conflict.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationReadSetRequest' }
+      responses:
+        '200':
+          description: Idempotent final read-state receipt and current unread count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationReadProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/interactions/{interaction_type}/{target_type}/{project_id}:
     put:
       tags: [Community]
@@ -2546,6 +2611,89 @@ components:
         count_deltas: { $ref: '#/components/schemas/InteractionCountDeltas' }
         change_sources: { $ref: '#/components/schemas/InteractionChangeSources' }
         updated_at: { type: string, format: date-time }
+    NotificationType:
+      type: string
+      enum: [submission_published]
+    NotificationProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - notification_id
+        - type
+        - title
+        - body_summary
+        - target_type
+        - target_id
+        - event_id
+        - read_at
+        - created_at
+      properties:
+        notification_id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/NotificationType' }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body_summary: { type: string, minLength: 1, maxLength: 500 }
+        target_type: { type: string, const: project }
+        target_id: { type: string, format: uuid }
+        event_id:
+          type: [string, 'null']
+          format: uuid
+        read_at:
+          type: [string, 'null']
+          format: date-time
+        created_at: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, unread_count]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationProjection' }
+        next_cursor:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 1024
+            - type: 'null'
+        unread_count: { type: integer, minimum: 0 }
+    NotificationReadSetRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [notification_ids, read, operation_id]
+          properties:
+            notification_ids:
+              type: array
+              minItems: 1
+              maxItems: 100
+              uniqueItems: true
+              items: { type: string, format: uuid }
+            read: { type: boolean, const: true }
+            operation_id:
+              type: string
+              minLength: 8
+              maxLength: 128
+              pattern: '^[A-Za-z0-9_-]+$'
+        - type: object
+          additionalProperties: false
+          required: [scope, read, operation_id]
+          properties:
+            scope: { type: string, const: all }
+            read: { type: boolean, const: true }
+            operation_id:
+              type: string
+              minLength: 8
+              maxLength: 128
+              pattern: '^[A-Za-z0-9_-]+$'
+    NotificationReadProjection:
+      type: object
+      additionalProperties: false
+      required: [read, changed_count, unread_count, read_at]
+      properties:
+        read: { type: boolean, const: true }
+        changed_count: { type: integer, minimum: 0 }
+        unread_count: { type: integer, minimum: 0 }
+        read_at: { type: string, format: date-time }
     CommentCreateRequest:
       type: object
       additionalProperties: false

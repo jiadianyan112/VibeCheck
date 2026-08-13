@@ -54,7 +54,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 24) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 25) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify synthetic catalog fixture and PostgreSQL projections
         run: |
           npm run catalog:fixture:load
@@ -92,3 +92,5 @@ jobs:
         run: npm run workflow:review-decision:fixture:verify
       - name: Verify idempotent approved-Submission publication and atomic catalog promotion against PostgreSQL
         run: npm run submission:publication:fixture:verify
+      - name: Verify recipient-isolated immutable in-app notifications against PostgreSQL
+        run: npm run community:notification:fixture:verify

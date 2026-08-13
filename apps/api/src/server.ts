@@ -47,6 +47,8 @@ import {
   type CommentReportProjection,
   type CreateCommentCommand,
   type ListCommentsCommand,
+  type NotificationPage,
+  type NotificationReadProjection,
   type ProjectInteractionProjection,
   type ReportCommentCommand,
   type SetProjectInteractionCommand,
@@ -268,6 +270,21 @@ export interface ApiCommunityService {
   reportComment(command: ReportCommentCommand): Promise<CommentReportProjection>
 }
 
+export interface ApiNotificationService {
+  list(input: Readonly<{
+    userId: string
+    type: string | null
+    unreadOnly: boolean
+    cursor: string | null
+    limit: number
+  }>): Promise<NotificationPage>
+  setRead(input: Readonly<{
+    userId: string
+    notificationIds: readonly string[] | null
+    operationId: string
+  }>): Promise<NotificationReadProjection>
+}
+
 export interface ApiSubmissionService {
   checkUrl(command: CheckSubmissionUrlCommand): Promise<SubmissionUrlCheckProjection>
   createDraft(command: CreateSubmissionDraftCommand): Promise<SubmissionDraftProjection>
@@ -321,6 +338,7 @@ export interface ApiServerDependencies {
   readonly assetResolver?: ApiAssetResolutionService
   readonly comparison?: ApiComparisonService
   readonly community?: ApiCommunityService
+  readonly notifications?: ApiNotificationService
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
@@ -2502,6 +2520,82 @@ async function handleCommunityRequest(
   return null
 }
 
+async function handleNotificationRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  path: string,
+  method: string,
+  requestId: string,
+  config: ServiceConfig,
+  dependencies: ApiServerDependencies,
+): Promise<number | null> {
+  const isList = path === '/api/v1/notifications' && method === 'GET'
+  const isSetRead = path === '/api/v1/notifications/read-state' && method === 'PUT'
+  if (!isList && !isSetRead) return null
+  if (!dependencies.notifications) {
+    throw new CommunityError('NOTIFICATION_SERVICE_UNAVAILABLE', 503, true)
+  }
+  const session = await resolveAuthenticatedSession(request, dependencies)
+
+  if (isList) {
+    exactQueryKeys(url.searchParams, ['type', 'unread_only', 'cursor', 'limit'])
+    const rawUnreadOnly = url.searchParams.get('unread_only')
+    if (rawUnreadOnly !== null && rawUnreadOnly !== 'true' && rawUnreadOnly !== 'false') {
+      throw new CommunityError('NOTIFICATION_UNREAD_ONLY_INVALID', 400)
+    }
+    const rawLimit = url.searchParams.get('limit')
+    if (rawLimit !== null && !/^[1-9][0-9]{0,2}$/.test(rawLimit)) {
+      throw new CommunityError('NOTIFICATION_LIMIT_INVALID', 400)
+    }
+    const limit = rawLimit === null ? 30 : Number(rawLimit)
+    if (limit > 100) throw new CommunityError('NOTIFICATION_LIMIT_INVALID', 400)
+    const projection = await dependencies.notifications.list({
+      userId: session.userId,
+      type: url.searchParams.get('type'),
+      unreadOnly: rawUnreadOnly === 'true',
+      cursor: url.searchParams.get('cursor'),
+      limit,
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  exactQueryKeys(url.searchParams, [])
+  if (!requestOriginAllowed(request, config)) {
+    throw new CommunityError('ORIGIN_INVALID', 403)
+  }
+  requireCommunityMutationCsrf(request)
+  const body = await readJsonBody(request)
+  exactKeys(body, ['notification_ids', 'scope', 'read', 'operation_id'])
+  if (booleanField(body, 'read') !== true) {
+    throw new CommunityError('NOTIFICATION_READ_FINAL', 422)
+  }
+  const scope = body.scope
+  const hasIds = Object.hasOwn(body, 'notification_ids')
+  const hasScope = Object.hasOwn(body, 'scope')
+  if ((hasIds && hasScope) || (!hasIds && !hasScope)) {
+    throw new CommunityError('NOTIFICATION_READ_SCOPE_INVALID', 422)
+  }
+  let notificationIds: readonly string[] | null
+  if (hasIds) {
+    notificationIds = stringArrayField(body, 'notification_ids', 100, 36)
+    if (notificationIds.length === 0) {
+      throw new CommunityError('NOTIFICATION_IDS_INVALID', 422)
+    }
+  } else {
+    if (scope !== 'all') throw new CommunityError('NOTIFICATION_READ_SCOPE_INVALID', 422)
+    notificationIds = null
+  }
+  const projection = await dependencies.notifications.setRead({
+    userId: session.userId,
+    notificationIds,
+    operationId: stringField(body, 'operation_id', { maximum: 128 })!,
+  })
+  writeJson(response, 200, projection, requestId)
+  return 200
+}
+
 export function createApiServer(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
@@ -2619,6 +2713,12 @@ export function createApiServer(
                     if (workflowStatus !== null) {
                       statusCode = workflowStatus
                     } else {
+                    const notificationStatus = await handleNotificationRequest(
+                      request, response, url, path, method, requestId, config, dependencies,
+                    )
+                    if (notificationStatus !== null) {
+                      statusCode = notificationStatus
+                    } else {
                     const communityStatus = await handleCommunityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -2672,6 +2772,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                     }

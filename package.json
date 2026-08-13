@@ -49,6 +49,7 @@
     "comparison:fixture:verify": "npm run fixture:verify -w @vibecheck/comparison",
     "analytics:fixture:verify": "npm run fixture:verify -w @vibecheck/analytics",
     "community:fixture:verify": "npm run fixture:verify -w @vibecheck/community",
+    "community:notification:fixture:verify": "npm run fixture:notification:verify -w @vibecheck/community",
     "identity:pending:verify": "npm run fixture:verify -w @vibecheck/identity",
     "search:fixture:verify": "npm run fixture:verify -w @vibecheck/search",
     "submission:fixture:verify": "npm run fixture:verify -w @vibecheck/submission",

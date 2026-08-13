@@ -33,6 +33,7 @@ describe('discoverMigrations', () => {
         '000022_admin_operation_security.sql',
         '000023_review_decisions.sql',
         '000024_submission_publication.sql',
+        '000025_notifications.sql',
       ],
     )
     for (const migration of migrations) {

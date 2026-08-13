@@ -209,7 +209,7 @@ WP-04G：实现批准后的 Submission 发布 worker，在独立幂等事务中�
 
 ## 当前迭代：WP-04H1 发布后的搜索投影
 
-状态：实现完成；进入远端 PostgreSQL 投影 fixture 验证。
+状态：实现完成；GitHub Actions `31674309172` 已在 PostgreSQL 18 通过全部质量门与投影 fixture。
 
 ### 已实现
 
@@ -224,3 +224,28 @@ WP-04G：实现批准后的 Submission 发布 worker，在独立幂等事务中�
 ### 下一步
 
 WP-04H2：建立 P0 站内 Notification 存储、用户隔离读取与幂等已读最终态，再让 `project_published` 为 Submission owner 写发布成功通知；站外邮件不进入 P0。
+
+## 当前迭代：WP-04H2 发布成功站内通知
+
+状态：实现完成；进入远端 PostgreSQL 迁移与通知事务 fixture 验证。
+
+### 已实现
+
+- 新增迁移 `000025_notifications.sql`，建立独立 Notification 事实与已读操作收据；通知正文、接收者、目标、事件和创建时间不可修改或删除，`read_at` 只允许从空值推进一次且不可撤销。
+- 首个 P0 通知类型固定为 `submission_published`。worker 在完成发布搜索投影后，依据不可变 publication receipt、published Submission 和 Project 当前名称，为 Submission owner 写一条发布成功通知；同一 Submission 重放通过接收者加 dedup_key 唯一约束返回同一通知。
+- 通知列表必须登录，服务端只按 session user_id 查询，不接受客户端 recipient_user_id；默认 30 条、最多 100 条，未读优先并使用绑定用户和筛选条件的 HMAC keyset cursor，返回该用户全局未读数。
+- `PUT /api/v1/notifications/read-state` 只接受 `read=true`，可指定 1–100 个通知或 `scope=all`；同源和 CSRF 必须通过。指定列表含非本人或不存在 ID 时整批返回 404，不泄露归属，也不产生部分更新。
+- 已读操作按 user_id、operation_id 和请求哈希写不可变收据；同载荷重放返回原响应，异载荷复用返回 409。受限账号仍可读取并清除自己的通知未读状态，但不能借此执行任何领域写入。
+- OpenAPI 当前为 55 paths / 63 operations；API、worker 单测覆盖 session/CSRF、参数绑定、事件 aggregate 绑定与索引后通知顺序。
+- 新增 PostgreSQL fixture，依赖真实批准发布结果，验证通知来源绑定、重复投递唯一、接收者隔离、跨用户已读拒绝、已读最终态及操作收据幂等。
+
+### 明确边界
+
+- 本轮只提供站内通知，不发送发布成功邮件、短信、Webhook 或推送；站外渠道、重试期限和供应商继续待产品/技术确认。
+- 通知目标即使后续不可访问，历史通知仍保留并允许显式标记已读；列表接口不伪造目标可访问状态，前端访问目标时以 catalog 实时鉴权结果为准。
+- 通知不属于 Interaction，不参与收藏、点赞、关注或评论计数；通知读取也不改变 Project、Submission、Event 或作者身份事实。
+- 登录继续只保留账号状态，本轮没有增加游客通知、游客比较合并或登录后状态选择。
+
+### 下一步
+
+WP-04I：收紧 Submission asset_drafts 的审核前安全边界；在 safe_web_url 具备 DNS、重定向与可访问性审计收据前，生产入口不得接受非空外部资产草稿。随后进入 ProjectUpdate 与作者身份验证的独立状态机实现。

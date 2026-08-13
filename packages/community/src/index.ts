@@ -1,6 +1,15 @@
 export { CommunityError, communityError } from './errors.js'
 export { PostgresCommunityStore } from './postgres-store.js'
 export { CommunityService, type CommunityServiceDependencies } from './service.js'
+export {
+  NotificationService,
+  PostgresNotificationStore,
+  notificationTypes,
+  type NotificationPage,
+  type NotificationProjection,
+  type NotificationReadProjection,
+  type NotificationType,
+} from './notification.js'
 export type {
   ProjectInteractionFactChange,
   ProjectInteractionStore,
