@@ -1,12 +1,12 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0–2 步已完成，第 3 步待开始｜记录日期：2026-08-20**
+**版本：v1.0｜执行状态：第 0–3 步已完成，第 4 步待开始｜记录日期：2026-08-20**
 
 ## 1. 执行基线
 
 - 产品基线：`docs/VibeCheck首期MVP开发级PRD-v1.10.md`。
 - 技术基线：`docs/VibeCheck首期MVP技术实现方案-v1.0.md`。
-- 稳定代码基线：`9b0cfec`，正式完成至 WP-05B3a–d。
+- 稳定代码基线：`accd040`，正式完成至 WP-05B4。
 - 当前分支：`codex/wp-03-directory-discovery`。
 - P0 范围：P01–P18、A01–A14；P19/P20 不进入首期 P0。
 - P09 不建立 DecisionRecord，不产生 `decision_submitted`。
@@ -20,7 +20,7 @@
 | 0 | 恢复安全开发基线：文件归属、范围漂移、稳定测试证据 | 无用户/WorkBuddy 文件误纳入；冻结范围一致；稳定基线可追溯 | 已完成 |
 | 1 | WP-05B2b：S3 + GuardDuty 私密材料安全链 | 未扫描不可读；clean/malicious/unscannable/超时/重试通过；API/Worker/IaC/CI 完整 | 已完成 |
 | 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 已完成 |
-| 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 待开始 |
+| 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 已完成 |
 | 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 待开始 |
 | 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 待开始 |
 | 6 | P14–P18 社区和个人闭环 | 互动幂等计数、作者主页、个人中心、通知和登录回放通过 | 待开始 |
@@ -116,3 +116,23 @@
 - PostgreSQL 18：36 个 append-only migration 新库/重复执行通过；create-new、claim owner、claim manager、use-existing、补充/拒绝/三类撤回、自审拦截、重复关系全回滚、一次性 read grant 与双审计通过。
 - 全仓契约、部署检查、Lint、TypeScript、测试、foundation tests、生产构建及后续既有 PostgreSQL 夹具全部通过。
 - 详细事务、安全边界和冲突处理见 `docs/development/WP-05B3-author-verification.md`。
+
+## 9. 第 3 步完成记录
+
+### 9.1 交付基线
+
+- 核心工程基线：`accd040`；新增 `000037_ownership_dispute_lifecycle.sql`，历史 migration 未修改。
+- 完成立案、证据追加、撤回申请与 supersedes 历史、撤回拒绝、`uphold/revoke/withdraw` 三类终局，以及 Party/Reviewer 隔离投影。
+- Case 创建即暂停 AuthorRelation；终局事务原子恢复或终止 Relation、重算 Project 作者态、决定 WorkItem、消费安全令牌并写不可删除审计与 Outbox。
+- 队列分页前过滤持久与实时冲突主体；claim、审核读取和决定时再次校验，申请人、关系主体、证据提交者和撤回申请者不能审核案件。
+- Ownership ReviewDecision 不创建 ProjectVersion/Event；按 PRD v1.10 Version 判别矩阵处理与旧技术说明的冲突。
+- WorkBuddy 接入资料见 `docs/development/WP-05B4-workbuddy-handoff.md`；production Feature Flag 继续关闭。
+
+### 9.2 验证证据
+
+- OpenAPI：81 paths / 91 operations；SHA-256 `7550fbd6f968eccd8531df74f4f926338bc336fd15651746251414231a33d4ac`。
+- GitHub Actions：Run [#32354573273](https://github.com/jiadianyan112/VibeCheck/actions/runs/32354573273) 成功。
+- PostgreSQL 18：37 个 append-only migration 新库/重复执行通过；归属夹具覆盖三类终局、两轮撤回、冲突主体轮换、claim 释放、队列预分页隔离、VerificationRequest 保留及 Relation/Project/Outbox 原子一致性。
+- 全仓契约、部署检查、Lint、TypeScript、测试、foundation tests、生产构建及全部既有 PostgreSQL 夹具通过。
+- 同时修复验证 supersedes 链在同时间戳下依赖随机 UUID 排序的旧非确定性，现按无后继链尾判定。
+- 详细事务、安全边界和未纳入范围见 `docs/development/WP-05B4-ownership-dispute.md`。
