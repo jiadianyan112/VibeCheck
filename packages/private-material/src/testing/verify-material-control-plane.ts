@@ -166,11 +166,11 @@ try {
   const sessionIdHash=createHmac('sha256',authTokenSecret).update(sessionToken,'utf8').digest()
   await pool.query(
     `INSERT INTO iam.sessions (
-       session_id_hash,user_id,anonymous_subject_id,roles_version,status,recent_auth_at,
+       session_id_hash,user_id,anonymous_subject_id,csrf_token_hash,roles_version,status,recent_auth_at,
        expires_at,created_at
-     ) VALUES ($1,$2,$3,1,'active',$4::timestamptz,
+     ) VALUES ($1,$2,$3,$5,1,'active',$4::timestamptz,
        $4::timestamptz+interval '1 hour',$4::timestamptz)`,
-    [sessionIdHash,reviewerId,randomUUID(),now],
+    [sessionIdHash,reviewerId,randomUUID(),now,Buffer.alloc(32,8)],
   )
   const reviewerCommand={reviewerUserId:reviewerId,roles:['admin'] as const,
     permissions:[] as const,sessionToken,materialId:prepared.material.material_id,claimToken}
