@@ -1,6 +1,6 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0 步已完成，第 1 步待开始｜记录日期：2026-08-20**
+**版本：v1.0｜执行状态：第 0–1 步已完成，第 2 步待开始｜记录日期：2026-08-20**
 
 ## 1. 执行基线
 
@@ -18,7 +18,7 @@
 | 步骤 | 工作内容 | 完成门槛 | 状态 |
 | --- | --- | --- | --- |
 | 0 | 恢复安全开发基线：文件归属、范围漂移、稳定测试证据 | 无用户/WorkBuddy 文件误纳入；冻结范围一致；稳定基线可追溯 | 已完成 |
-| 1 | WP-05B2b：S3 + GuardDuty 私密材料安全链 | 未扫描不可读；clean/malicious/unscannable/超时/重试通过；API/Worker/IaC/CI 完整 | 待开始 |
+| 1 | WP-05B2b：S3 + GuardDuty 私密材料安全链 | 未扫描不可读；clean/malicious/unscannable/超时/重试通过；API/Worker/IaC/CI 完整 | 已完成 |
 | 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 待开始 |
 | 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 待开始 |
 | 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 待开始 |
@@ -78,3 +78,22 @@
 1. P09 的 `DecisionRecord`、`DecisionForm`、`decision_submitted` 和“决策记录”文本仍残留在前端原型类型、状态、Mock 与路由描述中，但当前 P09 页面主路径不要求 action record。此清理由 WorkBuddy 在 P01–P09 真实 API 接入时完成；生产构建不得导入或产生这些对象和事件。
 2. 游客比较合并冲突的旧 OpenAPI、API、数据库对象和测试仍存在。根据 2026-08-20 前的已批准产品决定，P0 登录后只保留账号状态，不向用户提供合并、替换或选择流程。旧 migration 保持 append-only，不回改历史；相关公开 Operation、运行入口和执行器在 P01–P09 联调前通过独立兼容清理退场，且不得被前端调用。
 3. 上述两项不阻断 WP-05B2b，但都是发布候选的强制清理门禁。
+
+## 7. 第 1 步完成记录
+
+### 7.1 交付基线
+
+- 工程提交：`f6e5581`（`feat: complete private material scan pipeline`）。
+- API 装配 AWS S3 私密材料适配器；Worker 消费 `verification_material_scan_requested`，实现材料领取租约、GuardDuty 标签轮询、领域级重排、三次 provider failure 上限和过期回收。
+- `prepare` OpenAPI 返回五个必须原样发送的签名 Header；上传使用 checksum、SSE-S3、quarantine 标签和 `If-None-Match: *` 条件写入。
+- 追加第 35 个 migration，仅扩展版本化 `scanning → scanning` 轮询迁移；历史 migration 未修改。
+- 新增 `infra/aws/private-material.yaml`，冻结私有桶、GuardDuty MalwareProtectionPlan、条件写入与 GuardDuty/application 双标签读取门禁。
+- 生产 Feature Flag 继续默认关闭；真实 AWS 资源、部署角色与恶意/干净样本演练仍属于第 10 步外部上线门禁，不以 Mock 冒充已激活。
+
+### 7.2 验证证据
+
+- 本地：Lint 无错误；全仓 TypeScript、OpenAPI、Render 部署契约、全部基础包测试和生产构建通过。
+- 前端回归：60 个测试文件、285 项测试全部通过；未修改或暂存 WorkBuddy 文件。
+- 私密材料包：17 项单元/基础设施契约测试通过。
+- GitHub Actions：Run [#60](https://github.com/jiadianyan112/VibeCheck/actions/runs/32332867619) 成功；PostgreSQL 18 上第 35 个迁移重复执行、既有控制面 fixture 和新增 GuardDuty 扫描事务 fixture 全部通过。
+- 详细实现与激活规则见 `docs/development/WP-05B2b-private-material-scan.md`。

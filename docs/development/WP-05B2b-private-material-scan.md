@@ -1,6 +1,6 @@
 # WP-05B2b：S3 + GuardDuty 私密材料安全链
 
-**状态：工程实现完成，等待 GitHub PostgreSQL 质量门禁与真实 AWS 激活验收｜日期：2026-08-20**
+**状态：工程实现与 PostgreSQL 质量门禁已完成；真实 AWS 激活验收属于外部上线门禁｜日期：2026-08-20**
 
 ## 1. 目标与边界
 
@@ -91,7 +91,7 @@ prepared --30min upload expiry----------> abandoned
 | 重复/并发 | 租约内重复无操作；过期后可恢复；旧 version 不可提交结果 |
 | IaC 回归 | 静态测试锁定私有、加密、版本化、CORS、GuardDuty、条件写入和双标签门禁 |
 
-本地单元、静态、类型、契约和构建结果记录在完成提交中；真实 PostgreSQL 事务 fixture 由 GitHub Actions PostgreSQL 18 服务执行。真实 AWS 扫描仍属于外部上线门禁，需 AWS 账号、部署角色和实际桶后完成 EICAR/clean/unsupported/权限故障演练，且不得把测试恶意文件下载到开发者终端。
+本地单元、静态、类型、契约和构建通过。GitHub Actions Run [#60](https://github.com/jiadianyan112/VibeCheck/actions/runs/32332867619) 已在 PostgreSQL 18 上通过第 35 个迁移重复执行、既有控制面 fixture 与本工作包扫描事务 fixture。真实 AWS 扫描仍属于外部上线门禁，需 AWS 账号、部署角色和实际桶后完成 EICAR/clean/unsupported/权限故障演练，且不得把测试恶意文件下载到开发者终端。
 
 ## 8. 官方实现依据
 

@@ -482,4 +482,4 @@ WP-05B2：实现隔离的 VerificationMaterial 控制面、申请人粗粒度扫
 
 ### 下一步
 
-WP-05B2b：实现可租约、可重放的扫描/过期 worker 与存储隔离适配器配置；只有可信 scanner clean 回执可以推进 ready，超时和重试耗尽统一映射申请人 `processing_unavailable`。
+WP-05B2b 已完成：提交 `f6e5581` 实现可租约、可重放的扫描/过期 Worker、AWS S3 隔离适配器、GuardDuty 双标签读取门禁和 IaC；GitHub Actions Run [#60](https://github.com/jiadianyan112/VibeCheck/actions/runs/32332867619) 已通过 PostgreSQL 18 事务 fixture。真实 AWS 激活仍属于外部上线门禁。
