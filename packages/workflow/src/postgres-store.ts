@@ -59,6 +59,19 @@ export class PostgresWorkflowStore implements WorkflowStore {
           WHERE principal.work_item_id=item.work_item_id
             AND principal.principal_user_id=$3 AND principal.revoked_at IS NULL
         )`,
+        `(
+          item.work_type<>'ownership_case' OR NOT EXISTS (
+            SELECT 1 FROM workflow.ownership_cases ownership
+            JOIN catalog.author_relations relation ON relation.author_relation_id=ownership.author_relation_id
+            WHERE ownership.case_id=item.target_id AND (
+              ownership.opened_by_user_id=$3 OR ownership.appealed_user_id=$3 OR
+              EXISTS (SELECT 1 FROM workflow.verification_requests verification WHERE verification.verification_id=relation.source_verification_id AND verification.applicant_user_id=$3) OR
+              EXISTS (SELECT 1 FROM catalog.creator_account_links link WHERE link.creator_id=relation.creator_id AND link.user_id=$3 AND link.status IN ('active','suspended')) OR
+              EXISTS (SELECT 1 FROM workflow.ownership_case_evidence_submissions evidence WHERE evidence.case_id=ownership.case_id AND evidence.submitted_by_user_id=$3) OR
+              EXISTS (SELECT 1 FROM workflow.ownership_withdrawal_requests withdrawal WHERE withdrawal.case_id=ownership.case_id AND withdrawal.requested_by_user_id=$3)
+            )
+          )
+        )`,
       ]
       if (input.targetType !== null) {
         parameters.push(input.targetType)
@@ -134,6 +147,9 @@ export class PostgresWorkflowStore implements WorkflowStore {
         [row.work_item_id, input.actor.userId],
       )
       if (conflict.rows[0]?.present) throw workflowError('CONFLICT_OF_INTEREST', 403)
+      if (row.work_type==='ownership_case' && await this.ownershipActorConflict(client,row.target_id,input.actor.userId)) {
+        throw workflowError('CONFLICT_OF_INTEREST',403)
+      }
 
       const principalVersion = await this.principalVersion(client, row.work_item_id)
       if (row.work_type === 'ownership_case' && input.expectedConflictPrincipalVersion === null) {
@@ -158,6 +174,15 @@ export class PostgresWorkflowStore implements WorkflowStore {
       )
       const claimed = updated.rows[0]
       if (!claimed) throw workflowError('WORK_ITEM_VERSION_CONFLICT', 409)
+      if (claimed.work_type === 'ownership_case') {
+        await client.query(
+          `UPDATE workflow.ownership_cases
+           SET status='investigating',version=version+1,
+               updated_at=GREATEST($2,updated_at+interval '1 microsecond')
+           WHERE case_id=$1 AND status='open'`,
+          [claimed.target_id,input.now],
+        )
+      }
       await this.event(client, claimed, 'claimed', 'queued', 'claimed', input.actor.userId, 'review_claimed', input.now)
       await this.audit(client, {
         operationId: 'OP-ADMIN-CLAIM', actor: input.actor, row: claimed,
@@ -355,12 +380,33 @@ export class PostgresWorkflowStore implements WorkflowStore {
 
   private async principalVersion(client: PoolClient, workItemId: string): Promise<number> {
     const result = await client.query<{ readonly version: number } & QueryResultRow>(
-      `SELECT COALESCE(max(principal_version),1)::integer AS version
-       FROM workflow.review_work_item_conflict_principals
-       WHERE work_item_id=$1 AND revoked_at IS NULL`,
+      `SELECT COALESCE(
+         (SELECT ownership.conflict_principal_version
+          FROM workflow.review_work_items item
+          JOIN workflow.ownership_cases ownership
+            ON item.work_type='ownership_case' AND item.target_id=ownership.case_id
+          WHERE item.work_item_id=$1),
+         (SELECT max(principal_version)
+          FROM workflow.review_work_item_conflict_principals
+          WHERE work_item_id=$1 AND revoked_at IS NULL),1
+       )::integer AS version`,
       [workItemId],
     )
     return result.rows[0]?.version ?? 1
+  }
+
+  private async ownershipActorConflict(client:PoolClient,caseId:string,userId:string):Promise<boolean>{
+    const result=await client.query<{present:boolean}&QueryResultRow>(`SELECT EXISTS (
+      SELECT 1 FROM workflow.ownership_cases ownership
+      JOIN catalog.author_relations relation ON relation.author_relation_id=ownership.author_relation_id
+      WHERE ownership.case_id=$1 AND (
+        ownership.opened_by_user_id=$2 OR ownership.appealed_user_id=$2 OR
+        EXISTS (SELECT 1 FROM workflow.verification_requests verification WHERE verification.verification_id=relation.source_verification_id AND verification.applicant_user_id=$2) OR
+        EXISTS (SELECT 1 FROM catalog.creator_account_links link WHERE link.creator_id=relation.creator_id AND link.user_id=$2 AND link.status IN ('active','suspended')) OR
+        EXISTS (SELECT 1 FROM workflow.ownership_case_evidence_submissions evidence WHERE evidence.case_id=ownership.case_id AND evidence.submitted_by_user_id=$2) OR
+        EXISTS (SELECT 1 FROM workflow.ownership_withdrawal_requests withdrawal WHERE withdrawal.case_id=ownership.case_id AND withdrawal.requested_by_user_id=$2)
+      )
+    ) AS present`,[caseId,userId]);return result.rows[0]?.present??false
   }
 
   private async latestClaimedAt(client: PoolClient, workItemId: string): Promise<Date> {
@@ -500,6 +546,8 @@ export class PostgresWorkflowStore implements WorkflowStore {
         table = 'community.comment_reports'; id = 'report_id'; status = 'status'; break
       case 'verification_request':
         table = 'workflow.verification_requests'; id = 'verification_id'; status = 'status'; break
+      case 'ownership_case':
+        table = 'workflow.ownership_cases'; id = 'case_id'; status = 'status'; break
       default:
         return Object.freeze({ status: 'not_implemented' })
     }

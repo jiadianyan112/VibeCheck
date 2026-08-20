@@ -18,6 +18,7 @@ tags:
   - name: Analytics
   - name: Submission
   - name: Workflow
+  - name: Ownership
   - name: Media
   - name: Evidence
 paths:
@@ -2559,6 +2560,131 @@ paths:
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
+  /api/v1/ownership-cases:
+    post:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-CREATE
+      summary: Atomically open an ownership dispute, suspend the author relation, and create conflict snapshot v1
+      security: [{ sessionCookie: [], csrfToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOwnershipCaseRequest' }
+      responses:
+        '201':
+          description: Ownership case created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipMutationProjection' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/me/ownership-cases/{case_id}:
+    get:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-GET-PARTY
+      summary: Read the exact party-safe ownership-case projection
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OwnershipCaseId'
+      responses:
+        '200':
+          description: Party projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipPartyCaseProjection' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/ownership-cases/{case_id}:
+    get:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-GET-REVIEWER
+      summary: Read reviewer projection only with a current non-conflicted ownership claim
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OwnershipCaseId'
+        - $ref: '#/components/parameters/ReviewClaimToken'
+      responses:
+        '200':
+          description: Reviewer projection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipReviewerCaseProjection' }
+        '403': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+  /api/v1/ownership-cases/{case_id}/evidence-submissions:
+    post:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-EVIDENCE-ADD
+      summary: Append case evidence and rotate the conflict-principal snapshot
+      security: [{ sessionCookie: [], csrfToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OwnershipCaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddOwnershipEvidenceRequest' }
+      responses:
+        '201':
+          description: Evidence appended; any stale claim has been released
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipMutationProjection' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/ownership-cases/{case_id}/withdrawal-requests:
+    post:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-WITHDRAW-REQUEST
+      summary: Append a withdrawal request without restoring the disputed relation
+      security: [{ sessionCookie: [], csrfToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OwnershipCaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOwnershipWithdrawalRequest' }
+      responses:
+        '201':
+          description: Withdrawal request appended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipMutationProjection' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/ownership-cases/{case_id}/withdrawal-requests/{withdrawal_request_id}/reject:
+    post:
+      tags: [Ownership]
+      operationId: OP-OWNERSHIP-WITHDRAW-REJECT
+      summary: Reject the active withdrawal child while keeping the case and claim open
+      security: [{ sessionCookie: [], csrfToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/OwnershipCaseId'
+        - name: withdrawal_request_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/ReviewClaimToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectOwnershipWithdrawalRequest' }
+      responses:
+        '200':
+          description: Withdrawal request rejected; case remains reviewable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnershipMutationProjection' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2566,6 +2692,16 @@ components:
       in: cookie
       name: vc_session
   parameters:
+    OwnershipCaseId:
+      in: path
+      name: case_id
+      required: true
+      schema: { type: string, format: uuid }
+    ReviewClaimToken:
+      in: header
+      name: X-Review-Claim-Token
+      required: true
+      schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
     WorkItemId:
       in: path
       name: work_item_id
@@ -6254,7 +6390,7 @@ components:
           pattern: '^[A-Za-z0-9_-]{43}$'
         decision:
           type: string
-          enum: [approve, changes_requested, reject]
+          enum: [approve, changes_requested, reject, uphold, revoke, withdraw]
         reason_code:
           type: string
           pattern: '^[a-z][a-z0-9_]{0,63}$'
@@ -6288,6 +6424,14 @@ components:
               additionalProperties: false
               description: Submission, ProjectUpdate and non-approve Verification decisions require an empty object.
             - $ref: '#/components/schemas/VerificationApproveDecisionPayload'
+            - $ref: '#/components/schemas/OwnershipDecisionPayload'
+    OwnershipDecisionPayload:
+      type: object
+      additionalProperties: false
+      required: [expected_conflict_principal_version, withdrawal_request_id]
+      properties:
+        expected_conflict_principal_version: { type: integer, minimum: 1 }
+        withdrawal_request_id: { type: [string, 'null'], format: uuid }
     VerificationApproveDecisionPayload:
       type: object
       additionalProperties: false
@@ -6338,17 +6482,17 @@ components:
       properties:
         review_decision_id: { type: string, format: uuid }
         work_item_id: { type: string, format: uuid }
-        work_type: { type: string, enum: [submission, project_update, verification] }
-        target_type: { type: string, enum: [submission, project_update, verification_request] }
+        work_type: { type: string, enum: [submission, project_update, verification, ownership_case] }
+        target_type: { type: string, enum: [submission, project_update, verification_request, ownership_case] }
         target_id: { type: string, format: uuid }
         decision:
           type: string
-          enum: [approve, changes_requested, reject]
+          enum: [approve, changes_requested, reject, uphold, revoke, withdraw]
         project_id: { type: [string, 'null'], format: uuid }
         base_version_id: { type: [string, 'null'], format: uuid }
         resulting_status:
           type: string
-          enum: [approved, changes_requested, rejected, verified, failed]
+          enum: [approved, changes_requested, rejected, verified, failed, resolved_upheld, resolved_revoked, withdrawn]
         work_item_status: { type: string, const: decided }
         work_item_decision_ref_type: { type: string, const: review_decision }
         transaction_id: { type: string, format: uuid }
@@ -6356,7 +6500,7 @@ components:
         schema_version: { type: string, const: review_decision.v1 }
         domain_status:
           type: string
-          enum: [approved, changes_requested, rejected, verified, failed]
+          enum: [approved, changes_requested, rejected, verified, failed, resolved_upheld, resolved_revoked, withdrawn]
         outbox_status: { type: string, const: pending }
         resulting_creator_id: { type: [string, 'null'], format: uuid }
         resulting_link_id: { type: [string, 'null'], format: uuid }
@@ -6420,3 +6564,192 @@ components:
         claim_token:
           type: string
           pattern: '^[A-Za-z0-9_-]{43}$'
+    OwnershipCaseStatus:
+      type: string
+      enum: [open, investigating, resolved_upheld, resolved_revoked, withdrawn]
+    OwnershipWithdrawalStatus:
+      type: string
+      enum: [requested, rejected, accepted, closed_by_case_decision]
+    CreateOwnershipCaseRequest:
+      type: object
+      additionalProperties: false
+      required: [author_relation_id, appealed_user_id, reason_code, evidence_ids, client_request_id]
+      properties:
+        author_relation_id: { type: string, format: uuid }
+        appealed_user_id: { type: [string, 'null'], format: uuid }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        evidence_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        client_request_id: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
+    AddOwnershipEvidenceRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_case_version, evidence_ids, reason_code, client_request_id]
+      properties:
+        expected_case_version: { type: integer, minimum: 1 }
+        evidence_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        client_request_id: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
+    CreateOwnershipWithdrawalRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, reason_code, evidence_ids, supersedes_request_id, client_request_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        evidence_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        supersedes_request_id: { type: [string, 'null'], format: uuid }
+        client_request_id: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
+    RejectOwnershipWithdrawalRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_case_version, expected_request_version, reason_code, decision_id]
+      properties:
+        expected_case_version: { type: integer, minimum: 1 }
+        expected_request_version: { type: integer, minimum: 1 }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        decision_id: { type: string, format: uuid }
+    OwnershipMutationProjection:
+      type: object
+      additionalProperties: false
+      required: [case_id, status, review_work_item_id, work_item_status, resulting_author_relation_status, resulting_project_status, conflict_principal_version, version]
+      properties:
+        case_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OwnershipCaseStatus' }
+        review_work_item_id: { type: string, format: uuid }
+        work_item_status: { type: string, enum: [queued, claimed] }
+        resulting_author_relation_status: { type: string, enum: [suspended, active, terminated] }
+        resulting_project_status: { type: string, enum: [published_platform, published_author, restricted, archived, deleted] }
+        conflict_principal_version: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 1 }
+        withdrawal_request_id: { type: string, format: uuid }
+        withdrawal_request_status: { $ref: '#/components/schemas/OwnershipWithdrawalStatus' }
+    OwnershipPartyCaseProjection:
+      type: object
+      additionalProperties: false
+      required: [viewer_schema, case_id, project_id, author_relation_id, status, reason_code, party_roles, my_evidence_submissions, my_withdrawal_requests, allowed_actions, version, created_at, updated_at]
+      properties:
+        viewer_schema: { type: string, const: party }
+        case_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        author_relation_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OwnershipCaseStatus' }
+        reason_code: { type: string }
+        party_roles:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [opened_by, appealed_account, relation_principal, evidence_submitter] }
+        my_evidence_submissions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_id, submitted_at]
+            properties:
+              evidence_id: { type: string, format: uuid }
+              submitted_at: { type: string, format: date-time }
+        my_withdrawal_requests:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [withdrawal_request_id, status, reason_code, created_at]
+            properties:
+              withdrawal_request_id: { type: string, format: uuid }
+              status: { $ref: '#/components/schemas/OwnershipWithdrawalStatus' }
+              reason_code: { type: string }
+              created_at: { type: string, format: date-time }
+              decided_at: { type: string, format: date-time }
+              decision_reason_key: { type: string }
+        decision_summary:
+          type: object
+          additionalProperties: false
+          required: [case_status, decision, resulting_author_relation_status, resulting_project_status, decided_at]
+          properties:
+            case_status: { type: string, enum: [resolved_upheld, resolved_revoked, withdrawn] }
+            decision: { type: string, enum: [uphold, revoke, withdraw] }
+            resulting_author_relation_status: { type: string, enum: [active, terminated] }
+            resulting_project_status: { type: string }
+            reason_key: { type: string }
+            decided_at: { type: string, format: date-time }
+        allowed_actions:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [add_evidence, request_withdrawal] }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    OwnershipReviewerCaseProjection:
+      type: object
+      additionalProperties: false
+      required: [viewer_schema, case_id, project_id, author_relation_id, opened_by_user_id, reason_code, status, evidence_submissions, withdrawal_requests, review_work_item_summary, conflict_principal_version, allowed_actions, version, created_at, updated_at]
+      properties:
+        viewer_schema: { type: string, const: reviewer }
+        case_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        author_relation_id: { type: string, format: uuid }
+        opened_by_user_id: { type: string, format: uuid }
+        appealed_user_id: { type: string, format: uuid }
+        reason_code: { type: string }
+        status: { $ref: '#/components/schemas/OwnershipCaseStatus' }
+        evidence_submissions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_id, submitted_by_user_id, submitted_at, summary]
+            properties:
+              evidence_id: { type: string, format: uuid }
+              submitted_by_user_id: { type: string, format: uuid }
+              submitted_at: { type: string, format: date-time }
+              summary: { type: string, maxLength: 1000 }
+        withdrawal_requests:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [withdrawal_request_id, requested_by_user_id, status, reason_code, evidence_ids, created_at]
+            properties:
+              withdrawal_request_id: { type: string, format: uuid }
+              requested_by_user_id: { type: string, format: uuid }
+              status: { $ref: '#/components/schemas/OwnershipWithdrawalStatus' }
+              reason_code: { type: string }
+              evidence_ids:
+                type: array
+                items: { type: string, format: uuid }
+              created_at: { type: string, format: date-time }
+              decided_at: { type: string, format: date-time }
+              decision_reason_code: { type: string }
+        review_work_item_summary:
+          type: object
+          additionalProperties: false
+          required: [work_item_id, status, version]
+          properties:
+            work_item_id: { type: string, format: uuid }
+            status: { type: string, enum: [queued, claimed, decided, cancelled] }
+            assignee_user_id: { type: string, format: uuid }
+            lease_expires_at: { type: string, format: date-time }
+            version: { type: integer, minimum: 1 }
+        conflict_principal_version: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [uphold, revoke, withdraw] }
+        decided_by_user_id: { type: string, format: uuid }
+        resulting_author_relation_status: { type: string, enum: [active, terminated] }
+        resulting_project_status: { type: string }
+        allowed_actions:
+          type: array
+          items: { type: string, enum: [preview, request_more_evidence, decide, release] }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }

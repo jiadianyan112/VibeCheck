@@ -6,7 +6,8 @@ import {
   submissionReviewDecisions,
   type DecideReviewCommand,
   type ReviewDecisionProjection,
-  type SubmissionReviewDecision,
+  type ReviewDecisionValue,
+  type OwnershipDecisionPayload,
   type VerificationApprovePayload,
 } from './review-decision-types.js'
 import type { ReviewActor } from './types.js'
@@ -32,7 +33,10 @@ export class ReviewDecisionService {
   ): Promise<ReviewDecisionProjection> {
     const actor = this.actor(command.actor)
     const decision = this.decision(command.decision)
-    const resultingStatus = decision === 'approve'
+    const resultingStatus = decision === 'uphold' ? 'resolved_upheld'
+      : decision === 'revoke' ? 'resolved_revoked'
+      : decision === 'withdraw' ? 'withdrawn'
+      : decision === 'approve'
       ? 'approved'
       : decision === 'reject'
         ? 'rejected'
@@ -103,11 +107,12 @@ export class ReviewDecisionService {
     })
   }
 
-  private decision(value: string): SubmissionReviewDecision {
-    if (!(submissionReviewDecisions as readonly string[]).includes(value)) {
+  private decision(value: string): ReviewDecisionValue {
+    if (!(submissionReviewDecisions as readonly string[]).includes(value) &&
+      !['uphold','revoke','withdraw'].includes(value)) {
       throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     }
-    return value as SubmissionReviewDecision
+    return value as ReviewDecisionValue
   }
 
   private fieldPaths(value: readonly string[]): readonly string[] {
@@ -135,12 +140,24 @@ export class ReviewDecisionService {
 
   private decisionPayload(
     value: unknown,
-    decision: SubmissionReviewDecision,
-  ): Readonly<Record<string, unknown>> | VerificationApprovePayload {
+    decision: ReviewDecisionValue,
+  ): Readonly<Record<string, unknown>> | VerificationApprovePayload | OwnershipDecisionPayload {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     }
     const record = value as Record<string, unknown>
+    if (['uphold','revoke','withdraw'].includes(decision)) {
+      if (Object.keys(record).some((key) => !['expected_conflict_principal_version','withdrawal_request_id'].includes(key)) ||
+        !Number.isSafeInteger(record.expected_conflict_principal_version) || Number(record.expected_conflict_principal_version)<1) {
+        throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+      }
+      const withdrawalId=record.withdrawal_request_id
+      if (decision==='withdraw') {
+        if(typeof withdrawalId!=='string')throw workflowError('OWNERSHIP_WITHDRAWAL_REQUIRED',422)
+        this.uuid(withdrawalId,'WITHDRAWAL_REQUEST_ID_INVALID')
+      } else if(withdrawalId!==null)throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+      return Object.freeze({expected_conflict_principal_version:Number(record.expected_conflict_principal_version),withdrawal_request_id:withdrawalId as string|null})
+    }
     if (Object.keys(record).length === 0) return Object.freeze({})
     if (decision !== 'approve') throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     const allowedKeys = new Set([

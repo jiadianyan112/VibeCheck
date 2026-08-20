@@ -54,7 +54,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 36) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 37) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify synthetic catalog fixture and PostgreSQL projections
         run: |
           npm run catalog:fixture:load
@@ -98,6 +98,8 @@ jobs:
         run: npm run workflow:review-decision:fixture:verify
       - name: Verify owner-isolated VerificationRequest draft chains and idempotent autosave
         run: npm run workflow:verification-request:fixture:verify
+      - name: Verify ownership dispute principal isolation, withdrawal history and atomic terminal decisions
+        run: npm run workflow:ownership-case:fixture:verify
       - name: Verify encrypted private verification material control-plane transactions
         run: npm run private-material:fixture:verify
       - name: Verify scheduled GuardDuty polling, terminal scan results and expiry recovery

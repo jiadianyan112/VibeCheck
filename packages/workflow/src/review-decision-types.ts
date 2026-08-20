@@ -6,9 +6,16 @@ export const submissionReviewDecisions = Object.freeze([
   'reject',
 ] as const)
 export type SubmissionReviewDecision = typeof submissionReviewDecisions[number]
+export type OwnershipReviewDecision = 'uphold' | 'revoke' | 'withdraw'
+export type ReviewDecisionValue = SubmissionReviewDecision | OwnershipReviewDecision
 
-export type ReviewDecisionWorkType = 'submission' | 'project_update' | 'verification'
-export type ReviewDecisionTargetType = 'submission' | 'project_update' | 'verification_request'
+export type ReviewDecisionWorkType = 'submission' | 'project_update' | 'verification' | 'ownership_case'
+export type ReviewDecisionTargetType = 'submission' | 'project_update' | 'verification_request' | 'ownership_case'
+
+export interface OwnershipDecisionPayload {
+  readonly expected_conflict_principal_version: number
+  readonly withdrawal_request_id: string | null
+}
 
 export interface VerificationApprovePayload {
   readonly author_role: 'owner' | 'co_creator' | 'maintainer'
@@ -31,16 +38,16 @@ export interface ReviewDecisionProjection {
   readonly work_type: ReviewDecisionWorkType
   readonly target_type: ReviewDecisionTargetType
   readonly target_id: string
-  readonly decision: SubmissionReviewDecision
+  readonly decision: ReviewDecisionValue
   readonly project_id: string | null
   readonly base_version_id: string | null
-  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed'
+  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed' | 'resolved_upheld' | 'resolved_revoked' | 'withdrawn'
   readonly work_item_status: 'decided'
   readonly work_item_decision_ref_type: 'review_decision'
   readonly transaction_id: string
   readonly committed_at: string
   readonly schema_version: 'review_decision.v1'
-  readonly domain_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed'
+  readonly domain_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed' | 'resolved_upheld' | 'resolved_revoked' | 'withdrawn'
   readonly outbox_status: 'pending'
   readonly resulting_creator_id: string | null
   readonly resulting_link_id: string | null
@@ -71,7 +78,7 @@ export interface DecideReviewCommand {
   readonly decisionEvidenceRefs: readonly string[]
   readonly expectedVersion: number
   readonly decisionRequestId: string
-  readonly decisionPayload: Readonly<Record<string, unknown>> | VerificationApprovePayload
+  readonly decisionPayload: Readonly<Record<string, unknown>> | VerificationApprovePayload | OwnershipDecisionPayload
   readonly requestId: string
 }
 
@@ -84,14 +91,14 @@ export interface StoredReviewDecisionInput {
   readonly previewTokenHash: Buffer
   readonly claimTokenHash: Buffer
   readonly confirmTokenHash: Buffer
-  readonly decision: SubmissionReviewDecision
-  readonly resultingStatus: 'approved' | 'changes_requested' | 'rejected'
+  readonly decision: ReviewDecisionValue
+  readonly resultingStatus: 'approved' | 'changes_requested' | 'rejected' | 'resolved_upheld' | 'resolved_revoked' | 'withdrawn'
   readonly reasonCode: string
   readonly fieldPaths: readonly string[]
   readonly decisionEvidenceRefs: readonly string[]
   readonly expectedVersion: number
   readonly decisionRequestId: string
-  readonly decisionPayload: Readonly<Record<string, unknown>> | VerificationApprovePayload
+  readonly decisionPayload: Readonly<Record<string, unknown>> | VerificationApprovePayload | OwnershipDecisionPayload
   readonly decisionPayloadHash: string
   readonly now: Date
   readonly requestId: string

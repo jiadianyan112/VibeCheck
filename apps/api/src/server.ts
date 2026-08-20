@@ -179,6 +179,13 @@ import {
   type VerificationRequestProjection,
   type ReviewVerificationRequestCommand,
   type VerificationRequestReviewerProjection,
+  type AddOwnershipEvidenceCommand,
+  type CreateOwnershipCaseCommand,
+  type OwnershipMutationProjection,
+  type OwnershipPartyCaseProjection,
+  type OwnershipReviewerCaseProjection,
+  type RejectOwnershipWithdrawalCommand,
+  type RequestOwnershipWithdrawalCommand,
 } from '@vibecheck/workflow'
 
 const serviceVersion = '0.1.0'
@@ -353,6 +360,15 @@ export interface ApiVerificationRequestService {
   getForReviewer(command:ReviewVerificationRequestCommand):Promise<VerificationRequestReviewerProjection>
 }
 
+export interface ApiOwnershipCaseService {
+  create(command:CreateOwnershipCaseCommand):Promise<OwnershipMutationProjection>
+  getParty(command:Readonly<{userId:string;caseId:string}>):Promise<OwnershipPartyCaseProjection>
+  getReviewer(command:Readonly<{actor:ReviewActor;caseId:string;claimToken:string}>):Promise<OwnershipReviewerCaseProjection>
+  addEvidence(command:AddOwnershipEvidenceCommand):Promise<OwnershipMutationProjection>
+  requestWithdrawal(command:RequestOwnershipWithdrawalCommand):Promise<OwnershipMutationProjection>
+  rejectWithdrawal(command:RejectOwnershipWithdrawalCommand):Promise<OwnershipMutationProjection>
+}
+
 export interface ApiCreatorAuthorReadService {
   getLink(userId:string,linkId:string):Promise<CreatorAccountLinkProjection>
   listMyLinks(userId:string):Promise<readonly CreatorAccountLinkProjection[]>
@@ -424,6 +440,7 @@ export interface ApiServerDependencies {
   readonly submission?: ApiSubmissionService
   readonly projectUpdates?: ApiProjectUpdateService
   readonly verificationRequests?: ApiVerificationRequestService
+  readonly ownershipCases?: ApiOwnershipCaseService
   readonly privateMaterials?: ApiPrivateMaterialService
   readonly creatorAuthorRead?: ApiCreatorAuthorReadService
   readonly workflow?: ApiWorkflowService
@@ -1649,6 +1666,42 @@ async function handleWorkflowRequest(
     return 200
   }
   return null
+}
+
+async function handleOwnershipCaseRequest(
+  request:IncomingMessage,
+  response:ServerResponse,
+  url:URL,
+  path:string,
+  method:string,
+  requestId:string,
+  config:ServiceConfig,
+  dependencies:ApiServerDependencies,
+):Promise<number|null>{
+  const collection='/api/v1/ownership-cases'
+  const party=path.match(/^\/api\/v1\/me\/ownership-cases\/([^/]+)$/)
+  const reviewer=path.match(/^\/api\/v1\/admin\/ownership-cases\/([^/]+)$/)
+  const evidence=path.match(/^\/api\/v1\/ownership-cases\/([^/]+)\/evidence-submissions$/)
+  const withdrawal=path.match(/^\/api\/v1\/ownership-cases\/([^/]+)\/withdrawal-requests$/)
+  const reject=path.match(/^\/api\/v1\/ownership-cases\/([^/]+)\/withdrawal-requests\/([^/]+)\/reject$/)
+  if(path!==collection&&!party&&!reviewer&&!evidence&&!withdrawal&&!reject)return null
+  if((path===collection&&method!=='POST')||((party||reviewer)&&method!=='GET')||((evidence||withdrawal||reject)&&method!=='POST'))return null
+  if(!dependencies.ownershipCases)throw new WorkflowError('OWNERSHIP_SERVICE_UNAVAILABLE',503,true)
+  exactWorkflowQueryKeys(url.searchParams,[])
+  const session=await resolveAuthenticatedSession(request,dependencies)
+  const actor=reviewActor(session)
+  if(party){const projection=await dependencies.ownershipCases.getParty({userId:session.userId,caseId:party[1]!});writeJson(response,200,projection,requestId);return 200}
+  if(reviewer){const claim=request.headers['x-review-claim-token'];if(typeof claim!=='string')throw new WorkflowError('CLAIM_TOKEN_REQUIRED',403);const projection=await dependencies.ownershipCases.getReviewer({actor,caseId:reviewer[1]!,claimToken:claim});writeJson(response,200,projection,requestId);return 200}
+  if(session.accountStatus==='restricted')throw new WorkflowError('ACCOUNT_WRITE_RESTRICTED',403)
+  if(!requestOriginAllowed(request,config))throw new WorkflowError('ORIGIN_INVALID',403)
+  requireWorkflowMutationCsrf(request)
+  const body=await readJsonBody(request)
+  if(path===collection){exactKeys(body,['author_relation_id','appealed_user_id','reason_code','evidence_ids','client_request_id']);const projection=await dependencies.ownershipCases.create({actor,authorRelationId:stringField(body,'author_relation_id',{maximum:36})!,appealedUserId:nullableStringField(body,'appealed_user_id',36)??null,reasonCode:stringField(body,'reason_code',{maximum:64})!,evidenceIds:stringArrayField(body,'evidence_ids',20,36),clientRequestId:stringField(body,'client_request_id',{maximum:128})!,requestId});writeJson(response,201,projection,requestId);return 201}
+  if(evidence){exactKeys(body,['expected_case_version','evidence_ids','reason_code','client_request_id']);const projection=await dependencies.ownershipCases.addEvidence({actor,caseId:evidence[1]!,expectedCaseVersion:integerField(body,'expected_case_version',1),evidenceIds:stringArrayField(body,'evidence_ids',20,36),reasonCode:stringField(body,'reason_code',{maximum:64})!,clientRequestId:stringField(body,'client_request_id',{maximum:128})!,requestId});writeJson(response,201,projection,requestId);return 201}
+  if(withdrawal){exactKeys(body,['expected_version','reason_code','evidence_ids','supersedes_request_id','client_request_id']);const projection=await dependencies.ownershipCases.requestWithdrawal({actor,caseId:withdrawal[1]!,expectedVersion:integerField(body,'expected_version',1),reasonCode:stringField(body,'reason_code',{maximum:64})!,evidenceIds:stringArrayField(body,'evidence_ids',20,36),supersedesRequestId:nullableStringField(body,'supersedes_request_id',36)??null,clientRequestId:stringField(body,'client_request_id',{maximum:128})!,requestId});writeJson(response,201,projection,requestId);return 201}
+  const claim=request.headers['x-review-claim-token'];if(typeof claim!=='string')throw new WorkflowError('CLAIM_TOKEN_REQUIRED',403)
+  exactKeys(body,['expected_case_version','expected_request_version','reason_code','decision_id'])
+  const projection=await dependencies.ownershipCases.rejectWithdrawal({actor,caseId:reject![1]!,withdrawalRequestId:reject![2]!,claimToken:claim,expectedCaseVersion:integerField(body,'expected_case_version',1),expectedRequestVersion:integerField(body,'expected_request_version',1),reasonCode:stringField(body,'reason_code',{maximum:64})!,decisionId:stringField(body,'decision_id',{maximum:36})!,requestId});writeJson(response,200,projection,requestId);return 200
 }
 
 async function handleSubmissionRequest(
@@ -3183,6 +3236,12 @@ export function createApiServer(
                     if (verificationStatus !== null) {
                       statusCode = verificationStatus
                     } else {
+                    const ownershipStatus = await handleOwnershipCaseRequest(
+                      request,response,url,path,method,requestId,config,dependencies,
+                    )
+                    if (ownershipStatus !== null) {
+                      statusCode = ownershipStatus
+                    } else {
                     const privateMaterialStatus = await handlePrivateMaterialRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -3266,6 +3325,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                     }

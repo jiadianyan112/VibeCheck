@@ -167,4 +167,9 @@ describe('ReviewDecisionService', () => {
     })),(error:unknown)=>typeof error==='object'&&error!==null&&'code' in error&&
       error.code==='REVIEW_DECISION_SCHEMA_INVALID')
   })
+
+  it('normalizes ownership terminal decisions and binds withdrawal only to withdraw',async()=>{
+    for(const [decision,status] of [['uphold','resolved_upheld'],['revoke','resolved_revoked'],['withdraw','withdrawn']] as const){const store=new FakeStore();await service(store).decideReview(command({actor:Object.freeze({...actor,permissions:Object.freeze(['admin:identity_review'])}),decision,reasonCode:`ownership_${decision}`,decisionPayload:{expected_conflict_principal_version:3,withdrawal_request_id:decision==='withdraw'?'70000000-0000-4000-8000-000000000001':null}}));assert.equal(store.input?.resultingStatus,status);assert.deepEqual(store.input?.decisionPayload,{expected_conflict_principal_version:3,withdrawal_request_id:decision==='withdraw'?'70000000-0000-4000-8000-000000000001':null})}
+    await assert.rejects(()=>service(new FakeStore()).decideReview(command({decision:'withdraw',decisionPayload:{expected_conflict_principal_version:1,withdrawal_request_id:null}})),/OWNERSHIP_WITHDRAWAL_REQUIRED/)
+  })
 })

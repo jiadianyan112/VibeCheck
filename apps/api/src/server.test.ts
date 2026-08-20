@@ -129,6 +129,7 @@ import {
   type ApiPendingActionExecutor,
   type ApiProjectUpdateService,
   type ApiVerificationRequestService,
+  type ApiOwnershipCaseService,
   type ApiPrivateMaterialService,
   type ApiSearchService,
   type ApiSubmissionService,
@@ -169,6 +170,7 @@ async function start(
   projectUpdates?: ApiProjectUpdateService,
   verificationRequests?: ApiVerificationRequestService,
   privateMaterials?: ApiPrivateMaterialService,
+  ownershipCases?: ApiOwnershipCaseService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -181,7 +183,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests || privateMaterials)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests || privateMaterials || ownershipCases)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -207,6 +209,7 @@ async function start(
     ...(projectUpdates ? { projectUpdates } : {}),
     ...(verificationRequests ? { verificationRequests } : {}),
     ...(privateMaterials ? { privateMaterials } : {}),
+    ...(ownershipCases ? { ownershipCases } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -1356,6 +1359,18 @@ class FakeWorkflowService implements ApiWorkflowService {
   }
 }
 
+class FakeOwnershipCaseService implements ApiOwnershipCaseService {
+  createCommand:Parameters<ApiOwnershipCaseService['create']>[0]|null=null
+  reviewerCommand:Parameters<ApiOwnershipCaseService['getReviewer']>[0]|null=null
+  private mutation(){return Object.freeze({case_id:'86000000-0000-4000-8000-000000000001',status:'open' as const,review_work_item_id:'86000000-0000-4000-8000-000000000002',work_item_status:'queued' as const,resulting_author_relation_status:'suspended' as const,resulting_project_status:'published_platform',conflict_principal_version:1,version:1})}
+  async create(command:Parameters<ApiOwnershipCaseService['create']>[0]){this.createCommand=command;return this.mutation()}
+  async getParty(){return Object.freeze({viewer_schema:'party' as const,case_id:'86000000-0000-4000-8000-000000000001',project_id:'86000000-0000-4000-8000-000000000003',author_relation_id:'86000000-0000-4000-8000-000000000004',status:'open' as const,reason_code:'claim_conflict',party_roles:['opened_by' as const],my_evidence_submissions:[],my_withdrawal_requests:[],allowed_actions:['add_evidence' as const,'request_withdrawal' as const],version:1,created_at:'2026-08-10T00:00:00.000Z',updated_at:'2026-08-10T00:00:00.000Z'})}
+  async getReviewer(command:Parameters<ApiOwnershipCaseService['getReviewer']>[0]){this.reviewerCommand=command;return Object.freeze({viewer_schema:'reviewer' as const,case_id:'86000000-0000-4000-8000-000000000001',project_id:'86000000-0000-4000-8000-000000000003',author_relation_id:'86000000-0000-4000-8000-000000000004',opened_by_user_id:'86000000-0000-4000-8000-000000000005',reason_code:'claim_conflict',status:'investigating' as const,evidence_submissions:[],withdrawal_requests:[],review_work_item_summary:{work_item_id:'86000000-0000-4000-8000-000000000002',status:'claimed' as const,version:2},conflict_principal_version:1,allowed_actions:['preview' as const,'decide' as const,'release' as const],version:2,created_at:'2026-08-10T00:00:00.000Z',updated_at:'2026-08-10T00:00:00.000Z'})}
+  async addEvidence(){return this.mutation()}
+  async requestWithdrawal(){return Object.freeze({...this.mutation(),withdrawal_request_id:'86000000-0000-4000-8000-000000000006',withdrawal_request_status:'requested' as const})}
+  async rejectWithdrawal(){return Object.freeze({...this.mutation(),withdrawal_request_id:'86000000-0000-4000-8000-000000000006',withdrawal_request_status:'rejected' as const})}
+}
+
 class FakeAdminOperationSecurityService implements ApiAdminOperationSecurityService {
   previewCommand: PreviewAdminOperationCommand | null = null
   confirmCommand: ConfirmAdminOperationCommand | null = null
@@ -1601,6 +1616,20 @@ test('review work-item queue and lease mutations use staff session, CSRF and fro
   } finally {
     await runtime.stop()
   }
+})
+
+test('ownership routes bind actors, reject unknown fields, and separate party from reviewer claims',async()=>{
+  const ownership=new FakeOwnershipCaseService()
+  const server=createApiServer(config,{checkReadiness:async()=>undefined,identity:new StaffIdentityService(),ownershipCases:ownership,authCookieSecure:false,anonymousCookieSecret:'test-anonymous-cookie-secret-at-least-32-bytes'})
+  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address==='object');const baseUrl=`http://127.0.0.1:${address.port}`
+  const headers={origin:'https://web.example','x-csrf-token':session.csrfToken,cookie:`vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=${session.csrfToken}`,'content-type':'application/json'}
+  try{
+    const created=await fetch(`${baseUrl}/api/v1/ownership-cases`,{method:'POST',headers,body:JSON.stringify({author_relation_id:'86000000-0000-4000-8000-000000000004',appealed_user_id:null,reason_code:'claim_conflict',evidence_ids:[],client_request_id:'ownership-create-1'})});assert.equal(created.status,201);assert.equal(ownership.createCommand?.actor.userId,session.userId)
+    const forged=await fetch(`${baseUrl}/api/v1/ownership-cases`,{method:'POST',headers,body:JSON.stringify({author_relation_id:'86000000-0000-4000-8000-000000000004',appealed_user_id:null,reason_code:'claim_conflict',evidence_ids:[],client_request_id:'ownership-create-2',opened_by_user_id:'86000000-0000-4000-8000-000000000099'})});assert.equal(forged.status,422)
+    const party=await fetch(`${baseUrl}/api/v1/me/ownership-cases/86000000-0000-4000-8000-000000000001`,{headers:{cookie:headers.cookie}});assert.equal(party.status,200);assert.equal((await party.json() as {viewer_schema:string}).viewer_schema,'party')
+    const noClaim=await fetch(`${baseUrl}/api/v1/admin/ownership-cases/86000000-0000-4000-8000-000000000001`,{headers:{cookie:headers.cookie}});assert.equal(noClaim.status,403)
+    const reviewer=await fetch(`${baseUrl}/api/v1/admin/ownership-cases/86000000-0000-4000-8000-000000000001`,{headers:{cookie:headers.cookie,'x-review-claim-token':'c'.repeat(43)}});assert.equal(reviewer.status,200);assert.equal(ownership.reviewerCommand?.claimToken,'c'.repeat(43))
+  }finally{await close(server)}
 })
 
 class FakeSubmissionService implements ApiSubmissionService {

@@ -7,7 +7,8 @@ import type { ReviewDecisionStore } from './review-decision-store.js'
 import type {
   ReviewDecisionProjection,
   StoredReviewDecisionInput,
-  SubmissionReviewDecision,
+  ReviewDecisionValue,
+  OwnershipDecisionPayload,
   VerificationApprovePayload,
 } from './review-decision-types.js'
 
@@ -56,6 +57,25 @@ interface VerificationRequestRow extends QueryResultRow {
   readonly status: string
   readonly review_work_item_id: string
   readonly version: string
+}
+
+interface OwnershipCaseRow extends QueryResultRow {
+  readonly case_id:string
+  readonly project_id:string
+  readonly author_relation_id:string
+  readonly status:'open'|'investigating'|'resolved_upheld'|'resolved_revoked'|'withdrawn'
+  readonly review_work_item_id:string
+  readonly active_withdrawal_request_id:string|null
+  readonly latest_withdrawal_request_id:string|null
+  readonly conflict_principal_version:number
+  readonly version:string
+}
+
+interface OwnershipRelationRow extends QueryResultRow {
+  readonly author_relation_id:string
+  readonly project_id:string
+  readonly status:'active'|'suspended'|'terminated'|'replaced'
+  readonly version:string
 }
 
 interface CreatorRow extends QueryResultRow {
@@ -154,13 +174,13 @@ interface DecisionRow extends QueryResultRow {
   readonly decision_request_id: string
   readonly work_item_id: string
   readonly target_id: string
-  readonly work_type: 'submission' | 'project_update' | 'verification'
-  readonly target_type: 'submission' | 'project_update' | 'verification_request'
-  readonly decision: SubmissionReviewDecision
+  readonly work_type: 'submission' | 'project_update' | 'verification' | 'ownership_case'
+  readonly target_type: 'submission' | 'project_update' | 'verification_request' | 'ownership_case'
+  readonly decision: ReviewDecisionValue
   readonly project_id: string | null
   readonly base_version_id: string | null
   readonly decision_payload_hash: string
-  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed'
+  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed' | 'resolved_upheld' | 'resolved_revoked' | 'withdrawn'
   readonly transaction_id: string
   readonly committed_at: Date
 }
@@ -220,7 +240,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
         })
       }
       if (
-        !['submission', 'project_update', 'verification'].includes(workItem.work_type) ||
+        !['submission', 'project_update', 'verification', 'ownership_case'].includes(workItem.work_type) ||
         (workItem.work_type === 'verification'
           ? workItem.target_type !== 'verification_request'
           : workItem.target_type !== workItem.work_type)
@@ -242,6 +262,11 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       this.assertWorkTypePermission(input,workItem.work_type)
       if (workItem.work_type === 'verification') {
         const projection = await this.decideVerification(client,input,workItem,activeRolesVersion)
+        await client.query('COMMIT')
+        return projection
+      }
+      if (workItem.work_type === 'ownership_case') {
+        const projection=await this.decideOwnership(client,input,workItem,activeRolesVersion)
         await client.query('COMMIT')
         return projection
       }
@@ -379,7 +404,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
 
   private assertWorkTypePermission(input: StoredReviewDecisionInput,workType: string): void {
     if (input.actor.roles.includes('admin')) return
-    const permission = workType === 'verification' ? 'admin:identity_review' : 'admin:review'
+    const permission = ['verification','ownership_case'].includes(workType) ? 'admin:identity_review' : 'admin:review'
     if (!input.actor.permissions.includes(permission)) throw workflowError('WORK_ITEM_FORBIDDEN',403)
   }
 
@@ -542,6 +567,79 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     return approval
       ? this.verificationApprovalProjection(inserted.rows[0]!,approval)
       : this.verificationProjectionFromDecision(inserted.rows[0]!)
+  }
+
+  private async decideOwnership(
+    client:PoolClient,
+    input:StoredReviewDecisionInput,
+    workItem:WorkItemRow,
+    activeRolesVersion:number,
+  ):Promise<ReviewDecisionProjection>{
+    if(!['uphold','revoke','withdraw'].includes(input.decision))throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+    if(!input.actor.roles.includes('admin')&&!input.actor.permissions.includes('admin:identity_review'))throw workflowError('WORK_ITEM_FORBIDDEN',403)
+    const caseRow=(await client.query<OwnershipCaseRow>('SELECT * FROM workflow.ownership_cases WHERE case_id=$1 FOR UPDATE',[workItem.target_id])).rows[0]
+    if(!caseRow)throw workflowError('REVIEW_TARGET_NOT_FOUND',404)
+    if(!['open','investigating'].includes(caseRow.status)||caseRow.review_work_item_id!==workItem.work_item_id)throw workflowError('REVIEW_TARGET_STATE_CONFLICT',409)
+    const targetVersion=Number(caseRow.version)
+    const payload=this.ownershipPayload(input)
+    if(payload.expected_conflict_principal_version!==caseRow.conflict_principal_version)throw workflowError('CONFLICT_PRINCIPAL_VERSION_CONFLICT',409)
+    if(workItem.conflict_principal_version_at_claim!==caseRow.conflict_principal_version)throw workflowError('CONFLICT_PRINCIPAL_VERSION_CONFLICT',409)
+    const conflict=await client.query('SELECT 1 FROM workflow.ownership_conflict_principal_members WHERE case_id=$1 AND conflict_principal_version=$2 AND principal_user_id=$3 LIMIT 1',[caseRow.case_id,caseRow.conflict_principal_version,input.actor.userId])
+    if(conflict.rowCount)throw workflowError('CONFLICT_OF_INTEREST',403)
+    const liveConflict=await client.query<{present:boolean}&QueryResultRow>(`SELECT EXISTS (
+      SELECT 1 FROM workflow.ownership_cases ownership
+      JOIN catalog.author_relations relation ON relation.author_relation_id=ownership.author_relation_id
+      WHERE ownership.case_id=$1 AND (
+        ownership.opened_by_user_id=$2 OR ownership.appealed_user_id=$2 OR
+        EXISTS (SELECT 1 FROM workflow.verification_requests verification WHERE verification.verification_id=relation.source_verification_id AND verification.applicant_user_id=$2) OR
+        EXISTS (SELECT 1 FROM catalog.creator_account_links link WHERE link.creator_id=relation.creator_id AND link.user_id=$2 AND link.status IN ('active','suspended')) OR
+        EXISTS (SELECT 1 FROM workflow.ownership_case_evidence_submissions evidence WHERE evidence.case_id=ownership.case_id AND evidence.submitted_by_user_id=$2) OR
+        EXISTS (SELECT 1 FROM workflow.ownership_withdrawal_requests withdrawal WHERE withdrawal.case_id=ownership.case_id AND withdrawal.requested_by_user_id=$2)
+      )
+    ) AS present`,[caseRow.case_id,input.actor.userId]);if(liveConflict.rows[0]?.present)throw workflowError('CONFLICT_OF_INTEREST',403)
+    const preview=await this.preview(client,input.previewTokenHash);this.assertPreview(preview,input,workItem,caseRow,targetVersion,activeRolesVersion)
+    const confirm=await this.confirm(client,input.confirmTokenHash);this.assertConfirm(confirm,preview,input)
+    await this.assertEvidenceRefs(client,input.decisionEvidenceRefs)
+    const relation=(await client.query<OwnershipRelationRow>('SELECT author_relation_id,project_id,status,version FROM catalog.author_relations WHERE author_relation_id=$1 FOR UPDATE',[caseRow.author_relation_id])).rows[0]
+    if(!relation||relation.project_id!==caseRow.project_id||relation.status!=='suspended')throw workflowError('AUTHOR_RELATION_STATE_CONFLICT',409)
+    const withdrawalId=caseRow.active_withdrawal_request_id
+    if(input.decision==='withdraw'){
+      if(!withdrawalId||payload.withdrawal_request_id!==withdrawalId)throw workflowError('OWNERSHIP_WITHDRAWAL_REQUIRED',409)
+      const active=await client.query('SELECT 1 FROM workflow.ownership_withdrawal_requests WHERE withdrawal_request_id=$1 AND case_id=$2 AND status=\'requested\' FOR UPDATE',[withdrawalId,caseRow.case_id]);if(!active.rowCount)throw workflowError('OWNERSHIP_WITHDRAWAL_NOT_ACTIVE',409)
+    }else if(payload.withdrawal_request_id!==null)throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+
+    const reviewDecisionId=randomUUID(),transactionId=randomUUID()
+    const resultingStatus=input.decision==='uphold'?'resolved_upheld':input.decision==='revoke'?'resolved_revoked':'withdrawn'
+    const relationStatus=input.decision==='revoke'?'terminated':'active'
+    const previewHash=this.hash(this.canonicalJson({confirmation_summary_hash:preview.confirmation_summary_hash,diff_hash:preview.diff_hash,expected_versions:preview.expected_versions_json,impact_hash:preview.impact_hash,operation_type:preview.operation_type,preview_id:preview.preview_id,reason_code:preview.reason_code,targets:preview.targets_json}))
+    const inserted=await client.query<DecisionRow>(`INSERT INTO workflow.review_decisions (
+      review_decision_id,decision_request_id,work_item_id,work_type,target_type,target_id,decision,
+      actor_user_id,project_id,base_version_id,reason_code,field_paths_json,
+      decision_evidence_refs_json,preview_hash,confirmation_summary_hash,decision_payload_hash,
+      resulting_status,transaction_id,committed_at,schema_version
+    ) VALUES ($1,$2,$3,'ownership_case','ownership_case',$4,$5,$6,$7,NULL,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,'review_decision.v1') RETURNING review_decision_id,decision_request_id,work_item_id,work_type,target_type,target_id,decision,project_id,base_version_id,decision_payload_hash,resulting_status,transaction_id,committed_at`,[reviewDecisionId,input.decisionRequestId,workItem.work_item_id,caseRow.case_id,input.decision,input.actor.userId,caseRow.project_id,input.reasonCode,JSON.stringify(input.fieldPaths),JSON.stringify(input.decisionEvidenceRefs),previewHash,preview.confirmation_summary_hash,input.decisionPayloadHash,resultingStatus,transactionId,input.now])
+    const relationUpdated=await client.query(`UPDATE catalog.author_relations SET status=$2,version=version+1,updated_at=GREATEST($3,updated_at+interval '1 microsecond') WHERE author_relation_id=$1 AND status='suspended' AND version=$4`,[relation.author_relation_id,relationStatus,input.now,relation.version]);if(relationUpdated.rowCount!==1)throw workflowError('AUTHOR_RELATION_VERSION_CONFLICT',409)
+    if(withdrawalId){const withdrawalStatus=input.decision==='withdraw'?'accepted':'closed_by_case_decision';const closed=await client.query(`UPDATE workflow.ownership_withdrawal_requests SET status=$2,decision_id=$3,decided_by_user_id=$4,decision_reason_code=$5,version=version+1,decided_at=$6 WHERE withdrawal_request_id=$1 AND status='requested'`,[withdrawalId,withdrawalStatus,reviewDecisionId,input.actor.userId,input.reasonCode,input.now]);if(closed.rowCount!==1)throw workflowError('OWNERSHIP_WITHDRAWAL_VERSION_CONFLICT',409)}
+    const activeCount=await client.query<{count:string}&QueryResultRow>("SELECT count(*)::text count FROM catalog.author_relations WHERE project_id=$1 AND status='active'",[caseRow.project_id]);const hasActive=Number(activeCount.rows[0]?.count)>0
+    const project=(await client.query<{review_status:string}&QueryResultRow>('SELECT review_status FROM catalog.projects WHERE project_id=$1 FOR UPDATE',[caseRow.project_id])).rows[0];if(!project)throw workflowError('PROJECT_NOT_FOUND',404)
+    const projectStatus=['restricted','archived','deleted'].includes(project.review_status)?project.review_status:hasActive?'published_author':'published_platform'
+    await client.query(`UPDATE catalog.projects SET review_status=$2,author_link_status=$3,completeness_level=$4,aggregate_version=aggregate_version+1,updated_at=$5 WHERE project_id=$1`,[caseRow.project_id,projectStatus,hasActive?'linked':'failed',hasActive?'complete':'pending_verification',input.now])
+    const caseUpdated=await client.query(`UPDATE workflow.ownership_cases SET status=$2,decision=$3,decided_by_user_id=$4,review_decision_id=$5,active_withdrawal_request_id=NULL,resulting_author_relation_status=$6,resulting_project_status=$7,version=version+1,updated_at=GREATEST($8,updated_at+interval '1 microsecond'),decided_at=$8 WHERE case_id=$1 AND version=$9`,[caseRow.case_id,resultingStatus,input.decision,input.actor.userId,reviewDecisionId,relationStatus,projectStatus,input.now,caseRow.version]);if(caseUpdated.rowCount!==1)throw workflowError('OWNERSHIP_CASE_VERSION_CONFLICT',409)
+    const decidedWork=(await client.query<WorkItemRow>(`UPDATE workflow.review_work_items SET status='decided',assignee_user_id=NULL,claim_token_hash=NULL,lease_expires_at=NULL,last_heartbeat_at=NULL,conflict_principal_version_at_claim=NULL,decision_ref_type='review_decision',decision_ref_id=$2,version=version+1,updated_at=$3 WHERE work_item_id=$1 AND status='claimed' AND version=$4 RETURNING *`,[workItem.work_item_id,reviewDecisionId,input.now,workItem.version])).rows[0];if(!decidedWork)throw workflowError('WORK_ITEM_VERSION_CONFLICT',409)
+    const consumedConfirm=await client.query("UPDATE workflow.admin_operation_confirm_grants SET status='consumed',consumed_at=$2 WHERE confirm_grant_id=$1 AND status='active'",[confirm.confirm_grant_id,input.now]);if(consumedConfirm.rowCount!==1)throw workflowError('CONFIRM_TOKEN_CONSUMED',410)
+    const consumedPreview=await client.query("UPDATE workflow.admin_operation_previews SET status='consumed',consumed_at=$2 WHERE preview_id=$1 AND status IN ('active','reauth_required')",[preview.preview_id,input.now]);if(consumedPreview.rowCount!==1)throw workflowError('PREVIEW_TOKEN_CONSUMED',410)
+    await client.query(`INSERT INTO workflow.review_work_item_events (event_id,work_item_id,event_type,actor_user_id,from_status,to_status,work_item_version,reason_code,metadata_json,occurred_at) VALUES ($1,$2,'decided',$3,'claimed','decided',$4,$5,$6::jsonb,$7)`,[randomUUID(),workItem.work_item_id,input.actor.userId,decidedWork.version,input.reasonCode,JSON.stringify({review_decision_id:reviewDecisionId}),input.now])
+    await client.query(`INSERT INTO workflow.admin_operation_security_events (security_event_id,preview_id,confirm_grant_id,actor_user_id,event_type,request_id,metadata_json,occurred_at) VALUES ($1,$2,$3,$4,'confirm_consumed',$5,$6::jsonb,$7)`,[randomUUID(),preview.preview_id,confirm.confirm_grant_id,input.actor.userId,input.requestId,JSON.stringify({review_decision_id:reviewDecisionId}),input.now])
+    const eventName=input.decision==='withdraw'?'ownership_dispute_withdrawn':'ownership_dispute_resolved'
+    await this.writeVerificationOutbox(client,transactionId,caseRow.case_id,targetVersion+1,eventName,{case_id:caseRow.case_id,author_relation_id:caseRow.author_relation_id,project_id:caseRow.project_id,decision:input.decision,case_status:resultingStatus,resulting_author_relation_status:relationStatus,resulting_project_status:projectStatus,decision_id:reviewDecisionId,...(withdrawalId?{withdrawal_request_id:withdrawalId}:{}),result:'success'},input.now,'ownership_case')
+    await client.query(`INSERT INTO audit.audit_logs (audit_id,operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,before_hash,after_hash,diff_json,reason_code,request_id,trace_id,result,created_at) VALUES ($1,'OP-ADMIN-OWNERSHIP-DECISION',$2,$3,$4::jsonb,'ownership_case',$5,$6,$7,$8::jsonb,$9,$10,$11,'succeeded',$12)`,[randomUUID(),input.actor.roles.includes('admin')?'admin':'platform_editor',createHash('sha256').update(input.actor.userId).digest(),JSON.stringify(input.actor.roles),caseRow.case_id,this.hash(this.canonicalJson({status:caseRow.status,version:targetVersion})),this.hash(this.canonicalJson({status:resultingStatus,version:targetVersion+1})),JSON.stringify({decision:input.decision,relation_status:relationStatus,project_status:projectStatus,withdrawal_request_id:withdrawalId}),input.reasonCode,input.requestId,transactionId,input.now])
+    return this.projection(inserted.rows[0]!)
+  }
+
+  private ownershipPayload(input:StoredReviewDecisionInput):OwnershipDecisionPayload {
+    const payload=input.decisionPayload as Partial<OwnershipDecisionPayload>
+    if(!Number.isSafeInteger(payload.expected_conflict_principal_version)||Number(payload.expected_conflict_principal_version)<1||!('withdrawal_request_id' in payload))throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+    return payload as OwnershipDecisionPayload
   }
 
   private verificationPayload(input: StoredReviewDecisionInput): VerificationApprovePayload | null {
@@ -875,7 +973,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     preview: PreviewRow,
     input: StoredReviewDecisionInput,
     workItem: WorkItemRow,
-    target: SubmissionRow | ProjectUpdateRow | VerificationRequestRow,
+    target: SubmissionRow | ProjectUpdateRow | VerificationRequestRow | OwnershipCaseRow,
     targetVersion: number,
     activeRolesVersion: number,
   ): void {
@@ -892,9 +990,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     ) throw workflowError('PREVIEW_BINDING_MISMATCH', 403)
     const isSubmission = workItem.work_type === 'submission'
     const isVerification = workItem.work_type === 'verification'
+    const isOwnership = workItem.work_type === 'ownership_case'
     const expectedOperationType = isSubmission
       ? 'submission_review'
-      : isVerification ? 'verification_review' : 'project_update_review'
+      : isVerification ? 'verification_review' : isOwnership ? 'ownership_review' : 'project_update_review'
     if (preview.operation_type !== expectedOperationType) {
       throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     }
@@ -905,24 +1004,27 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       ? (target as SubmissionRow).submission_id
       : isVerification
         ? (target as VerificationRequestRow).verification_id
-        : (target as ProjectUpdateRow).update_id
+        : isOwnership ? (target as OwnershipCaseRow).case_id : (target as ProjectUpdateRow).update_id
     const targetType = isVerification ? 'verification_request' : workItem.work_type
     const targets = [{ target_type: targetType, target_id: targetId }]
     const expectedVersions = isSubmission
       ? { submission: targetVersion, work_item: workItem.version }
       : isVerification
         ? { verification_request: targetVersion, work_item: workItem.version }
-        : { project_update: targetVersion, work_item: workItem.version }
+        : isOwnership ? { ownership_case: targetVersion, work_item: workItem.version }
+          : { project_update: targetVersion, work_item: workItem.version }
     const diff = isSubmission
       ? { review_status: input.resultingStatus }
       : isVerification
         ? { status: input.decision==='approve' ? 'verified' : input.decision==='reject' ? 'failed' : 'changes_requested' }
         : { status: input.resultingStatus }
+    const ownershipPayload=isOwnership?input.decisionPayload as OwnershipDecisionPayload:null
     if (
       this.canonicalJson(preview.targets_json) !== this.canonicalJson(targets) ||
       this.canonicalJson(preview.expected_versions_json) !== this.canonicalJson(expectedVersions) ||
       this.canonicalJson(preview.proposed_diff_json) !== this.canonicalJson(diff) ||
-      preview.reason_code !== input.reasonCode
+      preview.reason_code !== input.reasonCode ||
+      (isOwnership && preview.expected_conflict_principal_version!==ownershipPayload?.expected_conflict_principal_version)
     ) throw workflowError('PREVIEW_BINDING_STALE', 409)
   }
 

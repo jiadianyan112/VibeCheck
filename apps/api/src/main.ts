@@ -61,6 +61,8 @@ import {
   PostgresReviewDecisionStore,
   PostgresWorkflowStore,
   PostgresVerificationRequestStore,
+  OwnershipCaseService,
+  PostgresOwnershipCaseStore,
   ReviewDecisionService,
   VerificationRequestService,
   WorkflowService,
@@ -174,6 +176,9 @@ const verificationRequests = workflowConfig.enabled
       authTokenSecret:identityConfig.authTokenSecret,
     })
   : undefined
+const ownershipCases=workflowConfig.enabled
+  ? new OwnershipCaseService(new PostgresOwnershipCaseStore(pool),workflowConfig.cursorSecret)
+  : undefined
 if (privateMaterialConfig.enabled && (!identityConfig.enabled || !workflowConfig.enabled)) {
   throw new Error('CONFIG_PRIVATE_MATERIAL_REQUIRES_IDENTITY_WORKFLOW')
 }
@@ -222,6 +227,7 @@ const server = createApiServer(config, {
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
   ...(verificationRequests ? { verificationRequests } : {}),
+  ...(ownershipCases ? { ownershipCases } : {}),
   ...(privateMaterials ? { privateMaterials } : {}),
   ...(adminOperations ? { adminOperations } : {}),
   ...(reviewDecisions ? { reviewDecisions } : {}),
