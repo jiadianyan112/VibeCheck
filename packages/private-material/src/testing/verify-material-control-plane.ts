@@ -214,14 +214,26 @@ try {
   assert.equal(accessLogs.rows.find((row)=>row.action==='read_grant')?.count,3)
   assert.equal(accessLogs.rows.find((row)=>row.action==='content_read')?.count,1)
 
+  const rejectedRequest=await pool.query<{verification_id:string}>(
+    `INSERT INTO workflow.verification_requests (
+       project_id,applicant_user_id,creator_resolution_mode,new_creator_profile_input_json,
+       requested_link_role,status_history_json,idempotency_key,request_hash,created_at,updated_at
+     ) VALUES ($1,$2,'create_new_creator',jsonb_build_object('display_name','Rejected Material Fixture'),
+       'owner',jsonb_build_array(jsonb_build_object('status','draft','at',$3::timestamptz)),
+       'private-material-rejected-request',$4,$3,$3)
+     RETURNING verification_id`,
+    [projectId,reviewerId,now,'e'.repeat(64)],
+  )
+  const rejectedVerificationId=rejectedRequest.rows[0]!.verification_id
   inspectionMime = 'text/plain'
   const rejectedPrepare = await service.prepare({
-    userId: applicantId, verificationId, declaredMime: 'application/pdf', byteSize: 4,
+    userId: reviewerId, verificationId:rejectedVerificationId,
+    declaredMime: 'application/pdf', byteSize: 4,
     checksum, idempotencyKey: 'material-fixture-prepare-0002', requestId: 'material-fixture-rejected-prepare',
   })
   await assert.rejects(
     service.complete({
-      userId: applicantId, materialId: rejectedPrepare.material.material_id, checksum,
+      userId: reviewerId, materialId: rejectedPrepare.material.material_id, checksum,
       uploadReceipt: 'fixture-receipt-rejected-0002', operationId: 'material-fixture-complete-0002',
       requestId: 'material-fixture-rejected-complete',
     }),
