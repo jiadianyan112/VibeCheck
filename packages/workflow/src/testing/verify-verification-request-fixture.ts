@@ -148,7 +148,7 @@ try {
   )
   const actor=Object.freeze({userId:reviewerId,roles:Object.freeze(['admin'] as const),permissions:Object.freeze([])})
   const workflow=new WorkflowService(new PostgresWorkflowStore(pool),{
-    cursorSecret:tokenSecret,leaseSeconds:600,maximumClaimSeconds:3600,queuePageSize:25,
+    cursorSecret:tokenSecret,leaseSeconds:60,maximumClaimSeconds:3600,queuePageSize:25,
   },()=>now)
   const claim=await workflow.claimWorkItem({actor,workItemId,expectedVersion:1,
     expectedConflictPrincipalVersion:null,requestId:'verification_fixture_claim'})
@@ -497,6 +497,42 @@ try {
     operationId:'verification-fixture-changes-withdraw',reasonCode:null,
     requestId:'verification-fixture-changes-withdraw'})
   assert.equal(changesWithdrawn.status,'withdrawn')
+  const beforeRollback=await pool.query<{aggregate_version:string;relation_count:number}>(
+    `SELECT creator.aggregate_version,
+       (SELECT count(*)::int FROM catalog.author_relations relation
+        WHERE relation.creator_id=creator.creator_id AND relation.project_id=$2
+          AND relation.status IN ('active','suspended')) AS relation_count
+     FROM catalog.creators creator WHERE creator.creator_id=$1`,
+    [decision.resulting_creator_id,projectId],
+  )
+  await assert.rejects(
+    approveAdditional({label:'duplicate-relation-rollback',applicantUserId:applicantId,
+      targetProjectId:projectId,mode:'use_existing_link',
+      creatorAccountLinkId:decision.resulting_link_id,targetCreatorId:null,requestedLinkRole:null,
+      authorRole:'co_creator'}),
+    (error:unknown)=>error instanceof Error&&error.message==='AUTHOR_RELATION_EXISTS',
+  )
+  const afterRollback=await pool.query<{aggregate_version:string;relation_count:number;
+    pending_request_count:number;decision_count:number}>(
+    `SELECT creator.aggregate_version,
+       (SELECT count(*)::int FROM catalog.author_relations relation
+        WHERE relation.creator_id=creator.creator_id AND relation.project_id=$2
+          AND relation.status IN ('active','suspended')) AS relation_count,
+       (SELECT count(*)::int FROM workflow.verification_requests request
+        WHERE request.applicant_user_id=$3 AND request.project_id=$2 AND request.status='pending')
+          AS pending_request_count,
+       (SELECT count(*)::int FROM workflow.review_decisions decision_row
+        JOIN workflow.review_work_items item ON item.work_item_id=decision_row.work_item_id
+        JOIN workflow.verification_requests request ON request.review_work_item_id=item.work_item_id
+        WHERE request.applicant_user_id=$3 AND request.project_id=$2 AND request.status='pending')
+          AS decision_count
+     FROM catalog.creators creator WHERE creator.creator_id=$1`,
+    [decision.resulting_creator_id,projectId,applicantId],
+  )
+  assert.equal(afterRollback.rows[0]!.aggregate_version,beforeRollback.rows[0]!.aggregate_version)
+  assert.equal(afterRollback.rows[0]!.relation_count,beforeRollback.rows[0]!.relation_count)
+  assert.equal(afterRollback.rows[0]!.pending_request_count,1)
+  assert.equal(afterRollback.rows[0]!.decision_count,0)
   assert.equal(claimedOwner.owner_link_set_version,1)
   assert.equal(claimedManager.owner_link_set_version,reused.owner_link_set_version)
   console.info(JSON.stringify({
@@ -512,6 +548,7 @@ try {
     changes_supplement_reject: true,
     draft_pending_changes_withdraw: true,
     conflict_of_interest_rejected: true,
+    duplicate_relation_atomic_rollback: true,
     project_version_created: false,
   }))
 

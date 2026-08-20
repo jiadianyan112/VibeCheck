@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 
 import { PostgresAuthorAuthorizationResolver } from '../author-authorization.js'
+import { CreatorAuthorReadService } from '../creator-author-read.js'
 import { linkPermissionProfiles } from '../link-permission-profile.js'
 
 const { Pool } = pg
@@ -16,6 +17,7 @@ const linkId = '52000000-0000-4000-8000-000000000001'
 const creatorId = '16000000-0000-4000-8000-000000000001'
 const projectId = '10000000-0000-4000-8000-000000000001'
 const verificationId = '53000000-0000-4000-8000-000000000001'
+const relationId = '19000000-0000-4000-8000-000000000001'
 
 async function run(): Promise<void> {
   await pool.query(
@@ -44,6 +46,50 @@ async function run(): Promise<void> {
     ['/category_data/core_problem', '/project_core/current_name'],
   )
 
+  const reads = new CreatorAuthorReadService(pool)
+  const link = await reads.getLink(userId, linkId)
+  assert.equal(link.creator_account_link_id, linkId)
+  assert.equal(link.creator_id, creatorId)
+  assert.equal(link.link_role, 'owner')
+  assert.equal(link.permission_profile_ref.profile_id, 'OWNER_V1')
+  assert.equal(link.permission_profile_ref.config_hash, linkPermissionProfiles.OWNER_V1.config_hash)
+  assert(link.effective_capabilities.includes('project_update.create'))
+
+  const myLinks = await reads.listMyLinks(userId)
+  assert(myLinks.some((candidate) => candidate.creator_account_link_id === linkId))
+
+  const publicRelation = await reads.getRelation(relationId, null)
+  assert.deepEqual(publicRelation, {
+    viewer_schema: 'public',
+    author_relation_id: relationId,
+    project_id: projectId,
+    creator_id: creatorId,
+    author_role: 'owner',
+    status: 'active',
+  })
+
+  const selfRelation = await reads.getRelation(relationId, userId)
+  assert.equal(selfRelation.viewer_schema, 'self')
+  assert.equal(selfRelation.source_creator_account_link_id, linkId)
+  assert.deepEqual(
+    selfRelation.effective_field_permissions,
+    ['/project_core/current_name', '/category_data/core_problem'],
+  )
+
+  const byProject = await reads.listRelations({ projectId, creatorId: null, userId: null })
+  assert(byProject.some((candidate) => candidate.author_relation_id === relationId))
+  const byCreatorForSelf = await reads.listRelations({ creatorId, projectId: null, userId })
+  assert(byCreatorForSelf.some((candidate) => (
+    candidate.author_relation_id === relationId && candidate.viewer_schema === 'self'
+  )))
+
+  await assert.rejects(
+    () => reads.getLink(secondUserId, linkId),
+    (error: unknown) => (
+      error instanceof Error && error.message === 'CREATOR_ACCOUNT_LINK_NOT_FOUND'
+    ),
+  )
+
   await assert.rejects(
     () => pool.query(
       `INSERT INTO catalog.creator_account_links (
@@ -68,7 +114,7 @@ async function run(): Promise<void> {
 
 try {
   await run()
-  process.stdout.write('author_authorization_fixture_ok chain=active fields=2 uniqueness=ok\n')
+  process.stdout.write('author_authorization_fixture_ok chain=active fields=2 reads=public+self uniqueness=ok\n')
 } finally {
   await pool.end()
 }
