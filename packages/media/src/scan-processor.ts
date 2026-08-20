@@ -187,7 +187,7 @@ export class PostgresMediaScanStore {
          event_id,aggregate_type,aggregate_id,event_name,event_version,payload_json,
          transaction_id,status,next_attempt_at,created_at
        ) VALUES ($1,'media_resource',$2,'media_scan_requested',1,
-         jsonb_build_object('media_resource_id',$2),$3,'pending',$4,$5)`,
+         jsonb_build_object('media_resource_id',$2::varchar),$3,'pending',$4,$5)`,
       [randomUUID(), id, randomUUID(), next, now],
     )
   }
@@ -198,7 +198,7 @@ export class PostgresMediaScanStore {
          audit_id,operation_id,actor_type,actor_roles_json,target_type,target_id,
          after_hash,diff_json,reason_code,request_id,result,created_at
        ) VALUES ($1,'OP-MEDIA-SCAN','system','[]'::jsonb,'media_resource',$2,$3,
-         jsonb_build_object('status',$4),'media_scan','worker','succeeded',$5)`,
+         jsonb_build_object('status',$4::text),'media_scan','worker','succeeded',$5)`,
       [randomUUID(), row.media_resource_id,
         createHash('sha256').update(`${row.media_resource_id}:${reason}`).digest('hex'), reason, now],
     )

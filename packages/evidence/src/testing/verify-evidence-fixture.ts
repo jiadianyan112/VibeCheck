@@ -13,6 +13,7 @@ const pool = new Pool({ connectionString: databaseUrl })
 const userId = '93000000-0000-4000-8000-000000000001'
 const draftId = '93000000-0000-4000-8000-000000000003'
 const resourceId = '93000000-0000-4000-8000-000000000005'
+const projectUpdateId = '93000000-0000-4000-8000-000000000006'
 const actor = Object.freeze({ userId, roles: Object.freeze(['user'] as const) })
 let clock = new Date('2026-08-13T13:10:00.000Z')
 const service = new EvidenceService({
@@ -29,6 +30,72 @@ const service = new EvidenceService({
   now: () => clock,
 })
 
+async function verifyProjectUpdateEvidence(): Promise<void> {
+  const existing = await pool.query<{ readonly status: string; readonly version: number }>(
+    `SELECT status,version FROM workflow.evidence_drafts
+     WHERE owner_user_id=$1 AND client_request_id='evidence-fixture-project-update-create-0001'`,
+    [userId],
+  )
+  if (existing.rows[0]) {
+    assert.deepEqual(existing.rows[0], { status: 'withdrawn', version: 5 })
+    const update = await pool.query<{ readonly version: number; readonly evidence_ids: unknown }>(
+      `SELECT version::int AS version,evidence_draft_ids_json AS evidence_ids
+       FROM catalog.project_updates WHERE update_id=$1`,
+      [projectUpdateId],
+    )
+    assert.deepEqual(update.rows[0], { version: 5, evidence_ids: [] })
+    return
+  }
+  const created = await service.createDraft({
+    actor, parentType: 'project_update', parentId: projectUpdateId, finalTargetKind: 'project',
+    targetAssetDraftKey: null, fieldPath: '/project_core/current_name', requestedVisibility: 'public',
+    evidenceType: 'trusted_external_source', sourceChannel: 'official_site',
+    clientRequestId: 'evidence-fixture-project-update-create-0001',
+    requestId: 'evidence-fixture-project-update-request-0001',
+  })
+  const parent = await pool.query<{ readonly version: number }>(
+    'SELECT version::int AS version FROM catalog.project_updates WHERE update_id=$1', [projectUpdateId],
+  )
+  const bound = await service.bindDraft({
+    actor, evidenceDraftId: created.evidence_draft_id, parentType: 'project_update',
+    parentId: projectUpdateId, expectedParentVersion: parent.rows[0]!.version,
+    operationId: 'evidence-fixture-project-update-bind-0001',
+    requestId: 'evidence-fixture-project-update-request-0002',
+  })
+  assert.equal(bound.evidence_draft_version, 2)
+  const afterBind = await pool.query<{ readonly version: number; readonly evidence_ids: unknown }>(
+    `SELECT version::int AS version,evidence_draft_ids_json AS evidence_ids
+     FROM catalog.project_updates WHERE update_id=$1`,
+    [projectUpdateId],
+  )
+  assert.equal(afterBind.rows[0]?.version, 4)
+  assert.deepEqual(afterBind.rows[0]?.evidence_ids, [created.evidence_draft_id])
+  const patched = await service.patchDraft({
+    actor, evidenceDraftId: created.evidence_draft_id, expectedVersion: 2,
+    patch: Object.freeze({ sourceUrl: 'https://example.com/project-update-proof' }),
+    operationId: 'evidence-fixture-project-update-patch-0001',
+    requestId: 'evidence-fixture-project-update-request-0003',
+  })
+  const completed = await service.completeDraft({
+    actor, evidenceDraftId: created.evidence_draft_id, expectedVersion: patched.version,
+    operationId: 'evidence-fixture-project-update-complete-0001',
+    requestId: 'evidence-fixture-project-update-request-0004',
+  })
+  const withdrawn = await service.withdrawDraft({
+    actor, evidenceDraftId: created.evidence_draft_id, expectedVersion: completed.version,
+    reasonCode: 'fixture_project_update_withdrawal',
+    operationId: 'evidence-fixture-project-update-withdraw-0001',
+    requestId: 'evidence-fixture-project-update-request-0005',
+  })
+  assert.equal(withdrawn.status, 'withdrawn')
+  const afterWithdraw = await pool.query<{ readonly version: number; readonly evidence_ids: unknown }>(
+    `SELECT version::int AS version,evidence_draft_ids_json AS evidence_ids
+     FROM catalog.project_updates WHERE update_id=$1`,
+    [projectUpdateId],
+  )
+  assert.deepEqual(afterWithdraw.rows[0], { version: 5, evidence_ids: [] })
+}
+
 async function run(): Promise<void> {
   const existing = await pool.query<{ readonly status: string; readonly version: number }>(
     `SELECT status,version FROM workflow.evidence_drafts
@@ -37,6 +104,7 @@ async function run(): Promise<void> {
   )
   if (existing.rows[0]) {
     assert.deepEqual(existing.rows[0], { status: 'withdrawn', version: 6 })
+    await verifyProjectUpdateEvidence()
     return
   }
   const created = await service.createDraft({
@@ -113,11 +181,12 @@ async function run(): Promise<void> {
   assert.equal(verified.rows[0]?.active_reference_count, 0)
   assert.deepEqual(verified.rows[0]?.parent_ids, [])
   assert.equal(verified.rows[0]?.attachment_status, 'withdrawn')
+  await verifyProjectUpdateEvidence()
 }
 
 try {
   await run()
-  process.stdout.write('evidence_fixture_ok snapshots=6 audits=6\n')
+  process.stdout.write('evidence_fixture_ok parents=submission_draft,project_update snapshots>=11 audits>=11\n')
 } finally {
   await pool.end()
 }

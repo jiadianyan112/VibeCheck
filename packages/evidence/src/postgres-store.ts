@@ -71,9 +71,9 @@ interface ResourceRow extends QueryResultRow {
 interface ParentRow extends QueryResultRow {
   readonly owner_user_id: string
   readonly status: string
-  readonly version: number
+  readonly version: number | string
   readonly evidence_draft_ids_json: unknown
-  readonly expires_at: Date
+  readonly expires_at: Date | null
 }
 
 interface ReceiptRow extends QueryResultRow {
@@ -258,21 +258,32 @@ export class PostgresEvidenceStore implements EvidenceStore {
       const parent = await this.authorizeParent(
         client, input.parentType, input.parentId, input.actor.userId, input.now, true,
       )
-      if (parent.version !== input.expectedParentVersion) {
+      const parentVersion = this.safeVersion(parent.version)
+      if (parentVersion !== input.expectedParentVersion) {
         throw evidenceError('EVIDENCE_PARENT_VERSION_CONFLICT', 409, false, {
           expected_version: input.expectedParentVersion,
-          current_version: parent.version,
+          current_version: parentVersion,
         })
       }
-      const updatedParent = await client.query<{ readonly evidence_draft_ids_json: unknown; readonly version: number } & QueryResultRow>(
-        `UPDATE workflow.submission_drafts SET evidence_draft_ids_json=CASE
-           WHEN evidence_draft_ids_json @> jsonb_build_array($2::text) THEN evidence_draft_ids_json
-           ELSE evidence_draft_ids_json || jsonb_build_array($2::text)
-         END,version=version+1,updated_at=$3,saved_at=$3
-         WHERE draft_id=$1 AND status='editing' AND version=$4
-         RETURNING evidence_draft_ids_json,version`,
-        [input.parentId, before.evidence_draft_id, input.now, input.expectedParentVersion],
-      )
+      const updatedParent = input.parentType === 'submission_draft'
+        ? await client.query<{ readonly evidence_draft_ids_json: unknown; readonly version: number | string } & QueryResultRow>(
+            `UPDATE workflow.submission_drafts SET evidence_draft_ids_json=CASE
+               WHEN evidence_draft_ids_json @> jsonb_build_array($2::text) THEN evidence_draft_ids_json
+               ELSE evidence_draft_ids_json || jsonb_build_array($2::text)
+             END,version=version+1,updated_at=$3,saved_at=$3
+             WHERE draft_id=$1 AND status='editing' AND version=$4
+             RETURNING evidence_draft_ids_json,version`,
+            [input.parentId, before.evidence_draft_id, input.now, input.expectedParentVersion],
+          )
+        : await client.query<{ readonly evidence_draft_ids_json: unknown; readonly version: number | string } & QueryResultRow>(
+            `UPDATE catalog.project_updates SET evidence_draft_ids_json=CASE
+               WHEN evidence_draft_ids_json @> jsonb_build_array($2::text) THEN evidence_draft_ids_json
+               ELSE evidence_draft_ids_json || jsonb_build_array($2::text)
+             END,version=version+1,updated_at=GREATEST($3,updated_at+interval '1 microsecond')
+             WHERE update_id=$1 AND status='editing' AND version=$4
+             RETURNING evidence_draft_ids_json,version`,
+            [input.parentId, before.evidence_draft_id, input.now, input.expectedParentVersion],
+          )
       const parentAfter = updatedParent.rows[0]
       if (!parentAfter) throw evidenceError('EVIDENCE_PARENT_VERSION_CONFLICT', 409)
       const updatedDraft = await client.query<DraftRow>(
@@ -289,7 +300,7 @@ export class PostgresEvidenceStore implements EvidenceStore {
         parent_type: input.parentType,
         parent_id: input.parentId,
         evidence_draft_ids: Object.freeze(ids),
-        parent_version: parentAfter.version,
+        parent_version: this.safeVersion(parentAfter.version),
         evidence_draft_version: row.version,
       })
       await this.saveReceipt(
@@ -578,15 +589,28 @@ export class PostgresEvidenceStore implements EvidenceStore {
       )
       const row = result.rows[0]
       if (!row) throw evidenceError('EVIDENCE_DRAFT_VERSION_CONFLICT', 409)
-      await client.query(
-        `UPDATE workflow.submission_drafts SET evidence_draft_ids_json=COALESCE((
-           SELECT jsonb_agg(value ORDER BY ordinality)
-           FROM jsonb_array_elements(evidence_draft_ids_json) WITH ORDINALITY entry(value,ordinality)
-           WHERE value <> to_jsonb($2::text)
-         ),'[]'::jsonb),version=version+1,updated_at=$3,saved_at=$3
-         WHERE draft_id=$1 AND evidence_draft_ids_json @> jsonb_build_array($2::text)`,
-        [before.parent_id, before.evidence_draft_id, input.now],
-      )
+      if (before.parent_type === 'submission_draft') {
+        await client.query(
+          `UPDATE workflow.submission_drafts SET evidence_draft_ids_json=COALESCE((
+             SELECT jsonb_agg(value ORDER BY ordinality)
+             FROM jsonb_array_elements(evidence_draft_ids_json) WITH ORDINALITY entry(value,ordinality)
+             WHERE value <> to_jsonb($2::text)
+           ),'[]'::jsonb),version=version+1,updated_at=$3,saved_at=$3
+           WHERE draft_id=$1 AND evidence_draft_ids_json @> jsonb_build_array($2::text)`,
+          [before.parent_id, before.evidence_draft_id, input.now],
+        )
+      } else if (before.parent_type === 'project_update') {
+        await client.query(
+          `UPDATE catalog.project_updates SET evidence_draft_ids_json=COALESCE((
+             SELECT jsonb_agg(value ORDER BY ordinality)
+             FROM jsonb_array_elements(evidence_draft_ids_json) WITH ORDINALITY entry(value,ordinality)
+             WHERE value <> to_jsonb($2::text)
+           ),'[]'::jsonb),version=version+1,
+             updated_at=GREATEST($3,updated_at+interval '1 microsecond')
+           WHERE update_id=$1 AND evidence_draft_ids_json @> jsonb_build_array($2::text)`,
+          [before.parent_id, before.evidence_draft_id, input.now],
+        )
+      }
       const attachments = await this.allAttachments(client, row.evidence_draft_id)
       await this.snapshot(client, row, attachments, input.actor.userId, input.now)
       const projection = await this.draftProjection(client, row, attachments)
@@ -618,18 +642,25 @@ export class PostgresEvidenceStore implements EvidenceStore {
     now: Date,
     lock: boolean,
   ): Promise<ParentRow> {
-    if (parentType !== 'submission_draft') {
+    if (!['submission_draft', 'project_update'].includes(parentType)) {
       throw evidenceError('EVIDENCE_PARENT_TYPE_UNAVAILABLE', 503, true)
     }
-    const result = await client.query<ParentRow>(
-      `SELECT owner_user_id,status,version,evidence_draft_ids_json,expires_at
-       FROM workflow.submission_drafts WHERE draft_id=$1 ${lock ? 'FOR UPDATE' : ''}`,
-      [parentId],
-    )
+    const result = parentType === 'submission_draft'
+      ? await client.query<ParentRow>(
+          `SELECT owner_user_id,status,version,evidence_draft_ids_json,expires_at
+           FROM workflow.submission_drafts WHERE draft_id=$1 ${lock ? 'FOR UPDATE' : ''}`,
+          [parentId],
+        )
+      : await client.query<ParentRow>(
+          `SELECT owner_user_id,status,version,evidence_draft_ids_json,
+             NULL::timestamptz AS expires_at
+           FROM catalog.project_updates WHERE update_id=$1 ${lock ? 'FOR UPDATE' : ''}`,
+          [parentId],
+        )
     const row = result.rows[0]
     if (!row) throw evidenceError('EVIDENCE_PARENT_NOT_FOUND', 404)
     if (row.owner_user_id !== userId) throw evidenceError('EVIDENCE_PARENT_FORBIDDEN', 403)
-    if (row.expires_at <= now) throw evidenceError('EVIDENCE_PARENT_GONE', 410)
+    if (row.expires_at !== null && row.expires_at <= now) throw evidenceError('EVIDENCE_PARENT_GONE', 410)
     if (row.status !== 'editing') throw evidenceError('EVIDENCE_PARENT_READ_ONLY', 409)
     return row
   }
@@ -961,6 +992,14 @@ export class PostgresEvidenceStore implements EvidenceStore {
       throw evidenceError(code, 500, true)
     }
     return value as string[]
+  }
+
+  private safeVersion(value: number | string): number {
+    const parsed = typeof value === 'number' ? value : Number(value)
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      throw evidenceError('EVIDENCE_PARENT_STATE_INVALID', 500, true)
+    }
+    return parsed
   }
 
   private draftReceipt(value: unknown): EvidenceDraftProjection {

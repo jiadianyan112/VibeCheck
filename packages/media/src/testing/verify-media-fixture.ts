@@ -46,7 +46,76 @@ const checkId = '93000000-0000-4000-8000-000000000002'
 const draftId = '93000000-0000-4000-8000-000000000003'
 const chainId = '93000000-0000-4000-8000-000000000004'
 const resourceId = '93000000-0000-4000-8000-000000000005'
+const projectUpdateId = '93000000-0000-4000-8000-000000000006'
 const now = new Date('2026-08-13T13:00:00.000Z')
+
+async function verifyProjectUpdateReference(): Promise<void> {
+  const existing = await pool.query<{
+    readonly lifecycle_status: string
+    readonly reference_version: number
+    readonly update_version: number
+    readonly media_ids: unknown
+  }>(
+    `SELECT reference.lifecycle_status,reference.version AS reference_version,
+       project_update.version::int AS update_version,project_update.media_reference_ids_json AS media_ids
+     FROM media.media_references reference
+     JOIN catalog.project_updates project_update ON project_update.update_id=reference.target_id
+     WHERE reference.owner_user_id=$1
+       AND reference.client_request_id='media-fixture-project-update-reference-0001'`,
+    [userId],
+  )
+  if (existing.rows[0]) {
+    assert.deepEqual(existing.rows[0], {
+      lifecycle_status: 'unlinked', reference_version: 2, update_version: 3, media_ids: [],
+    })
+    return
+  }
+  await pool.query(
+    `INSERT INTO catalog.project_updates (
+       update_id,owner_user_id,project_id,origin_review_status,base_version_id,update_type,
+       authorization_snapshot_json,status,client_request_id,request_hash,created_at,updated_at
+     ) VALUES ($1,$2,'10000000-0000-4000-8000-000000000001','published_author',
+       '11000000-0000-4000-8000-000000000001','description','{}'::jsonb,'editing',
+       'media-fixture-project-update-0001',$3,$4,$4)
+     ON CONFLICT (update_id) DO NOTHING`,
+    [projectUpdateId, userId, 'f'.repeat(64), now],
+  )
+  const created = await service.createReference({
+    userId, mediaResourceId: resourceId, targetType: 'project_update', targetId: projectUpdateId,
+    role: 'cover', altText: 'Project update fixture cover', sortOrder: 0,
+    cropFocus: null, variant: 'cover.v1',
+    clientRequestId: 'media-fixture-project-update-reference-0001',
+    requestId: 'media-fixture-project-update-request-0001',
+  })
+  const afterCreate = await pool.query<{ readonly version: number; readonly media_ids: unknown }>(
+    `SELECT version::int AS version,media_reference_ids_json AS media_ids
+     FROM catalog.project_updates WHERE update_id=$1`,
+    [projectUpdateId],
+  )
+  assert.equal(afterCreate.rows[0]?.version, 2)
+  assert.deepEqual(afterCreate.rows[0]?.media_ids, [created.media_reference_id])
+  await service.deleteReference({
+    userId, mediaReferenceId: created.media_reference_id, expectedVersion: 1,
+    operationId: 'media-fixture-project-update-delete-0001',
+    requestId: 'media-fixture-project-update-request-0002',
+  })
+  const afterDelete = await pool.query<{
+    readonly lifecycle_status: string
+    readonly reference_version: number
+    readonly update_version: number
+    readonly media_ids: unknown
+  }>(
+    `SELECT reference.lifecycle_status,reference.version AS reference_version,
+       project_update.version::int AS update_version,project_update.media_reference_ids_json AS media_ids
+     FROM media.media_references reference
+     JOIN catalog.project_updates project_update ON project_update.update_id=reference.target_id
+     WHERE reference.media_reference_id=$1`,
+    [created.media_reference_id],
+  )
+  assert.deepEqual(afterDelete.rows[0], {
+    lifecycle_status: 'unlinked', reference_version: 2, update_version: 3, media_ids: [],
+  })
+}
 
 async function run(): Promise<void> {
   const existing = await pool.query<{ readonly lifecycle_status: string; readonly version: number }>(
@@ -56,6 +125,7 @@ async function run(): Promise<void> {
   )
   if (existing.rows[0]) {
     assert.deepEqual(existing.rows[0], { lifecycle_status: 'unlinked', version: 3 })
+    await verifyProjectUpdateReference()
     return
   }
   await pool.query(
@@ -186,11 +256,12 @@ async function run(): Promise<void> {
   assert.equal(verified.rows[0]?.draft_version, 3)
   assert.deepEqual(verified.rows[0]?.media_ids, [])
   assert.equal(verified.rows[0]?.audit_count, 3)
+  await verifyProjectUpdateReference()
 }
 
 try {
   await run()
-  process.stdout.write('media_fixture_ok references=1 audits=3\n')
+  process.stdout.write('media_fixture_ok references=2 targets=submission_draft,project_update audits>=5\n')
 } finally {
   await pool.end()
 }

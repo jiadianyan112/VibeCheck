@@ -66,7 +66,7 @@ interface ReceiptRow extends QueryResultRow {
 interface SubmissionDraftRow extends QueryResultRow {
   readonly owner_user_id: string
   readonly status: string
-  readonly expires_at: Date
+  readonly expires_at: Date | null
 }
 
 export class PostgresMediaStore implements MediaStore {
@@ -215,7 +215,7 @@ export class PostgresMediaStore implements MediaStore {
              event_id,aggregate_type,aggregate_id,event_name,event_version,payload_json,
              transaction_id,status,created_at,next_attempt_at
            ) VALUES ($1,'media_resource',$2,'media_scan_requested',1,
-             jsonb_build_object('media_resource_id',$2),$3,'pending',$4,$4)`,
+             jsonb_build_object('media_resource_id',$2::varchar),$3,'pending',$4,$4)`,
           [randomUUID(), input.mediaResourceId, randomUUID(), input.now],
         )
       }
@@ -451,18 +451,24 @@ export class PostgresMediaStore implements MediaStore {
     now: Date,
     requireEditing: boolean,
   ): Promise<void> {
-    if (targetType !== 'submission_draft') {
+    if (!['submission_draft', 'project_update'].includes(targetType)) {
       throw mediaError('MEDIA_TARGET_TYPE_UNAVAILABLE', 503, true)
     }
-    const result = await client.query<SubmissionDraftRow>(
-      `SELECT owner_user_id,status,expires_at FROM workflow.submission_drafts
-       WHERE draft_id=$1 ${requireEditing ? 'FOR UPDATE' : ''}`,
-      [targetId],
-    )
+    const result = targetType === 'submission_draft'
+      ? await client.query<SubmissionDraftRow>(
+          `SELECT owner_user_id,status,expires_at FROM workflow.submission_drafts
+           WHERE draft_id=$1 ${requireEditing ? 'FOR UPDATE' : ''}`,
+          [targetId],
+        )
+      : await client.query<SubmissionDraftRow>(
+          `SELECT owner_user_id,status,NULL::timestamptz AS expires_at
+           FROM catalog.project_updates WHERE update_id=$1 ${requireEditing ? 'FOR UPDATE' : ''}`,
+          [targetId],
+        )
     const row = result.rows[0]
     if (!row) throw mediaError('MEDIA_TARGET_NOT_FOUND', 404)
     if (row.owner_user_id !== userId) throw mediaError('MEDIA_TARGET_FORBIDDEN', 403)
-    if (row.expires_at <= now) throw mediaError('MEDIA_TARGET_GONE', 410)
+    if (row.expires_at !== null && row.expires_at <= now) throw mediaError('MEDIA_TARGET_GONE', 410)
     if (requireEditing && row.status !== 'editing') throw mediaError('MEDIA_TARGET_READ_ONLY', 409)
   }
 
@@ -503,16 +509,27 @@ export class PostgresMediaStore implements MediaStore {
     referenceId: string,
     now: Date,
   ): Promise<void> {
-    if (targetType !== 'submission_draft') return
-    await client.query(
-      `UPDATE workflow.submission_drafts
-       SET media_reference_ids_json = CASE
-         WHEN media_reference_ids_json @> jsonb_build_array($2::text) THEN media_reference_ids_json
-         ELSE media_reference_ids_json || jsonb_build_array($2::text)
-       END,version=version+1,updated_at=$3,saved_at=$3
-       WHERE draft_id=$1`,
-      [targetId, referenceId, now],
-    )
+    if (targetType === 'submission_draft') {
+      await client.query(
+        `UPDATE workflow.submission_drafts
+         SET media_reference_ids_json = CASE
+           WHEN media_reference_ids_json @> jsonb_build_array($2::text) THEN media_reference_ids_json
+           ELSE media_reference_ids_json || jsonb_build_array($2::text)
+         END,version=version+1,updated_at=$3,saved_at=$3
+         WHERE draft_id=$1`,
+        [targetId, referenceId, now],
+      )
+    } else if (targetType === 'project_update') {
+      await client.query(
+        `UPDATE catalog.project_updates
+         SET media_reference_ids_json = CASE
+           WHEN media_reference_ids_json @> jsonb_build_array($2::text) THEN media_reference_ids_json
+           ELSE media_reference_ids_json || jsonb_build_array($2::text)
+         END,version=version+1,updated_at=GREATEST($3,updated_at+interval '1 microsecond')
+         WHERE update_id=$1`,
+        [targetId, referenceId, now],
+      )
+    }
   }
 
   private async removeReferenceFromTarget(
@@ -522,14 +539,24 @@ export class PostgresMediaStore implements MediaStore {
     referenceId: string,
     now: Date,
   ): Promise<void> {
-    if (targetType !== 'submission_draft') return
-    await client.query(
-      `UPDATE workflow.submission_drafts SET media_reference_ids_json=COALESCE((
-         SELECT jsonb_agg(value) FROM jsonb_array_elements(media_reference_ids_json) value
-         WHERE value <> to_jsonb($2::text)
-       ),'[]'::jsonb),version=version+1,updated_at=$3,saved_at=$3 WHERE draft_id=$1`,
-      [targetId, referenceId, now],
-    )
+    if (targetType === 'submission_draft') {
+      await client.query(
+        `UPDATE workflow.submission_drafts SET media_reference_ids_json=COALESCE((
+           SELECT jsonb_agg(value) FROM jsonb_array_elements(media_reference_ids_json) value
+           WHERE value <> to_jsonb($2::text)
+         ),'[]'::jsonb),version=version+1,updated_at=$3,saved_at=$3 WHERE draft_id=$1`,
+        [targetId, referenceId, now],
+      )
+    } else if (targetType === 'project_update') {
+      await client.query(
+        `UPDATE catalog.project_updates SET media_reference_ids_json=COALESCE((
+           SELECT jsonb_agg(value) FROM jsonb_array_elements(media_reference_ids_json) value
+           WHERE value <> to_jsonb($2::text)
+         ),'[]'::jsonb),version=version+1,
+           updated_at=GREATEST($3,updated_at+interval '1 microsecond') WHERE update_id=$1`,
+        [targetId, referenceId, now],
+      )
+    }
   }
 
   private async receipt(
