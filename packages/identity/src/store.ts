@@ -103,7 +103,7 @@ export type CompleteVerificationResult =
       readonly pendingActionId: string | null
       readonly identityLinks: readonly {
         readonly identityLinkId: string
-        readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
+        readonly purpose: 'pending_action_replay' | 'query_continuation'
         readonly expiresAt: Date
       }[]
     }
@@ -561,12 +561,11 @@ export class PostgresIdentityStore {
     }
     const linkPurposes = [
       'query_continuation',
-      'comparison_merge',
       ...(pendingActionActive ? ['pending_action_replay'] : []),
     ]
     const identityLinks = await client.query<{
       identity_link_id: string
-      purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
+      purpose: 'pending_action_replay' | 'query_continuation'
       expires_at: Date
     }>(
       `INSERT INTO iam.identity_links (

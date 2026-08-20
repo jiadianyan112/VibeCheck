@@ -1,8 +1,3 @@
-import {
-  ComparisonError,
-  type ComparisonProjection,
-  type SetComparisonSavedAfterLoginReplayCommand,
-} from '@vibecheck/comparison'
 import type {
   CommentProjection,
   CreateCommentCommand,
@@ -16,15 +11,8 @@ interface InteractionDomain {
   createComment(command: CreateCommentCommand): Promise<CommentProjection>
 }
 
-interface ComparisonDomain {
-  setSavedAfterLoginReplay(
-    command: SetComparisonSavedAfterLoginReplayCommand,
-  ): Promise<ComparisonProjection>
-}
-
 export interface PendingActionExecutorDependencies {
   readonly community?: InteractionDomain
-  readonly comparison?: ComparisonDomain
 }
 
 export type PendingActionExecutionResult =
@@ -69,25 +57,7 @@ export class PendingActionExecutor {
       return Object.freeze({ status: 'executed' })
     }
     if (action.payload.action_type === 'save_comparison') {
-      if (!this.dependencies.comparison) {
-        throw new IdentityError('PENDING_ACTION_EXECUTION_UNAVAILABLE', 503, true)
-      }
-      try {
-        await this.dependencies.comparison.setSavedAfterLoginReplay({
-          sourceComparisonId: action.payload.comparison_id,
-          sourceComparisonVersion: action.payload.comparison_version,
-          state: action.payload.state,
-          identityLinkId: input.identityLinkId,
-          subject: { kind: 'user', id: input.userId },
-          requestId: input.requestId,
-        })
-        return Object.freeze({ status: 'executed' })
-      } catch (error) {
-        if (error instanceof ComparisonError && error.code === 'COMPARISON_REPLAY_TARGET_NOT_ADOPTED') {
-          return Object.freeze({ status: 'cancelled', reason: 'account_comparison_preserved' })
-        }
-        throw error
-      }
+      return Object.freeze({ status: 'cancelled', reason: 'account_comparison_preserved' })
     }
     throw new IdentityError('PENDING_ACTION_EXECUTION_NOT_IMPLEMENTED', 501, false)
   }

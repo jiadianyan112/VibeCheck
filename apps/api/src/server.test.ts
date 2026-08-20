@@ -1323,10 +1323,6 @@ class FakeIdentityService implements ApiIdentityService {
         identityLinkId: '99999999-9999-4999-8999-999999999999',
         purpose: 'query_continuation',
         expiresAt: '2026-08-10T00:05:00.000Z',
-      }, {
-        identityLinkId: '99999999-9999-4999-8999-999999999998',
-        purpose: 'comparison_merge',
-        expiresAt: '2026-08-10T00:05:00.000Z',
       }] as const,
     } as const
   }
@@ -2974,7 +2970,7 @@ test('comment list is public while create, report and withdraw bind the authenti
   }
 })
 
-test('comparison merge conflict APIs require a user session, CSRF, and exact optimistic versions', async () => {
+test('retired comparison merge conflict APIs are not publicly routable', async () => {
   const comparison = new FakeComparisonService()
   const runtime = await start(
     async () => undefined,
@@ -2992,8 +2988,7 @@ test('comparison merge conflict APIs require a user session, CSRF, and exact opt
       `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}`,
       { headers: { cookie: sessionCookie } },
     )
-    assert.equal(recovered.status, 200)
-    assert.deepEqual(comparison.getMergeCommand?.subject, { kind: 'user', id: session.userId })
+    assert.equal(recovered.status, 404)
 
     const resolveBody = {
       selected_project_ids: ['10000000-0000-4000-8000-000000000001'],
@@ -3014,7 +3009,7 @@ test('comparison merge conflict APIs require a user session, CSRF, and exact opt
         body: JSON.stringify(resolveBody),
       },
     )
-    assert.equal(rejected.status, 403)
+    assert.equal(rejected.status, 404)
     assert.equal(comparison.resolveMergeCommand, null)
 
     const resolved = await fetch(
@@ -3030,12 +3025,8 @@ test('comparison merge conflict APIs require a user session, CSRF, and exact opt
         body: JSON.stringify(resolveBody),
       },
     )
-    assert.equal(resolved.status, 200)
-    const resolveCommand = comparison.getResolveMergeCommand()
-    assert.ok(resolveCommand)
-    assert.equal(resolveCommand.accountVersion, 2)
-    assert.equal(resolveCommand.anonymousVersion, 3)
-    assert.deepEqual(resolveCommand.selectedProjectIds, resolveBody.selected_project_ids)
+    assert.equal(resolved.status, 404)
+    assert.equal(comparison.getResolveMergeCommand(), null)
 
     const cancelled = await fetch(
       `${runtime.baseUrl}/api/v1/auth/comparison-merge-conflicts/${conflictId}/cancel`,
@@ -3054,8 +3045,8 @@ test('comparison merge conflict APIs require a user session, CSRF, and exact opt
         }),
       },
     )
-    assert.equal(cancelled.status, 200)
-    assert.equal(comparison.cancelMergeCommand?.cancelReason, 'user_closed')
+    assert.equal(cancelled.status, 404)
+    assert.equal(comparison.cancelMergeCommand, null)
   } finally {
     await runtime.stop()
   }
@@ -3179,7 +3170,6 @@ test('email OTP flow establishes signed browser cookies and a server session', a
     const verificationBody = await verification.json() as {
       purpose: string
       identity_links: readonly { identity_link_id: string; purpose: string; expires_at: string }[]
-      comparison_merge: { result: string } | null
     }
     assert.equal(verificationBody.purpose, 'login')
     assert.deepEqual(verificationBody.identity_links, [
@@ -3188,20 +3178,9 @@ test('email OTP flow establishes signed browser cookies and a server session', a
         purpose: 'query_continuation',
         expires_at: '2026-08-10T00:05:00.000Z',
       },
-      {
-        identity_link_id: '99999999-9999-4999-8999-999999999998',
-        purpose: 'comparison_merge',
-        expires_at: '2026-08-10T00:05:00.000Z',
-      },
     ])
-    assert.equal(verificationBody.comparison_merge?.result, 'not_required')
-    assert.deepEqual(comparison.prepareMergeCommand, {
-      userId: session.userId,
-      anonymousSubjectId: '77777777-7777-4777-8777-777777777777',
-      identityLinkId: '99999999-9999-4999-8999-999999999998',
-      operationId: '55555555-5555-4555-8555-555555555555',
-      pendingActionId: null,
-    })
+    assert.equal('comparison_merge' in verificationBody, false)
+    assert.equal(comparison.prepareMergeCommand, null)
     assert.equal(identity.verifyCommand?.browserBindingToken, browserBinding)
     const sessionCookies = verification.headers.get('set-cookie') ?? ''
     assert.match(sessionCookies, /vc_session=/)

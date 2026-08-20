@@ -48,6 +48,7 @@ describe('discoverMigrations', () => {
         '000037_ownership_dispute_lifecycle.sql',
         '000038_discovery_taxonomy_and_public_feed.sql',
         '000039_search_navigation_attribution.sql',
+        '000040_retire_comparison_login_merge.sql',
       ],
     )
     for (const migration of migrations) {

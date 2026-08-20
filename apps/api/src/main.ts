@@ -266,7 +266,6 @@ const server = createApiServer(config, {
         }),
         pendingActionExecutor: new PendingActionExecutor({
           ...(community ? { community } : {}),
-          ...(comparison ? { comparison } : {}),
         }),
         authCookieSecure: identityConfig.cookieSecure,
       }

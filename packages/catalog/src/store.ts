@@ -523,20 +523,18 @@ export class PostgresCatalogStore implements CatalogStore {
        SELECT requested.topic_id,requested.category_id,requested.canonical_slug,
          requested.name,requested.description,requested.config_json,
          requested.filter_snapshot_json,requested.display_order,requested.dictionary_version,
-         count(project.project_id)::int AS project_count,statement_timestamp() AS calculated_at,
+         (
+           SELECT count(*)::int
+           FROM catalog.projects project
+           JOIN catalog.project_versions version ON version.version_id=project.current_version_id
+           WHERE project.category_id=requested.category_id
+             AND project.review_status IN ('published_platform','published_author')
+             AND (version.snapshot_json->'category_data')
+               @> COALESCE(requested.filter_snapshot_json->'category_fields','{}'::jsonb)
+         ) AS project_count,statement_timestamp() AS calculated_at,
          requested.alias_resolved,requested.alias_chain_length
        FROM requested
-       LEFT JOIN catalog.projects project
-         ON project.category_id=requested.category_id
-        AND project.review_status IN ('published_platform','published_author')
-       LEFT JOIN catalog.project_versions version ON version.version_id=project.current_version_id
        WHERE requested.status='active'
-         AND (project.project_id IS NULL OR (version.snapshot_json->'category_data')
-           @> COALESCE(requested.filter_snapshot_json->'category_fields','{}'::jsonb))
-       GROUP BY requested.topic_id,requested.category_id,requested.canonical_slug,
-         requested.name,requested.description,requested.config_json,
-         requested.filter_snapshot_json,requested.display_order,requested.dictionary_version,
-         requested.alias_resolved,requested.alias_chain_length
        LIMIT 1`,
       [slug],
     )

@@ -759,110 +759,6 @@ paths:
         '415': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
-  /api/v1/auth/comparison-merge-conflicts/{conflict_id}:
-    get:
-      tags: [Auth, Comparison]
-      operationId: OP-AUTH-MERGE-GET
-      summary: Recover one authenticated user's comparison merge conflict
-      security:
-        - sessionCookie: []
-      parameters:
-        - $ref: '#/components/parameters/ConflictId'
-      responses:
-        '200':
-          description: Frozen source versions, ordered candidates and visible project summaries.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ComparisonMergeConflictProjection'
-        '401':
-          $ref: '#/components/responses/Error'
-        '403':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '410':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-  /api/v1/auth/comparison-merge-conflicts/{conflict_id}/resolve:
-    post:
-      tags: [Auth, Comparison]
-      operationId: OP-AUTH-MERGE-RESOLVE
-      summary: Resolve an over-limit anonymous/account comparison union
-      description: >-
-        Revalidates both frozen comparison versions, candidate membership, current visibility,
-        same-category membership and the conflict version. The original comparisons are retained;
-        the selected zero-to-five projects become a new account comparison version.
-      security:
-        - sessionCookie: []
-      parameters:
-        - $ref: '#/components/parameters/ConflictId'
-        - $ref: '#/components/parameters/CsrfToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ComparisonMergeResolveRequest'
-      responses:
-        '200':
-          description: Idempotent terminal resolution and new account comparison version.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ComparisonMergeResolutionProjection'
-        '401':
-          $ref: '#/components/responses/Error'
-        '403':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '410':
-          $ref: '#/components/responses/Error'
-        '415':
-          $ref: '#/components/responses/Error'
-        '422':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-  /api/v1/auth/comparison-merge-conflicts/{conflict_id}/cancel:
-    post:
-      tags: [Auth, Comparison]
-      operationId: OP-AUTH-MERGE-CANCEL
-      summary: Cancel a pending merge without changing either source comparison
-      security:
-        - sessionCookie: []
-      parameters:
-        - $ref: '#/components/parameters/ConflictId'
-        - $ref: '#/components/parameters/CsrfToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ComparisonMergeCancelRequest'
-      responses:
-        '200':
-          description: Idempotent cancelled terminal state; related pending action is cancelled when present.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ComparisonMergeCancellationProjection'
-        '401':
-          $ref: '#/components/responses/Error'
-        '403':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '410':
-          $ref: '#/components/responses/Error'
-        '415':
-          $ref: '#/components/responses/Error'
-        '422':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
   /api/v1/query-snapshots/{query_id}:
     get:
       tags: [Search]
@@ -2843,13 +2739,6 @@ components:
       schema:
         type: string
         format: uuid
-    ConflictId:
-      in: path
-      name: conflict_id
-      required: true
-      schema:
-        type: string
-        format: uuid
     PendingActionId:
       in: path
       name: pending_action_id
@@ -3854,184 +3743,6 @@ components:
           properties:
             mutation_result: { type: string, enum: [created, changed, no_change] }
       unevaluatedProperties: false
-    ComparisonLoginMergeProjection:
-      type: object
-      additionalProperties: false
-      required:
-        - result
-        - comparison_id
-        - comparison_version
-        - conflict_id
-        - conflict_version
-        - expires_at
-      properties:
-        result:
-          type: string
-          enum: [not_required, adopted, merged, conflict]
-        comparison_id:
-          oneOf:
-            - type: string
-              format: uuid
-            - type: 'null'
-        comparison_version:
-          oneOf:
-            - type: integer
-              minimum: 1
-            - type: 'null'
-        conflict_id:
-          oneOf:
-            - type: string
-              format: uuid
-            - type: 'null'
-        conflict_version:
-          oneOf:
-            - type: integer
-              minimum: 1
-            - type: 'null'
-        expires_at:
-          oneOf:
-            - type: string
-              format: date-time
-            - type: 'null'
-    ComparisonMergeProjectSummary:
-      type: object
-      additionalProperties: false
-      required: [project_id, current_name, category_id, access_status, freshness_status, last_verified_at]
-      properties:
-        project_id: { type: string, format: uuid }
-        current_name: { type: string, minLength: 1, maxLength: 120 }
-        category_id: { $ref: '#/components/schemas/CategoryId' }
-        access_status: { type: string, minLength: 1, maxLength: 64 }
-        freshness_status: { type: string, minLength: 1, maxLength: 64 }
-        last_verified_at: { type: string, format: date-time }
-    ComparisonMergeConflictProjection:
-      type: object
-      additionalProperties: false
-      required:
-        - conflict_id
-        - identity_link_id
-        - account_comparison_id
-        - account_comparison_version
-        - anonymous_comparison_id
-        - anonymous_comparison_version
-        - candidate_project_ids
-        - candidate_projects
-        - selected_project_ids
-        - status
-        - pending_action_id
-        - version
-        - expires_at
-        - resolved_at
-        - cancelled_at
-      properties:
-        conflict_id: { type: string, format: uuid }
-        identity_link_id: { type: string, format: uuid }
-        account_comparison_id: { type: string, format: uuid }
-        account_comparison_version: { type: integer, minimum: 1 }
-        anonymous_comparison_id: { type: string, format: uuid }
-        anonymous_comparison_version: { type: integer, minimum: 1 }
-        candidate_project_ids:
-          type: array
-          minItems: 6
-          maxItems: 10
-          uniqueItems: true
-          items: { type: string, format: uuid }
-        candidate_projects:
-          type: array
-          maxItems: 10
-          uniqueItems: true
-          items: { $ref: '#/components/schemas/ComparisonMergeProjectSummary' }
-        selected_project_ids:
-          oneOf:
-            - type: array
-              minItems: 0
-              maxItems: 5
-              uniqueItems: true
-              items: { type: string, format: uuid }
-            - type: 'null'
-        status: { type: string, enum: [pending, resolved, cancelled] }
-        pending_action_id:
-          oneOf:
-            - type: string
-              format: uuid
-            - type: 'null'
-        version: { type: integer, minimum: 1 }
-        expires_at: { type: string, format: date-time }
-        resolved_at:
-          oneOf:
-            - type: string
-              format: date-time
-            - type: 'null'
-        cancelled_at:
-          oneOf:
-            - type: string
-              format: date-time
-            - type: 'null'
-    ComparisonMergeResolveRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - selected_project_ids
-        - account_version
-        - anonymous_version
-        - expected_conflict_version
-        - operation_id
-      properties:
-        selected_project_ids:
-          type: array
-          minItems: 0
-          maxItems: 5
-          uniqueItems: true
-          items: { type: string, format: uuid }
-        account_version: { type: integer, minimum: 1 }
-        anonymous_version: { type: integer, minimum: 1 }
-        expected_conflict_version: { type: integer, minimum: 1 }
-        operation_id: { type: string, format: uuid }
-    ComparisonMergeCancelRequest:
-      type: object
-      additionalProperties: false
-      required: [cancel_reason, expected_conflict_version, operation_id]
-      properties:
-        cancel_reason: { type: string, minLength: 1, maxLength: 128 }
-        expected_conflict_version: { type: integer, minimum: 1 }
-        operation_id: { type: string, format: uuid }
-    ComparisonMergeResolutionProjection:
-      type: object
-      additionalProperties: false
-      required:
-        - conflict_id
-        - status
-        - conflict_version
-        - comparison_id
-        - comparison_version
-        - selected_project_ids
-        - resolved_at
-      properties:
-        conflict_id: { type: string, format: uuid }
-        status: { const: resolved }
-        conflict_version: { type: integer, minimum: 2 }
-        comparison_id: { type: string, format: uuid }
-        comparison_version: { type: integer, minimum: 2 }
-        selected_project_ids:
-          type: array
-          minItems: 0
-          maxItems: 5
-          uniqueItems: true
-          items: { type: string, format: uuid }
-        resolved_at: { type: string, format: date-time }
-    ComparisonMergeCancellationProjection:
-      type: object
-      additionalProperties: false
-      required: [conflict_id, status, conflict_version, cancelled_at, pending_action_status]
-      properties:
-        conflict_id: { type: string, format: uuid }
-        status: { const: cancelled }
-        conflict_version: { type: integer, minimum: 2 }
-        cancelled_at: { type: string, format: date-time }
-        pending_action_status:
-          oneOf:
-            - const: cancelled
-            - type: 'null'
     QuerySnapshotProjection:
       type: object
       additionalProperties: false
@@ -5251,7 +4962,7 @@ components:
       oneOf:
         - type: object
           additionalProperties: false
-          required: [purpose, session, return_to, identity_links, comparison_merge, pending_action_id]
+          required: [purpose, session, return_to, identity_links, pending_action_id]
           properties:
             purpose:
               const: login
@@ -5264,14 +4975,10 @@ components:
             identity_links:
               type: array
               minItems: 1
-              maxItems: 3
+              maxItems: 2
               uniqueItems: true
               items:
                 $ref: '#/components/schemas/IdentityLinkProjection'
-            comparison_merge:
-              oneOf:
-                - $ref: '#/components/schemas/ComparisonLoginMergeProjection'
-                - type: 'null'
             pending_action_id:
               type: [string, 'null']
               format: uuid
@@ -5359,7 +5066,7 @@ components:
           format: uuid
         purpose:
           type: string
-          enum: [pending_action_replay, query_continuation, comparison_merge]
+          enum: [pending_action_replay, query_continuation]
         expires_at:
           type: string
           format: date-time

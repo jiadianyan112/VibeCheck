@@ -132,7 +132,7 @@ try {
   assert.equal(verified.pendingActionId, created.pending_action_id)
   assert.deepEqual(
     verified.identityLinks.map(({ purpose }) => purpose).sort(),
-    ['comparison_merge', 'pending_action_replay', 'query_continuation'],
+    ['pending_action_replay', 'query_continuation'],
   )
   const pendingLink = verified.identityLinks.find(({ purpose }) => purpose === 'pending_action_replay')
   assert.ok(pendingLink)

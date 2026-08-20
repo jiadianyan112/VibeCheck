@@ -21,7 +21,7 @@ export type AccountStatus = 'active' | 'restricted' | 'disabled'
 
 export interface IdentityLinkProjection {
   readonly identityLinkId: string
-  readonly purpose: 'pending_action_replay' | 'query_continuation' | 'comparison_merge'
+  readonly purpose: 'pending_action_replay' | 'query_continuation'
   readonly expiresAt: string
 }
 

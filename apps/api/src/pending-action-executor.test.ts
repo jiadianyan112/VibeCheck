@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { IdentityError, type PendingActionExecutionProjection } from '@vibecheck/identity'
-import { ComparisonError } from '@vibecheck/comparison'
 
 import { PendingActionExecutor } from './pending-action-executor.js'
 
@@ -78,45 +77,8 @@ describe('PendingActionExecutor', () => {
     ])
   })
 
-  it('resolves the guest comparison through the completed login merge before saving', async () => {
-    let command: unknown = null
-    const executor = new PendingActionExecutor({
-      comparison: {
-        async setSavedAfterLoginReplay(input) {
-          command = input
-          return {} as never
-        },
-      },
-    })
-    await executor.execute({
-      action: action({
-        action_type: 'save_comparison',
-        comparison_id: '63000000-0000-4000-8000-000000000005',
-        comparison_version: 2,
-        state: true,
-      }),
-      userId: '63000000-0000-4000-8000-000000000004',
-      identityLinkId: '63000000-0000-4000-8000-000000000006',
-      requestId: 'request-replay-3',
-    })
-    assert.deepEqual(command, {
-      sourceComparisonId: '63000000-0000-4000-8000-000000000005',
-      sourceComparisonVersion: 2,
-      state: true,
-      identityLinkId: '63000000-0000-4000-8000-000000000006',
-      subject: { kind: 'user', id: '63000000-0000-4000-8000-000000000004' },
-      requestId: 'request-replay-3',
-    })
-  })
-
-  it('cancels a cross-category guest save while preserving the account comparison', async () => {
-    const executor = new PendingActionExecutor({
-      comparison: {
-        async setSavedAfterLoginReplay() {
-          throw new ComparisonError('COMPARISON_REPLAY_TARGET_NOT_ADOPTED', 409)
-        },
-      },
-    })
+  it('cancels a guest comparison save while preserving the account comparison', async () => {
+    const executor = new PendingActionExecutor({})
     const result = await executor.execute({
       action: action({
         action_type: 'save_comparison',
@@ -126,7 +88,7 @@ describe('PendingActionExecutor', () => {
       }),
       userId: '63000000-0000-4000-8000-000000000004',
       identityLinkId: '63000000-0000-4000-8000-000000000006',
-      requestId: 'request-replay-preserve-account',
+      requestId: 'request-replay-3',
     })
     assert.deepEqual(result, { status: 'cancelled', reason: 'account_comparison_preserved' })
   })
