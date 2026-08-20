@@ -50,4 +50,4 @@
 
 production Feature Flag 在 WorkBuddy 接入、Staging 真实 Session/权限验证和人工争议演练前保持关闭。
 
-后端验收基线：`accd040`；GitHub Actions Run [#32354573273](https://github.com/jiadianyan112/VibeCheck/actions/runs/32354573273) 已通过。WorkBuddy 接入时以本文件列出的 SHA 校验 OpenAPI，不得继续调用 P12/A06 归属争议 Mock。
+后端验收基线：`59eece1`；GitHub Actions Run [#32355331970](https://github.com/jiadianyan112/VibeCheck/actions/runs/32355331970) 已通过。WorkBuddy 接入时以本文件列出的 SHA 校验 OpenAPI，不得继续调用 P12/A06 归属争议 Mock。

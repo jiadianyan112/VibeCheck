@@ -60,8 +60,8 @@ Party 和 Reviewer 使用不同路由及 exact projection：
 - OpenAPI：81 paths / 91 operations；SHA-256 见 WorkBuddy 交接文件。
 - 单元/契约：Ownership 输入判别、重复证据、claim token 哈希、三类决定 payload、API actor 绑定、unknown field 和 party/reviewer 路由隔离均覆盖。
 - PostgreSQL fixture：三种终局、两轮撤回 supersedes 历史、证据导致 principal 轮换与 claim 释放、冲突人员预分页隐藏、VerificationRequest 终态保留、Relation/Project/Outbox 原子一致性。
-- GitHub Actions：Run [#32354573273](https://github.com/jiadianyan112/VibeCheck/actions/runs/32354573273) 成功；PostgreSQL 18 上 37 个 append-only migration 重复执行及全量后续夹具通过。
-- 核心工程基线：`accd040`；OpenAPI 为 81 paths / 91 operations，SHA-256 `7550fbd6f968eccd8531df74f4f926338bc336fd15651746251414231a33d4ac`。
+- GitHub Actions：Run [#32355331970](https://github.com/jiadianyan112/VibeCheck/actions/runs/32355331970) 成功；PostgreSQL 18 上 37 个 append-only migration 重复执行及全量后续夹具通过。
+- 核心工程基线：`59eece1`；OpenAPI 为 81 paths / 91 operations，SHA-256 `7550fbd6f968eccd8531df74f4f926338bc336fd15651746251414231a33d4ac`。
 
 ## 7. 未进入本工作包
 
