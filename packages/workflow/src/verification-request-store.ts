@@ -153,8 +153,12 @@ export class PostgresVerificationRequestStore {
         throw workflowError('PROJECT_NOT_FOUND', 404)
       }
       const latest = await client.query<VerificationRequestRow>(
-        `SELECT * FROM workflow.verification_requests
-         WHERE applicant_user_id=$1 AND project_id=$2
+        `SELECT request.* FROM workflow.verification_requests request
+         WHERE request.applicant_user_id=$1 AND request.project_id=$2
+           AND NOT EXISTS (
+             SELECT 1 FROM workflow.verification_requests successor
+             WHERE successor.supersedes_verification_id=request.verification_id
+           )
          ORDER BY created_at DESC,verification_id DESC LIMIT 1 FOR UPDATE`,
         [input.userId, input.projectId],
       )
