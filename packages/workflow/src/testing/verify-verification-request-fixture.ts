@@ -520,7 +520,7 @@ try {
     [decision.resulting_creator_id,secondProjectId],
   )
   await assert.rejects(
-    approveAdditional({label:'duplicate-relation-rollback',
+    approveAdditional({label:'duplicate-rel',
       applicantUserId:managerClaimApplicantId,targetProjectId:secondProjectId,
       mode:'use_existing_link',creatorAccountLinkId:claimedManager.resulting_link_id!,
       targetCreatorId:null,requestedLinkRole:null,authorRole:'co_creator',
