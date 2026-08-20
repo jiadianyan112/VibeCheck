@@ -59,8 +59,9 @@ async function verifyProjectUpdateReference(): Promise<void> {
     `SELECT reference.lifecycle_status,reference.version AS reference_version,
        project_update.version::int AS update_version,project_update.media_reference_ids_json AS media_ids
      FROM media.media_references reference
+     JOIN media.media_resources resource ON resource.media_resource_id=reference.media_resource_id
      JOIN catalog.project_updates project_update ON project_update.update_id=reference.target_id
-     WHERE reference.owner_user_id=$1
+     WHERE resource.owner_user_id=$1
        AND reference.client_request_id='media-fixture-project-update-reference-0001'`,
     [userId],
   )
