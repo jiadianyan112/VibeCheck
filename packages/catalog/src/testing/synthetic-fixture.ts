@@ -451,7 +451,8 @@ async function insertProjects(client: PoolClient): Promise<void> {
          resulting_profile_version_id=$5,approved_link_role='owner',
          approved_permission_profile_id='OWNER_V1',approved_permission_profile_version=1,
          approved_profile_config_hash=$6,status_history_json=status_history_json||$7::jsonb,
-         version=2,decided_at=$8,updated_at=$8+interval '1 microsecond'
+         version=2,decided_at=$8::timestamptz,
+         updated_at=$8::timestamptz+interval '1 microsecond'
        WHERE verification_id=$1 AND status='pending'`,
       [project.verificationId,project.creatorId,fixtureLinkId,project.authorRelationId,
         project.creatorProfileVersionId,linkPermissionProfiles.OWNER_V1.config_hash,
