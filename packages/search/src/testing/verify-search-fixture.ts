@@ -102,7 +102,7 @@ try {
   const navigationFacts=await pool.query<{contexts:number;outbox:number;bridges:number}>(
     `SELECT
        (SELECT count(*)::int FROM search.navigation_contexts WHERE navigation_context_id=$1) AS contexts,
-       (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_id=$1
+       (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_id=$1::text
           AND event_name IN ('feed_item_clicked','project_viewed')) AS outbox,
        (SELECT count(*)::int FROM analytics.identity_bridge_events
           WHERE metric_subject_id='97000000-0000-4000-8000-000000000001') AS bridges`,
