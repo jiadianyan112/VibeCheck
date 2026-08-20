@@ -1,6 +1,6 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0–3 步已完成，第 4 步待开始｜记录日期：2026-08-20**
+**版本：v1.0｜执行状态：第 0–4 步已完成，第 5 步待开始｜记录日期：2026-08-20**
 
 ## 1. 执行基线
 
@@ -21,7 +21,7 @@
 | 1 | WP-05B2b：S3 + GuardDuty 私密材料安全链 | 未扫描不可读；clean/malicious/unscannable/超时/重试通过；API/Worker/IaC/CI 完整 | 已完成 |
 | 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 已完成 |
 | 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 已完成 |
-| 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 待开始 |
+| 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 已完成 |
 | 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 待开始 |
 | 6 | P14–P18 社区和个人闭环 | 互动幂等计数、作者主页、个人中心、通知和登录回放通过 | 待开始 |
 | 7 | A01–A14 正式后台 | 全路由无占位；高风险操作具备鉴权、预览、确认、原因、乐观锁和审计 | 待开始 |
@@ -136,3 +136,21 @@
 - 全仓契约、部署检查、Lint、TypeScript、测试、foundation tests、生产构建及全部既有 PostgreSQL 夹具通过。
 - 同时修复验证 supersedes 链在同时间戳下依赖随机 UUID 排序的旧非确定性，现按无后继链尾判定。
 - 详细事务、安全边界和未纳入范围见 `docs/development/WP-05B4-ownership-dispute.md`。
+
+## 10. 第 4 步完成记录
+
+### 10.1 交付基线
+
+- 核心工程基线：`3dfc15a`；追加 `000038`–`000040`，历史 migration 未修改。
+- P01–P04 增加双品类/九专题版本化字典、专题别名和跨作品公开事件流；0 个匹配作品的专题仍稳定返回。
+- P05→P08 使用 owner-bound、服务端签名并一次消费的 SearchNavigationContext，原子产生 `feed_item_clicked/v2` 与 `project_viewed/v2` 可核验事实。
+- P09 保持同品类 2–5 项和可信完成口径；OTP 登录、PendingAction、公开 OpenAPI 和运行路由均落实“只保留账号比较状态”。
+- P06/P07 的生产语义和正式评估仍按计划留在第 8 步；旧浏览器规则不得在 production 冒充真实能力。
+
+### 10.2 验证证据
+
+- OpenAPI：82 paths / 92 operations；SHA-256 `7928370e7674f80638e5ca451e2a795dd55f8d71a492eb0e9dc481f0dcdb823f`。
+- GitHub Actions：Run [#32362182369](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362182369) 成功。
+- PostgreSQL 18：40 个 append-only migration 新库/重复执行通过；目录、搜索导航归因、比较和既有全量夹具通过。
+- 本地契约、Lint、TypeScript、foundation tests 和生产构建通过；未修改或暂存 WorkBuddy 前端文件。
+- 详细边界见 `docs/development/WP-04-browse-search-comparison.md`；前端接入见 `docs/development/WP-04-workbuddy-handoff.md`。
