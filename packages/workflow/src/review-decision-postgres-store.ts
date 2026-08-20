@@ -445,16 +445,16 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     )
 
     const updatedRequest = await client.query(
-      `UPDATE workflow.verification_requests SET status=$2,
-         decision=CASE WHEN $3='changes_requested' THEN NULL ELSE $3 END,
+      `UPDATE workflow.verification_requests SET status=$2::varchar,
+         decision=CASE WHEN $3::varchar='changes_requested' THEN NULL ELSE $3::varchar END,
          status_history_json=status_history_json||jsonb_build_array(
            jsonb_build_object('status',$2::text,'at',$4::timestamptz)
-         ),decided_at=CASE WHEN $2='changes_requested' THEN NULL ELSE $4 END,
+         ),decided_at=CASE WHEN $2::varchar='changes_requested' THEN NULL ELSE $4::timestamptz END,
          resulting_creator_id=$5,resulting_link_id=$6,resulting_author_relation_id=$7,
          resulting_profile_version_id=$8,approved_link_role=$9,
          approved_permission_profile_id=$10,approved_permission_profile_version=$11,
          approved_profile_config_hash=$12,version=version+1,
-         updated_at=GREATEST($4,updated_at+interval '1 microsecond')
+         updated_at=GREATEST($4::timestamptz,updated_at+interval '1 microsecond')
        WHERE verification_id=$1 AND status='pending' AND version=$13`,
       [request.verification_id,domainStatus,input.decision,input.now,
         approval?.creatorId ?? null,approval?.linkId ?? null,approval?.relationId ?? null,
