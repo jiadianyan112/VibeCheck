@@ -78,6 +78,34 @@ export interface StoredAsset {
   readonly updated_at: Date
 }
 
+export interface StoredCategoryTaxonomy {
+  readonly category_id: CategoryId
+  readonly schema_version: CategorySchemaVersion
+  readonly name: string
+  readonly description: string
+  readonly display_order: number
+  readonly dictionary_version: string
+  readonly project_count: number
+  readonly calculated_at: Date
+  readonly topics: unknown
+}
+
+export interface StoredTopic {
+  readonly topic_id: string
+  readonly category_id: CategoryId
+  readonly canonical_slug: string
+  readonly name: string
+  readonly description: string
+  readonly config_json: unknown
+  readonly filter_snapshot_json: unknown
+  readonly display_order: number
+  readonly dictionary_version: string
+  readonly project_count: number
+  readonly calculated_at: Date
+  readonly alias_resolved: boolean
+  readonly alias_chain_length: number
+}
+
 export interface ListStoredProjectsInput {
   readonly categoryId: CategoryId | null
   readonly snapshotAt: Date
@@ -102,12 +130,23 @@ export interface ListStoredAssetsInput {
   readonly limit: number
 }
 
+export interface ListStoredPublicEventsInput {
+  readonly categoryId: CategoryId | null
+  readonly eventTypes: readonly string[]
+  readonly afterSortAt: Date | null
+  readonly afterEventId: string | null
+  readonly limit: number
+}
+
 export interface CatalogStore {
   listPublicProjects(input: ListStoredProjectsInput): Promise<readonly StoredProject[]>
   getProject(projectId: string): Promise<StoredProject | null>
   getCreator(creatorId: string): Promise<StoredCreator | null>
   listProjectEvents(input: ListStoredEventsInput): Promise<readonly StoredEvent[]>
+  listPublicEvents(input: ListStoredPublicEventsInput): Promise<readonly StoredEvent[]>
   listProjectAssets(input: ListStoredAssetsInput): Promise<readonly StoredAsset[]>
+  getCategoryTaxonomy(categoryId: CategoryId): Promise<StoredCategoryTaxonomy | null>
+  getTopic(slug: string): Promise<StoredTopic | null>
 }
 
 function publicEvidenceJson(alias: string): string {
@@ -346,6 +385,53 @@ export class PostgresCatalogStore implements CatalogStore {
     return Object.freeze(result.rows)
   }
 
+  async listPublicEvents(input: ListStoredPublicEventsInput): Promise<readonly StoredEvent[]> {
+    const result = await this.pool.query<StoredEvent>(
+      `SELECT event.event_id,event.project_id,event.version_id,event.event_type,
+         event.category_change_type,event.event_time,event.time_precision,event.event_sort_at,
+         event.event_sort_rule_version,event.event_summary,event.source_actor,
+         'published'::text AS lifecycle_status,event.supersedes_event_id,
+         COALESCE(event_evidence.evidence_summaries, '[]'::jsonb) AS evidence_summaries,
+         CASE
+           WHEN event_evidence.has_in_review THEN 'has_in_review'
+           WHEN event_evidence.has_insufficient THEN 'has_insufficient_evidence'
+           WHEN event_evidence.has_resolved THEN 'has_resolved'
+           ELSE 'none'
+         END AS evidence_dispute_summary,
+         jsonb_build_object(
+           'project_id', project.project_id,
+           'current_name', project.current_name,
+           'category_id', project.category_id,
+           'access_status', project.access_status
+         ) AS project_summary
+       FROM catalog.events event
+       JOIN catalog.projects project ON project.project_id=event.project_id
+       LEFT JOIN catalog.events replacement ON replacement.supersedes_event_id=event.event_id
+       LEFT JOIN LATERAL (
+         SELECT
+           jsonb_agg(${publicEvidenceJson('evidence')} ORDER BY evidence.captured_at DESC,evidence.evidence_id DESC)
+             AS evidence_summaries,
+           COALESCE(bool_or(evidence.dispute_status='in_review'),false) AS has_in_review,
+           COALESCE(bool_or(evidence.dispute_status='insufficient_evidence'),false) AS has_insufficient,
+           COALESCE(bool_or(evidence.dispute_status='resolved'),false) AS has_resolved
+         FROM catalog.evidence evidence
+         WHERE evidence.event_id=event.event_id
+           AND evidence.visibility='public'
+           AND evidence.validity_status='valid'
+           AND evidence.freshness_status<>'expired'
+       ) event_evidence ON true
+       WHERE project.review_status IN ('published_platform','published_author')
+         AND replacement.event_id IS NULL
+         AND ($1::text IS NULL OR project.category_id=$1)
+         AND (cardinality($2::text[])=0 OR event.event_type=ANY($2::text[]))
+         AND ($3::timestamptz IS NULL OR (event.event_sort_at,event.event_id)<($3::timestamptz,$4::uuid))
+       ORDER BY event.event_sort_at DESC,event.event_id DESC
+       LIMIT $5`,
+      [input.categoryId,input.eventTypes,input.afterSortAt,input.afterEventId,input.limit],
+    )
+    return Object.freeze(result.rows)
+  }
+
   async listProjectAssets(input: ListStoredAssetsInput): Promise<readonly StoredAsset[]> {
     const result = await this.pool.query<StoredAsset>(
       `SELECT asset.asset_id,asset.project_id,asset.asset_type,asset.component_role,
@@ -375,5 +461,85 @@ export class PostgresCatalogStore implements CatalogStore {
       [input.projectId, input.afterUpdatedAt, input.afterAssetId, input.limit],
     )
     return Object.freeze(result.rows)
+  }
+
+  async getCategoryTaxonomy(categoryId: CategoryId): Promise<StoredCategoryTaxonomy | null> {
+    const result = await this.pool.query<StoredCategoryTaxonomy>(
+      `SELECT category.category_id,category.schema_version,category.name,category.description,
+         category.display_order,category.dictionary_version,
+         count(DISTINCT project.project_id)::int AS project_count,
+         statement_timestamp() AS calculated_at,
+         COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+             'topic_id',topic.topic_id,
+             'category_id',topic.category_id,
+             'canonical_slug',topic.canonical_slug,
+             'name',topic.name,
+             'description',topic.description,
+             'config_json',topic.config_json,
+             'filter_snapshot_json',topic.filter_snapshot_json,
+             'display_order',topic.display_order,
+             'dictionary_version',topic.dictionary_version,
+             'project_count',(
+               SELECT count(*)::int
+               FROM catalog.projects topic_project
+               JOIN catalog.project_versions topic_version
+                 ON topic_version.version_id=topic_project.current_version_id
+               WHERE topic_project.review_status IN ('published_platform','published_author')
+                 AND topic_project.category_id=topic.category_id
+                 AND (topic_version.snapshot_json->'category_data')
+                   @> COALESCE(topic.filter_snapshot_json->'category_fields','{}'::jsonb)
+             ),
+             'calculated_at',statement_timestamp(),
+             'alias_resolved',false,
+             'alias_chain_length',0
+           ) ORDER BY topic.display_order,topic.topic_id)
+           FROM taxonomy.topics topic
+           WHERE topic.category_id=category.category_id AND topic.status='active'
+         ),'[]'::jsonb) AS topics
+       FROM taxonomy.categories category
+       LEFT JOIN catalog.projects project
+         ON project.category_id=category.category_id
+        AND project.review_status IN ('published_platform','published_author')
+       WHERE category.category_id=$1 AND category.status='active'
+       GROUP BY category.category_id,category.schema_version,category.name,category.description,
+         category.display_order,category.dictionary_version`,
+      [categoryId],
+    )
+    return result.rows[0] ?? null
+  }
+
+  async getTopic(slug: string): Promise<StoredTopic | null> {
+    const result = await this.pool.query<StoredTopic>(
+      `WITH requested AS (
+         SELECT topic.*,false AS alias_resolved,0::int AS alias_chain_length
+         FROM taxonomy.topics topic WHERE topic.canonical_slug=$1
+         UNION ALL
+         SELECT topic.*,true AS alias_resolved,1::int AS alias_chain_length
+         FROM taxonomy.topic_aliases alias
+         JOIN taxonomy.topics topic ON topic.topic_id=alias.target_topic_id
+         WHERE alias.alias_slug=$1 AND alias.status='active'
+       )
+       SELECT requested.topic_id,requested.category_id,requested.canonical_slug,
+         requested.name,requested.description,requested.config_json,
+         requested.filter_snapshot_json,requested.display_order,requested.dictionary_version,
+         count(project.project_id)::int AS project_count,statement_timestamp() AS calculated_at,
+         requested.alias_resolved,requested.alias_chain_length
+       FROM requested
+       LEFT JOIN catalog.projects project
+         ON project.category_id=requested.category_id
+        AND project.review_status IN ('published_platform','published_author')
+       LEFT JOIN catalog.project_versions version ON version.version_id=project.current_version_id
+       WHERE requested.status='active'
+         AND (project.project_id IS NULL OR (version.snapshot_json->'category_data')
+           @> COALESCE(requested.filter_snapshot_json->'category_fields','{}'::jsonb))
+       GROUP BY requested.topic_id,requested.category_id,requested.canonical_slug,
+         requested.name,requested.description,requested.config_json,
+         requested.filter_snapshot_json,requested.display_order,requested.dictionary_version,
+         requested.alias_resolved,requested.alias_chain_length
+       LIMIT 1`,
+      [slug],
+    )
+    return result.rows[0] ?? null
   }
 }

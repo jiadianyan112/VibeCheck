@@ -3272,6 +3272,7 @@ const projectCard = Object.freeze({
 class FakeCatalogService implements ApiCatalogService {
   listInput: Parameters<ApiCatalogService['listProjects']>[0] | null = null
   eventInput: Parameters<ApiCatalogService['listProjectEvents']>[0] | null = null
+  publicEventInput: Parameters<ApiCatalogService['listPublicEvents']>[0] | null = null
   assetInput: Parameters<ApiCatalogService['listProjectAssets']>[0] | null = null
 
   async listProjects(input: Parameters<ApiCatalogService['listProjects']>[0]): Promise<ProjectListProjection> {
@@ -3360,6 +3361,45 @@ class FakeCatalogService implements ApiCatalogService {
     })
   }
 
+  async listPublicEvents(input: Parameters<ApiCatalogService['listPublicEvents']>[0]): Promise<EventPage> {
+    this.publicEventInput=input
+    return Object.freeze({items:Object.freeze([]),next_cursor:null})
+  }
+
+  async getCategoryTaxonomy(): Promise<Awaited<ReturnType<ApiCatalogService['getCategoryTaxonomy']>>> {
+    return Object.freeze({
+      category_id: 'ai_learning_quiz',
+      schema_version: 'learning.v1',
+      name: 'AI 学习与练习工具',
+      description: '学习工具分类',
+      order: 10,
+      status: 'active',
+      dictionary_version: 1,
+      project_count: 1,
+      calculated_at: '2026-08-10T00:00:00.000Z',
+      topics: Object.freeze([]),
+      etag: 'a'.repeat(64),
+    })
+  }
+
+  async getTopic(): Promise<Awaited<ReturnType<ApiCatalogService['getTopic']>>> {
+    return Object.freeze({
+      topic_id: '38000000-0000-4000-8000-000000000001',
+      category_id: 'personal_site_portfolio',
+      canonical_slug: 'personal-sites-portfolios',
+      name: '个人主页与作品集',
+      description: '作品集专题',
+      config: Object.freeze({}),
+      filter_snapshot: Object.freeze({ category_id: 'personal_site_portfolio', category_fields: {} }),
+      order: 10,
+      project_count: 1,
+      calculated_at: '2026-08-10T00:00:00.000Z',
+      dictionary_version: 1,
+      alias_resolved: false,
+      alias_chain_length: 0,
+    })
+  }
+
   async listProjectAssets(input: Parameters<ApiCatalogService['listProjectAssets']>[0]): Promise<AssetPage> {
     this.assetInput = input
     return Object.freeze({
@@ -3412,6 +3452,21 @@ test('public catalog routes preserve list query state and emit versioned cache v
       cursor: null,
     })
     assert.equal((await list.json() as { items: unknown[] }).items.length, 1)
+
+    const publicEvents=await fetch(`${runtime.baseUrl}/api/v1/events?category_id=ai_learning_quiz&event_types=version_updated`)
+    assert.equal(publicEvents.status,200)
+    assert.deepEqual(catalog.publicEventInput,{
+      categoryId:'ai_learning_quiz',eventTypes:['version_updated'],cursor:null,
+    })
+
+    const taxonomy=await fetch(`${runtime.baseUrl}/api/v1/taxonomies/ai_learning_quiz?version=1`)
+    assert.equal(taxonomy.status,200)
+    assert.equal(taxonomy.headers.get('etag'),`"taxonomy-${'a'.repeat(64)}"`)
+    assert.equal((await taxonomy.json() as {dictionary_version:number}).dictionary_version,1)
+
+    const topic=await fetch(`${runtime.baseUrl}/api/v1/topics/personal-sites-portfolios`)
+    assert.equal(topic.status,200)
+    assert.equal((await topic.json() as {canonical_slug:string}).canonical_slug,'personal-sites-portfolios')
 
     const detail = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectCard.project_id}`)
     assert.equal(detail.status, 200)

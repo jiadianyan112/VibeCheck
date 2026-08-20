@@ -5,6 +5,7 @@ import type { CatalogStore, StoredAsset, StoredEvent, StoredProject } from './st
 import type {
   AssetPage,
   AssetPublicProjection,
+  CategoryTaxonomyProjection,
   CategoryId,
   CreatorProjection,
   CreatorSummary,
@@ -15,6 +16,7 @@ import type {
   LatestEventSummary,
   ListProjectAssetsInput,
   ListProjectEventsInput,
+  ListPublicEventsInput,
   ListProjectsInput,
   ProjectCardProjection,
   ProjectListProjection,
@@ -22,6 +24,7 @@ import type {
   ProjectSummary,
   PublicFeedEventProjection,
   RelationPublicProjection,
+  TopicProjection,
 } from './types.js'
 import {
   assetAcquisitionMethods,
@@ -59,6 +62,15 @@ interface AssetCursorPayload {
   readonly project_id: string
   readonly after_updated_at: string
   readonly after_asset_id: string
+}
+
+interface PublicEventCursorPayload {
+  readonly v: 1
+  readonly kind: 'public_events'
+  readonly category_id: CategoryId | null
+  readonly event_types: readonly EventType[]
+  readonly after_sort_at: string
+  readonly after_event_id: string
 }
 
 const publicPageSize = 30
@@ -359,6 +371,80 @@ export class CatalogService {
     return Object.freeze({ items, next_cursor: nextCursor })
   }
 
+  async listPublicEvents(input: ListPublicEventsInput): Promise<EventPage> {
+    if (input.categoryId !== null && !categoryIds.includes(input.categoryId)) {
+      throw catalogError('CATEGORY_ID_INVALID', 400)
+    }
+    const uniqueTypes = [...new Set(input.eventTypes)]
+    if (uniqueTypes.length !== input.eventTypes.length || uniqueTypes.some((type) => !eventTypes.includes(type))) {
+      throw catalogError('EVENT_TYPES_INVALID', 400)
+    }
+    const cursor = input.cursor === null ? null : this.decodePublicEventCursor(input.cursor)
+    if (cursor !== null && (
+      cursor.category_id !== input.categoryId ||
+      JSON.stringify(cursor.event_types) !== JSON.stringify(uniqueTypes)
+    )) throw catalogError('CURSOR_QUERY_MISMATCH', 400)
+    const stored = await this.store.listPublicEvents({
+      categoryId: input.categoryId,
+      eventTypes: uniqueTypes,
+      afterSortAt: cursor === null ? null : new Date(cursor.after_sort_at),
+      afterEventId: cursor?.after_event_id ?? null,
+      limit: publicPageSize + 1,
+    })
+    const hasMore = stored.length > publicPageSize
+    const page = stored.slice(0, publicPageSize)
+    const items = Object.freeze(page.map((event) => this.event(event)))
+    const last = page.at(-1)
+    const nextCursor = hasMore && last
+      ? this.encodeSignedCursor({
+          v: 1,
+          kind: 'public_events',
+          category_id: input.categoryId,
+          event_types: uniqueTypes,
+          after_sort_at: last.event_sort_at.toISOString(),
+          after_event_id: last.event_id,
+        } satisfies PublicEventCursorPayload)
+      : null
+    return Object.freeze({ items, next_cursor: nextCursor })
+  }
+
+  async getCategoryTaxonomy(categoryId: string): Promise<CategoryTaxonomyProjection> {
+    if (!categoryIds.includes(categoryId as CategoryId)) throw catalogError('CATEGORY_ID_INVALID', 400)
+    const stored = await this.store.getCategoryTaxonomy(categoryId as CategoryId)
+    if (stored === null) throw catalogError('TAXONOMY_NOT_FOUND', 404)
+    const calculatedAt = stored.calculated_at.toISOString()
+    const topics = this.topics(stored.topics, calculatedAt)
+    const dictionaryVersion = parseReadVersion(stored.dictionary_version)
+    const etag = createHash('sha256').update(JSON.stringify({
+      category_id: stored.category_id,
+      schema_version: stored.schema_version,
+      dictionary_version: dictionaryVersion,
+      topics: topics.map(({ topic_id, dictionary_version }) => [topic_id, dictionary_version]),
+    })).digest('hex')
+    return Object.freeze({
+      category_id: stored.category_id,
+      schema_version: stored.schema_version,
+      name: stored.name,
+      description: stored.description,
+      order: stored.display_order,
+      status: 'active',
+      dictionary_version: dictionaryVersion,
+      project_count: stored.project_count,
+      calculated_at: calculatedAt,
+      topics,
+      etag,
+    })
+  }
+
+  async getTopic(slug: string): Promise<TopicProjection> {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 80) {
+      throw catalogError('TOPIC_NOT_FOUND', 404)
+    }
+    const stored = await this.store.getTopic(slug)
+    if (stored === null) throw catalogError('TOPIC_NOT_FOUND', 404)
+    return this.topic(stored, stored.calculated_at.toISOString())
+  }
+
   async listProjectAssets(input: ListProjectAssetsInput): Promise<AssetPage> {
     const projectId = requireUuid(input.projectId)
     await this.getPublicStoredProject(projectId)
@@ -564,11 +650,59 @@ export class CatalogService {
     })
   }
 
+  private topics(value: unknown, fallbackCalculatedAt: string): readonly TopicProjection[] {
+    if (!Array.isArray(value) || value.length > 500) throw catalogError('TAXONOMY_PROJECTION_INVALID', 500)
+    return Object.freeze(value.map((entry) => this.topic(entry, fallbackCalculatedAt)))
+  }
+
+  private topic(value: unknown, fallbackCalculatedAt: string): TopicProjection {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw catalogError('TAXONOMY_PROJECTION_INVALID', 500)
+    }
+    const record = value as Record<string, unknown>
+    const config = record.config_json
+    const filterSnapshot = record.filter_snapshot_json
+    const calculatedAt = record.calculated_at instanceof Date
+      ? record.calculated_at.toISOString()
+      : typeof record.calculated_at === 'string' && !Number.isNaN(Date.parse(record.calculated_at))
+        ? new Date(record.calculated_at).toISOString()
+        : fallbackCalculatedAt
+    if (
+      typeof record.topic_id !== 'string' || !isUuid(record.topic_id) ||
+      typeof record.category_id !== 'string' || !categoryIds.includes(record.category_id as CategoryId) ||
+      typeof record.canonical_slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(record.canonical_slug) ||
+      typeof record.name !== 'string' || record.name.length < 1 || record.name.length > 80 ||
+      typeof record.description !== 'string' || record.description.length > 1_000 ||
+      config === null || typeof config !== 'object' || Array.isArray(config) ||
+      filterSnapshot === null || typeof filterSnapshot !== 'object' || Array.isArray(filterSnapshot) ||
+      typeof record.display_order !== 'number' || !Number.isSafeInteger(record.display_order) || record.display_order < 0 ||
+      typeof record.project_count !== 'number' || !Number.isSafeInteger(record.project_count) || record.project_count < 0 ||
+      typeof record.alias_resolved !== 'boolean' ||
+      typeof record.alias_chain_length !== 'number' || !Number.isSafeInteger(record.alias_chain_length) ||
+      record.alias_chain_length < 0 || record.alias_chain_length > 5
+    ) throw catalogError('TAXONOMY_PROJECTION_INVALID', 500)
+    return Object.freeze({
+      topic_id: record.topic_id,
+      category_id: record.category_id as CategoryId,
+      canonical_slug: record.canonical_slug,
+      name: record.name,
+      description: record.description,
+      config: Object.freeze(config as Record<string, unknown>),
+      filter_snapshot: Object.freeze(filterSnapshot as Record<string, unknown>),
+      order: record.display_order,
+      project_count: record.project_count,
+      calculated_at: calculatedAt,
+      dictionary_version: parseReadVersion(record.dictionary_version as string | number),
+      alias_resolved: record.alias_resolved,
+      alias_chain_length: record.alias_chain_length,
+    })
+  }
+
   private encodeCursor(payload: CursorPayload): string {
     return this.encodeSignedCursor(payload)
   }
 
-  private encodeSignedCursor(payload: CursorPayload | EventCursorPayload | AssetCursorPayload): string {
+  private encodeSignedCursor(payload: CursorPayload | EventCursorPayload | AssetCursorPayload | PublicEventCursorPayload): string {
     const body = encodePart(JSON.stringify(payload))
     const signature = encodePart(createHmac('sha256', this.cursorSecret).update(body).digest())
     return `${body}.${signature}`
@@ -615,6 +749,18 @@ export class CatalogService {
       throw catalogError('CURSOR_INVALID', 400)
     }
     return cursor as AssetCursorPayload
+  }
+
+  private decodePublicEventCursor(value: string): PublicEventCursorPayload {
+    const cursor = this.decodeSignedCursor(value) as Partial<PublicEventCursorPayload>
+    if (
+      cursor.v !== 1 || cursor.kind !== 'public_events' ||
+      (cursor.category_id !== null && !categoryIds.includes(cursor.category_id as CategoryId)) ||
+      !Array.isArray(cursor.event_types) || cursor.event_types.some((type) => !eventTypes.includes(type)) ||
+      typeof cursor.after_sort_at !== 'string' || Number.isNaN(Date.parse(cursor.after_sort_at)) ||
+      typeof cursor.after_event_id !== 'string' || !isUuid(cursor.after_event_id)
+    ) throw catalogError('CURSOR_INVALID', 400)
+    return cursor as PublicEventCursorPayload
   }
 
   private decodeSignedCursor(value: string): unknown {

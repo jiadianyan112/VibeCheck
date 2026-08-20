@@ -256,6 +256,42 @@ export interface EventPage {
   readonly next_cursor: string | null
 }
 
+export interface ListPublicEventsInput {
+  readonly categoryId: CategoryId | null
+  readonly eventTypes: readonly EventType[]
+  readonly cursor: string | null
+}
+
+export interface TopicProjection {
+  readonly topic_id: string
+  readonly category_id: CategoryId
+  readonly canonical_slug: string
+  readonly name: string
+  readonly description: string
+  readonly config: Readonly<Record<string, unknown>>
+  readonly filter_snapshot: Readonly<Record<string, unknown>>
+  readonly order: number
+  readonly project_count: number
+  readonly calculated_at: string
+  readonly dictionary_version: number
+  readonly alias_resolved: boolean
+  readonly alias_chain_length: number
+}
+
+export interface CategoryTaxonomyProjection {
+  readonly category_id: CategoryId
+  readonly schema_version: CategorySchemaVersion
+  readonly name: string
+  readonly description: string
+  readonly order: number
+  readonly status: 'active'
+  readonly dictionary_version: number
+  readonly project_count: number
+  readonly calculated_at: string
+  readonly topics: readonly TopicProjection[]
+  readonly etag: string
+}
+
 export interface AssetPublicProjection {
   readonly asset_id: string
   readonly project_id: string

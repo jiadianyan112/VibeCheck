@@ -44,6 +44,7 @@
     "contracts:check": "npm run check -w @vibecheck/contracts",
     "catalog:fixture:load": "npm run fixture:load -w @vibecheck/catalog",
     "catalog:fixture:verify": "npm run fixture:verify -w @vibecheck/catalog",
+    "catalog:discovery:verify": "npm run discovery:verify -w @vibecheck/catalog",
     "catalog:profile:verify": "npm run profile:verify -w @vibecheck/catalog",
     "catalog:authorization:verify": "npm run authorization:verify -w @vibecheck/catalog",
     "catalog:project-update:verify": "npm run project-update:verify -w @vibecheck/catalog",

@@ -16,11 +16,13 @@ import {
   type AssetResolutionCommand,
   type AssetResolutionProjection,
   type CategoryId,
+  type CategoryTaxonomyProjection,
   type CreatorProjection,
   type EventPage,
   type EventType,
   type ProjectListProjection,
   type ProjectProjection,
+  type TopicProjection,
   type CreateProjectUpdateCommand,
   type GetProjectUpdateCommand,
   type PatchProjectUpdateCommand,
@@ -243,6 +245,13 @@ export interface ApiCatalogService {
     readonly includeSuperseded: boolean
     readonly cursor: string | null
   }): Promise<EventPage>
+  listPublicEvents(input: {
+    readonly categoryId: CategoryId | null
+    readonly eventTypes: readonly EventType[]
+    readonly cursor: string | null
+  }): Promise<EventPage>
+  getCategoryTaxonomy(categoryId: string): Promise<CategoryTaxonomyProjection>
+  getTopic(slug: string): Promise<TopicProjection>
   listProjectAssets(input: {
     readonly projectId: string
     readonly cursor: string | null
@@ -2658,13 +2667,17 @@ async function handleCatalogRequest(
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
   const projectsPath = '/api/v1/projects'
+  const publicEventsPath = '/api/v1/events'
   const projectMatch = path.match(/^\/api\/v1\/projects\/([^/]+)$/)
   const projectEventsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/events$/)
   const projectAssetsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/assets$/)
   const creatorMatch = path.match(/^\/api\/v1\/creators\/([^/]+)$/)
+  const taxonomyMatch = path.match(/^\/api\/v1\/taxonomies\/([^/]+)$/)
+  const topicMatch = path.match(/^\/api\/v1\/topics\/([^/]+)$/)
   if (
-    path !== projectsPath && projectMatch === null && projectEventsMatch === null &&
-    projectAssetsMatch === null && creatorMatch === null
+    path !== projectsPath && path !== publicEventsPath && projectMatch === null &&
+    projectEventsMatch === null && projectAssetsMatch === null && creatorMatch === null &&
+    taxonomyMatch === null && topicMatch === null
   ) return null
   if (method !== 'GET') return null
   const catalog = requireCatalog(dependencies)
@@ -2689,6 +2702,44 @@ async function handleCatalogRequest(
       cursor: url.searchParams.get('cursor'),
     })
     writeJson(response, 200, result, requestId, 'public, max-age=30, stale-while-revalidate=60')
+    return 200
+  }
+
+  if (path === publicEventsPath) {
+    exactQueryKeys(url.searchParams, ['category_id','event_types','cursor'])
+    const categoryValue = url.searchParams.get('category_id')
+    const rawTypes = url.searchParams.get('event_types')
+    const parsedTypes = rawTypes === null ? [] : rawTypes.split(',')
+    if (
+      parsedTypes.some((value) => !eventTypes.includes(value as EventType)) ||
+      new Set(parsedTypes).size !== parsedTypes.length
+    ) throw new CatalogError('EVENT_TYPES_INVALID',400)
+    const result = await catalog.listPublicEvents({
+      categoryId: categoryValue as CategoryId | null,
+      eventTypes: parsedTypes as EventType[],
+      cursor: url.searchParams.get('cursor'),
+    })
+    writeJson(response,200,result,requestId,'public, max-age=30, stale-while-revalidate=60')
+    return 200
+  }
+
+  if (taxonomyMatch !== null) {
+    exactQueryKeys(url.searchParams,['version'])
+    const version = url.searchParams.get('version')
+    const result = await catalog.getCategoryTaxonomy(taxonomyMatch[1]!)
+    if (version !== null && version !== String(result.dictionary_version)) {
+      throw new CatalogError('TAXONOMY_VERSION_NOT_FOUND',410)
+    }
+    response.setHeader('etag',`"taxonomy-${result.etag}"`)
+    writeJson(response,200,result,requestId,'public, max-age=300, stale-while-revalidate=3600')
+    return 200
+  }
+
+  if (topicMatch !== null) {
+    exactQueryKeys(url.searchParams,[])
+    const result = await catalog.getTopic(topicMatch[1]!)
+    response.setHeader('etag',`W/"topic-${result.topic_id}-${result.dictionary_version}"`)
+    writeJson(response,200,result,requestId,'public, max-age=3600')
     return 200
   }
 

@@ -10,8 +10,10 @@ import type {
   ListStoredProjectsInput,
   StoredAsset,
   StoredCreator,
+  StoredCategoryTaxonomy,
   StoredEvent,
   StoredProject,
+  StoredTopic,
 } from './store.js'
 
 const projectIds = [
@@ -145,6 +147,8 @@ class MemoryCatalogStore implements CatalogStore {
   readonly calls: ListStoredProjectsInput[] = []
   readonly eventCalls: ListStoredEventsInput[] = []
   readonly assetCalls: ListStoredAssetsInput[] = []
+  categoryTaxonomy: StoredCategoryTaxonomy | null = null
+  topic: StoredTopic | null = null
   constructor(
     private readonly projects: StoredProject[],
     private readonly creator: StoredCreator | null = null,
@@ -175,6 +179,24 @@ class MemoryCatalogStore implements CatalogStore {
       : this.events.findIndex(({ event_id }) => event_id === input.afterEventId) + 1
     return this.events.slice(afterIndex, afterIndex + input.limit)
   }
+
+  async listPublicEvents(input: Parameters<CatalogStore['listPublicEvents']>[0]): Promise<readonly StoredEvent[]> {
+    this.eventCalls.push({
+      projectId: '',
+      eventTypes: input.eventTypes,
+      includeSuperseded: false,
+      afterSortAt: input.afterSortAt,
+      afterEventId: input.afterEventId,
+      limit: input.limit,
+    })
+    const afterIndex = input.afterEventId === null
+      ? 0
+      : this.events.findIndex(({ event_id }) => event_id === input.afterEventId) + 1
+    return this.events.slice(afterIndex,afterIndex+input.limit)
+  }
+
+  async getCategoryTaxonomy(): Promise<StoredCategoryTaxonomy | null> { return this.categoryTaxonomy }
+  async getTopic(): Promise<StoredTopic | null> { return this.topic }
 
   async listProjectAssets(input: ListStoredAssetsInput): Promise<readonly StoredAsset[]> {
     this.assetCalls.push(input)
@@ -339,5 +361,50 @@ describe('CatalogService public projections', () => {
       invalidAssetService.listProjectAssets({ projectId: projectIds[0], cursor: null }),
       (error: unknown) => error instanceof CatalogError && error.code === 'CATALOG_ASSET_PROJECTION_INVALID',
     )
+  })
+
+  it('returns a public cross-project event feed with a query-bound cursor', async () => {
+    const events = Array.from({ length: 31 },(_,index) => ({
+      ...storedEvent(index%2),
+      event_id: `${String((index%8)+1).repeat(8)}-${String((index%8)+1).repeat(4)}-4${String((index%8)+1).repeat(3)}-8${String((index%8)+1).repeat(3)}-${index.toString().padStart(12,'0')}`,
+    }))
+    const service = new CatalogService({
+      store: new MemoryCatalogStore([storedProject(0)],null,events),
+      cursorSecret: 'catalog-test-secret-at-least-thirty-two-characters',
+    })
+    const first = await service.listPublicEvents({
+      categoryId: 'ai_learning_quiz',eventTypes: ['version_updated'],cursor: null,
+    })
+    assert.equal(first.items.length,30)
+    assert.ok(first.next_cursor)
+    await assert.rejects(
+      service.listPublicEvents({categoryId: null,eventTypes: ['version_updated'],cursor: first.next_cursor}),
+      (error:unknown)=>error instanceof CatalogError&&error.code==='CURSOR_QUERY_MISMATCH',
+    )
+  })
+
+  it('returns only canonical taxonomy fields and makes alias resolution explicit',async()=>{
+    const store=new MemoryCatalogStore([storedProject(0)])
+    const rawTopic:StoredTopic={
+      topic_id:'38000000-0000-4000-8000-000000000004',category_id:'ai_learning_quiz',
+      canonical_slug:'daily-practice',name:'刷题',description:'持续完成练习',config_json:{},
+      filter_snapshot_json:{category_id:'ai_learning_quiz',category_fields:{use_scenarios:['daily_practice']}},
+      display_order:40,dictionary_version:'2',project_count:1,
+      calculated_at:new Date('2026-08-20T00:00:00.000Z'),alias_resolved:true,alias_chain_length:1,
+    }
+    store.topic=rawTopic
+    store.categoryTaxonomy={
+      category_id:'ai_learning_quiz',schema_version:'learning.v1',name:'AI 学习与练习工具',
+      description:'学习工具分类',display_order:10,dictionary_version:'3',project_count:1,
+      calculated_at:new Date('2026-08-20T00:00:00.000Z'),topics:[{...rawTopic,alias_resolved:false,alias_chain_length:0}],
+    }
+    const service=new CatalogService({store,cursorSecret:'catalog-test-secret-at-least-thirty-two-characters'})
+    const taxonomy=await service.getCategoryTaxonomy('ai_learning_quiz')
+    assert.equal(taxonomy.topics[0]!.canonical_slug,'daily-practice')
+    assert.equal(taxonomy.dictionary_version,3)
+    assert.match(taxonomy.etag,/^[0-9a-f]{64}$/)
+    const alias=await service.getTopic('old-daily-practice')
+    assert.equal(alias.alias_resolved,true)
+    assert.equal(alias.alias_chain_length,1)
   })
 })

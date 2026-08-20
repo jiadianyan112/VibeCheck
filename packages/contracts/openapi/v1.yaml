@@ -2321,6 +2321,87 @@ paths:
         '410': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/events:
+    get:
+      tags: [Catalog]
+      operationId: OP-EVENT-PUBLIC-LIST
+      summary: List public current event heads across all visible projects
+      parameters:
+        - in: query
+          name: category_id
+          required: false
+          schema: { $ref: '#/components/schemas/CategoryId' }
+        - in: query
+          name: event_types
+          required: false
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 12
+            uniqueItems: true
+            items: { $ref: '#/components/schemas/EventType' }
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+      responses:
+        '200':
+          description: Stable page ordered by event_sort.v1 and event_id descending; restricted projects are omitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /api/v1/taxonomies/{category_id}:
+    get:
+      tags: [Catalog]
+      operationId: OP-TAX-GET
+      summary: Read one active versioned category dictionary and its canonical topics
+      parameters:
+        - in: path
+          name: category_id
+          required: true
+          schema: { $ref: '#/components/schemas/CategoryId' }
+        - in: query
+          name: version
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Active dictionary; hidden and restricted topics are omitted.
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryTaxonomyProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+  /api/v1/topics/{slug}:
+    get:
+      tags: [Catalog]
+      operationId: OP-TOPIC-GET
+      summary: Resolve a canonical or active alias slug to one public topic projection
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      responses:
+        '200':
+          description: Canonical topic and immutable filter snapshot; alias hits are explicit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopicProjection' }
+        '404': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
   /api/v1/projects:
     get:
       tags: [Catalog]
@@ -4762,6 +4843,71 @@ components:
           maxItems: 30
           items: { $ref: '#/components/schemas/PublicFeedEventProjection' }
         next_cursor: { type: [string, 'null'], maxLength: 1024 }
+    TopicProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - topic_id
+        - category_id
+        - canonical_slug
+        - name
+        - description
+        - config
+        - filter_snapshot
+        - order
+        - project_count
+        - calculated_at
+        - dictionary_version
+        - alias_resolved
+        - alias_chain_length
+      properties:
+        topic_id: { type: string, format: uuid }
+        category_id: { $ref: '#/components/schemas/CategoryId' }
+        canonical_slug:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 1000 }
+        config: { type: object, additionalProperties: true }
+        filter_snapshot: { type: object, additionalProperties: true }
+        order: { type: integer, minimum: 0 }
+        project_count: { type: integer, minimum: 0 }
+        calculated_at: { type: string, format: date-time }
+        dictionary_version: { type: integer, minimum: 1 }
+        alias_resolved: { type: boolean }
+        alias_chain_length: { type: integer, minimum: 0, maximum: 5 }
+    CategoryTaxonomyProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - category_id
+        - schema_version
+        - name
+        - description
+        - order
+        - status
+        - dictionary_version
+        - project_count
+        - calculated_at
+        - topics
+        - etag
+      properties:
+        category_id: { $ref: '#/components/schemas/CategoryId' }
+        schema_version: { type: string, enum: [learning.v1, portfolio.v1] }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 1000 }
+        order: { type: integer, minimum: 0 }
+        status: { const: active }
+        dictionary_version: { type: integer, minimum: 1 }
+        project_count: { type: integer, minimum: 0 }
+        calculated_at: { type: string, format: date-time }
+        topics:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/TopicProjection' }
+        etag: { type: string, pattern: '^[0-9a-f]{64}$' }
     AssetPublicProjection:
       type: object
       additionalProperties: false

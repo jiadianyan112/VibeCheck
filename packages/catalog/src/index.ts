@@ -38,10 +38,13 @@ export {
   type CatalogStore,
   type ListStoredAssetsInput,
   type ListStoredEventsInput,
+  type ListStoredPublicEventsInput,
   type ListStoredProjectsInput,
   type StoredAsset,
   type StoredCreator,
   type StoredEvent,
+  type StoredCategoryTaxonomy,
+  type StoredTopic,
   type StoredProject,
 } from './store.js'
 export {
@@ -62,6 +65,7 @@ export {
   type AssetType,
   type CategoryChangeType,
   type CategoryId,
+  type CategoryTaxonomyProjection,
   type CategorySchemaVersion,
   type CreatorProjection,
   type CreatorSummary,
@@ -72,6 +76,7 @@ export {
   type LearningSchemaV1,
   type ListProjectAssetsInput,
   type ListProjectEventsInput,
+  type ListPublicEventsInput,
   type ListProjectsInput,
   type PortfolioSchemaV1,
   type ProjectCardProjection,
@@ -84,6 +89,7 @@ export {
   type PublicFeedEventProjection,
   type RelationPublicProjection,
   type TimePrecision,
+  type TopicProjection,
 } from './types.js'
 export { parseProjectSnapshot } from './validation.js'
 export {

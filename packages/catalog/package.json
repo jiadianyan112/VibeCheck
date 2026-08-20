@@ -20,6 +20,7 @@
     "asset:resolve:verify": "tsx src/testing/verify-asset-resolution.ts",
     "fixture:load": "tsx src/testing/load-synthetic-fixture.ts",
     "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
+    "discovery:verify": "tsx src/testing/verify-discovery-fixture.ts",
     "profile:verify": "tsx src/testing/verify-link-permission-profiles.ts",
     "authorization:verify": "tsx src/testing/verify-author-authorization.ts",
     "project-update:verify": "tsx src/testing/verify-project-update-drafts.ts",
