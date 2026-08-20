@@ -45,6 +45,7 @@ describe('discoverMigrations', () => {
         '000034_verification_material_control_plane.sql',
         '000035_verification_material_scan_polling.sql',
         '000036_author_verification_lifecycle.sql',
+        '000037_ownership_dispute_lifecycle.sql',
       ],
     )
     for (const migration of migrations) {
