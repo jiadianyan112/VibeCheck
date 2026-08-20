@@ -36,6 +36,16 @@ class FakeStore implements ReviewDecisionStore {
       schema_version: 'review_decision.v1',
       domain_status: input.resultingStatus,
       outbox_status: 'pending',
+      resulting_creator_id: null,
+      resulting_link_id: null,
+      resulting_author_relation_id: null,
+      resulting_profile_version_id: null,
+      approved_link_role: null,
+      approved_permission_profile_ref: null,
+      effective_capabilities: Object.freeze([]),
+      effective_field_permissions: Object.freeze([]),
+      creator_aggregate_version: null,
+      owner_link_set_version: null,
     })
   }
 }
@@ -121,5 +131,40 @@ describe('ReviewDecisionService', () => {
       (error: unknown) => typeof error === 'object' && error !== null &&
         'code' in error && error.code === 'REVIEW_DECISION_SCHEMA_INVALID',
     )
+  })
+
+  it('normalizes the exact verification approval union for an identity reviewer', async () => {
+    const store=new FakeStore()
+    await service(store).decideReview(command({
+      actor:Object.freeze({...actor,permissions:Object.freeze(['admin:identity_review'])}),
+      reasonCode:'verification_approved',
+      decisionPayload:{
+        author_role:'co_creator',field_permissions:['/project_core/current_name'],
+        policy_version:'creator_link.v1',expected_creator_aggregate_version:3,
+        expected_owner_link_set_version:1,expected_reused_link_version:null,
+        approved_link_role:'manager',approved_permission_profile_ref:{
+          profile_id:'MANAGER_V1',profile_version:1,config_hash:'a'.repeat(64),
+        },
+      },
+    }))
+    assert.deepEqual(store.input?.decisionPayload,{
+      author_role:'co_creator',field_permissions:['/project_core/current_name'],
+      policy_version:'creator_link.v1',expected_creator_aggregate_version:3,
+      expected_owner_link_set_version:1,expected_reused_link_version:null,
+      approved_link_role:'manager',approved_permission_profile_ref:{
+        profile_id:'MANAGER_V1',profile_version:1,config_hash:'a'.repeat(64),
+      },
+    })
+  })
+
+  it('rejects verification branch data on non-approve decisions', async () => {
+    await assert.rejects(()=>service(new FakeStore()).decideReview(command({
+      decision:'reject',reasonCode:'verification_rejected',decisionPayload:{
+        author_role:'owner',field_permissions:[],policy_version:'creator_link.v1',
+        expected_creator_aggregate_version:null,expected_owner_link_set_version:null,
+        expected_reused_link_version:null,
+      },
+    })),(error:unknown)=>typeof error==='object'&&error!==null&&'code' in error&&
+      error.code==='REVIEW_DECISION_SCHEMA_INVALID')
   })
 })

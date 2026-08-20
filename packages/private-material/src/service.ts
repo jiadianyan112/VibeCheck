@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 
 import { privateMaterialError } from './errors.js'
 import {
@@ -17,6 +17,12 @@ import {
   type PrivateMaterialStorage,
   type RevokeMaterialCommand,
   type RevokeMaterialProjection,
+  type ReviewerMaterialCommand,
+  type VerificationMaterialReviewerProjection,
+  type CreateMaterialReadGrantCommand,
+  type MaterialReadGrantProjection,
+  type RedeemMaterialReadGrantCommand,
+  type MaterialReadRedemptionProjection,
   type StorageKeyCiphertext,
   type VerificationMaterialMime,
 } from './types.js'
@@ -29,11 +35,16 @@ export interface PrivateMaterialStorePort {
   getOperationReplay: PostgresPrivateMaterialStore['getOperationReplay']
   complete: PostgresPrivateMaterialStore['complete']
   revoke: PostgresPrivateMaterialStore['revoke']
+  getForReviewer: PostgresPrivateMaterialStore['getForReviewer']
+  createReadGrant: PostgresPrivateMaterialStore['createReadGrant']
+  redeemReadGrant: PostgresPrivateMaterialStore['redeemReadGrant']
 }
 
 export interface PrivateMaterialCryptoConfig {
   readonly encryptionKeyBase64: string
   readonly encryptionKeyVersion: string
+  readonly authTokenSecret?: string
+  readonly readGrantTokenSecret?: string
 }
 
 export type PrivateMaterialStorageKeyResolver = (row: StoredMaterial) => string
@@ -67,6 +78,8 @@ export class PrivateMaterialService {
   private readonly key: Buffer
   private readonly resolveStorageKey: PrivateMaterialStorageKeyResolver
   private readonly now: () => Date
+  private readonly authTokenSecret: string
+  private readonly readGrantTokenSecret: string
 
   constructor(private readonly dependencies: Readonly<{
     store: PrivateMaterialStorePort
@@ -82,6 +95,11 @@ export class PrivateMaterialService {
       throw new Error('PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION_INVALID')
     }
     this.resolveStorageKey = createPrivateMaterialStorageKeyResolver(dependencies.crypto)
+    this.authTokenSecret = dependencies.crypto.authTokenSecret ?? 'private-material-test-auth-secret-32'
+    this.readGrantTokenSecret = dependencies.crypto.readGrantTokenSecret ?? 'private-material-test-grant-secret-32'
+    if (this.authTokenSecret.length<32 || this.readGrantTokenSecret.length<32) {
+      throw new Error('PRIVATE_MATERIAL_TOKEN_SECRET_INVALID')
+    }
     this.now = dependencies.now ?? (() => new Date())
   }
 
@@ -141,6 +159,64 @@ export class PrivateMaterialService {
     if (row.status==='deleted') throw privateMaterialError('VERIFICATION_MATERIAL_DELETED', 410)
     await this.dependencies.store.recordSelfRead(userId, materialId, requestIdValue(command.requestId), this.now())
     return applicantSummary(row)
+  }
+
+  async getForReviewer(command: ReviewerMaterialCommand): Promise<VerificationMaterialReviewerProjection> {
+    const reviewerUserId = uuid(command.reviewerUserId,'MATERIAL_REVIEWER_INVALID')
+    this.assertIdentityReviewer(command.roles,command.permissions)
+    const materialId = uuid(command.materialId,'MATERIAL_ID_INVALID')
+    const row = await this.dependencies.store.getForReviewer({
+      reviewerUserId,primarySessionIdHash:this.sessionHash(command.sessionToken),materialId,
+      claimTokenHash:this.claimHash(command.claimToken),now:this.now(),
+      requestId:requestIdValue(command.requestId),
+    })
+    return this.reviewerProjection(row)
+  }
+
+  async createReadGrant(command: CreateMaterialReadGrantCommand): Promise<MaterialReadGrantProjection> {
+    const reviewerUserId = uuid(command.reviewerUserId,'MATERIAL_REVIEWER_INVALID')
+    this.assertIdentityReviewer(command.roles,command.permissions)
+    const materialId = uuid(command.materialId,'MATERIAL_ID_INVALID')
+    if (command.purpose!=='author_verification_review') {
+      throw privateMaterialError('MATERIAL_READ_PURPOSE_INVALID',422)
+    }
+    const operation = operationId(command.operationId)
+    const claimToken = boundedOpaque(command.claimToken,'CLAIM_TOKEN_INVALID',43)
+    if (!/^[A-Za-z0-9_-]{43}$/.test(claimToken)) throw privateMaterialError('CLAIM_TOKEN_INVALID',403)
+    const sessionHash = this.sessionHash(command.sessionToken)
+    const requestHash = hashJson({material_id:materialId,purpose:command.purpose})
+    const grantToken = createHmac('sha256',this.readGrantTokenSecret)
+      .update(`${reviewerUserId}:${materialId}:${operation}:${requestHash}`,'utf8').digest('base64url')
+    const now = this.now()
+    const expiresAt = new Date(now.getTime()+5*60_000)
+    const stored = await this.dependencies.store.createReadGrant({
+      reviewerUserId,primarySessionIdHash:sessionHash,materialId,
+      claimTokenHash:createHash('sha256').update(claimToken,'utf8').digest(),
+      purpose:'author_verification_review',operationId:operation,requestHash,
+      tokenHash:createHash('sha256').update(grantToken,'utf8').digest(),now,expiresAt,
+      requestId:requestIdValue(command.requestId),
+    })
+    return Object.freeze({
+      read_url:`/api/v1/verification-material-read-grants/${grantToken}`,
+      expires_at:stored.expiresAt.toISOString(),
+    })
+  }
+
+  async redeemReadGrant(command: RedeemMaterialReadGrantCommand): Promise<MaterialReadRedemptionProjection> {
+    const reviewerUserId = uuid(command.reviewerUserId,'MATERIAL_REVIEWER_INVALID')
+    const token = boundedOpaque(command.grantToken,'MATERIAL_READ_GRANT_INVALID',43)
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw privateMaterialError('MATERIAL_READ_GRANT_INVALID',404)
+    const redeemed = await this.dependencies.store.redeemReadGrant({
+      reviewerUserId,primarySessionIdHash:this.sessionHash(command.sessionToken),
+      tokenHash:createHash('sha256').update(token,'utf8').digest(),now:this.now(),
+      requestId:requestIdValue(command.requestId),
+    })
+    const signed = await this.dependencies.storage.issueRead({
+      storageKey:this.resolveStorageKey(redeemed.material),expiresAt:redeemed.expiresAt,
+    })
+    const url = new URL(signed.readUrl)
+    if (url.protocol!=='https:') throw privateMaterialError('MATERIAL_STORAGE_RESPONSE_INVALID',503,true)
+    return Object.freeze({redirect_url:signed.readUrl})
   }
 
   async complete(command: CompleteMaterialCommand): Promise<CompleteMaterialProjection> {
@@ -231,6 +307,38 @@ export class PrivateMaterialService {
     return Object.freeze({
       material: Object.freeze({ ...(receipt.material as ApplicantMaterialSummary) }),
       scan_queued: true,
+    })
+  }
+
+  private assertIdentityReviewer(roles: readonly string[],permissions: readonly string[]): void {
+    if (!Array.isArray(roles) || !Array.isArray(permissions) ||
+      (!roles.includes('admin') && !permissions.includes('admin:identity_review'))) {
+      throw privateMaterialError('MATERIAL_REVIEW_FORBIDDEN',403)
+    }
+  }
+
+  private sessionHash(value: string): Buffer {
+    const token = boundedOpaque(value,'SESSION_INVALID',128)
+    if (token.length<32) throw privateMaterialError('SESSION_INVALID',401)
+    return createHmac('sha256',this.authTokenSecret).update(token,'utf8').digest()
+  }
+
+  private claimHash(value: string): Buffer {
+    const token = boundedOpaque(value,'CLAIM_TOKEN_INVALID',43)
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw privateMaterialError('CLAIM_TOKEN_INVALID',403)
+    return createHash('sha256').update(token,'utf8').digest()
+  }
+
+  private reviewerProjection(row: StoredMaterial): VerificationMaterialReviewerProjection {
+    if (row.status!=='ready' || row.scan_result!=='clean') {
+      throw privateMaterialError('VERIFICATION_MATERIAL_NOT_READY',409)
+    }
+    return Object.freeze({
+      material_id:row.material_id,verification_id:row.verification_id,status:'ready',scan_result:'clean',
+      rejection_reason_code:null,pre_terminal_scan_result:null,scan_attempt_count:row.scan_attempt_count,
+      next_scan_at:null,processing_deadline_at:row.processing_deadline_at?.toISOString()??null,
+      declared_mime:row.declared_mime,detected_mime:row.detected_mime,byte_size:row.byte_size,
+      checksum_match:true,read_grant_eligibility:'eligible',version:Number(row.version),
     })
   }
 }

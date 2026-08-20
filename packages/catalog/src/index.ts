@@ -112,6 +112,11 @@ export {
   type UpdatedProjectIndexProjection,
 } from './updated-project-indexer.js'
 export {
+  CreatorAuthorReadService,
+  type CreatorAccountLinkProjection,
+  type AuthorRelationProjection,
+} from './creator-author-read.js'
+export {
   projectUpdateTypes,
   type CreateProjectUpdateCommand,
   type GetProjectUpdateCommand,

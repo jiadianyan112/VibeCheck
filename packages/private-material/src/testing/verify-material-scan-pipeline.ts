@@ -42,6 +42,7 @@ const storage: PrivateMaterialStorage = {
   async inspectUpload() {
     return { detectedMime: 'application/pdf', byteSize: 4, checksumSha256: checksum }
   },
+  async issueRead() { return { readUrl: 'https://private-storage.example/read' } },
   async allowReads(input) { openedKeys.add(input.storageKey) },
   async denyReads(input) { openedKeys.delete(input.storageKey) },
 }

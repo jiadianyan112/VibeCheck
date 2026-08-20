@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 
 import { buildSearchDocument } from '../search-document.js'
+import { linkPermissionProfiles } from '../link-permission-profile.js'
 import type { CategoryId, CategorySchemaVersion, ProjectSnapshot } from '../types.js'
 import { parseProjectSnapshot } from '../validation.js'
 
@@ -409,13 +410,52 @@ async function insertProjects(client: PoolClient): Promise<void> {
         fixtureTimestamp,
       ],
     )
+    const fixtureUserId=project.creatorId.replace(/^16000000/,'51000000')
+    const fixtureLinkId=project.creatorId.replace(/^16000000/,'52000000')
+    await client.query(`INSERT INTO iam.users(user_id,status,created_at,updated_at)
+      VALUES($1,'active',$2,$2) ON CONFLICT(user_id) DO NOTHING`,[fixtureUserId,fixtureTimestamp])
+    await client.query(
+      `INSERT INTO workflow.verification_requests (
+         verification_id,project_id,applicant_user_id,creator_resolution_mode,target_creator_id,
+         requested_link_role,status_history_json,status,method,public_summary,idempotency_key,
+         request_hash,version,created_at,updated_at,submitted_at
+       ) VALUES ($1,$2,$3,'claim_existing_creator',$4,'owner',$5::jsonb,'pending',
+         'fixture_import','Synthetic verified author fixture.',$6,$7,1,$8,$8,$8)
+       ON CONFLICT(verification_id) DO NOTHING`,
+      [project.verificationId,project.projectId,fixtureUserId,project.creatorId,
+        JSON.stringify([{status:'draft',at:fixtureTimestamp},{status:'pending',at:fixtureTimestamp}]),
+        `catalog-fixture-${project.verificationId}`,'f'.repeat(64),fixtureTimestamp],
+    )
+    await client.query(
+      `INSERT INTO catalog.creator_account_links (
+         creator_account_link_id,user_id,creator_id,link_role,permission_profile_id,
+         permission_profile_version,permission_profile_config_hash,status,source_verification_id,
+         version,created_at,updated_at
+       ) VALUES($1,$2,$3,'owner','OWNER_V1',1,$4,'active',$5,1,$6,$6)
+       ON CONFLICT(creator_account_link_id) DO NOTHING`,
+      [fixtureLinkId,fixtureUserId,project.creatorId,linkPermissionProfiles.OWNER_V1.config_hash,
+        project.verificationId,fixtureTimestamp],
+    )
     await client.query(
       `INSERT INTO catalog.author_relations (
          author_relation_id,project_id,creator_id,status,author_role,field_permissions_json,
-         source_verification_id,created_at,updated_at
-       ) VALUES ($1,$2,$3,'active','creator','["/project_core/current_name","/category_data/core_problem"]'::jsonb,$4,$5,$5)
+         source_verification_id,approved_via_creator_account_link_id,created_at,updated_at
+       ) VALUES ($1,$2,$3,'active','owner','["/project_core/current_name","/category_data/core_problem"]'::jsonb,$4,$5,$6,$6)
        ON CONFLICT (author_relation_id) DO NOTHING`,
-      [project.authorRelationId, project.projectId, project.creatorId, project.verificationId, fixtureTimestamp],
+      [project.authorRelationId,project.projectId,project.creatorId,project.verificationId,
+        fixtureLinkId,fixtureTimestamp],
+    )
+    await client.query(
+      `UPDATE workflow.verification_requests SET status='verified',decision='approve',
+         resulting_creator_id=$2,resulting_link_id=$3,resulting_author_relation_id=$4,
+         resulting_profile_version_id=$5,approved_link_role='owner',
+         approved_permission_profile_id='OWNER_V1',approved_permission_profile_version=1,
+         approved_profile_config_hash=$6,status_history_json=status_history_json||$7::jsonb,
+         version=2,decided_at=$8,updated_at=$8+interval '1 microsecond'
+       WHERE verification_id=$1 AND status='pending'`,
+      [project.verificationId,project.creatorId,fixtureLinkId,project.authorRelationId,
+        project.creatorProfileVersionId,linkPermissionProfiles.OWNER_V1.config_hash,
+        JSON.stringify([{status:'verified',at:fixtureTimestamp}]),fixtureTimestamp],
     )
     await client.query(
       `INSERT INTO catalog.project_interaction_counters (project_id,recalculated_at,source_watermark)

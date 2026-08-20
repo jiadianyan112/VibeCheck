@@ -22,6 +22,7 @@ import {
   PostgresPrivateMaterialScanStore,
   PrivateMaterialScanProcessor,
   createPrivateMaterialStorageKeyResolver,
+  PostgresPrivateMaterialAccessRevoker,
 } from '@vibecheck/private-material'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
@@ -30,6 +31,7 @@ import { createProjectPublishedHandler } from './project-published-handler.js'
 import { createProjectUpdateApplicationHandler } from './project-update-application-handler.js'
 import { createProjectUpdatedHandler } from './project-updated-handler.js'
 import { createPrivateMaterialScanHandler } from './private-material-scan-handler.js'
+import { createPrivateMaterialAccessRevokeHandler } from './private-material-access-revoke-handler.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
 const privateMaterialConfig = loadPrivateMaterialConfig()
@@ -65,18 +67,23 @@ const privateMaterialScanStore = privateMaterialConfig.enabled
   ? new PostgresPrivateMaterialScanStore(pool)
   : undefined
 if (privateMaterialStorage && privateMaterialScanStore) {
+  const resolveStorageKey=createPrivateMaterialStorageKeyResolver({
+    encryptionKeyBase64:privateMaterialConfig.encryptionMasterKey,
+    encryptionKeyVersion:privateMaterialConfig.encryptionKeyVersion,
+  })
   handlers.set(
     'verification_material_scan_requested',
     createPrivateMaterialScanHandler(new PrivateMaterialScanProcessor({
       store: privateMaterialScanStore,
       scanner: privateMaterialStorage,
       storage: privateMaterialStorage,
-      resolveStorageKey: createPrivateMaterialStorageKeyResolver({
-        encryptionKeyBase64: privateMaterialConfig.encryptionMasterKey,
-        encryptionKeyVersion: privateMaterialConfig.encryptionKeyVersion,
-      }),
+      resolveStorageKey,
     })),
   )
+  handlers.set('verification_material_access_revoke_requested',
+    createPrivateMaterialAccessRevokeHandler(new PostgresPrivateMaterialAccessRevoker({
+      pool,storage:privateMaterialStorage,resolveStorageKey,
+    })))
 }
 const workflowStore = new PostgresWorkflowStore(pool)
 let nextPrivateMaterialSweepAt = 0

@@ -1375,12 +1375,20 @@ paths:
       summary: Read the current applicant's safe verification draft projection
       security:
         - sessionCookie: []
+      parameters:
+        - in: header
+          name: X-Review-Claim-Token
+          required: false
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
       responses:
         '200':
           description: Applicant-safe projection with no applicant ID or private-material internals.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/VerificationRequestDraft' }
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VerificationRequestDraft'
+                  - $ref: '#/components/schemas/VerificationRequestReviewerProjection'
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
@@ -1411,6 +1419,83 @@ paths:
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-requests/{verification_id}/submit:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-SUBMIT
+      summary: Freeze clean materials and creator-link policy, then enqueue identity review atomically
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: verification_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationSubmitRequest' }
+      responses:
+        '202':
+          description: Pending applicant projection with immutable submission and Link-policy snapshot.
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerificationRequestDraft' } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-requests/{verification_id}/supplements:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-SUPPLEMENT
+      summary: Append a supplementary revision after changes are requested and enqueue a fresh review item
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: verification_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerificationSupplementRequest' } } }
+      responses:
+        '202':
+          description: New pending revision; prior submissions and review decisions remain immutable.
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerificationRequestDraft' } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-requests/{verification_id}/withdraw:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-WITHDRAW
+      summary: Withdraw an active request, cancel any live review lease and revoke all material reads
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: verification_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerificationWithdrawRequest' } } }
+      responses:
+        '200':
+          description: Terminal withdrawn applicant projection.
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerificationRequestDraft' } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/verification-materials:
     post:
       tags: [AuthorVerification]
@@ -1452,12 +1537,20 @@ paths:
       summary: Read an owner-bound applicant-safe material summary
       security:
         - sessionCookie: []
+      parameters:
+        - in: header
+          name: X-Review-Claim-Token
+          required: false
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
       responses:
         '200':
           description: Summary excludes storage keys, detected MIME, raw scanner results and reviewer data.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApplicantVerificationMaterialSummary'
+                  - $ref: '#/components/schemas/VerificationMaterialReviewerProjection'
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
@@ -1525,6 +1618,114 @@ paths:
         '410': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-materials/{material_id}/read-grants:
+    post:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-READ-GRANT
+      summary: Issue one reviewer, session, work-item and claim-bound material read grant
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: material_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Review-Claim-Token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MaterialReadGrantRequest' } } }
+      responses:
+        '201':
+          description: Relative one-time read URL valid for no more than five minutes.
+          content: { application/json: { schema: { $ref: '#/components/schemas/MaterialReadGrant' } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /api/v1/verification-material-read-grants/{grant_token}:
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-VER-MATERIAL-READ
+      summary: Consume a one-time read grant and redirect to a maximum-60-second private object URL
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: grant_token
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+      responses:
+        '302':
+          description: One-time redirect; Location is never persisted or included in Analytics.
+          headers:
+            Location: { schema: { type: string, format: uri, pattern: '^https://' } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/creator-account-links/{creator_account_link_id}:
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-CREATOR-LINK-GET
+      summary: Read one CreatorAccountLink owned by the current account
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: creator_account_link_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Owner-only Link projection., content: { application/json: { schema: { $ref: '#/components/schemas/CreatorAccountLink' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/me/creator-account-links:
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-CREATOR-LINK-LIST-ME
+      summary: List the current account's Creator links without making Link IDs publicly enumerable
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: Account-owned Link history.
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CreatorAccountLink' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/v1/author-relations/{author_relation_id}:
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-AUTHOR-RELATION-GET
+      summary: Read a public active signature or the owning account's expanded authorization projection
+      security: [{}, { sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: author_relation_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Discriminated public or self projection., content: { application/json: { schema: { $ref: '#/components/schemas/AuthorRelation' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/v1/author-relations:
+    get:
+      tags: [AuthorVerification]
+      operationId: OP-AUTHOR-RELATION-LIST
+      summary: List relations by exactly one Creator or Project filter
+      security: [{}, { sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: creator_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: project_id
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Public active relations plus expanded rows owned by the session., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AuthorRelation' } } } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -2093,7 +2294,7 @@ paths:
     post:
       tags: [Workflow]
       operationId: OP-ADMIN-DECISION
-      summary: Commit one immutable Submission or ProjectUpdate review decision and consume its bound claim, preview and confirmation
+      summary: Commit one immutable Submission, ProjectUpdate or Verification review decision and consume its bound claim, preview and confirmation
       security:
         - sessionCookie: []
       parameters:
@@ -5385,6 +5586,45 @@ components:
         requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
         method: { type: [string, 'null'], minLength: 1, maxLength: 64 }
         public_summary: { type: [string, 'null'], minLength: 10, maxLength: 1000 }
+    VerificationSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, material_ids, submission_key]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        material_ids:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        submission_key: { type: string, pattern: '^[A-Za-z0-9:_-]{8,128}$' }
+    VerificationSupplementRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, material_ids, evidence_refs, operation_id]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        material_ids:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        evidence_refs:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9:_-]{8,128}$' }
+    VerificationWithdrawRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, operation_id, reason_code]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9:_-]{8,128}$' }
+        reason_code: { type: [string, 'null'], pattern: '^[a-z][a-z0-9_]{0,63}$' }
     PermissionProfileExactRef:
       type: object
       additionalProperties: false
@@ -5419,12 +5659,22 @@ components:
           minItems: 1
           maxItems: 2
           items: { $ref: '#/components/schemas/PermissionProfileExactRef' }
+    LinkPolicySnapshot:
+      allOf:
+        - $ref: '#/components/schemas/ProvisionalLinkPolicy'
+        - type: object
+          required: [observed_owner_link_id, observed_owner_link_version, reused_link_id, reused_link_version]
+          properties:
+            observed_owner_link_id: { type: [string, 'null'], format: uuid }
+            observed_owner_link_version: { type: [integer, 'null'], minimum: 1 }
+            reused_link_id: { type: [string, 'null'], format: uuid }
+            reused_link_version: { type: [integer, 'null'], minimum: 1 }
     VerificationStatusHistoryItem:
       type: object
       additionalProperties: false
       required: [status, at]
       properties:
-        status: { type: string, enum: [draft, changes_requested] }
+        status: { type: string, enum: [draft, pending, changes_requested, verified, failed, withdrawn] }
         at: { type: string, format: date-time }
     VerificationRequestDraft:
       type: object
@@ -5450,6 +5700,8 @@ components:
         - resulting_link_id
         - resulting_author_relation_id
         - resulting_profile_version_id
+        - approved_link_role
+        - approved_permission_profile_ref
         - version
         - created_at
         - updated_at
@@ -5464,25 +5716,77 @@ components:
             - $ref: '#/components/schemas/NewCreatorProfileInput'
             - type: 'null'
         requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
-        provisional_link_policy: { $ref: '#/components/schemas/ProvisionalLinkPolicy' }
-        link_policy_snapshot: { type: 'null' }
+        provisional_link_policy:
+          oneOf:
+            - $ref: '#/components/schemas/ProvisionalLinkPolicy'
+            - type: 'null'
+        link_policy_snapshot:
+          oneOf:
+            - $ref: '#/components/schemas/LinkPolicySnapshot'
+            - type: 'null'
         method: { type: [string, 'null'], minLength: 1, maxLength: 64 }
         public_summary: { type: [string, 'null'], minLength: 10, maxLength: 1000 }
-        material_summaries: { type: array, maxItems: 0 }
-        status: { type: string, enum: [draft, changes_requested] }
+        material_summaries:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
+        status: { type: string, enum: [draft, pending, changes_requested, verified, failed, withdrawn] }
         status_history:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/VerificationStatusHistoryItem' }
-        latest_public_review_message: { type: 'null' }
+        latest_public_review_message:
+          oneOf:
+            - $ref: '#/components/schemas/VerificationPublicReviewMessage'
+            - type: 'null'
         supersedes_verification_id: { type: [string, 'null'], format: uuid }
-        resulting_creator_id: { type: 'null' }
-        resulting_link_id: { type: 'null' }
-        resulting_author_relation_id: { type: 'null' }
-        resulting_profile_version_id: { type: 'null' }
+        resulting_creator_id: { type: [string, 'null'], format: uuid }
+        resulting_link_id: { type: [string, 'null'], format: uuid }
+        resulting_author_relation_id: { type: [string, 'null'], format: uuid }
+        resulting_profile_version_id: { type: [string, 'null'], format: uuid }
+        approved_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        approved_permission_profile_ref:
+          oneOf:
+            - $ref: '#/components/schemas/PermissionProfileExactRef'
+            - type: 'null'
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    VerificationPublicReviewMessage:
+      type: object
+      additionalProperties: false
+      required: [message_key, field_paths, created_at]
+      properties:
+        message_key: { type: string, enum: [verification_changes_requested, verification_rejected] }
+        field_paths:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string, pattern: '^/' }
+        created_at: { type: string, format: date-time }
+    VerificationRequestReviewerProjection:
+      type: object
+      additionalProperties: false
+      required: [viewer_schema, verification_id, project_id, creator_resolution_mode, creator_account_link_id, target_creator_id, new_creator_profile_input, requested_link_role, link_policy_snapshot, method, public_summary, material_ids, evidence_refs, submission_revision, status, review_work_item_id, version]
+      properties:
+        viewer_schema: { type: string, const: reviewer }
+        verification_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        creator_resolution_mode: { $ref: '#/components/schemas/CreatorResolutionMode' }
+        creator_account_link_id: { type: [string, 'null'], format: uuid }
+        target_creator_id: { type: [string, 'null'], format: uuid }
+        new_creator_profile_input:
+          oneOf: [{ $ref: '#/components/schemas/NewCreatorProfileInput' }, { type: 'null' }]
+        requested_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        link_policy_snapshot: { $ref: '#/components/schemas/LinkPolicySnapshot' }
+        method: { type: string, minLength: 1, maxLength: 64 }
+        public_summary: { type: string, minLength: 10, maxLength: 1000 }
+        material_ids: { type: array, minItems: 1, maxItems: 5, uniqueItems: true, items: { type: string, format: uuid } }
+        evidence_refs: { type: array, maxItems: 50, uniqueItems: true, items: { type: string, format: uuid } }
+        submission_revision: { type: integer, minimum: 1 }
+        status: { type: string, const: pending }
+        review_work_item_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
     VerificationMaterialMime:
       type: string
       enum: [application/pdf, image/jpeg, image/png]
@@ -5570,6 +5874,88 @@ components:
       properties:
         material: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
         revoked_at: { type: string, format: date-time }
+    VerificationMaterialReviewerProjection:
+      type: object
+      additionalProperties: false
+      required: [material_id, verification_id, status, scan_result, rejection_reason_code, pre_terminal_scan_result, scan_attempt_count, next_scan_at, processing_deadline_at, declared_mime, detected_mime, byte_size, checksum_match, read_grant_eligibility, version]
+      properties:
+        material_id: { type: string, format: uuid }
+        verification_id: { type: string, format: uuid }
+        status: { type: string, const: ready }
+        scan_result: { type: string, const: clean }
+        rejection_reason_code: { type: 'null' }
+        pre_terminal_scan_result: { type: 'null' }
+        scan_attempt_count: { type: integer, minimum: 0 }
+        next_scan_at: { type: 'null' }
+        processing_deadline_at: { type: [string, 'null'], format: date-time }
+        declared_mime: { $ref: '#/components/schemas/VerificationMaterialMime' }
+        detected_mime: { type: [string, 'null'], maxLength: 64 }
+        byte_size: { type: integer, minimum: 1, maximum: 10485760 }
+        checksum_match: { type: boolean, const: true }
+        read_grant_eligibility: { type: string, const: eligible }
+        version: { type: integer, minimum: 1 }
+    MaterialReadGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, operation_id]
+      properties:
+        purpose: { type: string, const: author_verification_review }
+        operation_id: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
+    MaterialReadGrant:
+      type: object
+      additionalProperties: false
+      required: [read_url, expires_at]
+      properties:
+        read_url: { type: string, pattern: '^/api/v1/verification-material-read-grants/[A-Za-z0-9_-]{43}$' }
+        expires_at: { type: string, format: date-time }
+    CreatorAccountLink:
+      type: object
+      additionalProperties: false
+      required: [creator_account_link_id, creator_id, link_role, permission_profile_ref, status, source_verification_id, version, effective_capabilities]
+      properties:
+        creator_account_link_id: { type: string, format: uuid }
+        creator_id: { type: string, format: uuid }
+        link_role: { type: string, enum: [owner, manager] }
+        permission_profile_ref: { $ref: '#/components/schemas/PermissionProfileExactRef' }
+        status: { type: string, enum: [active, suspended, terminated] }
+        source_verification_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        effective_capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+    AuthorRelation:
+      oneOf:
+        - $ref: '#/components/schemas/AuthorRelationPublic'
+        - $ref: '#/components/schemas/AuthorRelationSelf'
+      discriminator: { propertyName: viewer_schema }
+    AuthorRelationPublic:
+      type: object
+      additionalProperties: false
+      required: [viewer_schema, author_relation_id, project_id, creator_id, author_role, status]
+      properties:
+        viewer_schema: { type: string, const: public }
+        author_relation_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        creator_id: { type: string, format: uuid }
+        author_role: { type: string, enum: [owner, co_creator, maintainer] }
+        status: { type: string, const: active }
+    AuthorRelationSelf:
+      type: object
+      additionalProperties: false
+      required: [viewer_schema, author_relation_id, project_id, creator_id, author_role, status, field_permissions, effective_field_permissions, source_creator_account_link_id, source_verification_id, version]
+      properties:
+        viewer_schema: { type: string, const: self }
+        author_relation_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        creator_id: { type: string, format: uuid }
+        author_role: { type: string, enum: [owner, co_creator, maintainer] }
+        status: { type: string, enum: [active, suspended, terminated, replaced] }
+        field_permissions: { type: array, uniqueItems: true, items: { type: string, pattern: '^/' } }
+        effective_field_permissions: { type: array, uniqueItems: true, items: { type: string, pattern: '^/' } }
+        source_creator_account_link_id: { type: [string, 'null'], format: uuid }
+        source_verification_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
     AdminOperationTarget:
       type: object
       additionalProperties: false
@@ -5897,9 +6283,28 @@ components:
           type: string
           pattern: '^[A-Za-z0-9_-]{8,64}$'
         decision_payload:
-          type: object
-          additionalProperties: false
-          description: Submission and ProjectUpdate v1 have no client-authoritative branch fields and require an empty object.
+          oneOf:
+            - type: object
+              additionalProperties: false
+              description: Submission, ProjectUpdate and non-approve Verification decisions require an empty object.
+            - $ref: '#/components/schemas/VerificationApproveDecisionPayload'
+    VerificationApproveDecisionPayload:
+      type: object
+      additionalProperties: false
+      required: [author_role, field_permissions, policy_version, expected_creator_aggregate_version, expected_owner_link_set_version, expected_reused_link_version]
+      properties:
+        author_role: { type: string, enum: [owner, co_creator, maintainer] }
+        field_permissions:
+          type: array
+          maxItems: 43
+          uniqueItems: true
+          items: { type: string, pattern: '^/' }
+        policy_version: { type: string, const: creator_link.v1 }
+        expected_creator_aggregate_version: { type: [integer, 'null'], minimum: 1 }
+        expected_owner_link_set_version: { type: [integer, 'null'], minimum: 1 }
+        expected_reused_link_version: { type: [integer, 'null'], minimum: 1 }
+        approved_link_role: { type: string, enum: [owner, manager] }
+        approved_permission_profile_ref: { $ref: '#/components/schemas/PermissionProfileExactRef' }
     ReviewDecision:
       type: object
       additionalProperties: false
@@ -5920,11 +6325,21 @@ components:
         - schema_version
         - domain_status
         - outbox_status
+        - resulting_creator_id
+        - resulting_link_id
+        - resulting_author_relation_id
+        - resulting_profile_version_id
+        - approved_link_role
+        - approved_permission_profile_ref
+        - effective_capabilities
+        - effective_field_permissions
+        - creator_aggregate_version
+        - owner_link_set_version
       properties:
         review_decision_id: { type: string, format: uuid }
         work_item_id: { type: string, format: uuid }
-        work_type: { type: string, enum: [submission, project_update] }
-        target_type: { type: string, enum: [submission, project_update] }
+        work_type: { type: string, enum: [submission, project_update, verification] }
+        target_type: { type: string, enum: [submission, project_update, verification_request] }
         target_id: { type: string, format: uuid }
         decision:
           type: string
@@ -5933,7 +6348,7 @@ components:
         base_version_id: { type: [string, 'null'], format: uuid }
         resulting_status:
           type: string
-          enum: [approved, changes_requested, rejected]
+          enum: [approved, changes_requested, rejected, verified, failed]
         work_item_status: { type: string, const: decided }
         work_item_decision_ref_type: { type: string, const: review_decision }
         transaction_id: { type: string, format: uuid }
@@ -5941,8 +6356,21 @@ components:
         schema_version: { type: string, const: review_decision.v1 }
         domain_status:
           type: string
-          enum: [approved, changes_requested, rejected]
+          enum: [approved, changes_requested, rejected, verified, failed]
         outbox_status: { type: string, const: pending }
+        resulting_creator_id: { type: [string, 'null'], format: uuid }
+        resulting_link_id: { type: [string, 'null'], format: uuid }
+        resulting_author_relation_id: { type: [string, 'null'], format: uuid }
+        resulting_profile_version_id: { type: [string, 'null'], format: uuid }
+        approved_link_role: { type: [string, 'null'], enum: [owner, manager, null] }
+        approved_permission_profile_ref:
+          oneOf:
+            - $ref: '#/components/schemas/PermissionProfileExactRef'
+            - type: 'null'
+        effective_capabilities: { type: array, uniqueItems: true, items: { type: string } }
+        effective_field_permissions: { type: array, uniqueItems: true, items: { type: string, pattern: '^/' } }
+        creator_aggregate_version: { type: [integer, 'null'], minimum: 1 }
+        owner_link_set_version: { type: [integer, 'null'], minimum: 1 }
     ReviewClaimProjection:
       type: object
       additionalProperties: false

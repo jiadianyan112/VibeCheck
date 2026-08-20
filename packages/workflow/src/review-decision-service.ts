@@ -7,6 +7,7 @@ import {
   type DecideReviewCommand,
   type ReviewDecisionProjection,
   type SubmissionReviewDecision,
+  type VerificationApprovePayload,
 } from './review-decision-types.js'
 import type { ReviewActor } from './types.js'
 
@@ -41,7 +42,7 @@ export class ReviewDecisionService {
       throw workflowError('REVIEW_DECISION_FIELD_PATHS_REQUIRED', 422)
     }
     const evidenceRefs = this.uuidList(command.decisionEvidenceRefs, 'DECISION_EVIDENCE_REFS_INVALID')
-    const decisionPayload = this.emptyPayload(command.decisionPayload)
+    const decisionPayload = this.decisionPayload(command.decisionPayload, decision)
     const workItemId = this.uuid(command.workItemId, 'WORK_ITEM_ID_INVALID')
     const expectedVersion = this.version(command.expectedVersion)
     const reasonCode = this.safeKey(command.reasonCode, 'REASON_CODE_INVALID')
@@ -88,7 +89,11 @@ export class ReviewDecisionService {
     if (!value.roles.includes('admin') && !value.roles.includes('editor')) {
       throw workflowError('WORK_ITEM_FORBIDDEN', 403)
     }
-    if (!value.roles.includes('admin') && !value.permissions.includes('admin:review')) {
+    if (
+      !value.roles.includes('admin') &&
+      !value.permissions.includes('admin:review') &&
+      !value.permissions.includes('admin:identity_review')
+    ) {
       throw workflowError('WORK_ITEM_FORBIDDEN', 403)
     }
     return Object.freeze({
@@ -128,12 +133,75 @@ export class ReviewDecisionService {
     return Object.freeze([...normalized].sort())
   }
 
-  private emptyPayload(value: unknown): Readonly<Record<string, unknown>> {
+  private decisionPayload(
+    value: unknown,
+    decision: SubmissionReviewDecision,
+  ): Readonly<Record<string, unknown>> | VerificationApprovePayload {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     }
-    if (Object.keys(value).length !== 0) throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
-    return Object.freeze({})
+    const record = value as Record<string, unknown>
+    if (Object.keys(record).length === 0) return Object.freeze({})
+    if (decision !== 'approve') throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
+    const allowedKeys = new Set([
+      'author_role','field_permissions','policy_version','expected_creator_aggregate_version',
+      'expected_owner_link_set_version','expected_reused_link_version','approved_link_role',
+      'approved_permission_profile_ref',
+    ])
+    if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
+      throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
+    }
+    if (!['owner','co_creator','maintainer'].includes(String(record.author_role))) {
+      throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
+    }
+    if (record.policy_version !== 'creator_link.v1') {
+      throw workflowError('VERIFICATION_LINK_POLICY_CHANGED', 409)
+    }
+    const fields = this.fieldPaths(record.field_permissions as readonly string[])
+    const aggregateVersion = this.nullableVersion(record.expected_creator_aggregate_version)
+    const ownerSetVersion = this.nullableVersion(record.expected_owner_link_set_version)
+    const reusedLinkVersion = this.nullableVersion(record.expected_reused_link_version)
+    const approvedRole = record.approved_link_role
+    const approvedRefValue = record.approved_permission_profile_ref
+    let approvedRef: VerificationApprovePayload['approved_permission_profile_ref']
+    if (approvedRole === undefined && approvedRefValue === undefined) {
+      approvedRef = undefined
+    } else {
+      if (!['owner','manager'].includes(String(approvedRole)) || !approvedRefValue ||
+        typeof approvedRefValue !== 'object' || Array.isArray(approvedRefValue)) {
+        throw workflowError('LINK_PERMISSION_PROFILE_INVALID', 422)
+      }
+      const ref = approvedRefValue as Record<string, unknown>
+      if (Object.keys(ref).some((key) => !['profile_id','profile_version','config_hash'].includes(key)) ||
+        !['OWNER_V1','MANAGER_V1'].includes(String(ref.profile_id)) || ref.profile_version !== 1 ||
+        typeof ref.config_hash !== 'string' || !/^[a-f0-9]{64}$/.test(ref.config_hash) ||
+        (approvedRole === 'owner' ? ref.profile_id !== 'OWNER_V1' : ref.profile_id !== 'MANAGER_V1')) {
+        throw workflowError('LINK_PERMISSION_PROFILE_INVALID', 422)
+      }
+      approvedRef = Object.freeze({
+        profile_id: ref.profile_id as 'OWNER_V1' | 'MANAGER_V1',
+        profile_version: 1,
+        config_hash: ref.config_hash,
+      })
+    }
+    return Object.freeze({
+      author_role: record.author_role as VerificationApprovePayload['author_role'],
+      field_permissions: fields,
+      policy_version: 'creator_link.v1',
+      expected_creator_aggregate_version: aggregateVersion,
+      expected_owner_link_set_version: ownerSetVersion,
+      expected_reused_link_version: reusedLinkVersion,
+      ...(approvedRole === undefined ? {} : { approved_link_role: approvedRole as 'owner' | 'manager' }),
+      ...(approvedRef === undefined ? {} : { approved_permission_profile_ref: approvedRef }),
+    })
+  }
+
+  private nullableVersion(value: unknown): number | null {
+    if (value === null) return null
+    if (!Number.isSafeInteger(value) || Number(value) < 1) {
+      throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
+    }
+    return Number(value)
   }
 
   private canonicalJson(value: unknown): string {

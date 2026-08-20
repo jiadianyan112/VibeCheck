@@ -86,6 +86,24 @@ describe('PrivateMaterialService', () => {
     )
     assert.equal(fixture.current().status, 'revoked')
   })
+
+  it('returns the reviewer discriminator and one-time relative read grant without storage coordinates', async () => {
+    const fixture=fakeDependencies();const service=createService(fixture)
+    await service.prepare({userId,verificationId,declaredMime:'application/pdf',byteSize:4,
+      checksum,idempotencyKey:'material-prepare-0005',requestId:'request-5'})
+    fixture.setReady()
+    const reviewer={reviewerUserId:userId,roles:['admin'],permissions:[],sessionToken:'s'.repeat(43),
+      materialId,claimToken:'c'.repeat(43),requestId:'request-5'} as const
+    const metadata=await service.getForReviewer(reviewer)
+    assert.equal(metadata.read_grant_eligibility,'eligible')
+    assert.equal(Object.hasOwn(metadata,'storage_key'),false)
+    const grant=await service.createReadGrant({...reviewer,purpose:'author_verification_review',
+      operationId:'material-read-grant-0005'})
+    assert.match(grant.read_url,/^\/api\/v1\/verification-material-read-grants\/[A-Za-z0-9_-]{43}$/)
+    const redeemed=await service.redeemReadGrant({reviewerUserId:userId,
+      sessionToken:'s'.repeat(43),grantToken:grant.read_url.split('/').at(-1)!,requestId:'request-5'})
+    assert.equal(redeemed.redirect_url,'https://private.example/read')
+  })
 })
 
 function createService(fixture: ReturnType<typeof fakeDependencies>): PrivateMaterialService {
@@ -142,6 +160,14 @@ function fakeDependencies(options: {
       receipts.set(input.operationId, { requestHash: input.requestHash, response: applicantSummary(row) })
       return row
     },
+    async getForReviewer() { if (!row) throw new Error('missing row'); return row },
+    async createReadGrant(input: Parameters<PrivateMaterialStorePort['createReadGrant']>[0]) {
+      return {expiresAt:input.expiresAt,replayed:false}
+    },
+    async redeemReadGrant() {
+      if (!row) throw new Error('missing row')
+      return {material:row,expiresAt:new Date(now.getTime()+60_000)}
+    },
   } as PrivateMaterialStorePort
   const storage: PrivateMaterialStorage = {
     async issueUpload() {
@@ -152,6 +178,7 @@ function fakeDependencies(options: {
       inspectCalls += 1
       return { detectedMime: options.detectedMime ?? 'application/pdf', byteSize: 4, checksumSha256: checksum }
     },
+    async issueRead() { return { readUrl: 'https://private.example/read' } },
     async allowReads() {},
     async denyReads() {
       if (options.denyReadsFails) throw new Error('gateway unavailable')
@@ -163,6 +190,7 @@ function fakeDependencies(options: {
     get inspectCalls() { return inspectCalls },
     current() { return row! },
     setStatus(status: StoredMaterial['status']) { row = { ...row!, status } as StoredMaterial },
+    setReady() { row={...row!,status:'ready',scan_result:'clean',detected_mime:'application/pdf'} as StoredMaterial },
   }
 }
 

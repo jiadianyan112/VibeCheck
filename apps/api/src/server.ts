@@ -31,6 +31,8 @@ import {
   type ProjectUpdateWithdrawalProjection,
   type SubmitProjectUpdateCommand,
   type WithdrawProjectUpdateCommand,
+  type CreatorAccountLinkProjection,
+  type AuthorRelationProjection,
 } from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import {
@@ -106,6 +108,12 @@ import {
   type PrepareMaterialProjection,
   type RevokeMaterialCommand,
   type RevokeMaterialProjection,
+  type ReviewerMaterialCommand,
+  type VerificationMaterialReviewerProjection,
+  type CreateMaterialReadGrantCommand,
+  type MaterialReadGrantProjection,
+  type RedeemMaterialReadGrantCommand,
+  type MaterialReadRedemptionProjection,
 } from '@vibecheck/private-material'
 import {
   MediaError,
@@ -165,7 +173,12 @@ import {
   type CreateVerificationRequestCommand,
   type GetVerificationRequestCommand,
   type PatchVerificationRequestCommand,
+  type SubmitVerificationRequestCommand,
+  type SupplementVerificationRequestCommand,
+  type WithdrawVerificationRequestCommand,
   type VerificationRequestProjection,
+  type ReviewVerificationRequestCommand,
+  type VerificationRequestReviewerProjection,
 } from '@vibecheck/workflow'
 
 const serviceVersion = '0.1.0'
@@ -334,6 +347,17 @@ export interface ApiVerificationRequestService {
   create(command: CreateVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection>
   get(command: GetVerificationRequestCommand): Promise<VerificationRequestProjection>
   patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection>
+  submit(command: SubmitVerificationRequestCommand): Promise<VerificationRequestProjection>
+  supplement(command: SupplementVerificationRequestCommand): Promise<VerificationRequestProjection>
+  withdraw(command: WithdrawVerificationRequestCommand): Promise<VerificationRequestProjection>
+  getForReviewer(command:ReviewVerificationRequestCommand):Promise<VerificationRequestReviewerProjection>
+}
+
+export interface ApiCreatorAuthorReadService {
+  getLink(userId:string,linkId:string):Promise<CreatorAccountLinkProjection>
+  listMyLinks(userId:string):Promise<readonly CreatorAccountLinkProjection[]>
+  getRelation(relationId:string,userId:string|null):Promise<AuthorRelationProjection>
+  listRelations(input:Readonly<{creatorId:string|null;projectId:string|null;userId:string|null}>):Promise<readonly AuthorRelationProjection[]>
 }
 
 export interface ApiPrivateMaterialService {
@@ -341,6 +365,9 @@ export interface ApiPrivateMaterialService {
   get(command: GetMaterialCommand): Promise<ApplicantMaterialSummary>
   complete(command: CompleteMaterialCommand): Promise<CompleteMaterialProjection>
   revoke(command: RevokeMaterialCommand): Promise<RevokeMaterialProjection>
+  getForReviewer(command: ReviewerMaterialCommand): Promise<VerificationMaterialReviewerProjection>
+  createReadGrant(command: CreateMaterialReadGrantCommand): Promise<MaterialReadGrantProjection>
+  redeemReadGrant(command: RedeemMaterialReadGrantCommand): Promise<MaterialReadRedemptionProjection>
 }
 
 export interface ApiWorkflowService {
@@ -398,6 +425,7 @@ export interface ApiServerDependencies {
   readonly projectUpdates?: ApiProjectUpdateService
   readonly verificationRequests?: ApiVerificationRequestService
   readonly privateMaterials?: ApiPrivateMaterialService
+  readonly creatorAuthorRead?: ApiCreatorAuthorReadService
   readonly workflow?: ApiWorkflowService
   readonly adminOperations?: ApiAdminOperationSecurityService
   readonly reviewDecisions?: ApiReviewDecisionService
@@ -1909,19 +1937,28 @@ async function handleVerificationRequest(
 ): Promise<number | null> {
   const collectionPath = '/api/v1/verification-requests'
   const itemMatch = path.match(/^\/api\/v1\/verification-requests\/([^/]+)$/)
-  if (path !== collectionPath && itemMatch === null) return null
+  const submitMatch = path.match(/^\/api\/v1\/verification-requests\/([^/]+)\/submit$/)
+  const supplementMatch = path.match(/^\/api\/v1\/verification-requests\/([^/]+)\/supplements$/)
+  const withdrawMatch = path.match(/^\/api\/v1\/verification-requests\/([^/]+)\/withdraw$/)
+  if (path !== collectionPath && itemMatch === null && submitMatch===null &&
+      supplementMatch===null && withdrawMatch===null) return null
   if ((path === collectionPath && method !== 'POST') ||
-      (itemMatch !== null && method !== 'GET' && method !== 'PATCH')) return null
+      (itemMatch !== null && method !== 'GET' && method !== 'PATCH') ||
+      (submitMatch!==null && method!=='POST') || (supplementMatch!==null && method!=='POST') ||
+      (withdrawMatch!==null && method!=='POST')) return null
   if (!dependencies.verificationRequests) {
     throw new WorkflowError('VERIFICATION_SERVICE_UNAVAILABLE', 503, true)
   }
   exactWorkflowQueryKeys(url.searchParams, [])
   const session = await resolveAuthenticatedSession(request, dependencies)
   if (itemMatch !== null && method === 'GET') {
-    const projection = await dependencies.verificationRequests.get({
-      userId: session.userId,
-      verificationId: itemMatch[1]!,
-    })
+    const claimHeader=request.headers['x-review-claim-token']
+    const projection=typeof claimHeader==='string'
+      ? await dependencies.verificationRequests.getForReviewer({reviewerUserId:session.userId,
+          roles:session.roles,permissions:session.permissions,
+          sessionToken:parseCookies(request)[authCookieNames.session]!,
+          verificationId:itemMatch[1]!,claimToken:claimHeader})
+      : await dependencies.verificationRequests.get({userId:session.userId,verificationId:itemMatch[1]!})
     writeJson(response, 200, projection, requestId)
     return 200
   }
@@ -1929,6 +1966,40 @@ async function handleVerificationRequest(
   if (!requestOriginAllowed(request, config)) throw new WorkflowError('ORIGIN_INVALID', 403)
   requireWorkflowMutationCsrf(request)
   const body = await readJsonBody(request)
+  if (submitMatch!==null) {
+    exactKeys(body,['expected_version','material_ids','submission_key'])
+    const projection = await dependencies.verificationRequests.submit({
+      userId:session.userId,verificationId:submitMatch[1]!,
+      expectedVersion:integerField(body,'expected_version',1),
+      materialIds:stringArrayField(body,'material_ids',5,64),
+      submissionKey:stringField(body,'submission_key',{maximum:128})!,requestId,
+    })
+    writeJson(response,202,projection,requestId)
+    return 202
+  }
+  if (supplementMatch!==null) {
+    exactKeys(body,['expected_version','material_ids','evidence_refs','operation_id'])
+    const projection = await dependencies.verificationRequests.supplement({
+      userId:session.userId,verificationId:supplementMatch[1]!,
+      expectedVersion:integerField(body,'expected_version',1),
+      materialIds:stringArrayField(body,'material_ids',5,64),
+      evidenceRefs:stringArrayField(body,'evidence_refs',50,64),
+      operationId:stringField(body,'operation_id',{maximum:128})!,requestId,
+    })
+    writeJson(response,202,projection,requestId)
+    return 202
+  }
+  if (withdrawMatch!==null) {
+    exactKeys(body,['expected_version','operation_id','reason_code'])
+    const projection = await dependencies.verificationRequests.withdraw({
+      userId:session.userId,verificationId:withdrawMatch[1]!,
+      expectedVersion:integerField(body,'expected_version',1),
+      operationId:stringField(body,'operation_id',{maximum:128})!,
+      reasonCode:nullableStringField(body,'reason_code',64)??null,requestId,
+    })
+    writeJson(response,200,projection,requestId)
+    return 200
+  }
   if (path === collectionPath) {
     exactKeys(body, [
       'project_id','supersedes_verification_id','creator_resolution_mode',
@@ -1986,21 +2057,41 @@ async function handlePrivateMaterialRequest(
   const itemMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)$/)
   const completeMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)\/complete$/)
   const revokeMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)\/revoke$/)
-  const recognized = path===collectionPath || itemMatch!==null || completeMatch!==null || revokeMatch!==null
+  const readGrantMatch = path.match(/^\/api\/v1\/verification-materials\/([^/]+)\/read-grants$/)
+  const redeemMatch = path.match(/^\/api\/v1\/verification-material-read-grants\/([^/]+)$/)
+  const recognized = path===collectionPath || itemMatch!==null || completeMatch!==null ||
+    revokeMatch!==null || readGrantMatch!==null || redeemMatch!==null
   if (!recognized) return null
   if ((path===collectionPath && method!=='POST') || (itemMatch!==null && method!=='GET') ||
-      (completeMatch!==null && method!=='POST') || (revokeMatch!==null && method!=='POST')) return null
+      (completeMatch!==null && method!=='POST') || (revokeMatch!==null && method!=='POST') ||
+      (readGrantMatch!==null && method!=='POST') || (redeemMatch!==null && method!=='GET')) return null
   if (!dependencies.privateMaterials) {
     throw new PrivateMaterialError('PRIVATE_MATERIAL_SERVICE_UNAVAILABLE', 503, true)
   }
   exactWorkflowQueryKeys(url.searchParams, [])
   const session = await resolveAuthenticatedSession(request, dependencies)
-  if (itemMatch!==null) {
-    const projection = await dependencies.privateMaterials.get({
-      userId: session.userId,
-      materialId: itemMatch[1]!,
-      requestId,
+  const sessionToken = parseCookies(request)[authCookieNames.session]
+  if (!sessionToken) throw new PrivateMaterialError('SESSION_INVALID',401,false)
+  if (redeemMatch!==null) {
+    const projection = await dependencies.privateMaterials.redeemReadGrant({
+      reviewerUserId:session.userId,sessionToken,grantToken:redeemMatch[1]!,requestId,
     })
+    response.statusCode=302
+    response.setHeader('location',projection.redirect_url)
+    response.setHeader('cache-control','no-store')
+    response.end()
+    return 302
+  }
+  if (itemMatch!==null) {
+    const claimHeader = request.headers['x-review-claim-token']
+    const projection = typeof claimHeader==='string'
+      ? await dependencies.privateMaterials.getForReviewer({
+          reviewerUserId:session.userId,roles:session.roles,permissions:session.permissions,
+          sessionToken,materialId:itemMatch[1]!,claimToken:claimHeader,requestId,
+        })
+      : await dependencies.privateMaterials.get({
+          userId: session.userId,materialId: itemMatch[1]!,requestId,
+        })
     writeJson(response, 200, projection, requestId)
     return 200
   }
@@ -2008,6 +2099,19 @@ async function handlePrivateMaterialRequest(
   if (!requestOriginAllowed(request, config)) throw new PrivateMaterialError('ORIGIN_INVALID', 403)
   requireWorkflowMutationCsrf(request)
   const body = await readJsonBody(request)
+  if (readGrantMatch!==null) {
+    exactKeys(body,['purpose','operation_id'])
+    const claimHeader=request.headers['x-review-claim-token']
+    if (typeof claimHeader!=='string') throw new PrivateMaterialError('CLAIM_TOKEN_INVALID',403,false)
+    const projection=await dependencies.privateMaterials.createReadGrant({
+      reviewerUserId:session.userId,roles:session.roles,permissions:session.permissions,
+      sessionToken,materialId:readGrantMatch[1]!,claimToken:claimHeader,
+      purpose:stringField(body,'purpose',{maximum:64})!,
+      operationId:stringField(body,'operation_id',{maximum:128})!,requestId,
+    })
+    writeJson(response,201,projection,requestId)
+    return 201
+  }
   if (path===collectionPath) {
     exactKeys(body, ['verification_id','declared_mime','byte_size','checksum','idempotency_key'])
     const projection = await dependencies.privateMaterials.prepare({
@@ -2046,6 +2150,41 @@ async function handlePrivateMaterialRequest(
   })
   writeJson(response, 200, projection, requestId)
   return 200
+}
+
+async function handleCreatorAuthorReadRequest(
+  request:IncomingMessage,response:ServerResponse,url:URL,path:string,method:string,
+  requestId:string,dependencies:ApiServerDependencies,
+):Promise<number|null>{
+  const linkMatch=path.match(/^\/api\/v1\/creator-account-links\/([^/]+)$/)
+  const myLinks=path==='/api/v1/me/creator-account-links'
+  const relationMatch=path.match(/^\/api\/v1\/author-relations\/([^/]+)$/)
+  const relationList=path==='/api/v1/author-relations'
+  if(!linkMatch&&!myLinks&&!relationMatch&&!relationList)return null
+  if(method!=='GET')return null
+  if(!dependencies.creatorAuthorRead)throw new CatalogError('CREATOR_AUTHORIZATION_READ_UNAVAILABLE',503,true)
+  if(linkMatch||myLinks){
+    exactWorkflowQueryKeys(url.searchParams,[])
+    const session=await resolveAuthenticatedSession(request,dependencies)
+    const projection=linkMatch
+      ? await dependencies.creatorAuthorRead.getLink(session.userId,linkMatch[1]!)
+      : await dependencies.creatorAuthorRead.listMyLinks(session.userId)
+    writeJson(response,200,projection,requestId);return 200
+  }
+  const cookies=parseCookies(request)
+  const session=cookies[authCookieNames.session]
+    ? await resolveAuthenticatedSession(request,dependencies):null
+  if(relationMatch){
+    exactWorkflowQueryKeys(url.searchParams,[])
+    const projection=await dependencies.creatorAuthorRead.getRelation(relationMatch[1]!,session?.userId??null)
+    writeJson(response,200,projection,requestId);return 200
+  }
+  exactWorkflowQueryKeys(url.searchParams,['creator_id','project_id'])
+  const projection=await dependencies.creatorAuthorRead.listRelations({
+    creatorId:url.searchParams.get('creator_id'),projectId:url.searchParams.get('project_id'),
+    userId:session?.userId??null,
+  })
+  writeJson(response,200,projection,requestId);return 200
 }
 
 async function handleMediaRequest(
@@ -3050,6 +3189,12 @@ export function createApiServer(
                     if (privateMaterialStatus !== null) {
                       statusCode = privateMaterialStatus
                     } else {
+                    const creatorAuthorStatus = await handleCreatorAuthorReadRequest(
+                      request,response,url,path,method,requestId,dependencies,
+                    )
+                    if (creatorAuthorStatus !== null) {
+                      statusCode = creatorAuthorStatus
+                    } else {
                     const adminOperationStatus = await handleAdminOperationSecurityRequest(
                       request, response, url, path, method, requestId, config, dependencies,
                     )
@@ -3121,6 +3266,7 @@ export function createApiServer(
                           }
                         }
                       }
+                    }
                     }
                     }
                     }

@@ -8,6 +8,7 @@ import type {
   ReviewDecisionProjection,
   StoredReviewDecisionInput,
   SubmissionReviewDecision,
+  VerificationApprovePayload,
 } from './review-decision-types.js'
 
 interface WorkItemRow extends QueryResultRow {
@@ -41,6 +42,82 @@ interface ProjectUpdateRow extends QueryResultRow {
   readonly status: string
   readonly review_work_item_id: string
   readonly version: string
+}
+
+interface VerificationRequestRow extends QueryResultRow {
+  readonly verification_id: string
+  readonly project_id: string
+  readonly applicant_user_id: string
+  readonly creator_resolution_mode: 'use_existing_link' | 'create_new_creator' | 'claim_existing_creator'
+  readonly creator_account_link_id: string | null
+  readonly target_creator_id: string | null
+  readonly new_creator_profile_input_json: unknown
+  readonly link_policy_snapshot_json: unknown
+  readonly status: string
+  readonly review_work_item_id: string
+  readonly version: string
+}
+
+interface CreatorRow extends QueryResultRow {
+  readonly creator_id: string
+  readonly current_profile_version_id: string | null
+  readonly aggregate_version: string
+  readonly owner_link_set_version: string
+  readonly canonical_creator_id: string | null
+  readonly merge_status: string
+}
+
+interface CreatorAccountLinkRow extends QueryResultRow {
+  readonly creator_account_link_id: string
+  readonly user_id: string
+  readonly creator_id: string
+  readonly link_role: 'owner' | 'manager'
+  readonly permission_profile_id: 'OWNER_V1' | 'MANAGER_V1'
+  readonly permission_profile_version: number
+  readonly permission_profile_config_hash: string
+  readonly status: string
+  readonly version: string
+}
+
+interface LinkPermissionProfileRow extends QueryResultRow {
+  readonly profile_id: 'OWNER_V1' | 'MANAGER_V1'
+  readonly profile_version: number
+  readonly profile_family: 'owner' | 'manager'
+  readonly config_hash: string
+  readonly capabilities_json: unknown
+  readonly field_path_ceiling_json: unknown
+}
+
+interface VerificationApprovalResult {
+  readonly creatorId: string
+  readonly linkId: string
+  readonly relationId: string
+  readonly profileVersionId: string | null
+  readonly linkRole: 'owner' | 'manager'
+  readonly profile: LinkPermissionProfileRow
+  readonly effectiveFields: readonly string[]
+  readonly capabilities: readonly string[]
+  readonly creatorAggregateVersion: number
+  readonly ownerLinkSetVersion: number
+  readonly projectAggregateVersion: number
+  readonly firstProjectAuthorLink: boolean
+}
+
+interface VerificationPolicySnapshot {
+  readonly policy_version: 'creator_link.v1'
+  readonly target_creator_aggregate_version: number | null
+  readonly owner_link_set_version: number | null
+  readonly observed_owner_link_id: string | null
+  readonly observed_owner_link_version: number | null
+  readonly reused_link_id: string | null
+  readonly reused_link_version: number | null
+  readonly allowed_link_roles: readonly ('owner' | 'manager')[]
+  readonly default_link_role: 'owner' | 'manager'
+  readonly allowed_permission_profile_refs: readonly Readonly<{
+    readonly profile_id: 'OWNER_V1' | 'MANAGER_V1'
+    readonly profile_version: 1
+    readonly config_hash: string
+  }>[]
 }
 
 interface PreviewRow extends QueryResultRow {
@@ -77,15 +154,31 @@ interface DecisionRow extends QueryResultRow {
   readonly decision_request_id: string
   readonly work_item_id: string
   readonly target_id: string
-  readonly work_type: 'submission' | 'project_update'
-  readonly target_type: 'submission' | 'project_update'
+  readonly work_type: 'submission' | 'project_update' | 'verification'
+  readonly target_type: 'submission' | 'project_update' | 'verification_request'
   readonly decision: SubmissionReviewDecision
   readonly project_id: string | null
   readonly base_version_id: string | null
   readonly decision_payload_hash: string
-  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected'
+  readonly resulting_status: 'approved' | 'changes_requested' | 'rejected' | 'verified' | 'failed'
   readonly transaction_id: string
   readonly committed_at: Date
+}
+
+interface VerificationProjectionRow extends QueryResultRow {
+  readonly resulting_creator_id: string | null
+  readonly resulting_link_id: string | null
+  readonly resulting_author_relation_id: string | null
+  readonly resulting_profile_version_id: string | null
+  readonly approved_link_role: 'owner' | 'manager' | null
+  readonly approved_permission_profile_id: 'OWNER_V1' | 'MANAGER_V1' | null
+  readonly approved_permission_profile_version: number | null
+  readonly approved_profile_config_hash: string | null
+  readonly capabilities_json: unknown
+  readonly field_path_ceiling_json: unknown
+  readonly field_permissions_json: unknown
+  readonly creator_aggregate_version: string | null
+  readonly owner_link_set_version: string | null
 }
 
 export class PostgresReviewDecisionStore implements ReviewDecisionStore {
@@ -112,7 +205,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
           throw workflowError('REVIEW_DECISION_REQUEST_CONFLICT', 409)
         }
         await client.query('COMMIT')
-        return this.projection(replay.rows[0])
+        const replayProjection = replay.rows[0].work_type === 'verification'
+          ? await this.verificationProjection(client,replay.rows[0])
+          : this.projection(replay.rows[0])
+        return replayProjection
       }
 
       const workItem = await this.workItem(client, input.workItemId)
@@ -124,8 +220,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
         })
       }
       if (
-        !['submission', 'project_update'].includes(workItem.work_type) ||
-        workItem.target_type !== workItem.work_type
+        !['submission', 'project_update', 'verification'].includes(workItem.work_type) ||
+        (workItem.work_type === 'verification'
+          ? workItem.target_type !== 'verification_request'
+          : workItem.target_type !== workItem.work_type)
       ) {
         throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
       }
@@ -140,6 +238,13 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
         throw workflowError('WORK_ITEM_LEASE_EXPIRED', 410)
       }
       await this.assertNoConflict(client, workItem.work_item_id, input.actor.userId)
+
+      this.assertWorkTypePermission(input,workItem.work_type)
+      if (workItem.work_type === 'verification') {
+        const projection = await this.decideVerification(client,input,workItem,activeRolesVersion)
+        await client.query('COMMIT')
+        return projection
+      }
 
       const submission = workItem.work_type === 'submission'
         ? (await client.query<SubmissionRow>(
@@ -266,10 +371,451 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       return this.projection(inserted.rows[0]!)
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined)
-      throw error
+      throw this.mapDatabaseConflict(error)
     } finally {
       client.release()
     }
+  }
+
+  private assertWorkTypePermission(input: StoredReviewDecisionInput,workType: string): void {
+    if (input.actor.roles.includes('admin')) return
+    const permission = workType === 'verification' ? 'admin:identity_review' : 'admin:review'
+    if (!input.actor.permissions.includes(permission)) throw workflowError('WORK_ITEM_FORBIDDEN',403)
+  }
+
+  private async decideVerification(
+    client: PoolClient,
+    input: StoredReviewDecisionInput,
+    workItem: WorkItemRow,
+    activeRolesVersion: number,
+  ): Promise<ReviewDecisionProjection> {
+    const result = await client.query<VerificationRequestRow>(
+      'SELECT * FROM workflow.verification_requests WHERE verification_id=$1 FOR UPDATE',
+      [workItem.target_id],
+    )
+    const request = result.rows[0]
+    if (!request) throw workflowError('REVIEW_TARGET_NOT_FOUND',404)
+    if (request.review_work_item_id !== workItem.work_item_id || request.status !== 'pending') {
+      throw workflowError('REVIEW_TARGET_STATE_CONFLICT',409)
+    }
+    if (request.applicant_user_id === input.actor.userId) throw workflowError('CONFLICT_OF_INTEREST',403)
+    const targetVersion = this.targetVersion(request)
+    const domainStatus = input.decision === 'approve'
+      ? 'verified'
+      : input.decision === 'reject' ? 'failed' : 'changes_requested'
+    const payload = this.verificationPayload(input)
+    const preview = await this.preview(client,input.previewTokenHash)
+    this.assertPreview(preview,input,workItem,request,targetVersion,activeRolesVersion)
+    const confirm = await this.confirm(client,input.confirmTokenHash)
+    this.assertConfirm(confirm,preview,input)
+    await this.assertEvidenceRefs(client,input.decisionEvidenceRefs)
+
+    let approval: VerificationApprovalResult | null = null
+    if (input.decision === 'approve') {
+      approval = await this.applyVerificationApproval(client,request,payload!,input.now)
+    }
+
+    const reviewDecisionId = randomUUID()
+    const transactionId = randomUUID()
+    const previewHash = this.hash(this.canonicalJson({
+      confirmation_summary_hash: preview.confirmation_summary_hash,
+      diff_hash: preview.diff_hash,
+      expected_versions: preview.expected_versions_json,
+      impact_hash: preview.impact_hash,
+      operation_type: preview.operation_type,
+      preview_id: preview.preview_id,
+      reason_code: preview.reason_code,
+      targets: preview.targets_json,
+    }))
+    const inserted = await client.query<DecisionRow>(
+      `INSERT INTO workflow.review_decisions (
+         review_decision_id,decision_request_id,work_item_id,work_type,target_type,target_id,
+         decision,actor_user_id,project_id,base_version_id,reason_code,field_paths_json,
+         decision_evidence_refs_json,preview_hash,confirmation_summary_hash,
+         decision_payload_hash,resulting_status,transaction_id,committed_at,schema_version
+       ) VALUES ($1,$2,$3,'verification','verification_request',$4,$5,$6,$7,NULL,$8,$9::jsonb,
+         $10::jsonb,$11,$12,$13,$14,$15,$16,'review_decision.v1')
+       RETURNING review_decision_id,decision_request_id,work_item_id,work_type,target_type,
+         target_id,decision,project_id,base_version_id,decision_payload_hash,resulting_status,
+         transaction_id,committed_at`,
+      [reviewDecisionId,input.decisionRequestId,workItem.work_item_id,request.verification_id,
+        input.decision,input.actor.userId,request.project_id,input.reasonCode,
+        JSON.stringify(input.fieldPaths),JSON.stringify(input.decisionEvidenceRefs),previewHash,
+        preview.confirmation_summary_hash,input.decisionPayloadHash,domainStatus,transactionId,input.now],
+    )
+
+    const updatedRequest = await client.query(
+      `UPDATE workflow.verification_requests SET status=$2,
+         decision=CASE WHEN $3='changes_requested' THEN NULL ELSE $3 END,
+         status_history_json=status_history_json||jsonb_build_array(
+           jsonb_build_object('status',$2::text,'at',$4::timestamptz)
+         ),decided_at=CASE WHEN $2='changes_requested' THEN NULL ELSE $4 END,
+         resulting_creator_id=$5,resulting_link_id=$6,resulting_author_relation_id=$7,
+         resulting_profile_version_id=$8,approved_link_role=$9,
+         approved_permission_profile_id=$10,approved_permission_profile_version=$11,
+         approved_profile_config_hash=$12,version=version+1,
+         updated_at=GREATEST($4,updated_at+interval '1 microsecond')
+       WHERE verification_id=$1 AND status='pending' AND version=$13`,
+      [request.verification_id,domainStatus,input.decision,input.now,
+        approval?.creatorId ?? null,approval?.linkId ?? null,approval?.relationId ?? null,
+        approval?.profileVersionId ?? null,approval?.linkRole ?? null,
+        approval?.profile.profile_id ?? null,approval?.profile.profile_version ?? null,
+        approval?.profile.config_hash ?? null,targetVersion],
+    )
+    if (updatedRequest.rowCount !== 1) throw workflowError('REVIEW_TARGET_STATE_CONFLICT',409)
+
+    const updatedWorkItem = await client.query<WorkItemRow>(
+      `UPDATE workflow.review_work_items SET status='decided',assignee_user_id=NULL,
+         claim_token_hash=NULL,lease_expires_at=NULL,last_heartbeat_at=NULL,
+         conflict_principal_version_at_claim=NULL,decision_ref_type='review_decision',
+         decision_ref_id=$2,version=version+1,updated_at=$3
+       WHERE work_item_id=$1 AND status='claimed' AND version=$4 RETURNING *`,
+      [workItem.work_item_id,reviewDecisionId,input.now,workItem.version],
+    )
+    const decidedWorkItem = updatedWorkItem.rows[0]
+    if (!decidedWorkItem) throw workflowError('WORK_ITEM_VERSION_CONFLICT',409)
+    await client.query(
+      `UPDATE private_material.material_read_grants grant SET invalidated_at=$2
+       FROM private_material.verification_materials material
+       WHERE material.verification_id=$1 AND material.material_id=grant.material_id
+         AND grant.consumed_at IS NULL AND grant.invalidated_at IS NULL`,
+      [request.verification_id,input.now],
+    )
+    const consumedConfirm = await client.query(
+      `UPDATE workflow.admin_operation_confirm_grants SET status='consumed',consumed_at=$2
+       WHERE confirm_grant_id=$1 AND status='active'`,[confirm.confirm_grant_id,input.now],
+    )
+    if (consumedConfirm.rowCount !== 1) throw workflowError('CONFIRM_TOKEN_CONSUMED',410)
+    const consumedPreview = await client.query(
+      `UPDATE workflow.admin_operation_previews SET status='consumed',consumed_at=$2
+       WHERE preview_id=$1 AND status IN ('active','reauth_required')`,[preview.preview_id,input.now],
+    )
+    if (consumedPreview.rowCount !== 1) throw workflowError('PREVIEW_TOKEN_CONSUMED',410)
+
+    await client.query(
+      `INSERT INTO workflow.review_work_item_events (
+         event_id,work_item_id,event_type,actor_user_id,from_status,to_status,
+         work_item_version,reason_code,metadata_json,occurred_at
+       ) VALUES ($1,$2,'decided',$3,'claimed','decided',$4,$5,$6::jsonb,$7)`,
+      [randomUUID(),workItem.work_item_id,input.actor.userId,decidedWorkItem.version,
+        input.reasonCode,JSON.stringify({review_decision_id:reviewDecisionId}),input.now],
+    )
+    await client.query(
+      `INSERT INTO workflow.admin_operation_security_events (
+         security_event_id,preview_id,confirm_grant_id,actor_user_id,event_type,
+         request_id,metadata_json,occurred_at
+       ) VALUES ($1,$2,$3,$4,'confirm_consumed',$5,$6::jsonb,$7)`,
+      [randomUUID(),preview.preview_id,confirm.confirm_grant_id,input.actor.userId,
+        input.requestId,JSON.stringify({review_decision_id:reviewDecisionId}),input.now],
+    )
+    if (domainStatus !== 'changes_requested') {
+      await this.writeVerificationOutbox(client,transactionId,request.verification_id,
+        targetVersion+1,'author_verification_completed',{
+          verification_id: request.verification_id,project_id: request.project_id,
+          decision: input.decision,resulting_status: domainStatus,result: 'success',
+          creator_id: approval?.creatorId ?? null,link_id: approval?.linkId ?? null,
+          author_relation_id: approval?.relationId ?? null,
+        },input.now)
+    }
+    if (approval?.firstProjectAuthorLink) {
+      await this.writeVerificationOutbox(client,transactionId,request.project_id,
+        approval.projectAggregateVersion,'project_author_linked',{
+          project_id:request.project_id,creator_id:approval.creatorId,
+          author_relation_id:approval.relationId,verification_id:request.verification_id,
+        },input.now,'project')
+    }
+    await client.query(
+      `INSERT INTO audit.audit_logs (
+         audit_id,operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+         before_hash,after_hash,diff_json,reason_code,request_id,trace_id,result,created_at
+       ) VALUES ($1,'OP-ADMIN-IDENTITY-DECISION',$2,$3,$4::jsonb,'verification_request',$5,
+         $6,$7,$8::jsonb,$9,$10,$11,'succeeded',$12)`,
+      [randomUUID(),input.actor.roles.includes('admin')?'admin':'platform_editor',
+        createHash('sha256').update(input.actor.userId).digest(),JSON.stringify(input.actor.roles),
+        request.verification_id,this.hash(this.canonicalJson({status:'pending',version:targetVersion})),
+        this.hash(this.canonicalJson({status:domainStatus,version:targetVersion+1})),
+        JSON.stringify({status:domainStatus,review_decision_id:reviewDecisionId,
+          creator_id:approval?.creatorId ?? null,link_id:approval?.linkId ?? null,
+          author_relation_id:approval?.relationId ?? null}),input.reasonCode,input.requestId,
+        transactionId,input.now],
+    )
+    return approval
+      ? this.verificationApprovalProjection(inserted.rows[0]!,approval)
+      : this.verificationProjectionFromDecision(inserted.rows[0]!)
+  }
+
+  private verificationPayload(input: StoredReviewDecisionInput): VerificationApprovePayload | null {
+    const keys = Object.keys(input.decisionPayload)
+    if (input.decision !== 'approve') {
+      if (keys.length !== 0) throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+      return null
+    }
+    if (keys.length === 0) throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+    return input.decisionPayload as VerificationApprovePayload
+  }
+
+  private async applyVerificationApproval(
+    client: PoolClient,
+    request: VerificationRequestRow,
+    payload: VerificationApprovePayload,
+    now: Date,
+  ): Promise<VerificationApprovalResult> {
+    const snapshot = this.verificationPolicySnapshot(request.link_policy_snapshot_json)
+    if (payload.policy_version !== snapshot.policy_version ||
+      payload.expected_creator_aggregate_version !== snapshot.target_creator_aggregate_version ||
+      payload.expected_owner_link_set_version !== snapshot.owner_link_set_version ||
+      payload.expected_reused_link_version !== snapshot.reused_link_version) {
+      throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+    }
+    const project = await client.query<{ aggregate_version: string; review_status: string } & QueryResultRow>(
+      'SELECT aggregate_version,review_status FROM catalog.projects WHERE project_id=$1 FOR UPDATE',
+      [request.project_id],
+    )
+    if (!project.rows[0] || project.rows[0].review_status === 'deleted') {
+      throw workflowError('PROJECT_NOT_FOUND',404)
+    }
+    const firstRelation = await client.query<{ present: boolean } & QueryResultRow>(
+      `SELECT EXISTS (SELECT 1 FROM catalog.author_relations
+       WHERE project_id=$1 AND status IN ('active','suspended')) AS present`,[request.project_id],
+    )
+    const firstProjectAuthorLink = !firstRelation.rows[0]?.present
+
+    let creator: CreatorRow
+    let link: CreatorAccountLinkRow
+    let profile: LinkPermissionProfileRow
+    let profileVersionId: string | null = null
+    if (request.creator_resolution_mode === 'create_new_creator') {
+      if (payload.approved_link_role !== undefined || payload.approved_permission_profile_ref !== undefined ||
+        snapshot.target_creator_aggregate_version !== null || snapshot.owner_link_set_version !== null ||
+        snapshot.reused_link_version !== null) throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+      profile = await this.profileFromSnapshot(client,snapshot,'owner','OWNER_V1')
+      const input = this.newCreatorProfile(request.new_creator_profile_input_json)
+      const creatorId = randomUUID()
+      profileVersionId = randomUUID()
+      await client.query(
+        `INSERT INTO catalog.creators (
+           creator_id,current_profile_version_id,aggregate_version,owner_link_set_version,
+           canonical_creator_id,merge_status,created_at,updated_at
+         ) VALUES ($1,NULL,1,1,NULL,'canonical',$2,$2)`,[creatorId,now],
+      )
+      await client.query(
+        `INSERT INTO catalog.creator_profile_versions (
+           creator_profile_version_id,creator_id,base_version_id,source_creator_profile_draft_id,
+           source_verification_request_id,profile_snapshot_json,avatar_media_reference_id,
+           published_by_admin_id,created_at
+         ) VALUES ($1,$2,NULL,NULL,$3,$4::jsonb,NULL,NULL,$5)`,
+        [profileVersionId,creatorId,request.verification_id,JSON.stringify({
+          display_name:input.display_name,bio:input.bio ?? '',avatar_url:null,
+          contacts:[],external_links:[],verification_status:'verified',
+        }),now],
+      )
+      const createdCreator = await client.query<CreatorRow>(
+        `UPDATE catalog.creators SET current_profile_version_id=$2,aggregate_version=2,
+           updated_at=$3 WHERE creator_id=$1 RETURNING *`,[creatorId,profileVersionId,now],
+      )
+      creator = createdCreator.rows[0]!
+      const linkId = randomUUID()
+      const createdLink = await client.query<CreatorAccountLinkRow>(
+        `INSERT INTO catalog.creator_account_links (
+           creator_account_link_id,user_id,creator_id,link_role,permission_profile_id,
+           permission_profile_version,permission_profile_config_hash,status,
+           source_verification_id,version,created_at,updated_at
+         ) VALUES ($1,$2,$3,'owner',$4,$5,$6,'active',$7,1,$8,$8) RETURNING *`,
+        [linkId,request.applicant_user_id,creatorId,profile.profile_id,profile.profile_version,
+          profile.config_hash,request.verification_id,now],
+      )
+      link = createdLink.rows[0]!
+    } else if (request.creator_resolution_mode === 'use_existing_link') {
+      if (payload.approved_link_role !== undefined || payload.approved_permission_profile_ref !== undefined ||
+        !request.creator_account_link_id || snapshot.reused_link_id !== request.creator_account_link_id) {
+        throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+      }
+      const linkResult = await client.query<CreatorAccountLinkRow>(
+        `SELECT * FROM catalog.creator_account_links
+         WHERE creator_account_link_id=$1 AND user_id=$2 FOR UPDATE`,
+        [request.creator_account_link_id,request.applicant_user_id],
+      )
+      link = linkResult.rows[0]!
+      if (!link || link.status !== 'active') throw workflowError('REUSED_LINK_CHANGED',409)
+      if (Number(link.version) !== snapshot.reused_link_version) throw workflowError('REUSED_LINK_CHANGED',409)
+      const creatorResult = await client.query<CreatorRow>(
+        'SELECT * FROM catalog.creators WHERE creator_id=$1 FOR UPDATE',[link.creator_id],
+      )
+      creator = creatorResult.rows[0]!
+      this.assertCreatorSnapshot(creator,snapshot)
+      profile = await this.loadProfile(client,{
+        profile_id:link.permission_profile_id,profile_version:link.permission_profile_version,
+        config_hash:link.permission_profile_config_hash,
+      })
+      const updatedCreator = await client.query<CreatorRow>(
+        `UPDATE catalog.creators SET aggregate_version=aggregate_version+1,
+           updated_at=$2 WHERE creator_id=$1 RETURNING *`,[creator.creator_id,now],
+      )
+      creator = updatedCreator.rows[0]!
+    } else {
+      if (!request.target_creator_id || !payload.approved_link_role ||
+        !payload.approved_permission_profile_ref) throw workflowError('REVIEW_DECISION_SCHEMA_INVALID',422)
+      if (!snapshot.allowed_link_roles.includes(payload.approved_link_role)) {
+        throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+      }
+      profile = await this.profileFromSnapshot(client,snapshot,payload.approved_link_role,
+        payload.approved_permission_profile_ref.profile_id,payload.approved_permission_profile_ref)
+      const creatorResult = await client.query<CreatorRow>(
+        'SELECT * FROM catalog.creators WHERE creator_id=$1 FOR UPDATE',[request.target_creator_id],
+      )
+      creator = creatorResult.rows[0]!
+      this.assertCreatorSnapshot(creator,snapshot)
+      const owner = await client.query<CreatorAccountLinkRow>(
+        `SELECT * FROM catalog.creator_account_links WHERE creator_id=$1 AND link_role='owner'
+         AND status IN ('active','suspended') ORDER BY creator_account_link_id LIMIT 1 FOR UPDATE`,
+        [creator.creator_id],
+      )
+      if ((owner.rows[0]?.creator_account_link_id ?? null) !== snapshot.observed_owner_link_id ||
+        (owner.rows[0] ? Number(owner.rows[0].version) : null) !== snapshot.observed_owner_link_version) {
+        throw workflowError('OWNER_LINK_SET_CHANGED',409)
+      }
+      if (payload.approved_link_role === 'owner' && owner.rows[0]) {
+        throw workflowError('OWNER_LINK_SET_CHANGED',409)
+      }
+      const linkId = randomUUID()
+      const createdLink = await client.query<CreatorAccountLinkRow>(
+        `INSERT INTO catalog.creator_account_links (
+           creator_account_link_id,user_id,creator_id,link_role,permission_profile_id,
+           permission_profile_version,permission_profile_config_hash,status,
+           source_verification_id,version,created_at,updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,1,$9,$9) RETURNING *`,
+        [linkId,request.applicant_user_id,creator.creator_id,payload.approved_link_role,
+          profile.profile_id,profile.profile_version,profile.config_hash,request.verification_id,now],
+      )
+      link = createdLink.rows[0]!
+      const updatedCreator = await client.query<CreatorRow>(
+        `UPDATE catalog.creators SET aggregate_version=aggregate_version+1,
+           owner_link_set_version=owner_link_set_version+$2,updated_at=$3
+         WHERE creator_id=$1 RETURNING *`,
+        [creator.creator_id,payload.approved_link_role === 'owner' ? 1 : 0,now],
+      )
+      creator = updatedCreator.rows[0]!
+    }
+
+    const ceiling = this.stringArray(profile.field_path_ceiling_json,'LINK_PERMISSION_PROFILE_INVALID')
+    const capabilities = this.stringArray(profile.capabilities_json,'LINK_PERMISSION_PROFILE_INVALID')
+    if (payload.field_permissions.some((field) => !ceiling.includes(field))) {
+      throw workflowError('LINK_PERMISSION_PROFILE_INVALID',422)
+    }
+    const relationId = randomUUID()
+    await client.query(
+      `INSERT INTO catalog.author_relations (
+         author_relation_id,project_id,creator_id,status,author_role,field_permissions_json,
+         source_verification_id,approved_via_creator_account_link_id,version,created_at,updated_at
+       ) VALUES ($1,$2,$3,'active',$4,$5::jsonb,$6,$7,1,$8,$8)`,
+      [relationId,request.project_id,creator.creator_id,payload.author_role,
+        JSON.stringify(payload.field_permissions),request.verification_id,
+        link.creator_account_link_id,now],
+    )
+    const updatedProject = await client.query<{ aggregate_version: string } & QueryResultRow>(
+      `UPDATE catalog.projects SET review_status='published_author',author_link_status='linked',
+         aggregate_version=aggregate_version+1,updated_at=$2
+       WHERE project_id=$1 AND review_status<>'deleted' RETURNING aggregate_version`,
+      [request.project_id,now],
+    )
+    if (!updatedProject.rows[0]) throw workflowError('PROJECT_NOT_FOUND',404)
+    return Object.freeze({
+      creatorId:creator.creator_id,linkId:link.creator_account_link_id,relationId,
+      profileVersionId,linkRole:link.link_role,profile,
+      effectiveFields:Object.freeze([...payload.field_permissions]),
+      capabilities:Object.freeze([...capabilities]),
+      creatorAggregateVersion:Number(creator.aggregate_version),
+      ownerLinkSetVersion:Number(creator.owner_link_set_version),
+      projectAggregateVersion:Number(updatedProject.rows[0].aggregate_version),
+      firstProjectAuthorLink,
+    })
+  }
+
+  private assertCreatorSnapshot(creator: CreatorRow | undefined,snapshot: VerificationPolicySnapshot): void {
+    if (!creator || creator.canonical_creator_id !== null || creator.merge_status !== 'canonical') {
+      throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+    }
+    if (Number(creator.aggregate_version) !== snapshot.target_creator_aggregate_version) {
+      throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
+    }
+    if (Number(creator.owner_link_set_version) !== snapshot.owner_link_set_version) {
+      throw workflowError('OWNER_LINK_SET_CHANGED',409)
+    }
+  }
+
+  private async profileFromSnapshot(
+    client: PoolClient,
+    snapshot: VerificationPolicySnapshot,
+    role: 'owner' | 'manager',
+    profileId: 'OWNER_V1' | 'MANAGER_V1',
+    requested?: Readonly<{profile_id:'OWNER_V1'|'MANAGER_V1';profile_version:1;config_hash:string}>,
+  ): Promise<LinkPermissionProfileRow> {
+    const expected = snapshot.allowed_permission_profile_refs.find((ref) => ref.profile_id===profileId)
+    if (!expected || (role==='owner' ? profileId!=='OWNER_V1' : profileId!=='MANAGER_V1') ||
+      (requested && (requested.profile_version!==expected.profile_version ||
+        requested.config_hash!==expected.config_hash))) {
+      throw workflowError('LINK_PERMISSION_PROFILE_INVALID',422)
+    }
+    return this.loadProfile(client,expected)
+  }
+
+  private async loadProfile(
+    client: PoolClient,
+    ref: Readonly<{profile_id:'OWNER_V1'|'MANAGER_V1';profile_version:number;config_hash:string}>,
+  ): Promise<LinkPermissionProfileRow> {
+    const result = await client.query<LinkPermissionProfileRow>(
+      `SELECT * FROM catalog.link_permission_profiles
+       WHERE profile_id=$1 AND profile_version=$2 AND config_hash=$3`,
+      [ref.profile_id,ref.profile_version,ref.config_hash],
+    )
+    if (!result.rows[0]) throw workflowError('LINK_PERMISSION_PROFILE_INVALID',409)
+    return result.rows[0]
+  }
+
+  private newCreatorProfile(value: unknown): Readonly<{display_name:string;bio?:string}> {
+    if (!value || typeof value!=='object' || Array.isArray(value)) {
+      throw workflowError('REVIEW_TARGET_STATE_INVALID',500,true)
+    }
+    const record = value as Record<string,unknown>
+    if (typeof record.display_name!=='string' || record.display_name.trim().length<1 ||
+      record.display_name.trim().length>80 ||
+      (record.bio!==undefined && (typeof record.bio!=='string' || record.bio.length>1000))) {
+      throw workflowError('REVIEW_TARGET_STATE_INVALID',500,true)
+    }
+    return Object.freeze({display_name:record.display_name.trim(),
+      ...(record.bio===undefined?{}:{bio:record.bio})})
+  }
+
+  private verificationPolicySnapshot(value: unknown): VerificationPolicySnapshot {
+    if (!value || typeof value!=='object' || Array.isArray(value)) {
+      throw workflowError('REVIEW_TARGET_STATE_INVALID',500,true)
+    }
+    return value as VerificationPolicySnapshot
+  }
+
+  private stringArray(value: unknown,code: string): readonly string[] {
+    if (!Array.isArray(value) || value.some((item)=>typeof item!=='string')) throw workflowError(code,500,true)
+    return value as readonly string[]
+  }
+
+  private async writeVerificationOutbox(
+    client: PoolClient,
+    transactionId: string,
+    aggregateId: string,
+    eventVersion: number,
+    eventName: string,
+    payload: Readonly<Record<string,unknown>>,
+    now: Date,
+    aggregateType='verification_request',
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO ops.outbox_events (
+         outbox_id,event_id,aggregate_type,aggregate_id,event_name,event_version,
+         payload_json,transaction_id,status,next_attempt_at,created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,'pending',$9,$9)`,
+      [randomUUID(),randomUUID(),aggregateType,aggregateId,eventName,eventVersion,
+        JSON.stringify(payload),transactionId,now],
+    )
   }
 
   private async activeSession(
@@ -329,7 +875,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     preview: PreviewRow,
     input: StoredReviewDecisionInput,
     workItem: WorkItemRow,
-    target: SubmissionRow | ProjectUpdateRow,
+    target: SubmissionRow | ProjectUpdateRow | VerificationRequestRow,
     targetVersion: number,
     activeRolesVersion: number,
   ): void {
@@ -345,7 +891,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       Number(preview.roles_version) !== activeRolesVersion
     ) throw workflowError('PREVIEW_BINDING_MISMATCH', 403)
     const isSubmission = workItem.work_type === 'submission'
-    const expectedOperationType = isSubmission ? 'submission_review' : 'project_update_review'
+    const isVerification = workItem.work_type === 'verification'
+    const expectedOperationType = isSubmission
+      ? 'submission_review'
+      : isVerification ? 'verification_review' : 'project_update_review'
     if (preview.operation_type !== expectedOperationType) {
       throw workflowError('REVIEW_DECISION_SCHEMA_INVALID', 422)
     }
@@ -354,14 +903,21 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     }
     const targetId = isSubmission
       ? (target as SubmissionRow).submission_id
-      : (target as ProjectUpdateRow).update_id
-    const targets = [{ target_type: workItem.work_type, target_id: targetId }]
+      : isVerification
+        ? (target as VerificationRequestRow).verification_id
+        : (target as ProjectUpdateRow).update_id
+    const targetType = isVerification ? 'verification_request' : workItem.work_type
+    const targets = [{ target_type: targetType, target_id: targetId }]
     const expectedVersions = isSubmission
       ? { submission: targetVersion, work_item: workItem.version }
-      : { project_update: targetVersion, work_item: workItem.version }
+      : isVerification
+        ? { verification_request: targetVersion, work_item: workItem.version }
+        : { project_update: targetVersion, work_item: workItem.version }
     const diff = isSubmission
       ? { review_status: input.resultingStatus }
-      : { status: input.resultingStatus }
+      : isVerification
+        ? { status: input.decision==='approve' ? 'verified' : input.decision==='reject' ? 'failed' : 'changes_requested' }
+        : { status: input.resultingStatus }
     if (
       this.canonicalJson(preview.targets_json) !== this.canonicalJson(targets) ||
       this.canonicalJson(preview.expected_versions_json) !== this.canonicalJson(expectedVersions) ||
@@ -540,6 +1096,105 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       schema_version: 'review_decision.v1',
       domain_status: row.resulting_status,
       outbox_status: 'pending',
+      resulting_creator_id: null,
+      resulting_link_id: null,
+      resulting_author_relation_id: null,
+      resulting_profile_version_id: null,
+      approved_link_role: null,
+      approved_permission_profile_ref: null,
+      effective_capabilities: Object.freeze([]),
+      effective_field_permissions: Object.freeze([]),
+      creator_aggregate_version: null,
+      owner_link_set_version: null,
+    })
+  }
+
+  private verificationProjectionFromDecision(row: DecisionRow): ReviewDecisionProjection {
+    return Object.freeze({
+      review_decision_id:row.review_decision_id,work_item_id:row.work_item_id,
+      work_type:'verification',target_type:'verification_request',target_id:row.target_id,
+      decision:row.decision,project_id:row.project_id,base_version_id:null,
+      resulting_status:row.resulting_status as 'changes_requested'|'failed',
+      work_item_status:'decided',work_item_decision_ref_type:'review_decision',
+      transaction_id:row.transaction_id,committed_at:row.committed_at.toISOString(),
+      schema_version:'review_decision.v1',domain_status:row.resulting_status as 'changes_requested'|'failed',
+      outbox_status:'pending',resulting_creator_id:null,resulting_link_id:null,
+      resulting_author_relation_id:null,resulting_profile_version_id:null,approved_link_role:null,
+      approved_permission_profile_ref:null,effective_capabilities:Object.freeze([]),
+      effective_field_permissions:Object.freeze([]),creator_aggregate_version:null,
+      owner_link_set_version:null,
+    })
+  }
+
+  private verificationApprovalProjection(
+    row: DecisionRow,
+    approval: VerificationApprovalResult,
+  ): ReviewDecisionProjection {
+    return Object.freeze({
+      review_decision_id:row.review_decision_id,work_item_id:row.work_item_id,
+      work_type:'verification',target_type:'verification_request',target_id:row.target_id,
+      decision:row.decision,project_id:row.project_id,base_version_id:null,
+      resulting_status:'verified',work_item_status:'decided',
+      work_item_decision_ref_type:'review_decision',transaction_id:row.transaction_id,
+      committed_at:row.committed_at.toISOString(),schema_version:'review_decision.v1',
+      domain_status:'verified',outbox_status:'pending',resulting_creator_id:approval.creatorId,
+      resulting_link_id:approval.linkId,resulting_author_relation_id:approval.relationId,
+      resulting_profile_version_id:approval.profileVersionId,approved_link_role:approval.linkRole,
+      approved_permission_profile_ref:Object.freeze({
+        profile_id:approval.profile.profile_id,profile_version:1,
+        config_hash:approval.profile.config_hash,
+      }),effective_capabilities:approval.capabilities,
+      effective_field_permissions:approval.effectiveFields,
+      creator_aggregate_version:approval.creatorAggregateVersion,
+      owner_link_set_version:approval.ownerLinkSetVersion,
+    })
+  }
+
+  private async verificationProjection(
+    client: PoolClient,
+    row: DecisionRow,
+  ): Promise<ReviewDecisionProjection> {
+    const result = await client.query<VerificationProjectionRow>(
+      `SELECT request.resulting_creator_id,request.resulting_link_id,
+         request.resulting_author_relation_id,request.resulting_profile_version_id,
+         request.approved_link_role,request.approved_permission_profile_id,
+         request.approved_permission_profile_version,request.approved_profile_config_hash,
+         profile.capabilities_json,profile.field_path_ceiling_json,relation.field_permissions_json,
+         creator.aggregate_version AS creator_aggregate_version,
+         creator.owner_link_set_version
+       FROM workflow.verification_requests request
+       LEFT JOIN catalog.creators creator ON creator.creator_id=request.resulting_creator_id
+       LEFT JOIN catalog.author_relations relation
+         ON relation.author_relation_id=request.resulting_author_relation_id
+       LEFT JOIN catalog.link_permission_profiles profile
+         ON profile.profile_id=request.approved_permission_profile_id
+        AND profile.profile_version=request.approved_permission_profile_version
+        AND profile.config_hash=request.approved_profile_config_hash
+       WHERE request.verification_id=$1`,[row.target_id],
+    )
+    const value = result.rows[0]
+    if (!value?.resulting_creator_id) {
+      if (row.resulting_status === 'verified') {
+        throw workflowError('REVIEW_TARGET_STATE_INVALID', 500, true)
+      }
+      return this.verificationProjectionFromDecision(row)
+    }
+    const ceiling = this.stringArray(value.field_path_ceiling_json,'REVIEW_TARGET_STATE_INVALID')
+    const requested = this.stringArray(value.field_permissions_json,'REVIEW_TARGET_STATE_INVALID')
+    const fields = Object.freeze(requested.filter((field)=>ceiling.includes(field)))
+    const capabilities = Object.freeze([...this.stringArray(value.capabilities_json,'REVIEW_TARGET_STATE_INVALID')])
+    return Object.freeze({
+      ...this.verificationProjectionFromDecision(row),resulting_status:'verified',domain_status:'verified',
+      resulting_creator_id:value.resulting_creator_id,resulting_link_id:value.resulting_link_id,
+      resulting_author_relation_id:value.resulting_author_relation_id,
+      resulting_profile_version_id:value.resulting_profile_version_id,
+      approved_link_role:value.approved_link_role,
+      approved_permission_profile_ref:value.approved_permission_profile_id ? Object.freeze({
+        profile_id:value.approved_permission_profile_id,profile_version:1 as const,
+        config_hash:value.approved_profile_config_hash!,
+      }) : null,effective_capabilities:capabilities,effective_field_permissions:fields,
+      creator_aggregate_version:value.creator_aggregate_version===null?null:Number(value.creator_aggregate_version),
+      owner_link_set_version:value.owner_link_set_version===null?null:Number(value.owner_link_set_version),
     })
   }
 
@@ -550,7 +1205,7 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     return value as readonly string[]
   }
 
-  private targetVersion(target: SubmissionRow | ProjectUpdateRow): number {
+  private targetVersion(target: SubmissionRow | ProjectUpdateRow | VerificationRequestRow): number {
     const version = Number(target.version)
     if (!Number.isSafeInteger(version) || version < 1) {
       throw workflowError('REVIEW_TARGET_STATE_INVALID', 500, true)
@@ -572,5 +1227,25 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
 
   private hash(value: string): string {
     return createHash('sha256').update(value, 'utf8').digest('hex')
+  }
+
+  private mapDatabaseConflict(error: unknown): unknown {
+    if (!error || typeof error!=='object') return error
+    const pg=error as {code?:string;constraint?:string;message?:string}
+    if (pg.code!=='23505' && pg.code!=='23503' && pg.code!=='23514') return error
+    if (pg.constraint==='creator_account_links_owner_nonterminal_uniq') {
+      return workflowError('OWNER_LINK_SET_CHANGED',409)
+    }
+    if (pg.constraint==='creator_account_links_user_creator_nonterminal_uniq') {
+      return workflowError('REUSED_LINK_CHANGED',409)
+    }
+    if (pg.constraint==='author_relations_creator_project_nonterminal_uniq' ||
+      pg.constraint==='author_relations_creator_project_role_nonterminal_uniq') {
+      return workflowError('AUTHOR_RELATION_EXISTS',409)
+    }
+    if (pg.constraint?.includes('permission_profile') || pg.message?.includes('PROFILE_MISMATCH')) {
+      return workflowError('LINK_PERMISSION_PROFILE_INVALID',409)
+    }
+    return error
   }
 }

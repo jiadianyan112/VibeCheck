@@ -138,6 +138,8 @@ function fakeStore(options: { readonly owned?: boolean } = {}) {
     resulting_link_id: null,
     resulting_author_relation_id: null,
     resulting_profile_version_id: null,
+    approved_link_role: null,
+    approved_permission_profile_ref: null,
     version: 1,
     created_at: '2026-08-13T16:00:00.000Z',
     updated_at: '2026-08-13T16:00:00.000Z',

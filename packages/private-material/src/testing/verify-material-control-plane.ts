@@ -36,6 +36,7 @@ const storage: PrivateMaterialStorage = {
     assert.equal(input.uploadReceipt.startsWith('fixture-receipt-'), true)
     return { detectedMime: inspectionMime, byteSize: 4, checksumSha256: checksum }
   },
+  async issueRead() { return { readUrl: 'https://private-storage.example/read' } },
   async allowReads() {},
   async denyReads(input) { deniedKeys.add(input.storageKey) },
 }

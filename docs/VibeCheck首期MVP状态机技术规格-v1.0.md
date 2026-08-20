@@ -92,7 +92,7 @@ Transition Log 不替代领域 Event、ReviewDecision 或 AuditLog。
 
 | Transition ID | From | Command | To | Actor | Guard | 同事务写入 | 事件 | 可逆 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SM-002-T01 | published_platform | VerificationApproved | published_author | verification service | 至少一条 active AuthorRelation | Project Version/状态、Relation、Outbox | project_author_linked | 是 |
+| SM-002-T01 | published_platform | VerificationApproved | published_author | verification service | 至少一条 active AuthorRelation | Project 当前状态、Relation、Outbox；不创建 ProjectVersion/catalog Event | project_author_linked | 是 |
 | SM-002-T02 | published_author | RelationSuspended/Terminated | published_platform | ownership/verification service | 最后一条 active AuthorRelation 失效 | Relation、治理 Version、Project | project_author_unlinked | 新关系可恢复 |
 | SM-002-T03 | published_* | Restrict | restricted | admin | preview/confirm；法律/安全/隐私/争议原因 | AdminFactDecision、治理 Version、Project、Outbox | project_restricted | 可复核 |
 | SM-002-T04 | published_* | Archive | archived | admin | Evidence或豁免；origin publication status | AdminFactDecision、Version、Project | project_archived | 可恢复 |

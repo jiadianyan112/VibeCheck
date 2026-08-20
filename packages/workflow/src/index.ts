@@ -13,9 +13,19 @@ export {
   type GetVerificationRequestCommand,
   type NewCreatorProfileInput,
   type PatchVerificationRequestCommand,
+  type PermissionProfileExactRef,
+  type LinkPolicySnapshot,
   type ProvisionalLinkPolicy,
   type RequestedLinkRole,
+  type SubmitVerificationRequestCommand,
+  type SupplementVerificationRequestCommand,
+  type VerificationApplicantMaterialSummary,
+  type VerificationPublicReviewMessage,
   type VerificationRequestProjection,
+  type VerificationRequestStatus,
+  type WithdrawVerificationRequestCommand,
+  type ReviewVerificationRequestCommand,
+  type VerificationRequestReviewerProjection,
 } from './verification-request-types.js'
 export { WorkflowService, type WorkflowServiceConfig } from './service.js'
 export type { ReviewQueueAnchor, StoredReviewWorkItemPage, WorkflowStore } from './store-port.js'

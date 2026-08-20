@@ -269,6 +269,7 @@ export class PostgresWorkflowStore implements WorkflowStore {
       )
       const released = updated.rows[0]
       if (!released) throw workflowError('WORK_ITEM_VERSION_CONFLICT', 409)
+      await this.invalidateMaterialReadGrants(client,row.work_item_id,input.now)
       await this.event(
         client, released, 'released', 'claimed', 'queued', input.actor.userId,
         input.reasonCode, input.now,
@@ -388,6 +389,7 @@ export class PostgresWorkflowStore implements WorkflowStore {
     )
     const expired = updated.rows[0]
     if (!expired) throw workflowError('WORK_ITEM_VERSION_CONFLICT', 409)
+    await this.invalidateMaterialReadGrants(client,row.work_item_id,now)
     await this.event(
       client, expired, 'lease_expired', 'claimed', 'queued', null, 'review_lease_expired', now,
     )
@@ -396,6 +398,16 @@ export class PostgresWorkflowStore implements WorkflowStore {
       reasonCode: 'review_lease_expired', requestId: requestId.slice(0, 64), now,
     })
     return expired
+  }
+
+  private async invalidateMaterialReadGrants(
+    client: PoolClient,workItemId: string,now: Date,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE private_material.material_read_grants SET invalidated_at=$2
+       WHERE work_item_id=$1 AND consumed_at IS NULL AND invalidated_at IS NULL`,
+      [workItemId,now],
+    )
   }
 
   private async event(
@@ -486,6 +498,8 @@ export class PostgresWorkflowStore implements WorkflowStore {
         table = 'community.comments'; id = 'comment_id'; status = 'moderation_state'; break
       case 'report':
         table = 'community.comment_reports'; id = 'report_id'; status = 'status'; break
+      case 'verification_request':
+        table = 'workflow.verification_requests'; id = 'verification_id'; status = 'status'; break
       default:
         return Object.freeze({ status: 'not_implemented' })
     }

@@ -575,6 +575,9 @@ class FakeVerificationRequestService implements ApiVerificationRequestService {
   createCommand: (CreateVerificationRequestCommand & { readonly requestId?: string }) | null = null
   getCommand: GetVerificationRequestCommand | null = null
   patchCommand: (PatchVerificationRequestCommand & { readonly requestId?: string }) | null = null
+  submitCommand: import('@vibecheck/workflow').SubmitVerificationRequestCommand | null = null
+  supplementCommand: import('@vibecheck/workflow').SupplementVerificationRequestCommand | null = null
+  withdrawCommand: import('@vibecheck/workflow').WithdrawVerificationRequestCommand | null = null
 
   getCreateCommand() { return this.createCommand }
   getGetCommand() { return this.getCommand }
@@ -593,6 +596,32 @@ class FakeVerificationRequestService implements ApiVerificationRequestService {
   async patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }) {
     this.patchCommand = command
     return verificationProjection(command.expectedVersion + 1)
+  }
+
+  async submit(command: import('@vibecheck/workflow').SubmitVerificationRequestCommand) {
+    this.submitCommand=command
+    return verificationProjection(command.expectedVersion + 1)
+  }
+
+  async supplement(command: import('@vibecheck/workflow').SupplementVerificationRequestCommand) {
+    this.supplementCommand=command
+    return verificationProjection(command.expectedVersion + 1)
+  }
+
+  async withdraw(command: import('@vibecheck/workflow').WithdrawVerificationRequestCommand) {
+    this.withdrawCommand=command
+    return verificationProjection(command.expectedVersion + 1)
+  }
+  async getForReviewer(command:import('@vibecheck/workflow').ReviewVerificationRequestCommand){
+    return Object.freeze({viewer_schema:'reviewer' as const,verification_id:command.verificationId,
+      project_id:'62000000-0000-4000-8000-000000000001',creator_resolution_mode:'create_new_creator' as const,
+      creator_account_link_id:null,target_creator_id:null,new_creator_profile_input:{display_name:'Creator'},
+      requested_link_role:'owner' as const,link_policy_snapshot:Object.freeze({
+        ...verificationProjection(1).provisional_link_policy!,observed_owner_link_id:null,
+        observed_owner_link_version:null,reused_link_id:null,reused_link_version:null}),
+      method:'official_domain_control',public_summary:'I control the official project domain.',
+      material_ids:Object.freeze(['6a000000-0000-4000-8000-000000000001']),evidence_refs:Object.freeze([]),
+      submission_revision:1,status:'pending' as const,review_work_item_id:'6b000000-0000-4000-8000-000000000001',version:3})
   }
 }
 
@@ -627,6 +656,8 @@ function verificationProjection(version: number): VerificationRequestProjection 
     resulting_link_id: null,
     resulting_author_relation_id: null,
     resulting_profile_version_id: null,
+    approved_link_role: null,
+    approved_permission_profile_ref: null,
     version,
     created_at: '2026-08-10T00:00:00.000Z',
     updated_at: '2026-08-10T00:00:00.000Z',
@@ -673,6 +704,25 @@ class FakePrivateMaterialService implements ApiPrivateMaterialService {
   async revoke(command: RevokeMaterialCommand): Promise<RevokeMaterialProjection> {
     this.revokeCommand = command
     return Object.freeze({ material: materialSummary('pending', 3), revoked_at: '2026-08-10T00:01:00.000Z' })
+  }
+
+  async getForReviewer(command: import('@vibecheck/private-material').ReviewerMaterialCommand) {
+    return Object.freeze({
+      material_id:command.materialId,verification_id:'69000000-0000-4000-8000-000000000001',
+      status:'ready' as const,scan_result:'clean' as const,rejection_reason_code:null,
+      pre_terminal_scan_result:null,scan_attempt_count:1,next_scan_at:null,
+      processing_deadline_at:null,declared_mime:'application/pdf' as const,detected_mime:'application/pdf',
+      byte_size:4,checksum_match:true,read_grant_eligibility:'eligible' as const,version:2,
+    })
+  }
+
+  async createReadGrant() {
+    return Object.freeze({read_url:'/api/v1/verification-material-read-grants/token',
+      expires_at:'2026-08-10T00:05:00.000Z'})
+  }
+
+  async redeemReadGrant() {
+    return Object.freeze({redirect_url:'https://private.example/read'})
   }
 }
 
@@ -1422,6 +1472,16 @@ class FakeReviewDecisionService implements ApiReviewDecisionService {
       schema_version: 'review_decision.v1',
       domain_status: 'approved',
       outbox_status: 'pending',
+      resulting_creator_id: null,
+      resulting_link_id: null,
+      resulting_author_relation_id: null,
+      resulting_profile_version_id: null,
+      approved_link_role: null,
+      approved_permission_profile_ref: null,
+      effective_capabilities: Object.freeze([]),
+      effective_field_permissions: Object.freeze([]),
+      creator_aggregate_version: null,
+      owner_link_set_version: null,
     })
   }
 }
@@ -2051,6 +2111,11 @@ test('verification draft routes bind the applicant, require CSRF, and keep ident
     })
     assert.equal(loaded.status, 200)
     assert.equal(verificationRequests.getGetCommand()?.userId, session.userId)
+    const reviewerLoaded=await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}`,{
+      headers:{cookie:headers.cookie,'x-review-claim-token':'c'.repeat(43)},
+    })
+    assert.equal(reviewerLoaded.status,200)
+    assert.equal((await reviewerLoaded.json() as Record<string,unknown>).viewer_schema,'reviewer')
 
     const patched = await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}`, {
       method: 'PATCH',
@@ -2067,6 +2132,25 @@ test('verification draft routes bind the applicant, require CSRF, and keep ident
     assert.equal(patched.status, 200)
     assert.equal(verificationRequests.getPatchCommand()?.userId, session.userId)
     assert.equal(verificationRequests.getPatchCommand()?.operationId, 'verification-patch-0001')
+    const submitted=await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}/submit`,{
+      method:'POST',headers,body:JSON.stringify({expected_version:2,
+        material_ids:['6a000000-0000-4000-8000-000000000001'],submission_key:'verification-submit-0001'}),
+    })
+    assert.equal(submitted.status,202)
+    assert.equal(verificationRequests.submitCommand?.userId,session.userId)
+    const supplemented=await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}/supplements`,{
+      method:'POST',headers,body:JSON.stringify({expected_version:3,
+        material_ids:['6a000000-0000-4000-8000-000000000001'],evidence_refs:[],
+        operation_id:'verification-supplement-0001'}),
+    })
+    assert.equal(supplemented.status,202)
+    assert.equal(verificationRequests.supplementCommand?.operationId,'verification-supplement-0001')
+    const withdrawn=await fetch(`${runtime.baseUrl}/api/v1/verification-requests/${verificationId}/withdraw`,{
+      method:'POST',headers,body:JSON.stringify({expected_version:4,
+        operation_id:'verification-withdraw-0001',reason_code:'applicant_cancelled'}),
+    })
+    assert.equal(withdrawn.status,200)
+    assert.equal(verificationRequests.withdrawCommand?.reasonCode,'applicant_cancelled')
   } finally {
     await runtime.stop()
   }
@@ -2128,6 +2212,23 @@ test('private verification material routes bind ownership and return only applic
       'applicant_scan_state','material_id','next_action','reason_key',
       'upload_expires_at','verification_id','version',
     ])
+    const reviewerLoaded=await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}`,{
+      headers:{cookie:headers.cookie,'x-review-claim-token':'c'.repeat(43)},
+    })
+    assert.equal(reviewerLoaded.status,200)
+    const reviewerBody=await reviewerLoaded.json() as Record<string,unknown>
+    assert.equal(reviewerBody.read_grant_eligibility,'eligible')
+    assert.equal(Object.hasOwn(reviewerBody,'storage_key'),false)
+    const grant=await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}/read-grants`,{
+      method:'POST',headers:{...headers,'x-review-claim-token':'c'.repeat(43)},
+      body:JSON.stringify({purpose:'author_verification_review',operation_id:'material-read-grant-0001'}),
+    })
+    assert.equal(grant.status,201)
+    const redeemed=await fetch(`${runtime.baseUrl}/api/v1/verification-material-read-grants/${'g'.repeat(43)}`,{
+      headers:{cookie:headers.cookie},redirect:'manual',
+    })
+    assert.equal(redeemed.status,302)
+    assert.equal(redeemed.headers.get('location'),'https://private.example/read')
 
     const completed = await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}/complete`, {
       method: 'POST', headers,

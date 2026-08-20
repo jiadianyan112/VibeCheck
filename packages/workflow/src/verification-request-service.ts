@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 
 import { workflowError } from './errors.js'
 import {
@@ -13,7 +13,12 @@ import {
   type NewCreatorProfileInput,
   type PatchVerificationRequestCommand,
   type RequestedLinkRole,
+  type SubmitVerificationRequestCommand,
+  type SupplementVerificationRequestCommand,
   type VerificationRequestProjection,
+  type WithdrawVerificationRequestCommand,
+  type ReviewVerificationRequestCommand,
+  type VerificationRequestReviewerProjection,
 } from './verification-request-types.js'
 
 export interface VerificationRequestStorePort {
@@ -21,15 +26,22 @@ export interface VerificationRequestStorePort {
   getOwned: PostgresVerificationRequestStore['getOwned']
   create: PostgresVerificationRequestStore['create']
   patch: PostgresVerificationRequestStore['patch']
+  submit: PostgresVerificationRequestStore['submit']
+  withdraw: PostgresVerificationRequestStore['withdraw']
   resolveSelection: PostgresVerificationRequestStore['resolveSelection']
   projection: PostgresVerificationRequestStore['projection']
+  getForReviewer: PostgresVerificationRequestStore['getForReviewer']
 }
 
 export class VerificationRequestService {
   private readonly now: () => Date
+  private readonly authTokenSecret: string | null
 
-  constructor(private readonly store: VerificationRequestStorePort, now?: () => Date) {
+  constructor(private readonly store: VerificationRequestStorePort, now?: () => Date,
+    reviewConfig?:Readonly<{authTokenSecret:string}>) {
     this.now = now ?? (() => new Date())
+    this.authTokenSecret=reviewConfig?.authTokenSecret??null
+    if(this.authTokenSecret!==null&&this.authTokenSecret.length<32)throw new Error('VERIFICATION_REVIEW_AUTH_SECRET_INVALID')
   }
 
   async create(command: CreateVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection> {
@@ -58,8 +70,29 @@ export class VerificationRequestService {
     const userId = uuid(command.userId, 'VERIFICATION_USER_INVALID')
     const row = await this.store.getOwned(userId, uuid(command.verificationId, 'VERIFICATION_ID_INVALID'))
     if (!row) throw workflowError('VERIFICATION_REQUEST_NOT_FOUND', 404)
-    const selection = await this.resolveStored(row)
-    return this.store.projection(row, selection.provisionalPolicy)
+    const policy = row.status==='draft' || row.status==='changes_requested'
+      ? (await this.resolveStored(row)).provisionalPolicy
+      : null
+    return this.store.projection(row, policy)
+  }
+
+  async getForReviewer(command:ReviewVerificationRequestCommand):Promise<VerificationRequestReviewerProjection>{
+    if(!this.authTokenSecret)throw workflowError('VERIFICATION_REVIEW_UNAVAILABLE',503,true)
+    const reviewerUserId=uuid(command.reviewerUserId,'VERIFICATION_REVIEWER_INVALID')
+    if(!Array.isArray(command.roles)||!Array.isArray(command.permissions)||
+      (!command.roles.includes('admin')&&!command.permissions.includes('admin:identity_review'))){
+      throw workflowError('WORK_ITEM_FORBIDDEN',403)
+    }
+    if(typeof command.sessionToken!=='string'||command.sessionToken.length<32||command.sessionToken.length>128){
+      throw workflowError('SESSION_INVALID',401)
+    }
+    if(typeof command.claimToken!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(command.claimToken)){
+      throw workflowError('WORK_ITEM_CLAIM_FORBIDDEN',403)
+    }
+    return this.store.getForReviewer({reviewerUserId,
+      primarySessionIdHash:createHmac('sha256',this.authTokenSecret).update(command.sessionToken).digest(),
+      verificationId:uuid(command.verificationId,'VERIFICATION_ID_INVALID'),
+      claimTokenHash:createHash('sha256').update(command.claimToken).digest(),now:this.now()})
   }
 
   async patch(command: PatchVerificationRequestCommand & { readonly requestId?: string }): Promise<VerificationRequestProjection> {
@@ -94,6 +127,60 @@ export class VerificationRequestService {
       requestId: command.requestId ?? operation,
     })
     return this.store.projection(row, selection.provisionalPolicy)
+  }
+
+  async submit(command: SubmitVerificationRequestCommand): Promise<VerificationRequestProjection> {
+    return this.submitRevision({ ...command, evidenceRefs: [], operationId: command.submissionKey, operationType: 'submit' })
+  }
+
+  async supplement(command: SupplementVerificationRequestCommand): Promise<VerificationRequestProjection> {
+    return this.submitRevision({ ...command, operationType: 'supplement' })
+  }
+
+  async withdraw(command: WithdrawVerificationRequestCommand): Promise<VerificationRequestProjection> {
+    const userId = uuid(command.userId,'VERIFICATION_USER_INVALID')
+    const verificationId = uuid(command.verificationId,'VERIFICATION_ID_INVALID')
+    const expectedVersion = version(command.expectedVersion)
+    const operation = operationId(command.operationId)
+    const reasonCode = command.reasonCode===null ? 'applicant_withdrawn' : safeKey(command.reasonCode,'VERIFICATION_REASON_INVALID')
+    const requestHash = hashJson({ expected_version: expectedVersion,reason_code: reasonCode })
+    const row = await this.store.withdraw({
+      userId,verificationId,expectedVersion,operationId: operation,requestHash,reasonCode,
+      now: this.now(),requestId: command.requestId ?? operation,
+    })
+    return this.store.projection(row,null)
+  }
+
+  private async submitRevision(command: Readonly<{
+    userId: string
+    verificationId: string
+    expectedVersion: number
+    materialIds: readonly string[]
+    evidenceRefs: readonly string[]
+    operationId: string
+    operationType: 'submit' | 'supplement'
+    requestId?: string
+  }>): Promise<VerificationRequestProjection> {
+    const userId = uuid(command.userId,'VERIFICATION_USER_INVALID')
+    const verificationId = uuid(command.verificationId,'VERIFICATION_ID_INVALID')
+    const expectedVersion = version(command.expectedVersion)
+    const materialIds = uuidList(command.materialIds,1,5,'VERIFICATION_MATERIAL_IDS_INVALID')
+    const evidenceRefs = uuidList(command.evidenceRefs,0,50,'VERIFICATION_EVIDENCE_REFS_INVALID')
+    const operation = operationId(command.operationId)
+    const row = await this.store.getOwned(userId,verificationId)
+    if (!row) throw workflowError('VERIFICATION_REQUEST_NOT_FOUND',404)
+    const selection = await this.resolveStored(row)
+    const requestHash = hashJson({
+      expected_version: expectedVersion,material_ids: materialIds,evidence_refs: evidenceRefs,
+      creator_resolution_mode: selection.mode,creator_account_link_id: selection.creatorAccountLinkId,
+      target_creator_id: selection.targetCreatorId,requested_link_role: selection.requestedLinkRole,
+    })
+    const updated = await this.store.submit({
+      userId,verificationId,expectedVersion,materialIds,evidenceRefs,operationId: operation,
+      operationType: command.operationType,requestHash,selection,now: this.now(),
+      requestId: command.requestId ?? operation,
+    })
+    return this.store.projection(updated,null)
   }
 
   private selectionInput(
@@ -169,6 +256,23 @@ function operationId(value: string): string {
   if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(value)) {
     throw workflowError('VERIFICATION_IDEMPOTENCY_KEY_INVALID', 422)
   }
+  return value
+}
+
+function version(value: number): number {
+  if (!Number.isSafeInteger(value) || value<1) throw workflowError('VERIFICATION_VERSION_INVALID',422)
+  return value
+}
+
+function uuidList(value: readonly string[], minimum: number, maximum: number, code: string): readonly string[] {
+  if (!Array.isArray(value) || value.length<minimum || value.length>maximum) throw workflowError(code,422)
+  const normalized = value.map((item) => uuid(item,code))
+  if (new Set(normalized).size!==normalized.length) throw workflowError(code,422)
+  return Object.freeze([...normalized])
+}
+
+function safeKey(value: string, code: string): string {
+  if (typeof value!=='string' || !/^[a-z][a-z0-9_]{0,63}$/.test(value)) throw workflowError(code,422)
   return value
 }
 

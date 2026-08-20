@@ -18,6 +18,7 @@ export {
   PrivateMaterialScanProcessor,
   type PrivateMaterialScanStorePort,
 } from './scan-processor.js'
+export { PostgresPrivateMaterialAccessRevoker } from './access-revoker.js'
 export {
   verificationMaterialMimeTypes,
   type ApplicantMaterialSummary,
@@ -33,4 +34,10 @@ export {
   type RevokeMaterialCommand,
   type RevokeMaterialProjection,
   type VerificationMaterialMime,
+  type ReviewerMaterialCommand,
+  type VerificationMaterialReviewerProjection,
+  type CreateMaterialReadGrantCommand,
+  type MaterialReadGrantProjection,
+  type RedeemMaterialReadGrantCommand,
+  type MaterialReadRedemptionProjection,
 } from './types.js'

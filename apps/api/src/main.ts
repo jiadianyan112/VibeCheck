@@ -15,6 +15,7 @@ import {
   PostgresProjectUpdateStore,
   ProjectUpdateService,
   validateLinkPermissionProfileDeployment,
+  CreatorAuthorReadService,
 } from '@vibecheck/catalog'
 import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
 import {
@@ -161,6 +162,7 @@ const projectUpdates = authorAuthorization
       authorization: authorAuthorization,
     })
   : undefined
+const creatorAuthorRead = catalogConfig.enabled ? new CreatorAuthorReadService(pool) : undefined
 if (workflowConfig.enabled && !identityConfig.enabled) {
   throw new Error('CONFIG_REVIEW_WORKFLOW_REQUIRES_IDENTITY')
 }
@@ -168,7 +170,9 @@ const workflow = workflowConfig.enabled
   ? new WorkflowService(new PostgresWorkflowStore(pool), workflowConfig)
   : undefined
 const verificationRequests = workflowConfig.enabled
-  ? new VerificationRequestService(new PostgresVerificationRequestStore(pool))
+  ? new VerificationRequestService(new PostgresVerificationRequestStore(pool),undefined,{
+      authTokenSecret:identityConfig.authTokenSecret,
+    })
   : undefined
 if (privateMaterialConfig.enabled && (!identityConfig.enabled || !workflowConfig.enabled)) {
   throw new Error('CONFIG_PRIVATE_MATERIAL_REQUIRES_IDENTITY_WORKFLOW')
@@ -184,6 +188,8 @@ const privateMaterials = privateMaterialConfig.enabled
       crypto: {
         encryptionKeyBase64: privateMaterialConfig.encryptionMasterKey,
         encryptionKeyVersion: privateMaterialConfig.encryptionKeyVersion,
+        authTokenSecret: identityConfig.authTokenSecret,
+        readGrantTokenSecret: workflowConfig.cursorSecret,
       },
     })
   : undefined
@@ -222,6 +228,7 @@ const server = createApiServer(config, {
   ...(media ? { media } : {}),
   ...(evidence ? { evidence } : {}),
   ...(projectUpdates ? { projectUpdates } : {}),
+  ...(creatorAuthorRead ? { creatorAuthorRead } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {

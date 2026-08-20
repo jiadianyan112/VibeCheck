@@ -1,4 +1,5 @@
 import {
+  GetObjectCommand,
   GetObjectTaggingCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -26,7 +27,7 @@ export interface S3PrivateMaterialClient {
 }
 
 export type S3PrivateMaterialPresigner = (
-  command: PutObjectCommand,
+  command: PutObjectCommand | GetObjectCommand,
   options: Readonly<{
     expiresIn: number
     signableHeaders: ReadonlySet<string>
@@ -119,6 +120,19 @@ export class AwsS3PrivateMaterialStorage implements PrivateMaterialStorage, Priv
     } catch (error) {
       if (error instanceof Error && error.name==='PrivateMaterialError') throw error
       throw privateMaterialError('MATERIAL_STORAGE_INSPECTION_FAILED', 503, true)
+    }
+  }
+
+  async issueRead(input: Parameters<PrivateMaterialStorage['issueRead']>[0]) {
+    const expiresIn = Math.max(1,Math.min(60,Math.floor((input.expiresAt.getTime()-Date.now())/1_000)))
+    try {
+      const readUrl = await this.presign(new GetObjectCommand({
+        Bucket:this.config.bucket,Key:this.key(input.storageKey),
+      }),{expiresIn,signableHeaders:new Set(),unhoistableHeaders:new Set()})
+      if (new URL(readUrl).protocol!=='https:') throw new Error('READ_URL_PROTOCOL_INVALID')
+      return Object.freeze({readUrl})
+    } catch {
+      throw privateMaterialError('MATERIAL_STORAGE_READ_SIGNING_FAILED',503,true)
     }
   }
 

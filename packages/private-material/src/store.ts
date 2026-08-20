@@ -44,6 +44,16 @@ export interface CompleteStoreResult {
   readonly replayed: boolean
 }
 
+export interface MaterialReadGrantStoreResult {
+  readonly expiresAt: Date
+  readonly replayed: boolean
+}
+
+export interface MaterialReadRedemptionStoreResult {
+  readonly material: StoredMaterial
+  readonly expiresAt: Date
+}
+
 export class PostgresPrivateMaterialStore {
   constructor(private readonly pool: Pool) {}
 
@@ -318,6 +328,11 @@ export class PostgresPrivateMaterialStore {
         [input.materialId, input.userId, JSON.stringify(terminal), input.now],
       )
       const material = updated.rows[0]!
+      await client.query(
+        `UPDATE private_material.material_read_grants SET invalidated_at=$2
+         WHERE material_id=$1 AND consumed_at IS NULL AND invalidated_at IS NULL`,
+        [input.materialId,input.now],
+      )
       const response = applicantSummary(material)
       await client.query(
         `INSERT INTO private_material.verification_material_operations (
@@ -340,6 +355,192 @@ export class PostgresPrivateMaterialStore {
     } finally {
       client.release()
     }
+  }
+
+  async getForReviewer(input: Readonly<{
+    reviewerUserId: string
+    primarySessionIdHash: Buffer
+    materialId: string
+    claimTokenHash: Buffer
+    now: Date
+    requestId: string
+  }>): Promise<StoredMaterial> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const material = await this.assertReviewerAccess(client,input)
+      const workItem=await client.query<{review_work_item_id:string}>(
+        'SELECT review_work_item_id FROM workflow.verification_requests WHERE verification_id=$1',
+        [material.verification_id],
+      )
+      await client.query(
+        `INSERT INTO private_material.material_access_logs (
+           material_id,actor_user_id,work_item_id,action,purpose,result,request_id,occurred_at
+         ) VALUES ($1,$2,$3,'read_grant','author_verification_metadata','success',left($4,128),$5)`,
+        [material.material_id,input.reviewerUserId,workItem.rows[0]!.review_work_item_id,
+          input.requestId,input.now],
+      )
+      await client.query('COMMIT')
+      return material
+    } catch (error) {
+      await client.query('ROLLBACK').catch(()=>undefined)
+      throw error
+    } finally { client.release() }
+  }
+
+  async createReadGrant(input: Readonly<{
+    reviewerUserId: string
+    primarySessionIdHash: Buffer
+    materialId: string
+    claimTokenHash: Buffer
+    purpose: 'author_verification_review'
+    operationId: string
+    requestHash: string
+    tokenHash: Buffer
+    now: Date
+    expiresAt: Date
+    requestId: string
+  }>): Promise<MaterialReadGrantStoreResult> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const material = await this.assertReviewerAccess(client,input)
+      const replay = await client.query<{request_hash:string;expires_at:Date}>(
+        `SELECT request_hash,expires_at FROM private_material.material_read_grants
+         WHERE reviewer_user_id=$1 AND material_id=$2 AND operation_id=$3 FOR UPDATE`,
+        [input.reviewerUserId,input.materialId,input.operationId],
+      )
+      if (replay.rows[0]) {
+        if (replay.rows[0].request_hash!==input.requestHash) {
+          throw privateMaterialError('MATERIAL_OPERATION_REUSED',409)
+        }
+        await client.query('COMMIT')
+        return {expiresAt:replay.rows[0].expires_at,replayed:true}
+      }
+      const workItem = await client.query<{review_work_item_id:string}>(
+        'SELECT review_work_item_id FROM workflow.verification_requests WHERE verification_id=$1',
+        [material.verification_id],
+      )
+      await client.query(
+        `INSERT INTO private_material.material_read_grants (
+           grant_id,material_id,reviewer_user_id,primary_session_id_hash,work_item_id,
+           claim_token_hash,purpose,operation_id,request_hash,token_hash,expires_at,created_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [randomUUID(),material.material_id,input.reviewerUserId,input.primarySessionIdHash,
+          workItem.rows[0]!.review_work_item_id,input.claimTokenHash,input.purpose,
+          input.operationId,input.requestHash,input.tokenHash,input.expiresAt,input.now],
+      )
+      await client.query(
+        `INSERT INTO private_material.material_access_logs (
+           material_id,actor_user_id,work_item_id,action,purpose,result,request_id,occurred_at
+         ) VALUES ($1,$2,$3,'read_grant',$4,'success',left($5,128),$6)`,
+        [material.material_id,input.reviewerUserId,workItem.rows[0]!.review_work_item_id,
+          input.purpose,input.requestId,input.now],
+      )
+      await client.query('COMMIT')
+      return {expiresAt:input.expiresAt,replayed:false}
+    } catch (error) {
+      await client.query('ROLLBACK').catch(()=>undefined)
+      throw error
+    } finally { client.release() }
+  }
+
+  async redeemReadGrant(input: Readonly<{
+    reviewerUserId: string
+    primarySessionIdHash: Buffer
+    tokenHash: Buffer
+    now: Date
+    requestId: string
+  }>): Promise<MaterialReadRedemptionStoreResult> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query<{
+        material_id:string;reviewer_user_id:string;primary_session_id_hash:Buffer;
+        work_item_id:string;claim_token_hash:Buffer;expires_at:Date;consumed_at:Date|null;
+        invalidated_at:Date|null
+      }>(
+        'SELECT * FROM private_material.material_read_grants WHERE token_hash=$1 FOR UPDATE',
+        [input.tokenHash],
+      )
+      const grant = result.rows[0]
+      if (!grant) throw privateMaterialError('MATERIAL_READ_GRANT_NOT_FOUND',404)
+      if (grant.reviewer_user_id!==input.reviewerUserId ||
+        !grant.primary_session_id_hash.equals(input.primarySessionIdHash)) {
+        throw privateMaterialError('MATERIAL_READ_GRANT_FORBIDDEN',403)
+      }
+      if (grant.consumed_at) throw privateMaterialError('MATERIAL_READ_GRANT_CONSUMED',410)
+      if (grant.invalidated_at || grant.expires_at<=input.now) {
+        throw privateMaterialError('MATERIAL_READ_GRANT_EXPIRED',410)
+      }
+      const access = await client.query<StoredMaterial>(
+        `SELECT material.* FROM private_material.verification_materials material
+         JOIN workflow.verification_requests request
+           ON request.verification_id=material.verification_id AND request.status='pending'
+         JOIN workflow.review_work_items item
+           ON item.work_item_id=$2 AND item.work_item_id=request.review_work_item_id
+          AND item.work_type='verification' AND item.target_type='verification_request'
+          AND item.target_id=request.verification_id
+         JOIN iam.sessions session ON session.session_id_hash=$3
+         JOIN iam.users reviewer ON reviewer.user_id=session.user_id
+         WHERE material.material_id=$1 AND material.status='ready' AND material.scan_result='clean'
+           AND item.status='claimed' AND item.assignee_user_id=$4
+           AND item.claim_token_hash=$5 AND item.lease_expires_at>$6
+           AND session.user_id=$4 AND session.status='active' AND session.expires_at>$6
+           AND reviewer.status='active' AND session.roles_version=reviewer.role_version
+         FOR UPDATE OF material,item,session`,
+        [grant.material_id,grant.work_item_id,input.primarySessionIdHash,input.reviewerUserId,
+          grant.claim_token_hash,input.now],
+      )
+      const material = access.rows[0]
+      if (!material) throw privateMaterialError('MATERIAL_READ_GRANT_EXPIRED',410)
+      const consumed = await client.query(
+        `UPDATE private_material.material_read_grants SET consumed_at=$2
+         WHERE token_hash=$1 AND consumed_at IS NULL AND invalidated_at IS NULL`,
+        [input.tokenHash,input.now],
+      )
+      if (consumed.rowCount!==1) throw privateMaterialError('MATERIAL_READ_GRANT_CONSUMED',410)
+      await client.query(
+        `INSERT INTO private_material.material_access_logs (
+           material_id,actor_user_id,work_item_id,action,purpose,result,request_id,occurred_at
+         ) VALUES ($1,$2,$3,'content_read','author_verification_review','success',left($4,128),$5)`,
+        [material.material_id,input.reviewerUserId,grant.work_item_id,input.requestId,input.now],
+      )
+      await client.query('COMMIT')
+      return {material,expiresAt:new Date(input.now.getTime()+60_000)}
+    } catch (error) {
+      await client.query('ROLLBACK').catch(()=>undefined)
+      throw error
+    } finally { client.release() }
+  }
+
+  private async assertReviewerAccess(
+    client: import('pg').PoolClient,
+    input: Readonly<{
+      reviewerUserId:string;primarySessionIdHash:Buffer;materialId:string;
+      claimTokenHash:Buffer;now:Date
+    }>,
+  ): Promise<StoredMaterial> {
+    const result = await client.query<StoredMaterial>(
+      `SELECT material.* FROM private_material.verification_materials material
+       JOIN workflow.verification_requests request
+         ON request.verification_id=material.verification_id AND request.status='pending'
+       JOIN workflow.review_work_items item
+         ON item.work_item_id=request.review_work_item_id
+        AND item.work_type='verification' AND item.target_type='verification_request'
+        AND item.target_id=request.verification_id
+       JOIN iam.sessions session ON session.session_id_hash=$2
+       JOIN iam.users reviewer ON reviewer.user_id=session.user_id
+       WHERE material.material_id=$1 AND material.status='ready' AND material.scan_result='clean'
+         AND item.status='claimed' AND item.assignee_user_id=$3
+         AND item.claim_token_hash=$4 AND item.lease_expires_at>$5
+         AND session.user_id=$3 AND session.status='active' AND session.expires_at>$5
+         AND reviewer.status='active' AND session.roles_version=reviewer.role_version
+       FOR UPDATE OF material,item,session`,
+      [input.materialId,input.primarySessionIdHash,input.reviewerUserId,input.claimTokenHash,input.now],
+    )
+    if (!result.rows[0]) throw privateMaterialError('WORK_ITEM_CLAIM_FORBIDDEN',403)
+    return result.rows[0]
   }
 }
 

@@ -334,7 +334,7 @@ PostgreSQL 官方文档将 18 列为当前受支持版本，并提供 JSONB、�
 | TX-002 | ProjectUpdate 应用 | ReviewDecision 已存在；新 Version、Project pointer、Event、Evidence/Media 提升、Update、Outbox | 索引、通知 |
 | TX-003 | Recheck apply | ReviewDecision、Version、Project pointer、Event、RecheckTask、WorkItem、Outbox | 重建索引、通知 |
 | TX-004 | A03 公开事实编辑 | AdminFactDecision、Version、Project pointer、Evidence/Media、AdminOperation、Outbox | 索引、通知 |
-| TX-005 | 作者验证批准 | VerificationRequest、Creator/ProfileVersion、Link、AuthorRelation、Project Version/状态、ReviewDecision、WorkItem、Outbox | 通知、索引 |
+| TX-005 | 作者验证批准 | VerificationRequest、Creator/ProfileVersion（仅 create_new_creator）、CreatorAccountLink、AuthorRelation、Project 当前审核/作者关联状态、ReviewDecision、WorkItem、Outbox；**不创建 ProjectVersion 或 catalog Event** | 通知、索引 |
 | TX-006 | Ownership 裁定 | ReviewDecision、Case、WithdrawalRequest、AuthorRelation、Project Version/状态、WorkItem、Outbox | 通知、索引 |
 | TX-007 | Creator Profile 发布 | CreatorProfileExecutionDecision、ProfileVersion、正式头像引用、Creator pointer/version、Draft、WorkItem、Outbox | 缓存、通知 |
 | TX-008 | 互动设置 | Interaction 行、蕴含关系、计数 delta、Outbox | Analytics service 事件 |

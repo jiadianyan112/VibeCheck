@@ -67,6 +67,55 @@ export interface RevokeMaterialCommand {
   readonly requestId: string
 }
 
+export interface ReviewerMaterialCommand {
+  readonly reviewerUserId: string
+  readonly roles: readonly string[]
+  readonly permissions: readonly string[]
+  readonly sessionToken: string
+  readonly materialId: string
+  readonly claimToken: string
+  readonly requestId: string
+}
+
+export interface VerificationMaterialReviewerProjection {
+  readonly material_id: string
+  readonly verification_id: string
+  readonly status: 'ready'
+  readonly scan_result: 'clean'
+  readonly rejection_reason_code: null
+  readonly pre_terminal_scan_result: null
+  readonly scan_attempt_count: number
+  readonly next_scan_at: null
+  readonly processing_deadline_at: string | null
+  readonly declared_mime: VerificationMaterialMime
+  readonly detected_mime: string | null
+  readonly byte_size: number
+  readonly checksum_match: boolean
+  readonly read_grant_eligibility: 'eligible'
+  readonly version: number
+}
+
+export interface CreateMaterialReadGrantCommand extends ReviewerMaterialCommand {
+  readonly purpose: string
+  readonly operationId: string
+}
+
+export interface MaterialReadGrantProjection {
+  readonly read_url: string
+  readonly expires_at: string
+}
+
+export interface RedeemMaterialReadGrantCommand {
+  readonly reviewerUserId: string
+  readonly sessionToken: string
+  readonly grantToken: string
+  readonly requestId: string
+}
+
+export interface MaterialReadRedemptionProjection {
+  readonly redirect_url: string
+}
+
 export interface StorageKeyCiphertext {
   readonly ciphertext: Buffer
   readonly nonce: Buffer
@@ -95,6 +144,9 @@ export interface PrivateMaterialStorage {
     storageKey: string
     uploadReceipt: string
   }>): Promise<MaterialUploadInspection>
+  issueRead(input: Readonly<{ storageKey: string; expiresAt: Date }>): Promise<Readonly<{
+    readUrl: string
+  }>>
   allowReads(input: Readonly<{ storageKey: string }>): Promise<void>
   denyReads(input: Readonly<{ storageKey: string }>): Promise<void>
 }
