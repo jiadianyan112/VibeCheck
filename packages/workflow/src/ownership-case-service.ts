@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHash } from 'node:crypto'
 
 import { workflowError } from './errors.js'
 import type { OwnershipCaseStore } from './ownership-case-store.js'
@@ -18,7 +18,7 @@ import type { ReviewActor } from './types.js'
 export class OwnershipCaseService {
   constructor(
     private readonly store: OwnershipCaseStore,
-    private readonly tokenSecret: string,
+    tokenSecret: string,
     private readonly now: () => Date = () => new Date(),
   ) {
     if (tokenSecret.length < 32) throw new Error('OWNERSHIP_TOKEN_SECRET_INVALID')
@@ -89,5 +89,5 @@ export class OwnershipCaseService {
   private reason(v:string):string { if(!/^[a-z][a-z0-9_]{0,63}$/.test(v))throw workflowError('REASON_CODE_INVALID',422);return v }
   private request(v:string):string { if(!/^[A-Za-z0-9_-]{8,128}$/.test(v))throw workflowError('REQUEST_ID_INVALID',422);return v }
   private ids(v:readonly string[],required=false):readonly string[] { if(!Array.isArray(v)||(required&&v.length===0)||v.length>20)throw workflowError('EVIDENCE_IDS_INVALID',422);const n=[...new Set(v.map(x=>this.uuid(x,'EVIDENCE_ID_INVALID')))].sort();if(n.length!==v.length)throw workflowError('EVIDENCE_IDS_DUPLICATE',422);return Object.freeze(n) }
-  private token(v:string):Buffer { if(!/^[A-Za-z0-9_-]{43}$/.test(v))throw workflowError('CLAIM_TOKEN_INVALID',403);return createHmac('sha256',this.tokenSecret).update(v).digest() }
+  private token(v:string):Buffer { if(!/^[A-Za-z0-9_-]{43}$/.test(v))throw workflowError('CLAIM_TOKEN_INVALID',403);return createHash('sha256').update(v,'utf8').digest() }
 }

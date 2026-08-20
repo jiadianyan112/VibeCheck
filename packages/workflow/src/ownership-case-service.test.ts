@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { describe, it } from 'node:test'
 
 import type { OwnershipCaseStore } from './ownership-case-store.js'
@@ -22,5 +23,5 @@ class Store implements OwnershipCaseStore {
 describe('OwnershipCaseService',()=>{
   it('normalizes create input and keeps actor identity server authoritative',async()=>{const store=new Store();const service=new OwnershipCaseService(store,'s'.repeat(32),()=>new Date('2026-08-20T00:00:00Z'));await service.create({actor,authorRelationId:'50000000-0000-4000-8000-000000000001',appealedUserId:null,reasonCode:'claim_conflict',evidenceIds:['60000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001'],clientRequestId:'ownership-create-1',requestId:'request-ownership-1'});assert.deepEqual(store.createInput?.evidenceIds,['60000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000002']);assert.equal(store.createInput?.actor.userId,actor.userId)})
   it('rejects duplicate evidence before persistence',()=>{const service=new OwnershipCaseService(new Store(),'s'.repeat(32));assert.throws(()=>service.create({actor,authorRelationId:'50000000-0000-4000-8000-000000000001',appealedUserId:null,reasonCode:'claim_conflict',evidenceIds:['60000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001'],clientRequestId:'ownership-create-1',requestId:'request-ownership-1'}),/EVIDENCE_IDS_DUPLICATE/)})
-  it('hashes reviewer claim tokens and rejects non identity reviewers',async()=>{const store=new Store();const service=new OwnershipCaseService(store,'s'.repeat(32));await service.getReviewer({actor,caseId:projection.case_id,claimToken:'a'.repeat(43)});assert.equal(store.reviewerHash?.length,32);assert.throws(()=>service.getReviewer({actor:{...actor,roles:['editor'],permissions:[]},caseId:projection.case_id,claimToken:'a'.repeat(43)}),/WORK_ITEM_FORBIDDEN/)})
+  it('hashes reviewer claim tokens with the shared lease protocol and rejects non identity reviewers',async()=>{const store=new Store();const service=new OwnershipCaseService(store,'s'.repeat(32));const token='a'.repeat(43);await service.getReviewer({actor,caseId:projection.case_id,claimToken:token});assert.equal(store.reviewerHash?.toString('hex'),createHash('sha256').update(token,'utf8').digest('hex'));assert.throws(()=>service.getReviewer({actor:{...actor,roles:['editor'],permissions:[]},caseId:projection.case_id,claimToken:token}),/WORK_ITEM_FORBIDDEN/)})
 })
