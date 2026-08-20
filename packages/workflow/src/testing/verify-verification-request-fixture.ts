@@ -207,10 +207,11 @@ try {
     targetCreatorId:string|null
     requestedLinkRole:'owner'|'manager'|null
     authorRole:'owner'|'co_creator'|'maintainer'
+    supersedesVerificationId?:string|null
   }>) => {
     const createdRequest=await service.create({
       userId:input.applicantUserId,projectId:input.targetProjectId,
-      supersedesVerificationId:null,creatorResolutionMode:input.mode,
+      supersedesVerificationId:input.supersedesVerificationId??null,creatorResolutionMode:input.mode,
       creatorAccountLinkId:input.creatorAccountLinkId,targetCreatorId:input.targetCreatorId,
       newCreatorProfileInput:null,requestedLinkRole:input.requestedLinkRole,
       idempotencyKey:`verification-fixture-${input.label}-create`,
@@ -306,9 +307,10 @@ try {
 
   const submitExistingRequest = async (input:Readonly<{
     label:string;applicantUserId:string;targetProjectId:string;creatorAccountLinkId:string
+    supersedesVerificationId?:string|null
   }>)=>{
     const request=await service.create({userId:input.applicantUserId,
-      projectId:input.targetProjectId,supersedesVerificationId:null,
+      projectId:input.targetProjectId,supersedesVerificationId:input.supersedesVerificationId??null,
       creatorResolutionMode:'use_existing_link',creatorAccountLinkId:input.creatorAccountLinkId,
       targetCreatorId:null,newCreatorProfileInput:null,requestedLinkRole:null,
       idempotencyKey:`verification-fixture-${input.label}-create`,
@@ -479,7 +481,8 @@ try {
 
   const pendingWithdrawal=await submitExistingRequest({label:'pending-withdraw',
     applicantUserId:managerClaimApplicantId,targetProjectId:secondProjectId,
-    creatorAccountLinkId:claimedManager.resulting_link_id!})
+    creatorAccountLinkId:claimedManager.resulting_link_id!,
+    supersedesVerificationId:lifecycle.request.verification_id})
   const pendingWithdrawn=await service.withdraw({userId:managerClaimApplicantId,
     verificationId:pendingWithdrawal.request.verification_id,
     expectedVersion:pendingWithdrawal.request.version,
@@ -514,13 +517,14 @@ try {
         WHERE relation.creator_id=creator.creator_id AND relation.project_id=$2
           AND relation.status IN ('active','suspended')) AS relation_count
      FROM catalog.creators creator WHERE creator.creator_id=$1`,
-    [decision.resulting_creator_id,projectId],
+    [decision.resulting_creator_id,secondProjectId],
   )
   await assert.rejects(
-    approveAdditional({label:'duplicate-relation-rollback',applicantUserId:applicantId,
-      targetProjectId:projectId,mode:'use_existing_link',
-      creatorAccountLinkId:decision.resulting_link_id,targetCreatorId:null,requestedLinkRole:null,
-      authorRole:'co_creator'}),
+    approveAdditional({label:'duplicate-relation-rollback',
+      applicantUserId:managerClaimApplicantId,targetProjectId:secondProjectId,
+      mode:'use_existing_link',creatorAccountLinkId:claimedManager.resulting_link_id!,
+      targetCreatorId:null,requestedLinkRole:null,authorRole:'co_creator',
+      supersedesVerificationId:pendingWithdrawal.request.verification_id}),
     (error:unknown)=>error instanceof Error&&error.message==='AUTHOR_RELATION_EXISTS',
   )
   const afterRollback=await pool.query<{aggregate_version:string;relation_count:number;
@@ -538,7 +542,7 @@ try {
         WHERE request.applicant_user_id=$3 AND request.project_id=$2 AND request.status='pending')
           AS decision_count
      FROM catalog.creators creator WHERE creator.creator_id=$1`,
-    [decision.resulting_creator_id,projectId,applicantId],
+    [decision.resulting_creator_id,secondProjectId,managerClaimApplicantId],
   )
   assert.equal(afterRollback.rows[0]!.aggregate_version,beforeRollback.rows[0]!.aggregate_version)
   assert.equal(afterRollback.rows[0]!.relation_count,beforeRollback.rows[0]!.relation_count)
