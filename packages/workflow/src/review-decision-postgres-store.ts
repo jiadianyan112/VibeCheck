@@ -475,10 +475,10 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     const decidedWorkItem = updatedWorkItem.rows[0]
     if (!decidedWorkItem) throw workflowError('WORK_ITEM_VERSION_CONFLICT',409)
     await client.query(
-      `UPDATE private_material.material_read_grants grant SET invalidated_at=$2
+      `UPDATE private_material.material_read_grants AS read_grant SET invalidated_at=$2
        FROM private_material.verification_materials material
-       WHERE material.verification_id=$1 AND material.material_id=grant.material_id
-         AND grant.consumed_at IS NULL AND grant.invalidated_at IS NULL`,
+       WHERE material.verification_id=$1 AND material.material_id=read_grant.material_id
+         AND read_grant.consumed_at IS NULL AND read_grant.invalidated_at IS NULL`,
       [request.verification_id,input.now],
     )
     const consumedConfirm = await client.query(

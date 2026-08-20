@@ -454,10 +454,10 @@ export class PostgresVerificationRequestStore {
         }
       }
       await client.query(
-        `UPDATE private_material.material_read_grants grant SET invalidated_at=$2
+        `UPDATE private_material.material_read_grants AS read_grant SET invalidated_at=$2
          FROM private_material.verification_materials material
-         WHERE grant.material_id=material.material_id AND material.verification_id=$1
-           AND grant.consumed_at IS NULL AND grant.invalidated_at IS NULL`,
+         WHERE read_grant.material_id=material.material_id AND material.verification_id=$1
+           AND read_grant.consumed_at IS NULL AND read_grant.invalidated_at IS NULL`,
         [row.verification_id,input.now],
       )
       const materialIds = await client.query<{ material_id: string; version: string }>(
