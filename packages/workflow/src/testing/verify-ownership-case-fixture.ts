@@ -28,7 +28,7 @@ const reviewer={userId:reviewerId,roles:['admin'] as const,permissions:[] as con
 try{
   await pool.query(`INSERT INTO iam.users (user_id,status,created_at,updated_at) VALUES ($1,'active',$4,$4),($2,'active',$4,$4),($3,'active',$4,$4) ON CONFLICT (user_id) DO NOTHING`,[openerId,appealedId,reviewerId,now])
   const sessionHash=createHmac('sha256',authSecret).update(sessionToken).digest()
-  await pool.query(`INSERT INTO iam.sessions (session_id_hash,user_id,anonymous_subject_id,csrf_token_hash,roles_version,status,recent_auth_at,expires_at,created_at) VALUES ($1,$2,$3,$4,1,'active',$5,$5+interval '1 hour',$5) ON CONFLICT (session_id_hash) DO NOTHING`,[sessionHash,reviewerId,'56000000-0000-4000-8000-000000000004',Buffer.alloc(32,8),now])
+  await pool.query(`INSERT INTO iam.sessions (session_id_hash,user_id,anonymous_subject_id,csrf_token_hash,roles_version,status,recent_auth_at,expires_at,created_at) VALUES ($1,$2,$3,$4,1,'active',$5::timestamptz,$5::timestamptz+interval '1 hour',$5::timestamptz) ON CONFLICT (session_id_hash) DO NOTHING`,[sessionHash,reviewerId,'56000000-0000-4000-8000-000000000004',Buffer.alloc(32,8),now])
   const relations=await pool.query<{author_relation_id:string;project_id:string}>("SELECT author_relation_id,project_id FROM catalog.author_relations WHERE status='active' ORDER BY created_at DESC,author_relation_id LIMIT 3")
   if(relations.rows.length<3)throw new Error('OWNERSHIP_FIXTURE_RELATIONS_REQUIRED')
   const ownership=new OwnershipCaseService(new PostgresOwnershipCaseStore(pool),tokenSecret,()=>now)
