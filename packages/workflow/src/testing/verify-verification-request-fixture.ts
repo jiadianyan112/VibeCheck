@@ -385,10 +385,10 @@ try {
   const ownerClaimCreatorId=randomUUID()
   const ownerClaimProfileId=randomUUID()
   await pool.query(
-    `INSERT INTO catalog.creators (
+     `INSERT INTO catalog.creators (
        creator_id,current_profile_version_id,aggregate_version,owner_link_set_version,
        canonical_creator_id,merge_status,created_at,updated_at
-     ) VALUES ($1,NULL,1,0,NULL,'canonical',$2,$2)`,[ownerClaimCreatorId,now],
+     ) VALUES ($1,NULL,1,1,NULL,'canonical',$2,$2)`,[ownerClaimCreatorId,now],
   )
   await pool.query(
     `INSERT INTO catalog.creator_profile_versions (
@@ -533,7 +533,7 @@ try {
   assert.equal(afterRollback.rows[0]!.relation_count,beforeRollback.rows[0]!.relation_count)
   assert.equal(afterRollback.rows[0]!.pending_request_count,1)
   assert.equal(afterRollback.rows[0]!.decision_count,0)
-  assert.equal(claimedOwner.owner_link_set_version,1)
+  assert.equal(claimedOwner.owner_link_set_version,2)
   assert.equal(claimedManager.owner_link_set_version,reused.owner_link_set_version)
   console.info(JSON.stringify({
     verification_id: created.verification_id,
