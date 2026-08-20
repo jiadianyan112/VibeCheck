@@ -110,6 +110,11 @@ export class PostgresEvidenceStore implements EvidenceStore {
       await this.authorizeParent(
         client, input.parentType, input.parentId, input.actor.userId, input.now, false,
       )
+      if (input.evidenceType === 'verified_author_statement') {
+        await this.authorizeVerifiedAuthorStatement(
+          client, input.parentType, input.parentId, input.actor.userId, input.fieldPath,
+        )
+      }
       const evidenceDraftId = randomUUID()
       const initialHash = this.sourceHash({
         evidenceType: input.evidenceType,
@@ -663,6 +668,44 @@ export class PostgresEvidenceStore implements EvidenceStore {
     if (row.expires_at !== null && row.expires_at <= now) throw evidenceError('EVIDENCE_PARENT_GONE', 410)
     if (row.status !== 'editing') throw evidenceError('EVIDENCE_PARENT_READ_ONLY', 409)
     return row
+  }
+
+  private async authorizeVerifiedAuthorStatement(
+    client: PoolClient,
+    parentType: EvidenceParentType,
+    parentId: string,
+    userId: string,
+    fieldPath: string | null,
+  ): Promise<void> {
+    if (parentType !== 'project_update' || fieldPath === null) {
+      throw evidenceError('EVIDENCE_AUTHOR_CONTEXT_FORBIDDEN', 403)
+    }
+    const result = await client.query<{ readonly authorized: boolean } & QueryResultRow>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM catalog.project_updates update_row
+         JOIN catalog.creator_account_links link
+           ON link.user_id=$2 AND link.status='active'
+         JOIN catalog.creators creator
+           ON creator.creator_id=link.creator_id AND creator.canonical_creator_id IS NULL
+         JOIN catalog.author_relations relation
+           ON relation.creator_id=creator.creator_id
+          AND relation.project_id=update_row.project_id AND relation.status='active'
+         JOIN catalog.link_permission_profiles profile
+           ON profile.profile_id=link.permission_profile_id
+          AND profile.profile_version=link.permission_profile_version
+          AND profile.config_hash=link.permission_profile_config_hash
+         WHERE update_row.update_id=$1 AND update_row.owner_user_id=$2
+           AND update_row.status='editing'
+           AND profile.capabilities_json @> '["project_update.create"]'::jsonb
+           AND profile.field_path_ceiling_json @> jsonb_build_array($3::text)
+           AND relation.field_permissions_json @> jsonb_build_array($3::text)
+       ) AS authorized`,
+      [parentId, userId, fieldPath],
+    )
+    if (result.rows[0]?.authorized !== true) {
+      throw evidenceError('EVIDENCE_AUTHOR_CAPABILITY_FORBIDDEN', 403)
+    }
   }
 
   private async lockReadyResource(client: PoolClient, resourceId: string, userId: string): Promise<void> {

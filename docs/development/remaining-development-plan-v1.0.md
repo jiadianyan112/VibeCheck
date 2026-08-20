@@ -168,3 +168,12 @@
 - AWS 模板见 `infra/aws/public-media.yaml`；production `MEDIA_ENABLED` 仍为 false，真实 S3/GuardDuty/Staging 验收属于第 10 步外部门禁。
 - 本切片不开放视频、不提供公开 CDN、不实现资源物理删除 Saga；这些能力不能由前端 Mock 冒充。
 - 实现边界见 `docs/development/WP-05A-public-media.md`；WorkBuddy 接入见 `docs/development/WP-05A-workbuddy-handoff.md`。
+
+### 11.2 已完成实现、等待 PostgreSQL CI：P13 媒体与证据绑定
+
+- 修复“契约允许 `project_update`、PostgreSQL Store 运行时返回 503”的实现断点；MediaReference 与 EvidenceDraft 现可绑定 editing ProjectUpdate。
+- 绑定和解绑在各自事务内同步更新 ProjectUpdate 引用数组并推进 optimistic version；公开 Project、Version、Event 不受影响。
+- ProjectUpdate 的 `bigint` 版本进入 Evidence 投影前执行安全整数转换，避免 Node `pg` 字符串与请求数字严格比较造成伪 409。
+- `verified_author_statement` 改为创建事务内校验 active Link＋Relation、exact permission profile 和字段权限交集；Session 角色不再被当作作者事实来源。
+- 修复 WP-05A 首次 CI 暴露的 Outbox 多态 JSON 参数 42P08，并将同类扫描重排、审计 SQL 一并显式定型。
+- PostgreSQL fixture 新增两类父对象的可重放验证；实现说明见 `docs/development/WP-05B-project-update-media-evidence.md`，WorkBuddy 接入见 `docs/development/WP-05B-workbuddy-handoff.md`。

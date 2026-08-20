@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import pg from 'pg'
 
+import { EvidenceError } from '../errors.js'
 import { PostgresEvidenceStore } from '../postgres-store.js'
 import { EvidenceService } from '../service.js'
 
@@ -14,6 +15,8 @@ const userId = '93000000-0000-4000-8000-000000000001'
 const draftId = '93000000-0000-4000-8000-000000000003'
 const resourceId = '93000000-0000-4000-8000-000000000005'
 const projectUpdateId = '93000000-0000-4000-8000-000000000006'
+const authorProjectUpdateId = '93000000-0000-4000-8000-000000000007'
+const authorUserId = '51000000-0000-4000-8000-000000000001'
 const actor = Object.freeze({ userId, roles: Object.freeze(['user'] as const) })
 let clock = new Date('2026-08-13T13:10:00.000Z')
 const service = new EvidenceService({
@@ -96,6 +99,84 @@ async function verifyProjectUpdateEvidence(): Promise<void> {
   assert.deepEqual(afterWithdraw.rows[0], { version: 5, evidence_ids: [] })
 }
 
+async function verifyAuthorStatement(): Promise<void> {
+  const existing = await pool.query<{
+    readonly collector_actor_type: string
+    readonly status: string
+    readonly version: number
+  }>(
+    `SELECT collector_actor_type,status,version FROM workflow.evidence_drafts
+     WHERE owner_user_id=$1 AND client_request_id='evidence-fixture-author-create-0001'`,
+    [authorUserId],
+  )
+  if (existing.rows[0]) {
+    assert.deepEqual(existing.rows[0], {
+      collector_actor_type: 'verified_author', status: 'ready', version: 4,
+    })
+    return
+  }
+  await assert.rejects(
+    () => service.createDraft({
+      actor, parentType: 'project_update', parentId: projectUpdateId,
+      finalTargetKind: 'project', targetAssetDraftKey: null,
+      fieldPath: '/project_core/current_name', requestedVisibility: 'public',
+      evidenceType: 'verified_author_statement', sourceChannel: 'author_statement',
+      clientRequestId: 'evidence-fixture-unverified-author-create-0001',
+      requestId: 'evidence-fixture-unverified-author-request-0001',
+    }),
+    (error: unknown) => error instanceof EvidenceError &&
+      error.code === 'EVIDENCE_AUTHOR_CAPABILITY_FORBIDDEN' && error.httpStatus === 403,
+  )
+  await pool.query(
+    `INSERT INTO catalog.project_updates (
+       update_id,owner_user_id,project_id,origin_review_status,base_version_id,update_type,
+       authorization_snapshot_json,status,client_request_id,request_hash,created_at,updated_at
+     ) VALUES ($1,$2,'10000000-0000-4000-8000-000000000001','published_author',
+       '11000000-0000-4000-8000-000000000001','description','{}'::jsonb,'editing',
+       'evidence-fixture-author-update-0001',$3,$4,$4)
+     ON CONFLICT (update_id) DO NOTHING`,
+    [authorProjectUpdateId, authorUserId, '1'.repeat(64), clock],
+  )
+  const authorActor = Object.freeze({
+    userId: authorUserId, roles: Object.freeze(['user'] as const),
+  })
+  const created = await service.createDraft({
+    actor: authorActor, parentType: 'project_update', parentId: authorProjectUpdateId,
+    finalTargetKind: 'project', targetAssetDraftKey: null,
+    fieldPath: '/project_core/current_name', requestedVisibility: 'public',
+    evidenceType: 'verified_author_statement', sourceChannel: 'author_statement',
+    clientRequestId: 'evidence-fixture-author-create-0001',
+    requestId: 'evidence-fixture-author-request-0001',
+  })
+  assert.equal(created.collector_actor_type, 'verified_author')
+  const bound = await service.bindDraft({
+    actor: authorActor, evidenceDraftId: created.evidence_draft_id,
+    parentType: 'project_update', parentId: authorProjectUpdateId, expectedParentVersion: 1,
+    operationId: 'evidence-fixture-author-bind-0001',
+    requestId: 'evidence-fixture-author-request-0002',
+  })
+  const patched = await service.patchDraft({
+    actor: authorActor, evidenceDraftId: created.evidence_draft_id,
+    expectedVersion: bound.evidence_draft_version,
+    patch: Object.freeze({ textExcerpt: 'Author confirms the updated project name.' }),
+    operationId: 'evidence-fixture-author-patch-0001',
+    requestId: 'evidence-fixture-author-request-0003',
+  })
+  const completed = await service.completeDraft({
+    actor: authorActor, evidenceDraftId: created.evidence_draft_id,
+    expectedVersion: patched.version, operationId: 'evidence-fixture-author-complete-0001',
+    requestId: 'evidence-fixture-author-request-0004',
+  })
+  assert.equal(completed.status, 'ready')
+  assert.equal(completed.final_field_preview?.confidence, 'medium')
+  const update = await pool.query<{ readonly version: number; readonly evidence_ids: unknown }>(
+    `SELECT version::int AS version,evidence_draft_ids_json AS evidence_ids
+     FROM catalog.project_updates WHERE update_id=$1`,
+    [authorProjectUpdateId],
+  )
+  assert.deepEqual(update.rows[0], { version: 2, evidence_ids: [created.evidence_draft_id] })
+}
+
 async function run(): Promise<void> {
   const existing = await pool.query<{ readonly status: string; readonly version: number }>(
     `SELECT status,version FROM workflow.evidence_drafts
@@ -105,6 +186,7 @@ async function run(): Promise<void> {
   if (existing.rows[0]) {
     assert.deepEqual(existing.rows[0], { status: 'withdrawn', version: 6 })
     await verifyProjectUpdateEvidence()
+    await verifyAuthorStatement()
     return
   }
   const created = await service.createDraft({
@@ -182,11 +264,12 @@ async function run(): Promise<void> {
   assert.deepEqual(verified.rows[0]?.parent_ids, [])
   assert.equal(verified.rows[0]?.attachment_status, 'withdrawn')
   await verifyProjectUpdateEvidence()
+  await verifyAuthorStatement()
 }
 
 try {
   await run()
-  process.stdout.write('evidence_fixture_ok parents=submission_draft,project_update snapshots>=11 audits>=11\n')
+  process.stdout.write('evidence_fixture_ok parents=submission_draft,project_update author_statement=active_link_relation\n')
 } finally {
   await pool.end()
 }

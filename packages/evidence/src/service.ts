@@ -46,7 +46,6 @@ export class EvidenceService {
     const finalTargetKind = this.finalTarget(command.finalTargetKind)
     this.assertTargetMatrix(parentType, finalTargetKind)
     const evidenceType = this.evidenceType(command.evidenceType)
-    this.authorizeEvidenceType(actor, evidenceType)
     const sourceChannel = this.sourceChannel(command.sourceChannel)
     if (sourceChannel === 'platform_check' && !this.isStaff(actor)) {
       throw evidenceError('EVIDENCE_SOURCE_CHANNEL_FORBIDDEN', 403)
@@ -56,14 +55,18 @@ export class EvidenceService {
       : command.targetAssetDraftKey === null
         ? null
         : (() => { throw evidenceError('EVIDENCE_ASSET_DRAFT_KEY_FORBIDDEN', 422) })()
+    const fieldPath = this.fieldPath(command.fieldPath)
+    const collectorActorType = this.authorizeEvidenceType(
+      actor, evidenceType, parentType, fieldPath, sourceChannel,
+    )
     const normalized = Object.freeze({
       actor,
-      collectorActorType: this.collector(actor),
+      collectorActorType,
       parentType,
       parentId: this.uuid(command.parentId, 'EVIDENCE_PARENT_ID_INVALID'),
       finalTargetKind,
       targetAssetDraftKey,
-      fieldPath: this.fieldPath(command.fieldPath),
+      fieldPath,
       requestedVisibility: this.visibility(command.requestedVisibility),
       evidenceType,
       sourceChannel,
@@ -246,12 +249,23 @@ export class EvidenceService {
     return Object.freeze({ userId, roles: Object.freeze([...new Set(value.roles)]) })
   }
 
-  private authorizeEvidenceType(actor: EvidenceActor, evidenceType: EvidenceType): void {
-    if (evidenceType === 'trusted_external_source') return
-    if (evidenceType === 'platform_verified_fact' && this.isStaff(actor)) return
+  private authorizeEvidenceType(
+    actor: EvidenceActor,
+    evidenceType: EvidenceType,
+    parentType: EvidenceParentType,
+    fieldPath: string | null,
+    sourceChannel: EvidenceSourceChannel,
+  ): EvidenceCollectorActorType {
+    if (evidenceType === 'trusted_external_source') return this.collector(actor)
+    if (evidenceType === 'platform_verified_fact' && this.isStaff(actor)) return 'platform_editor'
     if (evidenceType === 'verified_author_statement') {
-      if (!actor.roles.includes('verified_author')) throw evidenceError('EVIDENCE_TYPE_FORBIDDEN', 403)
-      throw evidenceError('EVIDENCE_AUTHOR_CAPABILITY_UNAVAILABLE', 503, true)
+      if (parentType !== 'project_update' || fieldPath === null) {
+        throw evidenceError('EVIDENCE_AUTHOR_CONTEXT_FORBIDDEN', 403)
+      }
+      if (sourceChannel !== 'author_statement') {
+        throw evidenceError('EVIDENCE_AUTHOR_SOURCE_CHANNEL_REQUIRED', 422)
+      }
+      return 'verified_author'
     }
     throw evidenceError('EVIDENCE_TYPE_FORBIDDEN', 403)
   }

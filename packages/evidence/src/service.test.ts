@@ -80,7 +80,7 @@ describe('EvidenceService', () => {
     assert.equal(store.patchInput?.patch.sourceUrl, 'https://example.com/release?ref=official')
   })
 
-  it('rejects invalid parent-target matrices and unverified author statements', async () => {
+  it('rejects invalid parent-target matrices and author statements outside project updates', async () => {
     const service = new EvidenceService({
       store: new FakeStore(),
       urlSafetyResolver: { async resolve() { throw new Error('not used') } },
@@ -103,7 +103,35 @@ describe('EvidenceService', () => {
         sourceChannel: 'author_statement', clientRequestId: 'evidence-create-0003',
         requestId: 'evidence-request-0004',
       }),
-      (error: unknown) => error instanceof EvidenceError && error.code === 'EVIDENCE_TYPE_FORBIDDEN',
+      (error: unknown) => error instanceof EvidenceError &&
+        error.code === 'EVIDENCE_AUTHOR_CONTEXT_FORBIDDEN',
+    )
+  })
+
+  it('derives an author collector only from a project-update statement context', async () => {
+    const store = new FakeStore()
+    const service = new EvidenceService({
+      store,
+      urlSafetyResolver: { async resolve() { throw new Error('not used') } },
+    })
+    await service.createDraft({
+      actor, parentType: 'project_update', parentId: draft.parent_id,
+      finalTargetKind: 'project', targetAssetDraftKey: null,
+      fieldPath: '/project_core/current_name', requestedVisibility: 'public',
+      evidenceType: 'verified_author_statement', sourceChannel: 'author_statement',
+      clientRequestId: 'evidence-create-author-0001', requestId: 'evidence-request-author-0001',
+    })
+    assert.equal(store.createInput?.collectorActorType, 'verified_author')
+    assert.throws(
+      () => service.createDraft({
+        actor, parentType: 'project_update', parentId: draft.parent_id,
+        finalTargetKind: 'project', targetAssetDraftKey: null,
+        fieldPath: '/project_core/current_name', requestedVisibility: 'public',
+        evidenceType: 'verified_author_statement', sourceChannel: 'official_site',
+        clientRequestId: 'evidence-create-author-0002', requestId: 'evidence-request-author-0002',
+      }),
+      (error: unknown) => error instanceof EvidenceError &&
+        error.code === 'EVIDENCE_AUTHOR_SOURCE_CHANNEL_REQUIRED',
     )
   })
 })
