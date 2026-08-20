@@ -106,6 +106,15 @@ export interface EvidenceConfig {
   readonly enabled: boolean
 }
 
+export interface PrivateMaterialConfig {
+  readonly enabled: boolean
+  readonly awsRegion: string
+  readonly bucket: string
+  readonly objectPrefix: string
+  readonly encryptionMasterKey: string
+  readonly encryptionKeyVersion: string
+}
+
 const environments = new Set<RuntimeEnvironment>([
   'development',
   'test',
@@ -525,5 +534,35 @@ export function loadMediaConfig(env: NodeJS.ProcessEnv = process.env): MediaConf
 export function loadEvidenceConfig(env: NodeJS.ProcessEnv = process.env): EvidenceConfig {
   return Object.freeze({
     enabled: parseBoolean('EVIDENCE_ENABLED', env.EVIDENCE_ENABLED, false),
+  })
+}
+
+export function loadPrivateMaterialConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): PrivateMaterialConfig {
+  const enabled = parseBoolean('PRIVATE_MATERIAL_ENABLED', env.PRIVATE_MATERIAL_ENABLED, false)
+  if (!enabled) return Object.freeze({
+    enabled: false, awsRegion: '', bucket: '', objectPrefix: 'verification/',
+    encryptionMasterKey: '', encryptionKeyVersion: '',
+  })
+  const awsRegion = env.PRIVATE_MATERIAL_AWS_REGION?.trim() ?? ''
+  if (!/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/.test(awsRegion)) {
+    throw new Error('CONFIG_PRIVATE_MATERIAL_AWS_REGION_REQUIRED')
+  }
+  const bucket = env.PRIVATE_MATERIAL_S3_BUCKET?.trim() ?? ''
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+    throw new Error('CONFIG_PRIVATE_MATERIAL_S3_BUCKET_REQUIRED')
+  }
+  const rawPrefix = env.PRIVATE_MATERIAL_S3_PREFIX?.trim() || 'verification/'
+  const objectPrefix = rawPrefix.endsWith('/') ? rawPrefix : `${rawPrefix}/`
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9/_-]{0,127}\/$/.test(objectPrefix) || objectPrefix.includes('//')) {
+    throw new Error('CONFIG_PRIVATE_MATERIAL_S3_PREFIX_INVALID')
+  }
+  return Object.freeze({
+    enabled: true, awsRegion, bucket, objectPrefix,
+    encryptionMasterKey: base64Key(
+      'PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY', env.PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY,
+    ),
+    encryptionKeyVersion: requiredName(env.PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION ?? ''),
   })
 }

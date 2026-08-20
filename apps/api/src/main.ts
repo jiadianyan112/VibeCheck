@@ -31,6 +31,7 @@ import {
   loadEvidenceConfig,
   loadIdentityConfig,
   loadMediaConfig,
+  loadPrivateMaterialConfig,
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
@@ -46,6 +47,11 @@ import {
   ResendEmailSender,
 } from '@vibecheck/identity'
 import { MediaService, PostgresMediaStore } from '@vibecheck/media'
+import {
+  AwsS3PrivateMaterialStorage,
+  PostgresPrivateMaterialStore,
+  PrivateMaterialService,
+} from '@vibecheck/private-material'
 import { PostgresSearchStore, SearchService } from '@vibecheck/search'
 import { PostgresSubmissionStore, SubmissionService } from '@vibecheck/submission'
 import {
@@ -74,6 +80,7 @@ const submissionConfig = loadSubmissionConfig()
 const workflowConfig = loadWorkflowConfig()
 const mediaConfig = loadMediaConfig()
 const evidenceConfig = loadEvidenceConfig()
+const privateMaterialConfig = loadPrivateMaterialConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -163,6 +170,23 @@ const workflow = workflowConfig.enabled
 const verificationRequests = workflowConfig.enabled
   ? new VerificationRequestService(new PostgresVerificationRequestStore(pool))
   : undefined
+if (privateMaterialConfig.enabled && (!identityConfig.enabled || !workflowConfig.enabled)) {
+  throw new Error('CONFIG_PRIVATE_MATERIAL_REQUIRES_IDENTITY_WORKFLOW')
+}
+const privateMaterials = privateMaterialConfig.enabled
+  ? new PrivateMaterialService({
+      store: new PostgresPrivateMaterialStore(pool),
+      storage: new AwsS3PrivateMaterialStorage({
+        region: privateMaterialConfig.awsRegion,
+        bucket: privateMaterialConfig.bucket,
+        objectPrefix: privateMaterialConfig.objectPrefix,
+      }),
+      crypto: {
+        encryptionKeyBase64: privateMaterialConfig.encryptionMasterKey,
+        encryptionKeyVersion: privateMaterialConfig.encryptionKeyVersion,
+      },
+    })
+  : undefined
 const adminOperations = workflowConfig.enabled
   ? new AdminOperationSecurityService(
       new PostgresAdminOperationSecurityStore(pool),
@@ -192,6 +216,7 @@ const server = createApiServer(config, {
   ...(submission ? { submission } : {}),
   ...(workflow ? { workflow } : {}),
   ...(verificationRequests ? { verificationRequests } : {}),
+  ...(privateMaterials ? { privateMaterials } : {}),
   ...(adminOperations ? { adminOperations } : {}),
   ...(reviewDecisions ? { reviewDecisions } : {}),
   ...(media ? { media } : {}),

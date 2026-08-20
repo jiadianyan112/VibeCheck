@@ -1,6 +1,23 @@
 export { PrivateMaterialError, privateMaterialError } from './errors.js'
-export { PrivateMaterialService, type PrivateMaterialCryptoConfig, type PrivateMaterialStorePort } from './service.js'
+export {
+  AwsS3PrivateMaterialStorage,
+  type AwsS3PrivateMaterialConfig,
+  type S3PrivateMaterialClient,
+  type S3PrivateMaterialPresigner,
+} from './aws-s3-storage.js'
+export {
+  PrivateMaterialService,
+  createPrivateMaterialStorageKeyResolver,
+  type PrivateMaterialCryptoConfig,
+  type PrivateMaterialStorageKeyResolver,
+  type PrivateMaterialStorePort,
+} from './service.js'
 export { PostgresPrivateMaterialStore, applicantSummary, type StoredMaterial } from './store.js'
+export {
+  PostgresPrivateMaterialScanStore,
+  PrivateMaterialScanProcessor,
+  type PrivateMaterialScanStorePort,
+} from './scan-processor.js'
 export {
   verificationMaterialMimeTypes,
   type ApplicantMaterialSummary,
@@ -11,6 +28,8 @@ export {
   type PrepareMaterialCommand,
   type PrepareMaterialProjection,
   type PrivateMaterialStorage,
+  type PrivateMaterialScanResult,
+  type PrivateMaterialScanSource,
   type RevokeMaterialCommand,
   type RevokeMaterialProjection,
   type VerificationMaterialMime,

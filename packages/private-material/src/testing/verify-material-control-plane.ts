@@ -20,13 +20,23 @@ let inspectionMime = 'application/pdf'
 const storage: PrivateMaterialStorage = {
   async issueUpload(input) {
     storageKeys.add(input.storageKey)
-    return { uploadUrl: `https://private-storage.example/upload/${encodeURIComponent(input.storageKey)}` }
+    return {
+      uploadUrl: `https://private-storage.example/upload/${encodeURIComponent(input.storageKey)}`,
+      uploadHeaders: {
+        'content-type': input.declaredMime,
+        'if-none-match': '*',
+        'x-amz-checksum-sha256': Buffer.from(input.checksumSha256, 'hex').toString('base64'),
+        'x-amz-server-side-encryption': 'AES256',
+        'x-amz-tagging': 'VibeCheckAccess=quarantined',
+      },
+    }
   },
   async inspectUpload(input) {
     assert.equal(storageKeys.has(input.storageKey), true)
     assert.equal(input.uploadReceipt.startsWith('fixture-receipt-'), true)
     return { detectedMime: inspectionMime, byteSize: 4, checksumSha256: checksum }
   },
+  async allowReads() {},
   async denyReads(input) { deniedKeys.add(input.storageKey) },
 }
 

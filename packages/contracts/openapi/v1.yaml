@@ -5534,10 +5534,27 @@ components:
     VerificationMaterialPrepareProjection:
       type: object
       additionalProperties: false
-      required: [material, upload_url, upload_expires_at]
+      required: [material, upload_url, upload_headers, upload_expires_at]
       properties:
         material: { $ref: '#/components/schemas/ApplicantVerificationMaterialSummary' }
         upload_url: { type: string, format: uri, pattern: '^https://' }
+        upload_headers:
+          type: object
+          additionalProperties: false
+          required:
+            - content-type
+            - if-none-match
+            - x-amz-checksum-sha256
+            - x-amz-server-side-encryption
+            - x-amz-tagging
+          properties:
+            content-type: { $ref: '#/components/schemas/VerificationMaterialMime' }
+            if-none-match: { type: string, const: '*' }
+            x-amz-checksum-sha256:
+              type: string
+              pattern: '^[A-Za-z0-9+/]{43}=$'
+            x-amz-server-side-encryption: { type: string, const: AES256 }
+            x-amz-tagging: { type: string, const: 'VibeCheckAccess=quarantined' }
         upload_expires_at: { type: string, format: date-time }
     VerificationMaterialCompleteProjection:
       type: object

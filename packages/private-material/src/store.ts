@@ -20,6 +20,8 @@ export interface StoredMaterial extends QueryResultRow {
   readonly status: 'prepared' | 'uploaded' | 'scanning' | 'ready' | 'abandoned' | 'rejected' | 'revoked' | 'deleted'
   readonly scan_result: 'not_scanned' | 'clean' | 'malicious' | 'unscannable'
   readonly rejection_reason_code: string | null
+  readonly scan_attempt_count: number
+  readonly next_scan_at: Date | null
   readonly applicant_terminal_state_json: unknown
   readonly idempotency_key: string
   readonly request_hash: string

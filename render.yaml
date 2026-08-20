@@ -89,6 +89,22 @@ services:
         value: "false"
       - key: EVIDENCE_ENABLED
         value: "false"
+      - key: PRIVATE_MATERIAL_ENABLED
+        value: "false"
+      - key: PRIVATE_MATERIAL_AWS_REGION
+        value: ap-southeast-1
+      - key: PRIVATE_MATERIAL_S3_BUCKET
+        sync: false
+      - key: PRIVATE_MATERIAL_S3_PREFIX
+        value: identity/verification/
+      - key: PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
 
   - type: worker
     name: vibecheck-worker
@@ -112,6 +128,22 @@ services:
         value: "1000"
       - key: WORKER_BATCH_SIZE
         value: "25"
+      - key: PRIVATE_MATERIAL_ENABLED
+        value: "false"
+      - key: PRIVATE_MATERIAL_AWS_REGION
+        value: ap-southeast-1
+      - key: PRIVATE_MATERIAL_S3_BUCKET
+        sync: false
+      - key: PRIVATE_MATERIAL_S3_PREFIX
+        value: identity/verification/
+      - key: PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
 
 databases:
   - name: vibecheck-postgres

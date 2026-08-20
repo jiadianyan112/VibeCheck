@@ -6,6 +6,7 @@ export type OutboxHandler = (event: OutboxEvent) => Promise<void>
 export interface OutboxStore {
   readonly requeueExpired: () => Promise<number>
   readonly requeueExpiredReviewClaims: () => Promise<number>
+  readonly sweepPrivateMaterials?: () => Promise<number>
   readonly claim: (
     workerId: string,
     eventNames: readonly string[],
@@ -18,6 +19,7 @@ export interface OutboxStore {
 export interface WorkerCycleResult {
   readonly requeued: number
   readonly reviewClaimsRequeued: number
+  readonly privateMaterialsSwept: number
   readonly claimed: number
   readonly published: number
   readonly failed: number
@@ -38,9 +40,13 @@ export async function runWorkerCycle(
 ): Promise<WorkerCycleResult> {
   const requeued = await store.requeueExpired()
   const reviewClaimsRequeued = await store.requeueExpiredReviewClaims()
+  const privateMaterialsSwept = await store.sweepPrivateMaterials?.() ?? 0
   const eventNames = [...handlers.keys()].sort()
   if (eventNames.length === 0) {
-    return Object.freeze({ requeued, reviewClaimsRequeued, claimed: 0, published: 0, failed: 0 })
+    return Object.freeze({
+      requeued, reviewClaimsRequeued, privateMaterialsSwept,
+      claimed: 0, published: 0, failed: 0,
+    })
   }
 
   const events = await store.claim(workerId, eventNames, batchSize)
@@ -74,5 +80,8 @@ export async function runWorkerCycle(
     }
   }
 
-  return Object.freeze({ requeued, reviewClaimsRequeued, claimed: events.length, published, failed })
+  return Object.freeze({
+    requeued, reviewClaimsRequeued, privateMaterialsSwept,
+    claimed: events.length, published, failed,
+  })
 }

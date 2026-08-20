@@ -19,6 +19,7 @@ export interface ApplicantMaterialSummary {
 export interface PrepareMaterialProjection {
   readonly material: ApplicantMaterialSummary
   readonly upload_url: string
+  readonly upload_headers: Readonly<Record<string, string>>
   readonly upload_expires_at: string
 }
 
@@ -86,10 +87,20 @@ export interface PrivateMaterialStorage {
     byteSize: number
     checksumSha256: string
     expiresAt: Date
-  }>): Promise<Readonly<{ uploadUrl: string }>>
+  }>): Promise<Readonly<{
+    uploadUrl: string
+    uploadHeaders: Readonly<Record<string, string>>
+  }>>
   inspectUpload(input: Readonly<{
     storageKey: string
     uploadReceipt: string
   }>): Promise<MaterialUploadInspection>
+  allowReads(input: Readonly<{ storageKey: string }>): Promise<void>
   denyReads(input: Readonly<{ storageKey: string }>): Promise<void>
+}
+
+export type PrivateMaterialScanResult = 'pending' | 'clean' | 'malicious' | 'unscannable' | 'retryable_failure'
+
+export interface PrivateMaterialScanSource {
+  getScanResult(input: Readonly<{ storageKey: string }>): Promise<PrivateMaterialScanResult>
 }

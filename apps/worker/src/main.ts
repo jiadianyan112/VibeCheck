@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { loadServiceConfig } from '@vibecheck/config'
+import { loadPrivateMaterialConfig, loadServiceConfig } from '@vibecheck/config'
 import {
   PostgresPublishedProjectIndexer,
   PostgresProjectUpdateApplier,
@@ -17,14 +17,22 @@ import {
 } from '@vibecheck/database'
 import { PostgresWorkflowStore } from '@vibecheck/workflow'
 import { PostgresSubmissionPublisher } from '@vibecheck/submission'
+import {
+  AwsS3PrivateMaterialStorage,
+  PostgresPrivateMaterialScanStore,
+  PrivateMaterialScanProcessor,
+  createPrivateMaterialStorageKeyResolver,
+} from '@vibecheck/private-material'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
 import { createSubmissionPublicationHandler } from './submission-publication-handler.js'
 import { createProjectPublishedHandler } from './project-published-handler.js'
 import { createProjectUpdateApplicationHandler } from './project-update-application-handler.js'
 import { createProjectUpdatedHandler } from './project-updated-handler.js'
+import { createPrivateMaterialScanHandler } from './private-material-scan-handler.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
+const privateMaterialConfig = loadPrivateMaterialConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -46,12 +54,47 @@ const handlers = new Map<string, OutboxHandler>([
   ['project_published', createProjectPublishedHandler(publishedProjectIndexer, notificationStore)],
   ['project_updated', createProjectUpdatedHandler(updatedProjectIndexer, notificationStore)],
 ])
+const privateMaterialStorage = privateMaterialConfig.enabled
+  ? new AwsS3PrivateMaterialStorage({
+      region: privateMaterialConfig.awsRegion,
+      bucket: privateMaterialConfig.bucket,
+      objectPrefix: privateMaterialConfig.objectPrefix,
+    })
+  : undefined
+const privateMaterialScanStore = privateMaterialConfig.enabled
+  ? new PostgresPrivateMaterialScanStore(pool)
+  : undefined
+if (privateMaterialStorage && privateMaterialScanStore) {
+  handlers.set(
+    'verification_material_scan_requested',
+    createPrivateMaterialScanHandler(new PrivateMaterialScanProcessor({
+      store: privateMaterialScanStore,
+      scanner: privateMaterialStorage,
+      storage: privateMaterialStorage,
+      resolveStorageKey: createPrivateMaterialStorageKeyResolver({
+        encryptionKeyBase64: privateMaterialConfig.encryptionMasterKey,
+        encryptionKeyVersion: privateMaterialConfig.encryptionKeyVersion,
+      }),
+    })),
+  )
+}
 const workflowStore = new PostgresWorkflowStore(pool)
+let nextPrivateMaterialSweepAt = 0
 const store: OutboxStore = {
   requeueExpired: () => requeueExpiredOutbox(pool),
   requeueExpiredReviewClaims: () => workflowStore.requeueExpiredClaims(
     new Date(), config.workerBatchSize,
   ),
+  ...(privateMaterialScanStore
+    ? {
+        sweepPrivateMaterials: async () => {
+          const now = new Date()
+          if (now.getTime()<nextPrivateMaterialSweepAt) return 0
+          nextPrivateMaterialSweepAt = now.getTime()+60_000
+          return privateMaterialScanStore.sweepExpired(now, config.workerBatchSize)
+        },
+      }
+    : {}),
   claim: (id, eventNames, limit) => claimOutboxEvents(pool, id, eventNames, limit),
   markPublished: (outboxId) => markOutboxPublished(pool, outboxId),
   markRetry: (outboxId, code) => markOutboxRetry(pool, outboxId, code),
@@ -62,7 +105,10 @@ let stopping = false
 async function cycle(): Promise<void> {
   try {
     const result = await runWorkerCycle(store, workerId, handlers, config.workerBatchSize)
-    if (result.requeued > 0 || result.reviewClaimsRequeued > 0 || result.claimed > 0) {
+    if (
+      result.requeued > 0 || result.reviewClaimsRequeued > 0 ||
+      result.privateMaterialsSwept > 0 || result.claimed > 0
+    ) {
       console.info(
         JSON.stringify({
           level: 'info',

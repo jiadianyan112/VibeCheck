@@ -649,6 +649,13 @@ class FakePrivateMaterialService implements ApiPrivateMaterialService {
     return Object.freeze({
       material: materialSummary('pending', 1),
       upload_url: 'https://private.example/upload-token',
+      upload_headers: {
+        'content-type': 'application/pdf',
+        'if-none-match': '*',
+        'x-amz-checksum-sha256': Buffer.from('a'.repeat(64), 'hex').toString('base64'),
+        'x-amz-server-side-encryption': 'AES256',
+        'x-amz-tagging': 'VibeCheckAccess=quarantined',
+      },
       upload_expires_at: '2026-08-10T00:30:00.000Z',
     })
   }
@@ -2106,6 +2113,10 @@ test('private verification material routes bind ownership and return only applic
     const preparedBody = await prepared.json() as Record<string, unknown>
     assert.equal(Object.hasOwn(preparedBody, 'storage_key'), false)
     assert.equal(Object.hasOwn(preparedBody, 'scan_result'), false)
+    assert.deepEqual(Object.keys(preparedBody.upload_headers as Record<string, string>).sort(), [
+      'content-type','if-none-match','x-amz-checksum-sha256',
+      'x-amz-server-side-encryption','x-amz-tagging',
+    ])
 
     const loaded = await fetch(`${runtime.baseUrl}/api/v1/verification-materials/${materialId}`, {
       headers: { cookie: headers.cookie },

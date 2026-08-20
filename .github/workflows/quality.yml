@@ -54,7 +54,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 34) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 35) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify synthetic catalog fixture and PostgreSQL projections
         run: |
           npm run catalog:fixture:load
@@ -100,6 +100,8 @@ jobs:
         run: npm run workflow:verification-request:fixture:verify
       - name: Verify encrypted private verification material control-plane transactions
         run: npm run private-material:fixture:verify
+      - name: Verify scheduled GuardDuty polling, terminal scan results and expiry recovery
+        run: npm run private-material:scan:fixture:verify
       - name: Verify idempotent approved-ProjectUpdate application and atomic catalog version advancement
         run: npm run catalog:project-update:application:verify
       - name: Verify idempotent ProjectUpdate search projection and recipient-isolated follower notifications

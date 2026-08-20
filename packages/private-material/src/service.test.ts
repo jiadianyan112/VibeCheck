@@ -23,6 +23,7 @@ describe('PrivateMaterialService', () => {
     })
     assert.equal(projection.material.applicant_scan_state, 'pending')
     assert.equal(projection.upload_url.startsWith('https://private.example/'), true)
+    assert.deepEqual(projection.upload_headers, uploadHeaders())
     assert.deepEqual(Object.keys(projection.material).sort(), [
       'applicant_scan_state','material_id','next_action','reason_key',
       'upload_expires_at','verification_id','version',
@@ -145,12 +146,13 @@ function fakeDependencies(options: {
   const storage: PrivateMaterialStorage = {
     async issueUpload() {
       issueCalls += 1
-      return { uploadUrl: `https://private.example/${materialId}` }
+      return { uploadUrl: `https://private.example/${materialId}`, uploadHeaders: uploadHeaders() }
     },
     async inspectUpload() {
       inspectCalls += 1
       return { detectedMime: options.detectedMime ?? 'application/pdf', byteSize: 4, checksumSha256: checksum }
     },
+    async allowReads() {},
     async denyReads() {
       if (options.denyReadsFails) throw new Error('gateway unavailable')
     },
@@ -162,6 +164,16 @@ function fakeDependencies(options: {
     current() { return row! },
     setStatus(status: StoredMaterial['status']) { row = { ...row!, status } as StoredMaterial },
   }
+}
+
+function uploadHeaders(): Readonly<Record<string, string>> {
+  return Object.freeze({
+    'content-type': 'application/pdf',
+    'if-none-match': '*',
+    'x-amz-checksum-sha256': Buffer.from(checksum, 'hex').toString('base64'),
+    'x-amz-server-side-encryption': 'AES256',
+    'x-amz-tagging': 'VibeCheckAccess=quarantined',
+  })
 }
 
 function stored(
@@ -183,6 +195,8 @@ function stored(
     status: 'prepared',
     scan_result: 'not_scanned',
     rejection_reason_code: null,
+    scan_attempt_count: 0,
+    next_scan_at: null,
     applicant_terminal_state_json: null,
     idempotency_key: 'material-prepare',
     request_hash: 'b'.repeat(64),

@@ -8,6 +8,7 @@ import {
   loadEvidenceConfig,
   loadIdentityConfig,
   loadMediaConfig,
+  loadPrivateMaterialConfig,
   loadSearchConfig,
   loadServiceConfig,
   loadSubmissionConfig,
@@ -232,5 +233,22 @@ describe('loadServiceConfig', () => {
     assert.equal(loadMediaConfig({ MEDIA_ENABLED: 'true' }).enabled, true)
     assert.equal(loadEvidenceConfig({ EVIDENCE_ENABLED: 'true' }).enabled, true)
     assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'yes' }), /CONFIG_MEDIA_ENABLED_INVALID/)
+  })
+
+  it('loads the private material AWS boundary only when fully configured', () => {
+    assert.equal(loadPrivateMaterialConfig({}).enabled, false)
+    assert.throws(
+      () => loadPrivateMaterialConfig({ PRIVATE_MATERIAL_ENABLED: 'true' }),
+      /CONFIG_PRIVATE_MATERIAL_AWS_REGION_REQUIRED/,
+    )
+    const config = loadPrivateMaterialConfig({
+      PRIVATE_MATERIAL_ENABLED: 'true',
+      PRIVATE_MATERIAL_AWS_REGION: 'ap-southeast-1',
+      PRIVATE_MATERIAL_S3_BUCKET: 'vibecheck-private-material-test',
+      PRIVATE_MATERIAL_S3_PREFIX: 'identity/verification',
+      PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY: Buffer.alloc(32, 4).toString('base64'),
+      PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION: 'aws-v1',
+    })
+    assert.equal(config.objectPrefix, 'identity/verification/')
   })
 })

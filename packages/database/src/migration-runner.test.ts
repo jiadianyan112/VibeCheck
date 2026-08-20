@@ -43,6 +43,7 @@ describe('discoverMigrations', () => {
         '000032_project_update_application.sql',
         '000033_verification_request_drafts.sql',
         '000034_verification_material_control_plane.sql',
+        '000035_verification_material_scan_polling.sql',
       ],
     )
     for (const migration of migrations) {

@@ -66,6 +66,7 @@
     "workflow:review-decision:fixture:verify": "npm run fixture:review-decision:verify -w @vibecheck/workflow",
     "workflow:verification-request:fixture:verify": "npm run fixture:verification-request:verify -w @vibecheck/workflow",
     "private-material:fixture:verify": "npm run fixture:verify -w @vibecheck/private-material",
+    "private-material:scan:fixture:verify": "npm run fixture:scan:verify -w @vibecheck/private-material",
     "worker:project-updated:fixture:verify": "npm run fixture:project-updated:verify -w @vibecheck/worker",
     "media:fixture:verify": "npm run fixture:verify -w @vibecheck/media",
     "evidence:fixture:verify": "npm run fixture:verify -w @vibecheck/evidence",

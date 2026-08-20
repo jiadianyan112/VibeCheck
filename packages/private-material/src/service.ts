@@ -36,8 +36,36 @@ export interface PrivateMaterialCryptoConfig {
   readonly encryptionKeyVersion: string
 }
 
+export type PrivateMaterialStorageKeyResolver = (row: StoredMaterial) => string
+
+export function createPrivateMaterialStorageKeyResolver(
+  crypto: PrivateMaterialCryptoConfig,
+): PrivateMaterialStorageKeyResolver {
+  const key = Buffer.from(crypto.encryptionKeyBase64, 'base64')
+  if (key.length!==32 || key.toString('base64')!==crypto.encryptionKeyBase64) {
+    throw new Error('PRIVATE_MATERIAL_ENCRYPTION_KEY_INVALID')
+  }
+  if (!/^[A-Za-z0-9._:-]{1,64}$/.test(crypto.encryptionKeyVersion)) {
+    throw new Error('PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION_INVALID')
+  }
+  return (row: StoredMaterial): string => {
+    if (row.storage_key_version!==crypto.encryptionKeyVersion) {
+      throw privateMaterialError('MATERIAL_KEY_VERSION_UNAVAILABLE', 503, true)
+    }
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', key, row.storage_key_nonce)
+      decipher.setAAD(Buffer.from(`${row.owner_user_id}:${row.verification_id}:${row.material_id}`, 'utf8'))
+      decipher.setAuthTag(row.storage_key_auth_tag)
+      return Buffer.concat([decipher.update(row.storage_key_ciphertext), decipher.final()]).toString('utf8')
+    } catch {
+      throw privateMaterialError('MATERIAL_KEY_DECRYPT_FAILED', 503, false)
+    }
+  }
+}
+
 export class PrivateMaterialService {
   private readonly key: Buffer
+  private readonly resolveStorageKey: PrivateMaterialStorageKeyResolver
   private readonly now: () => Date
 
   constructor(private readonly dependencies: Readonly<{
@@ -53,6 +81,7 @@ export class PrivateMaterialService {
     if (!/^[A-Za-z0-9._:-]{1,64}$/.test(dependencies.crypto.encryptionKeyVersion)) {
       throw new Error('PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION_INVALID')
     }
+    this.resolveStorageKey = createPrivateMaterialStorageKeyResolver(dependencies.crypto)
     this.now = dependencies.now ?? (() => new Date())
   }
 
@@ -85,7 +114,7 @@ export class PrivateMaterialService {
     if (row.status!=='prepared') throw privateMaterialError('VERIFICATION_MATERIAL_NOT_UPLOADABLE', 409)
     const now = this.now()
     if (row.upload_expires_at<=now) throw privateMaterialError('VERIFICATION_MATERIAL_UPLOAD_EXPIRED', 410)
-    const storageKey = this.decryptStorageKey(row)
+    const storageKey = this.resolveStorageKey(row)
     const upload = await this.dependencies.storage.issueUpload({
       storageKey,
       declaredMime: row.declared_mime,
@@ -95,9 +124,11 @@ export class PrivateMaterialService {
     })
     const parsed = new URL(upload.uploadUrl)
     if (parsed.protocol!=='https:') throw privateMaterialError('MATERIAL_STORAGE_RESPONSE_INVALID', 503, true)
+    const uploadHeaders = validateUploadHeaders(upload.uploadHeaders, row)
     return Object.freeze({
       material: applicantSummary(row),
       upload_url: upload.uploadUrl,
+      upload_headers: uploadHeaders,
       upload_expires_at: row.upload_expires_at.toISOString(),
     })
   }
@@ -130,7 +161,7 @@ export class PrivateMaterialService {
     if (current.upload_expires_at<=this.now()) throw privateMaterialError('VERIFICATION_MATERIAL_UPLOAD_EXPIRED', 410)
     if (checksum!==current.checksum_sha256) throw privateMaterialError('MATERIAL_CHECKSUM_INPUT_MISMATCH', 422)
     const inspection = await this.dependencies.storage.inspectUpload({
-      storageKey: this.decryptStorageKey(current), uploadReceipt,
+      storageKey: this.resolveStorageKey(current), uploadReceipt,
     })
     const detectedChecksum = sha256(inspection.checksumSha256, 'MATERIAL_STORAGE_RESPONSE_INVALID')
     const mimeMatches = inspection.detectedMime===current.declared_mime
@@ -160,7 +191,7 @@ export class PrivateMaterialService {
       now: this.now(), requestId: requestIdValue(command.requestId),
     })
     try {
-      await this.dependencies.storage.denyReads({ storageKey: this.decryptStorageKey(before) })
+      await this.dependencies.storage.denyReads({ storageKey: this.resolveStorageKey(before) })
     } catch {
       throw privateMaterialError('MATERIAL_STORAGE_REVOKE_PENDING', 503, true)
     }
@@ -185,20 +216,6 @@ export class PrivateMaterialService {
       ciphertext, nonce, authTag: cipher.getAuthTag(),
       keyVersion: this.dependencies.crypto.encryptionKeyVersion,
     })
-  }
-
-  private decryptStorageKey(row: StoredMaterial): string {
-    if (row.storage_key_version!==this.dependencies.crypto.encryptionKeyVersion) {
-      throw privateMaterialError('MATERIAL_KEY_VERSION_UNAVAILABLE', 503, true)
-    }
-    try {
-      const decipher = createDecipheriv('aes-256-gcm', this.key, row.storage_key_nonce)
-      decipher.setAAD(Buffer.from(`${row.owner_user_id}:${row.verification_id}:${row.material_id}`, 'utf8'))
-      decipher.setAuthTag(row.storage_key_auth_tag)
-      return Buffer.concat([decipher.update(row.storage_key_ciphertext), decipher.final()]).toString('utf8')
-    } catch {
-      throw privateMaterialError('MATERIAL_KEY_DECRYPT_FAILED', 503, false)
-    }
   }
 
   private completeReplay(value: unknown): CompleteMaterialProjection {
@@ -277,3 +294,21 @@ function reason(value: string): string {
 
 function hashJson(value: unknown): string { return hash(JSON.stringify(value)) }
 function hash(value: string): string { return createHash('sha256').update(value, 'utf8').digest('hex') }
+
+function validateUploadHeaders(
+  value: Readonly<Record<string, string>>,
+  row: StoredMaterial,
+): Readonly<Record<string, string>> {
+  const expected = Object.freeze({
+    'content-type': row.declared_mime,
+    'if-none-match': '*',
+    'x-amz-checksum-sha256': Buffer.from(row.checksum_sha256, 'hex').toString('base64'),
+    'x-amz-server-side-encryption': 'AES256',
+    'x-amz-tagging': 'VibeCheckAccess=quarantined',
+  })
+  if (
+    Object.keys(value).length!==Object.keys(expected).length ||
+    Object.entries(expected).some(([key, expectedValue]) => value[key]!==expectedValue)
+  ) throw privateMaterialError('MATERIAL_STORAGE_RESPONSE_INVALID', 503, true)
+  return expected
+}
