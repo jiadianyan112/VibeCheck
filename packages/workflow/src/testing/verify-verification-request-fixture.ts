@@ -384,27 +384,38 @@ try {
 
   const ownerClaimCreatorId=randomUUID()
   const ownerClaimProfileId=randomUUID()
-  await pool.query(
-     `INSERT INTO catalog.creators (
-       creator_id,current_profile_version_id,aggregate_version,owner_link_set_version,
-       canonical_creator_id,merge_status,created_at,updated_at
-     ) VALUES ($1,NULL,1,1,NULL,'canonical',$2,$2)`,[ownerClaimCreatorId,now],
-  )
-  await pool.query(
-    `INSERT INTO catalog.creator_profile_versions (
-       creator_profile_version_id,creator_id,base_version_id,source_creator_profile_draft_id,
-       source_verification_request_id,profile_snapshot_json,avatar_media_reference_id,
-       published_by_admin_id,created_at
-     ) VALUES ($1,$2,NULL,NULL,NULL,$3::jsonb,NULL,NULL,$4)`,
-    [ownerClaimProfileId,ownerClaimCreatorId,JSON.stringify({display_name:'Unclaimed Fixture Creator',
-      bio:'Existing canonical creator without an owner.',avatar_url:null,contacts:[],external_links:[],
-      verification_status:'unverified'}),now],
-  )
-  await pool.query(
-    `UPDATE catalog.creators SET current_profile_version_id=$2,aggregate_version=2,
-       updated_at=$3::timestamptz+interval '1 microsecond' WHERE creator_id=$1`,
-    [ownerClaimCreatorId,ownerClaimProfileId,now],
-  )
+  const ownerClaimSeed=await pool.connect()
+  try{
+    await ownerClaimSeed.query('BEGIN')
+    await ownerClaimSeed.query(
+      `INSERT INTO catalog.creators (
+         creator_id,current_profile_version_id,aggregate_version,owner_link_set_version,
+         canonical_creator_id,merge_status,created_at,updated_at
+       ) VALUES ($1,NULL,1,1,NULL,'canonical',$2,$2)`,[ownerClaimCreatorId,now],
+    )
+    await ownerClaimSeed.query(
+      `INSERT INTO catalog.creator_profile_versions (
+         creator_profile_version_id,creator_id,base_version_id,source_creator_profile_draft_id,
+         source_verification_request_id,profile_snapshot_json,avatar_media_reference_id,
+         published_by_admin_id,created_at
+       ) VALUES ($1,$2,NULL,$3,NULL,$4::jsonb,NULL,NULL,$5)`,
+      [ownerClaimProfileId,ownerClaimCreatorId,randomUUID(),
+        JSON.stringify({display_name:'Unclaimed Fixture Creator',
+          bio:'Existing canonical creator without an owner.',avatar_url:null,contacts:[],external_links:[],
+          verification_status:'unverified'}),now],
+    )
+    await ownerClaimSeed.query(
+      `UPDATE catalog.creators SET current_profile_version_id=$2,aggregate_version=2,
+         updated_at=$3::timestamptz+interval '1 microsecond' WHERE creator_id=$1`,
+      [ownerClaimCreatorId,ownerClaimProfileId,now],
+    )
+    await ownerClaimSeed.query('COMMIT')
+  }catch(error){
+    await ownerClaimSeed.query('ROLLBACK')
+    throw error
+  }finally{
+    ownerClaimSeed.release()
+  }
   const claimedOwner=await approveAdditional({label:'claim-owner',
     applicantUserId:ownerClaimApplicantId,targetProjectId:thirdProjectId,
     mode:'claim_existing_creator',creatorAccountLinkId:null,targetCreatorId:ownerClaimCreatorId,
