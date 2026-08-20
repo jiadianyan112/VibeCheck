@@ -53,7 +53,15 @@ function workflowAnnotation(value: string): string {
 try {
   fixtureStage = 'create_keyword_search'
   const store = new PostgresSearchStore(pool)
-  const service = new SearchService({ store, config })
+  const service = new SearchService({
+    store,config,
+    identityAttestor:{attestSubject:(subject)=>Object.freeze({
+      metricSubjectId:subject.kind==='anonymous'
+        ? '97000000-0000-4000-8000-000000000001'
+        : '97000000-0000-4000-8000-000000000002',
+      subjectRefHash:Buffer.alloc(32,subject.kind==='anonymous'?7:8),bridgeVersion:1,
+    })},
+  })
   const created = await service.search(command, owner)
   assert.equal(created.semantic_degraded, true)
   assert.equal(created.exact_count, 1)
@@ -69,6 +77,38 @@ try {
   }), owner)
   assert.equal(replayed.result_version, created.result_version)
   assert.deepEqual(replayed.groups, created.groups)
+
+  fixtureStage='verify_service_attested_navigation'
+  const resultItem=created.groups[0]!.items[0]!
+  const clickRequestId=randomUUID()
+  const navigation=await service.createNavigationContext({
+    resultItemToken:resultItem.result_item_token,sourcePage:'P05',clickRequestId,
+  },owner)
+  assert.equal(navigation.project_id,resultItem.project_id)
+  assert.equal(navigation.deduplicated,false)
+  const replayedNavigation=await service.createNavigationContext({
+    resultItemToken:resultItem.result_item_token,sourcePage:'P05',clickRequestId,
+  },owner)
+  assert.equal(replayedNavigation.navigation_context_id,navigation.navigation_context_id)
+  assert.equal(replayedNavigation.deduplicated,true)
+  const attribution=await service.consumeNavigationContext({
+    navigationContextId:navigation.navigation_context_id,projectId:navigation.project_id,
+  },owner)
+  assert.equal(attribution?.click_id,navigation.click_id)
+  assert.equal(attribution?.metric_subject_id,'97000000-0000-4000-8000-000000000001')
+  assert.equal(await service.consumeNavigationContext({
+    navigationContextId:navigation.navigation_context_id,projectId:navigation.project_id,
+  },owner),null)
+  const navigationFacts=await pool.query<{contexts:number;outbox:number;bridges:number}>(
+    `SELECT
+       (SELECT count(*)::int FROM search.navigation_contexts WHERE navigation_context_id=$1) AS contexts,
+       (SELECT count(*)::int FROM ops.outbox_events WHERE aggregate_id=$1
+          AND event_name IN ('feed_item_clicked','project_viewed')) AS outbox,
+       (SELECT count(*)::int FROM analytics.identity_bridge_events
+          WHERE metric_subject_id='97000000-0000-4000-8000-000000000001') AS bridges`,
+    [navigation.navigation_context_id],
+  )
+  assert.deepEqual(navigationFacts.rows[0],{contexts:1,outbox:2,bridges:1})
 
   fixtureStage = 'verify_learning_structured_fts'
   const learning = await service.search(Object.freeze({

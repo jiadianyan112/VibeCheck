@@ -6,8 +6,13 @@ import { SearchCrypto } from './crypto.js'
 import { searchError } from './errors.js'
 import type { SearchStore, StoredQuerySnapshot, StoredSearchExecution } from './store.js'
 import type {
+  ConsumeSearchNavigationCommand,
+  CreateSearchNavigationCommand,
   SearchCommand,
   SearchProjection,
+  SearchAttributionContext,
+  SearchMetricIdentityAttestor,
+  SearchNavigationProjection,
   QueryInvalidationCommand,
   QueryLinkCommand,
   QueryLinkProjection,
@@ -36,6 +41,7 @@ export interface SearchServiceDependencies {
   readonly store: SearchStore
   readonly config: SearchServiceConfig
   readonly now?: () => Date
+  readonly identityAttestor?: SearchMetricIdentityAttestor
 }
 
 interface CursorPayload {
@@ -205,6 +211,46 @@ export class SearchService {
       now,
     })
     return this.projection(execution, subjectHash, command.cursor)
+  }
+
+  async createNavigationContext(
+    command:CreateSearchNavigationCommand,
+    subject:SearchSubject,
+  ):Promise<SearchNavigationProjection>{
+    const attestor=this.dependencies.identityAttestor
+    if(!attestor)throw searchError('SEARCH_NAVIGATION_SERVICE_UNAVAILABLE',503,true)
+    if(!['P05','P07'].includes(command.sourcePage))throw searchError('SOURCE_PAGE_INVALID',422)
+    const clickRequestId=this.uuid(command.clickRequestId,'CLICK_REQUEST_ID_INVALID')
+    const subjectHash=this.crypto.subjectHash(subject)
+    const payload=this.crypto.verifyOpaquePayload(command.resultItemToken,subjectHash)
+    const token=this.navigationToken(payload)
+    const now=this.now()
+    if(token.expiresAt<=now)throw searchError('SEARCH_RESULT_EXPIRED',410)
+    const identity=attestor.attestSubject(subject)
+    if(
+      !this.isUuid(identity.metricSubjectId)||!Buffer.isBuffer(identity.subjectRefHash)||
+      identity.subjectRefHash.length!==32||!Number.isSafeInteger(identity.bridgeVersion)||identity.bridgeVersion<1
+    )throw searchError('SEARCH_IDENTITY_ATTESTATION_INVALID',500)
+    const requestHash=this.crypto.fingerprint({
+      result_item_token:command.resultItemToken,source_page:command.sourcePage,
+      click_request_id:clickRequestId,
+    }).toString('hex')
+    return this.dependencies.store.createNavigationContext({
+      token,sourcePage:command.sourcePage,clickRequestId,subjectKind:subject.kind,subjectHash,
+      metricSubjectId:identity.metricSubjectId,metricSubjectRefHash:identity.subjectRefHash,
+      bridgeVersion:identity.bridgeVersion,requestHash,now,
+    })
+  }
+
+  consumeNavigationContext(
+    command:ConsumeSearchNavigationCommand,
+    subject:SearchSubject,
+  ):Promise<SearchAttributionContext|null>{
+    return this.dependencies.store.consumeNavigationContext({
+      navigationContextId:this.uuid(command.navigationContextId,'SEARCH_NAVIGATION_ID_INVALID'),
+      projectId:this.uuid(command.projectId,'PROJECT_ID_INVALID'),
+      subjectHash:this.crypto.subjectHash(subject),now:this.now(),
+    })
   }
 
   async getQuerySnapshot(
@@ -416,5 +462,36 @@ export class SearchService {
       next_cursor: nextCursor,
       expires_at: execution.expiresAt.toISOString(),
     })
+  }
+
+  private navigationToken(value:Readonly<Record<string,unknown>>){
+    if(
+      value.type!=='search_result_item.v1'||typeof value.query_id!=='string'||!this.isUuid(value.query_id)||
+      typeof value.result_version!=='string'||!this.isUuid(value.result_version)||
+      typeof value.project_id!=='string'||!this.isUuid(value.project_id)||
+      typeof value.result_item_id!=='string'||!this.isUuid(value.result_item_id)||
+      typeof value.position!=='number'||!Number.isSafeInteger(value.position)||value.position<1||
+      !['search_exact','search_adjacent'].includes(String(value.channel))||
+      !['exact','adjacent'].includes(String(value.group_id))||
+      typeof value.ranking_version!=='string'||value.ranking_version.length<1||value.ranking_version.length>64||
+      typeof value.page_cursor_hash!=='string'||!/^[0-9a-f]{64}$/.test(value.page_cursor_hash)||
+      typeof value.expires_at!=='number'||!Number.isSafeInteger(value.expires_at)
+    )throw searchError('SEARCH_TOKEN_INVALID',400)
+    return Object.freeze({
+      queryId:value.query_id.toLowerCase(),resultVersion:value.result_version.toLowerCase(),
+      projectId:value.project_id.toLowerCase(),resultItemId:value.result_item_id.toLowerCase(),
+      position:value.position,channel:value.channel as 'search_exact'|'search_adjacent',
+      groupId:value.group_id as 'exact'|'adjacent',rankingVersion:value.ranking_version,
+      pageCursorHash:value.page_cursor_hash,expiresAt:new Date(value.expires_at),
+    })
+  }
+
+  private isUuid(value:string):boolean{
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  }
+
+  private uuid(value:string,code:string):string{
+    if(!this.isUuid(value))throw searchError(code,422)
+    return value.toLowerCase()
   }
 }

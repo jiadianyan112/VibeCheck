@@ -10,6 +10,8 @@ import type {
   SearchMatchReason,
   SearchMode,
   SearchSort,
+  SearchAttributionContext,
+  SearchNavigationProjection,
 } from './types.js'
 
 export interface StoredQuerySnapshot {
@@ -188,6 +190,37 @@ export interface QueryInvalidationStoreInput {
   readonly now: Date
 }
 
+export interface CreateNavigationContextStoreInput {
+  readonly token: Readonly<{
+    queryId: string
+    resultVersion: string
+    projectId: string
+    resultItemId: string
+    position: number
+    channel: 'search_exact' | 'search_adjacent'
+    groupId: 'exact' | 'adjacent'
+    rankingVersion: string
+    pageCursorHash: string
+    expiresAt: Date
+  }>
+  readonly sourcePage: 'P05' | 'P07'
+  readonly clickRequestId: string
+  readonly subjectKind: 'anonymous' | 'user'
+  readonly subjectHash: Buffer
+  readonly metricSubjectId: string
+  readonly metricSubjectRefHash: Buffer
+  readonly bridgeVersion: number
+  readonly requestHash: string
+  readonly now: Date
+}
+
+export interface ConsumeNavigationContextStoreInput {
+  readonly navigationContextId: string
+  readonly projectId: string
+  readonly subjectHash: Buffer
+  readonly now: Date
+}
+
 export interface SearchStore {
   consumeRawQueryRateLimit(input: {
     readonly bucketKeyHash: Buffer
@@ -213,6 +246,8 @@ export interface SearchStore {
   }>
   unlinkQuery(input: QueryMutationStoreInput): Promise<void>
   invalidateQuery(input: QueryInvalidationStoreInput): Promise<void>
+  createNavigationContext(input: CreateNavigationContextStoreInput): Promise<SearchNavigationProjection>
+  consumeNavigationContext(input: ConsumeNavigationContextStoreInput): Promise<SearchAttributionContext | null>
 }
 
 const candidateSql = `
@@ -1192,5 +1227,201 @@ export class PostgresSearchStore implements SearchStore {
         version,
       })
     })
+  }
+
+  async createNavigationContext(input: CreateNavigationContextStoreInput): Promise<SearchNavigationProjection> {
+    return begin(this.pool,async(client)=>{
+      const replay=await client.query<{
+        navigation_context_id:string;click_id:string;project_id:string;result_item_id:string;
+        position:number;channel:'search_exact'|'search_adjacent';group_id:'exact'|'adjacent';
+        ranking_version:string;expires_at:Date;request_hash:string
+      }>(
+        `SELECT navigation_context_id,click_id,project_id,result_item_id,position,channel,
+           group_id,ranking_version,expires_at,request_hash
+         FROM search.navigation_contexts
+         WHERE owner_subject_hash=$1 AND click_request_id=$2`,
+        [input.subjectHash,input.clickRequestId],
+      )
+      const existing=replay.rows[0]
+      if(existing){
+        if(existing.request_hash!==input.requestHash)throw searchError('CLICK_REQUEST_REUSED',409)
+        return Object.freeze({
+          navigation_context_id:existing.navigation_context_id,click_id:existing.click_id,
+          project_id:existing.project_id,result_item_id:existing.result_item_id,
+          position:existing.position,channel:existing.channel,group_id:existing.group_id,
+          ranking_version:existing.ranking_version,expires_at:existing.expires_at.toISOString(),
+          navigation_url:`/project/${existing.project_id}?navigation_context_id=${existing.navigation_context_id}`,
+          deduplicated:true,
+        })
+      }
+      const frozen=await client.query<{
+        snapshot_status:'active'|'invalidated';snapshot_expires_at:Date;authorized:boolean;
+        result_expires_at:Date;ranking_version:string;is_current_result:boolean;
+        project_id:string;result_item_id:string;group_position:number;channel:'search_exact'|'search_adjacent';
+        group_id:'exact'|'adjacent';token_binding_hash:Buffer;review_status:string
+      }>(
+        `SELECT snapshot.status AS snapshot_status,snapshot.expires_at AS snapshot_expires_at,
+           (snapshot.owner_subject_hash=$3 OR EXISTS(
+             SELECT 1 FROM search.query_authorized_subjects authorized
+             WHERE authorized.query_id=snapshot.query_id AND authorized.subject_hash=$3
+               AND authorized.revoked_at IS NULL
+           )) AS authorized,
+           result.expires_at AS result_expires_at,result.ranking_version,
+           result.result_version=(
+             SELECT current_result.result_version FROM search.result_versions current_result
+             WHERE current_result.query_id=snapshot.query_id
+               AND current_result.intent_version=snapshot.active_intent_version
+             ORDER BY current_result.created_at DESC,current_result.result_version DESC LIMIT 1
+           ) AS is_current_result,
+           item.project_id,item.result_item_id,item.group_position,item.channel,item.group_id,
+           item.token_binding_hash,project.review_status
+         FROM search.query_snapshots snapshot
+         JOIN search.result_versions result ON result.result_version=$2 AND result.query_id=snapshot.query_id
+         JOIN search.result_items item ON item.result_version=result.result_version AND item.result_item_id=$4
+         JOIN catalog.projects project ON project.project_id=item.project_id
+         WHERE snapshot.query_id=$1
+         FOR UPDATE OF snapshot`,
+        [input.token.queryId,input.token.resultVersion,input.subjectHash,input.token.resultItemId],
+      )
+      const row=frozen.rows[0]
+      if(!row)throw searchError('SEARCH_RESULT_ITEM_NOT_FOUND',404)
+      if(!row.authorized)throw searchError('QUERY_FORBIDDEN',403)
+      if(row.snapshot_status!=='active'||row.snapshot_expires_at<=input.now||row.result_expires_at<=input.now){
+        throw searchError('SEARCH_RESULT_EXPIRED',410)
+      }
+      if(!row.is_current_result)throw searchError('SEARCH_RESULT_STALE',410)
+      if(!['published_platform','published_author'].includes(row.review_status)){
+        throw searchError('PROJECT_NOT_PUBLIC',410)
+      }
+      const binding=createHash('sha256').update(JSON.stringify({
+        query_id:input.token.queryId,result_version:input.token.resultVersion,
+        result_item_id:input.token.resultItemId,project_id:input.token.projectId,
+        position:input.token.position,channel:input.token.channel,group_id:input.token.groupId,
+        ranking_version:input.token.rankingVersion,
+      })).digest()
+      if(
+        row.project_id!==input.token.projectId||row.result_item_id!==input.token.resultItemId||
+        row.group_position!==input.token.position||row.channel!==input.token.channel||
+        row.group_id!==input.token.groupId||row.ranking_version!==input.token.rankingVersion||
+        !row.token_binding_hash.equals(binding)
+      )throw searchError('SEARCH_RESULT_TOKEN_MISMATCH',422)
+
+      const navigationContextId=randomUUID()
+      const clickId=randomUUID()
+      const transactionId=randomUUID()
+      const expiresAt=new Date(Math.min(
+        input.token.expiresAt.getTime(),row.snapshot_expires_at.getTime(),row.result_expires_at.getTime(),
+      ))
+      await client.query(
+        `INSERT INTO analytics.identity_bridge_events(
+           bridge_event_id,metric_subject_id,subject_kind,subject_ref_hash,bridge_version,
+           link_action,status,effective_at,created_at
+         ) VALUES($1,$2,$3,$4,$5,'created','active',$6,$6)
+         ON CONFLICT(subject_kind,subject_ref_hash,bridge_version) DO NOTHING`,
+        [randomUUID(),input.metricSubjectId,input.subjectKind,input.metricSubjectRefHash,input.bridgeVersion,input.now],
+      )
+      await client.query(
+        `INSERT INTO search.navigation_contexts(
+           navigation_context_id,click_id,click_request_id,owner_subject_kind,owner_subject_hash,
+           query_id,result_version,result_item_id,project_id,position,channel,group_id,ranking_version,
+           page_cursor_hash,source_page,metric_subject_id,subject_kind,bridge_version,request_hash,
+           transaction_id,status,expires_at,created_at
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'active',$21,$22)`,
+        [navigationContextId,clickId,input.clickRequestId,input.subjectKind,input.subjectHash,
+          input.token.queryId,input.token.resultVersion,input.token.resultItemId,input.token.projectId,
+          input.token.position,input.token.channel,input.token.groupId,input.token.rankingVersion,
+          input.token.pageCursorHash,input.sourcePage,input.metricSubjectId,input.subjectKind,
+          input.bridgeVersion,input.requestHash,transactionId,expiresAt,input.now],
+      )
+      const payload={
+        event_name:'feed_item_clicked',event_version:2,actor_type:'service',
+        attestation_type:'service_attested',metric_subject_id:input.metricSubjectId,
+        subject_kind:input.subjectKind,bridge_version:input.bridgeVersion,item_type:'project',
+        item_id:input.token.projectId,project_id:input.token.projectId,position:input.token.position,
+        channel:input.token.channel,click_id:clickId,query_id:input.token.queryId,
+        result_version:input.token.resultVersion,result_item_id:input.token.resultItemId,
+        group_id:input.token.groupId,ranking_version:input.token.rankingVersion,
+        navigation_context_id:navigationContextId,source_page:input.sourcePage,
+        page_cursor_hash:input.token.pageCursorHash,service_actor_id:'search-navigation',transaction_id:transactionId,
+      }
+      await client.query(
+        `INSERT INTO ops.outbox_events(outbox_id,event_id,aggregate_type,aggregate_id,event_name,
+           event_version,payload_json,transaction_id,status,next_attempt_at,created_at)
+         VALUES($1,$2,'search_navigation',$3,'feed_item_clicked',2,$4::jsonb,$5,'pending',$6,$6)`,
+        [randomUUID(),clickId,navigationContextId,JSON.stringify(payload),transactionId,input.now],
+      )
+      return Object.freeze({
+        navigation_context_id:navigationContextId,click_id:clickId,project_id:input.token.projectId,
+        result_item_id:input.token.resultItemId,position:input.token.position,channel:input.token.channel,
+        group_id:input.token.groupId,ranking_version:input.token.rankingVersion,
+        expires_at:expiresAt.toISOString(),
+        navigation_url:`/project/${input.token.projectId}?navigation_context_id=${navigationContextId}`,
+        deduplicated:false,
+      })
+    })
+  }
+
+  async consumeNavigationContext(input: ConsumeNavigationContextStoreInput): Promise<SearchAttributionContext|null> {
+    const outcome=await begin(this.pool,async(client)=>{
+      const result=await client.query<{
+        navigation_context_id:string;click_id:string;owner_subject_hash:Buffer;query_id:string;
+        result_version:string;result_item_id:string;project_id:string;position:number;
+        channel:'search_exact'|'search_adjacent';group_id:'exact'|'adjacent';ranking_version:string;
+        source_page:'P05'|'P07';metric_subject_id:string;subject_kind:'anonymous'|'user';
+        bridge_version:number;transaction_id:string;status:'active'|'consumed'|'expired';expires_at:Date
+      }>(`SELECT * FROM search.navigation_contexts WHERE navigation_context_id=$1 FOR UPDATE`,[input.navigationContextId])
+      const row=result.rows[0]
+      if(!row)return Object.freeze({kind:'not_found' as const})
+      if(!row.owner_subject_hash.equals(input.subjectHash))return Object.freeze({kind:'forbidden' as const})
+      if(row.project_id!==input.projectId)return Object.freeze({kind:'mismatch' as const})
+      if(row.status==='consumed')return Object.freeze({kind:'consumed' as const})
+      if(row.status==='expired')return Object.freeze({kind:'expired' as const})
+      if(row.expires_at<=input.now){
+        await client.query(`UPDATE search.navigation_contexts SET status='expired' WHERE navigation_context_id=$1`,[row.navigation_context_id])
+        return Object.freeze({kind:'expired' as const})
+      }
+      const current=await client.query<{review_status:string}>(
+        `SELECT review_status FROM catalog.projects WHERE project_id=$1`,[row.project_id],
+      )
+      if(!current.rows[0]||!['published_platform','published_author'].includes(current.rows[0].review_status)){
+        return Object.freeze({kind:'project_unavailable' as const})
+      }
+      await client.query(
+        `UPDATE search.navigation_contexts SET status='consumed',consumed_at=$2 WHERE navigation_context_id=$1`,
+        [row.navigation_context_id,input.now],
+      )
+      const eventId=randomUUID()
+      const consumeTransactionId=randomUUID()
+      const payload={
+        event_name:'project_viewed',event_version:2,actor_type:'service',
+        attestation_type:'service_attested',metric_subject_id:row.metric_subject_id,
+        subject_kind:row.subject_kind,bridge_version:row.bridge_version,project_id:row.project_id,
+        item_id:row.project_id,click_id:row.click_id,query_id:row.query_id,
+        result_version:row.result_version,result_item_id:row.result_item_id,position:row.position,
+        channel:row.channel,group_id:row.group_id,ranking_version:row.ranking_version,
+        navigation_context_id:row.navigation_context_id,source_page:row.source_page,
+        service_actor_id:'search-navigation',transaction_id:consumeTransactionId,
+      }
+      await client.query(
+        `INSERT INTO ops.outbox_events(outbox_id,event_id,aggregate_type,aggregate_id,event_name,
+           event_version,payload_json,transaction_id,status,next_attempt_at,created_at)
+         VALUES($1,$2,'search_navigation',$3,'project_viewed',2,$4::jsonb,$5,'pending',$6,$6)`,
+        [randomUUID(),eventId,row.navigation_context_id,JSON.stringify(payload),consumeTransactionId,input.now],
+      )
+      return Object.freeze({kind:'attributed' as const,value:Object.freeze({
+        navigation_context_id:row.navigation_context_id,click_id:row.click_id,query_id:row.query_id,
+        result_version:row.result_version,result_item_id:row.result_item_id,project_id:row.project_id,
+        position:row.position,channel:row.channel,group_id:row.group_id,
+        ranking_version:row.ranking_version,source_page:row.source_page,
+        metric_subject_id:row.metric_subject_id,subject_kind:row.subject_kind,bridge_version:row.bridge_version,
+      })})
+    })
+    if(outcome.kind==='attributed')return outcome.value
+    if(outcome.kind==='consumed')return null
+    if(outcome.kind==='not_found')throw searchError('SEARCH_NAVIGATION_NOT_FOUND',404)
+    if(outcome.kind==='forbidden')throw searchError('SEARCH_NAVIGATION_FORBIDDEN',403)
+    if(outcome.kind==='mismatch')throw searchError('SEARCH_NAVIGATION_PROJECT_MISMATCH',422)
+    if(outcome.kind==='project_unavailable')throw searchError('PROJECT_NOT_PUBLIC',410)
+    throw searchError('SEARCH_NAVIGATION_EXPIRED',410)
   }
 }

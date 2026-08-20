@@ -143,6 +143,18 @@ class FakeStore implements SearchStore {
 
   async unlinkQuery() {}
   async invalidateQuery() {}
+  async createNavigationContext(input:Parameters<SearchStore['createNavigationContext']>[0]){
+    return Object.freeze({
+      navigation_context_id:'95000000-0000-4000-8000-000000000001',
+      click_id:'96000000-0000-4000-8000-000000000001',project_id:input.token.projectId,
+      result_item_id:input.token.resultItemId,position:input.token.position,channel:input.token.channel,
+      group_id:input.token.groupId,ranking_version:input.token.rankingVersion,
+      expires_at:input.token.expiresAt.toISOString(),
+      navigation_url:`/project/${input.token.projectId}?navigation_context_id=95000000-0000-4000-8000-000000000001`,
+      deduplicated:false,
+    })
+  }
+  async consumeNavigationContext(){return null}
 }
 
 function service(store: SearchStore): SearchService {
@@ -160,6 +172,12 @@ function service(store: SearchStore): SearchService {
       rawQueryRateWindowSeconds: 900,
     }),
     now: () => now,
+    identityAttestor:{
+      attestSubject:()=>Object.freeze({
+        metricSubjectId:'97000000-0000-4000-8000-000000000001',
+        subjectRefHash:Buffer.alloc(32,7),bridgeVersion:1,
+      }),
+    },
   })
 }
 
@@ -195,6 +213,26 @@ test('raw keyword search creates an encrypted owner-bound snapshot and omits pla
     filters: undefined,
   }), owner)
   assert.equal(replay.result_version, result.result_version)
+})
+
+test('creates an owner-bound navigation attempt only from the signed frozen result item',async()=>{
+  const store=new FakeStore()
+  const instance=service(store)
+  const result=await instance.search(rawCommand(),owner)
+  const item=result.groups[0]!.items[0]!
+  const navigation=await instance.createNavigationContext({
+    resultItemToken:item.result_item_token,sourcePage:'P05',
+    clickRequestId:'98000000-0000-4000-8000-000000000001',
+  },owner)
+  assert.equal(navigation.project_id,item.project_id)
+  assert.equal(navigation.position,item.position)
+  assert.equal(navigation.deduplicated,false)
+  await assert.rejects(
+    instance.createNavigationContext({
+      resultItemToken:item.result_item_token,sourcePage:'P05',clickRequestId:'invalid',
+    },owner),
+    (error:unknown)=>error instanceof SearchError&&error.code==='CLICK_REQUEST_ID_INVALID',
+  )
 })
 
 test('expired query snapshots and discover mode fail explicitly', async () => {

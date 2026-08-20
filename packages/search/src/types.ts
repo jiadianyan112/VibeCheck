@@ -114,6 +114,58 @@ export interface QueryLinkProjection {
   readonly expires_at: string
 }
 
+export interface SearchMetricIdentityAttestation {
+  readonly metricSubjectId: string
+  readonly subjectRefHash: Buffer
+  readonly bridgeVersion: number
+}
+
+export interface SearchMetricIdentityAttestor {
+  attestSubject(subject: SearchSubject): SearchMetricIdentityAttestation
+}
+
+export interface CreateSearchNavigationCommand {
+  readonly resultItemToken: string
+  readonly sourcePage: 'P05' | 'P07'
+  readonly clickRequestId: string
+}
+
+export interface SearchNavigationProjection {
+  readonly navigation_context_id: string
+  readonly click_id: string
+  readonly project_id: string
+  readonly result_item_id: string
+  readonly position: number
+  readonly channel: 'search_exact' | 'search_adjacent'
+  readonly group_id: 'exact' | 'adjacent'
+  readonly ranking_version: string
+  readonly expires_at: string
+  readonly navigation_url: string
+  readonly deduplicated: boolean
+}
+
+export interface ConsumeSearchNavigationCommand {
+  readonly navigationContextId: string
+  readonly projectId: string
+}
+
+export interface SearchAttributionContext {
+  readonly navigation_context_id: string
+  readonly click_id: string
+  readonly query_id: string
+  readonly result_version: string
+  readonly result_item_id: string
+  readonly project_id: string
+  readonly position: number
+  readonly channel: 'search_exact' | 'search_adjacent'
+  readonly group_id: 'exact' | 'adjacent'
+  readonly ranking_version: string
+  readonly source_page: 'P05' | 'P07'
+  readonly metric_subject_id: string
+  readonly subject_kind: 'anonymous' | 'user'
+  readonly bridge_version: number
+}
+
 export interface SearchServiceConfig {
   readonly encryptionMasterKey: string
   readonly encryptionKeyVersion: string

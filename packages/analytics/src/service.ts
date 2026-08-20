@@ -5,6 +5,7 @@ import type { AnalyticsConfig, RuntimeEnvironment } from '@vibecheck/config'
 import { analyticsError } from './errors.js'
 import type { AnalyticsStore } from './store-port.js'
 import type {
+  AnalyticsIdentityAttestation,
   AnalyticsBatchReceipt,
   AnalyticsBrowserContext,
   AnalyticsEventHandler,
@@ -359,6 +360,11 @@ export class AnalyticsService {
     return createHmac('sha256', this.dependencies.config.subjectHashPepper)
       .update(value, 'utf8')
       .digest()
+  }
+
+  attestSubject(subject:AnalyticsSubject):AnalyticsIdentityAttestation{
+    const identity=this.identity(subject)
+    return Object.freeze({...identity,bridgeVersion:1})
   }
 
   private safeEqual(left: string, right: string): boolean {

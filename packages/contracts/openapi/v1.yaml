@@ -327,6 +327,41 @@ paths:
           $ref: '#/components/responses/Error'
         '503':
           $ref: '#/components/responses/Error'
+  /api/v1/search-navigation-contexts:
+    post:
+      tags: [Search]
+      operationId: OP-SEARCH-NAV-CREATE
+      summary: Create one owner-bound service-attested search result click attempt
+      description: >-
+        The opaque result item token is the only source of query, result, item, ranking,
+        channel and position facts. The transaction creates one context and the
+        feed_item_clicked/v2 outbox fact. A repeated click_request_id is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [result_item_token, source_page, click_request_id]
+              properties:
+                result_item_token: { type: string, minLength: 1, maxLength: 4096 }
+                source_page: { type: string, enum: [P05, P07] }
+                click_request_id: { type: string, format: uuid }
+      responses:
+        '201':
+          description: New click attempt or an identical idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchNavigationProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/analytics/events:batch:
     post:
       tags: [Analytics]
@@ -2453,6 +2488,10 @@ paths:
           schema:
             type: string
             format: uuid
+        - in: query
+          name: navigation_context_id
+          required: false
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Public project projection; private author-relation states are excluded.
@@ -4274,6 +4313,66 @@ components:
         expires_at:
           type: string
           format: date-time
+    SearchNavigationProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - navigation_context_id
+        - click_id
+        - project_id
+        - result_item_id
+        - position
+        - channel
+        - group_id
+        - ranking_version
+        - expires_at
+        - navigation_url
+        - deduplicated
+      properties:
+        navigation_context_id: { type: string, format: uuid }
+        click_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        result_item_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        channel: { type: string, enum: [search_exact, search_adjacent] }
+        group_id: { type: string, enum: [exact, adjacent] }
+        ranking_version: { type: string, minLength: 1, maxLength: 64 }
+        expires_at: { type: string, format: date-time }
+        navigation_url: { type: string, pattern: '^/project/' }
+        deduplicated: { type: boolean }
+    SearchAttributionContext:
+      type: object
+      additionalProperties: false
+      required:
+        - navigation_context_id
+        - click_id
+        - query_id
+        - result_version
+        - result_item_id
+        - project_id
+        - position
+        - channel
+        - group_id
+        - ranking_version
+        - source_page
+        - metric_subject_id
+        - subject_kind
+        - bridge_version
+      properties:
+        navigation_context_id: { type: string, format: uuid }
+        click_id: { type: string, format: uuid }
+        query_id: { type: string, format: uuid }
+        result_version: { type: string, format: uuid }
+        result_item_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        channel: { type: string, enum: [search_exact, search_adjacent] }
+        group_id: { type: string, enum: [exact, adjacent] }
+        ranking_version: { type: string, minLength: 1, maxLength: 64 }
+        source_page: { type: string, enum: [P05, P07] }
+        metric_subject_id: { type: string, format: uuid }
+        subject_kind: { type: string, enum: [anonymous, user] }
+        bridge_version: { type: integer, minimum: 1 }
     CategoryId:
       type: string
       enum: [ai_learning_quiz, personal_site_portfolio]
@@ -4712,6 +4811,8 @@ components:
               type: array
               maxItems: 1000
               items: { $ref: '#/components/schemas/RelationPublicProjection' }
+            attribution_context:
+              $ref: '#/components/schemas/SearchAttributionContext'
     EvidenceSummary:
       type: object
       additionalProperties: false

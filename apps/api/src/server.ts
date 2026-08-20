@@ -136,6 +136,10 @@ import {
   type QueryMutationCommand,
   type QuerySnapshotProjection,
   type SearchCommand,
+  type CreateSearchNavigationCommand,
+  type ConsumeSearchNavigationCommand,
+  type SearchAttributionContext,
+  type SearchNavigationProjection,
   type SearchProjection,
   type SearchSubject,
 } from '@vibecheck/search'
@@ -312,6 +316,12 @@ export interface ApiSearchService {
     subject: SearchSubject,
     requestId: string,
   ): Promise<void>
+  createNavigationContext(
+    command:CreateSearchNavigationCommand,subject:SearchSubject,
+  ):Promise<SearchNavigationProjection>
+  consumeNavigationContext(
+    command:ConsumeSearchNavigationCommand,subject:SearchSubject,
+  ):Promise<SearchAttributionContext|null>
 }
 
 export interface ApiCommunityService {
@@ -2568,11 +2578,27 @@ async function handleSearchRequest(
   const queryPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)$/)
   const queryLinkPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)\/authorized-subjects$/)
   const queryUnlinkPath = path.match(/^\/api\/v1\/query-snapshots\/([^/]+)\/authorized-subjects\/me$/)
+  const navigationCollectionPath='/api/v1/search-navigation-contexts'
   if (
-    path !== '/api/v1/search' && queryPath === null &&
+    path !== '/api/v1/search' && path!==navigationCollectionPath && queryPath === null &&
     queryLinkPath === null && queryUnlinkPath === null
   ) return null
   const search = requireSearch(dependencies)
+
+  if(path===navigationCollectionPath&&method==='POST'){
+    if(!requestOriginAllowed(request,config))throw new SearchError('ORIGIN_INVALID',403)
+    const subject=await resolveSearchSubject(request,response,config,dependencies)
+    if(subject.kind==='user')requireSearchMutationCsrf(request)
+    const body=await readJsonBody(request)
+    exactKeys(body,['result_item_token','source_page','click_request_id'])
+    const projection=await search.createNavigationContext({
+      resultItemToken:stringField(body,'result_item_token',{maximum:4096})!,
+      sourcePage:stringField(body,'source_page',{maximum:4})! as 'P05'|'P07',
+      clickRequestId:stringField(body,'click_request_id',{maximum:64})!,
+    },subject)
+    writeJson(response,201,projection,requestId)
+    return 201
+  }
 
   if (queryPath !== null && method === 'GET') {
     const subject = await resolveSearchSubject(request, response, config, dependencies)
@@ -2659,11 +2685,13 @@ async function handleSearchRequest(
 }
 
 async function handleCatalogRequest(
+  request:IncomingMessage,
   response: ServerResponse,
   url: URL,
   path: string,
   method: string,
   requestId: string,
+  config:ServiceConfig,
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
   const projectsPath = '/api/v1/projects'
@@ -2776,10 +2804,23 @@ async function handleCatalogRequest(
     return 200
   }
   if (projectMatch !== null) {
-    exactQueryKeys(url.searchParams, [])
+    exactQueryKeys(url.searchParams, ['navigation_context_id'])
     const result = await catalog.getProject(projectMatch[1]!)
+    let attributionContext:SearchAttributionContext|null=null
+    const navigationContextId=url.searchParams.get('navigation_context_id')
+    if(navigationContextId!==null&&dependencies.search){
+      try{
+        const subject=await resolveSearchSubject(request,response,config,dependencies)
+        attributionContext=await dependencies.search.consumeNavigationContext({
+          navigationContextId,projectId:result.project_id,
+        },subject)
+      }catch(error){
+        if(!(error instanceof SearchError))throw error
+      }
+    }
     response.setHeader('etag', `W/"project-${result.project_id}-${result.read_version}"`)
-    writeJson(response, 200, result, requestId, 'public, max-age=60, stale-while-revalidate=120')
+    writeJson(response, 200, attributionContext===null?result:{...result,attribution_context:attributionContext},
+      requestId,navigationContextId===null?'public, max-age=60, stale-while-revalidate=120':'private, no-store')
     return 200
   }
   exactQueryKeys(url.searchParams, [])
@@ -3348,7 +3389,7 @@ export function createApiServer(
                             statusCode = searchStatus
                           } else {
                             const catalogStatus = await handleCatalogRequest(
-                              response, url, path, method, requestId, dependencies,
+                              request,response, url, path, method, requestId,config,dependencies,
                             )
                             if (catalogStatus !== null) {
                               statusCode = catalogStatus

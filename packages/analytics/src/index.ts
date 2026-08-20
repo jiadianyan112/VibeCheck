@@ -10,6 +10,7 @@ export type {
 export type {
   AnalyticsBatchReceipt,
   AnalyticsBrowserContext,
+  AnalyticsIdentityAttestation,
   AnalyticsEventHandler,
   AnalyticsItemReceipt,
   AnalyticsSubject,

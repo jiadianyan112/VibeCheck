@@ -276,6 +276,7 @@ const server = createApiServer(config, {
         search: new SearchService({
           store: new PostgresSearchStore(pool),
           config: searchConfig,
+          ...(analytics ? {identityAttestor:analytics} : {}),
         }),
       }
     : {}),

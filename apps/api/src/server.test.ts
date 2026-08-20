@@ -793,6 +793,8 @@ class FakeSearchService implements ApiSearchService {
   command: SearchCommand | null = null
   subject: SearchSubject | null = null
   lifecycleSubject: SearchSubject | null = null
+  navigationCommand:Parameters<ApiSearchService['createNavigationContext']>[0]|null=null
+  consumeCommand:Parameters<ApiSearchService['consumeNavigationContext']>[0]|null=null
 
   async search(command: SearchCommand, subject: SearchSubject): Promise<SearchProjection> {
     this.command = command
@@ -867,6 +869,33 @@ class FakeSearchService implements ApiSearchService {
   }
   async invalidateQuery(_queryId: string, _command: unknown, subject: SearchSubject) {
     this.lifecycleSubject = subject
+  }
+  async createNavigationContext(command:Parameters<ApiSearchService['createNavigationContext']>[0],subject:SearchSubject){
+    this.lifecycleSubject=subject
+    this.navigationCommand=command
+    return Object.freeze({
+      navigation_context_id:'95000000-0000-4000-8000-000000000001',
+      click_id:'96000000-0000-4000-8000-000000000001',
+      project_id:'11111111-1111-4111-8111-111111111111',
+      result_item_id:'92000000-0000-4000-8000-000000000001',position:1,
+      channel:'search_exact' as const,group_id:'exact' as const,ranking_version:'search.keyword.v1',
+      expires_at:'2026-08-11T00:00:00.000Z',
+      navigation_url:'/project/11111111-1111-4111-8111-111111111111?navigation_context_id=95000000-0000-4000-8000-000000000001',
+      deduplicated:false,
+    })
+  }
+  async consumeNavigationContext(command:Parameters<ApiSearchService['consumeNavigationContext']>[0]){
+    this.consumeCommand=command
+    return Object.freeze({
+      navigation_context_id:command.navigationContextId,click_id:'96000000-0000-4000-8000-000000000001',
+      query_id:'90000000-0000-4000-8000-000000000001',
+      result_version:'91000000-0000-4000-8000-000000000001',
+      result_item_id:'92000000-0000-4000-8000-000000000001',project_id:command.projectId,
+      position:1,channel:'search_exact' as const,group_id:'exact' as const,
+      ranking_version:'search.keyword.v1',source_page:'P05' as const,
+      metric_subject_id:'97000000-0000-4000-8000-000000000001',
+      subject_kind:'anonymous' as const,bridge_version:1,
+    })
   }
 }
 
@@ -967,6 +996,38 @@ test('search rejects cross-origin creation before invoking the search service', 
   } finally {
     await runtime.stop()
   }
+})
+
+test('search navigation creates one server-frozen attempt and P08 consumes its attribution without blocking public read',async()=>{
+  const search=new FakeSearchService()
+  const catalog=new FakeCatalogService()
+  const runtime=await start(async()=>undefined,undefined,undefined,catalog,search)
+  try{
+    const created=await fetch(`${runtime.baseUrl}/api/v1/search-navigation-contexts`,{
+      method:'POST',headers:{origin:'https://web.example','content-type':'application/json'},
+      body:JSON.stringify({
+        result_item_token:'signed-result-item-token',source_page:'P05',
+        click_request_id:'98000000-0000-4000-8000-000000000001',
+      }),
+    })
+    assert.equal(created.status,201)
+    assert.deepEqual(search.navigationCommand,{
+      resultItemToken:'signed-result-item-token',sourcePage:'P05',
+      clickRequestId:'98000000-0000-4000-8000-000000000001',
+    })
+    const cookie=created.headers.get('set-cookie')?.split(';')[0]
+    assert.ok(cookie)
+    const contextId=(await created.json() as {navigation_context_id:string}).navigation_context_id
+    const detail=await fetch(
+      `${runtime.baseUrl}/api/v1/projects/${projectCard.project_id}?navigation_context_id=${contextId}`,
+      {headers:{cookie:cookie!}},
+    )
+    assert.equal(detail.status,200)
+    assert.equal(detail.headers.get('cache-control'),'private, no-store')
+    assert.deepEqual(search.consumeCommand,{navigationContextId:contextId,projectId:projectCard.project_id})
+    assert.equal((await detail.json() as {attribution_context:{click_id:string}}).attribution_context.click_id,
+      '96000000-0000-4000-8000-000000000001')
+  }finally{await runtime.stop()}
 })
 
 test('comparison creates and reuses a signed anonymous owner without exposing its hash', async () => {

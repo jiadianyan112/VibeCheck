@@ -8,6 +8,12 @@ export interface AnalyticsBrowserContext {
   readonly bindingMaterial: string
 }
 
+export interface AnalyticsIdentityAttestation {
+  readonly metricSubjectId: string
+  readonly subjectRefHash: Buffer
+  readonly bridgeVersion: number
+}
+
 export interface ComparisonDimensionViewedPayload {
   readonly comparison_id: string
   readonly comparison_version: number
