@@ -141,7 +141,8 @@ try {
     `INSERT INTO iam.sessions (
        session_id_hash,user_id,anonymous_subject_id,roles_version,status,recent_auth_at,
        expires_at,created_at
-     ) VALUES ($1,$2,$3,1,'active',$4,$4+interval '1 hour',$4)
+     ) VALUES ($1,$2,$3,1,'active',$4::timestamptz,
+       $4::timestamptz+interval '1 hour',$4::timestamptz)
      ON CONFLICT (session_id_hash) DO NOTHING`,
     [sessionHash,reviewerId,'52000000-0000-4000-8000-000000000005',now],
   )
