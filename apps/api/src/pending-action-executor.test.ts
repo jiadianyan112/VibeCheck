@@ -93,18 +93,19 @@ describe('PendingActionExecutor', () => {
     assert.deepEqual(result, { status: 'cancelled', reason: 'account_comparison_preserved' })
   })
 
-  it('does not consume unimplemented submission or unavailable domain actions', async () => {
+  it('consumes the login-only submission entry without creating a draft', async () => {
     const executor = new PendingActionExecutor({})
-    await assert.rejects(
-      () => executor.execute({
-        action: action({ action_type: 'start_submission', category_id: 'ai_learning_quiz' }),
-        userId: '63000000-0000-4000-8000-000000000004',
-        identityLinkId: '63000000-0000-4000-8000-000000000006',
-        requestId: 'request-replay-4',
-      }),
-      (error: unknown) => error instanceof IdentityError &&
-        error.code === 'PENDING_ACTION_EXECUTION_NOT_IMPLEMENTED' && error.httpStatus === 501,
-    )
+    const result = await executor.execute({
+      action: action({ action_type: 'start_submission', category_id: 'ai_learning_quiz' }),
+      userId: '63000000-0000-4000-8000-000000000004',
+      identityLinkId: '63000000-0000-4000-8000-000000000006',
+      requestId: 'request-replay-4',
+    })
+    assert.deepEqual(result, { status: 'executed' })
+  })
+
+  it('does not consume an unavailable interaction domain action', async () => {
+    const executor = new PendingActionExecutor({})
     await assert.rejects(
       () => executor.execute({
         action: action({

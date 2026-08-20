@@ -1,9 +1,14 @@
 export { MediaError, mediaError } from './errors.js'
 export { PostgresMediaStore } from './postgres-store.js'
+export { MediaScanProcessor, PostgresMediaScanStore } from './scan-processor.js'
 export { MediaService } from './service.js'
+export { AwsS3MediaStorage } from './aws-s3-storage.js'
 export type { MediaStore } from './store-port.js'
 export {
   mediaTargetTypes,
+  publicMediaMimeTypes,
+  type CompleteMediaResourceCommand,
+  type CompleteMediaResourceProjection,
   type CreateMediaReferenceCommand,
   type DeleteMediaReferenceCommand,
   type GetMediaResourceCommand,
@@ -12,7 +17,16 @@ export {
   type MediaReferenceProjection,
   type MediaResourceProjection,
   type MediaResourceStatus,
+  type MediaStorage,
+  type MediaScanStorage,
+  type MediaProviderScanResult,
   type MediaScanResult,
   type MediaTargetType,
   type PatchMediaReferenceCommand,
+  type PrepareMediaResourceCommand,
+  type PrepareMediaResourceProjection,
+  type ReadMediaResourceContentCommand,
+  type ReadMediaResourceContentProjection,
+  type PublicMediaMime,
+  type PublicMediaPurpose,
 } from './types.js'

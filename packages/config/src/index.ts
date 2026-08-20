@@ -100,6 +100,9 @@ export interface WorkflowConfig {
 
 export interface MediaConfig {
   readonly enabled: boolean
+  readonly awsRegion: string
+  readonly bucket: string
+  readonly objectPrefix: string
 }
 
 export interface EvidenceConfig {
@@ -526,9 +529,23 @@ export function loadWorkflowConfig(
 }
 
 export function loadMediaConfig(env: NodeJS.ProcessEnv = process.env): MediaConfig {
-  return Object.freeze({
-    enabled: parseBoolean('MEDIA_ENABLED', env.MEDIA_ENABLED, false),
+  const enabled = parseBoolean('MEDIA_ENABLED', env.MEDIA_ENABLED, false)
+  if (!enabled) return Object.freeze({
+    enabled: false, awsRegion: '', bucket: '', objectPrefix: 'public-media/',
   })
+  const awsRegion = env.MEDIA_AWS_REGION?.trim() ?? ''
+  if (!/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/.test(awsRegion)) {
+    throw new Error('CONFIG_MEDIA_AWS_REGION_REQUIRED')
+  }
+  const bucket = env.MEDIA_S3_BUCKET?.trim() ?? ''
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+    throw new Error('CONFIG_MEDIA_S3_BUCKET_REQUIRED')
+  }
+  const prefix = env.MEDIA_S3_PREFIX?.trim() ?? 'public-media/'
+  if (prefix.length < 1 || prefix.length > 256 || prefix.startsWith('/') || !prefix.endsWith('/')) {
+    throw new Error('CONFIG_MEDIA_S3_PREFIX_INVALID')
+  }
+  return Object.freeze({ enabled, awsRegion, bucket, objectPrefix: prefix })
 }
 
 export function loadEvidenceConfig(env: NodeJS.ProcessEnv = process.env): EvidenceConfig {

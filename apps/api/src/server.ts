@@ -111,6 +111,8 @@ import {
 import {
   MediaError,
   type CreateMediaReferenceCommand,
+  type CompleteMediaResourceCommand,
+  type CompleteMediaResourceProjection,
   type DeleteMediaReferenceCommand,
   type GetMediaResourceCommand,
   type ListMediaReferencesCommand,
@@ -118,6 +120,10 @@ import {
   type MediaReferenceProjection,
   type MediaResourceProjection,
   type PatchMediaReferenceCommand,
+  type PrepareMediaResourceCommand,
+  type PrepareMediaResourceProjection,
+  type ReadMediaResourceContentCommand,
+  type ReadMediaResourceContentProjection,
 } from '@vibecheck/media'
 import {
   SearchError,
@@ -402,6 +408,9 @@ export interface ApiReviewDecisionService {
 }
 
 export interface ApiMediaService {
+  prepareResource(command: PrepareMediaResourceCommand): Promise<PrepareMediaResourceProjection>
+  completeResource(command: CompleteMediaResourceCommand): Promise<CompleteMediaResourceProjection>
+  readResourceContent(command: ReadMediaResourceContentCommand): Promise<ReadMediaResourceContentProjection>
   getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection>
   createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection>
   listReferences(command: ListMediaReferencesCommand): Promise<MediaReferencePage>
@@ -2238,10 +2247,17 @@ async function handleMediaRequest(
   config: ServiceConfig,
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
+  const resourceCollection = '/api/v1/media-resources'
   const resourceMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)$/)
+  const resourceCompleteMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)\/complete$/)
+  const resourceContentMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)\/content$/)
   const referenceCollection = '/api/v1/media-references'
   const referenceMatch = path.match(/^\/api\/v1\/media-references\/([^/]+)$/)
-  if (resourceMatch === null && path !== referenceCollection && referenceMatch === null) return null
+  if (
+    path !== resourceCollection && resourceMatch === null && resourceCompleteMatch === null &&
+    resourceContentMatch === null &&
+    path !== referenceCollection && referenceMatch === null
+  ) return null
   if (!dependencies.media) throw new MediaError('MEDIA_SERVICE_UNAVAILABLE', 503, true)
   const session = await resolveAuthenticatedSession(request, dependencies)
 
@@ -2254,6 +2270,18 @@ async function handleMediaRequest(
     })
     writeJson(response, 200, projection, requestId)
     return 200
+  }
+
+  if (resourceContentMatch !== null && method === 'GET') {
+    exactQueryKeys(url.searchParams, [])
+    const projection = await dependencies.media.readResourceContent({
+      userId: session.userId, mediaResourceId: resourceContentMatch[1]!, requestId,
+    })
+    response.writeHead(302, {
+      location: projection.redirect_url, 'cache-control': 'private, no-store', 'x-request-id': requestId,
+    })
+    response.end()
+    return 302
   }
 
   if (path === referenceCollection && method === 'GET') {
@@ -2274,13 +2302,41 @@ async function handleMediaRequest(
   }
 
   if (
-    !((path === referenceCollection && method === 'POST') ||
+    !((path === resourceCollection && method === 'POST') ||
+      (resourceCompleteMatch !== null && method === 'POST') ||
+      (path === referenceCollection && method === 'POST') ||
       (referenceMatch !== null && ['PATCH', 'DELETE'].includes(method)))
   ) return null
   if (session.accountStatus === 'restricted') throw new MediaError('ACCOUNT_WRITE_RESTRICTED', 403)
   if (!requestOriginAllowed(request, config)) throw new MediaError('ORIGIN_INVALID', 403)
   requireMediaMutationCsrf(request)
   const body = await readJsonBody(request)
+
+  if (path === resourceCollection) {
+    exactKeys(body, ['purpose', 'declared_mime', 'byte_size', 'checksum_sha256'])
+    const projection = await dependencies.media.prepareResource({
+      userId: session.userId,
+      purpose: stringField(body, 'purpose', { maximum: 64 })!,
+      declaredMime: stringField(body, 'declared_mime', { maximum: 128 })!,
+      byteSize: integerField(body, 'byte_size', 1),
+      checksumSha256: stringField(body, 'checksum_sha256', { maximum: 64 })!,
+      idempotencyKey: idempotencyKey(request), requestId,
+    })
+    writeJson(response, 201, projection, requestId)
+    return 201
+  }
+
+  if (resourceCompleteMatch !== null) {
+    exactKeys(body, ['checksum_sha256', 'upload_receipt'])
+    const projection = await dependencies.media.completeResource({
+      userId: session.userId, mediaResourceId: resourceCompleteMatch[1]!,
+      checksumSha256: stringField(body, 'checksum_sha256', { maximum: 64 })!,
+      uploadReceipt: stringField(body, 'upload_receipt', { maximum: 4_096 })!,
+      operationId: idempotencyKey(request), requestId,
+    })
+    writeJson(response, 202, projection, requestId)
+    return 202
+  }
 
   if (path === referenceCollection) {
     exactKeys(body, [

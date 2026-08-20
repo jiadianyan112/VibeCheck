@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { loadPrivateMaterialConfig, loadServiceConfig } from '@vibecheck/config'
+import { loadMediaConfig, loadPrivateMaterialConfig, loadServiceConfig } from '@vibecheck/config'
 import {
   PostgresPublishedProjectIndexer,
   PostgresProjectUpdateApplier,
@@ -24,6 +24,7 @@ import {
   createPrivateMaterialStorageKeyResolver,
   PostgresPrivateMaterialAccessRevoker,
 } from '@vibecheck/private-material'
+import { AwsS3MediaStorage, MediaScanProcessor, PostgresMediaScanStore } from '@vibecheck/media'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
 import { createSubmissionPublicationHandler } from './submission-publication-handler.js'
@@ -32,9 +33,11 @@ import { createProjectUpdateApplicationHandler } from './project-update-applicat
 import { createProjectUpdatedHandler } from './project-updated-handler.js'
 import { createPrivateMaterialScanHandler } from './private-material-scan-handler.js'
 import { createPrivateMaterialAccessRevokeHandler } from './private-material-access-revoke-handler.js'
+import { createMediaScanHandler } from './media-scan-handler.js'
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
 const privateMaterialConfig = loadPrivateMaterialConfig()
+const mediaConfig = loadMediaConfig()
 if (config.databaseUrl === null) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = createDatabasePool({
@@ -85,20 +88,37 @@ if (privateMaterialStorage && privateMaterialScanStore) {
       pool,storage:privateMaterialStorage,resolveStorageKey,
     })))
 }
+const mediaScanStore = mediaConfig.enabled ? new PostgresMediaScanStore(pool) : undefined
+if (mediaScanStore) {
+  const mediaStorage = new AwsS3MediaStorage({
+    region: mediaConfig.awsRegion, bucket: mediaConfig.bucket, objectPrefix: mediaConfig.objectPrefix,
+  })
+  handlers.set('media_scan_requested', createMediaScanHandler(new MediaScanProcessor({
+    store: mediaScanStore, storage: mediaStorage,
+  })))
+}
 const workflowStore = new PostgresWorkflowStore(pool)
 let nextPrivateMaterialSweepAt = 0
+let nextMediaSweepAt = 0
 const store: OutboxStore = {
   requeueExpired: () => requeueExpiredOutbox(pool),
   requeueExpiredReviewClaims: () => workflowStore.requeueExpiredClaims(
     new Date(), config.workerBatchSize,
   ),
-  ...(privateMaterialScanStore
+  ...((privateMaterialScanStore || mediaScanStore)
     ? {
         sweepPrivateMaterials: async () => {
           const now = new Date()
-          if (now.getTime()<nextPrivateMaterialSweepAt) return 0
-          nextPrivateMaterialSweepAt = now.getTime()+60_000
-          return privateMaterialScanStore.sweepExpired(now, config.workerBatchSize)
+          let swept = 0
+          if (privateMaterialScanStore && now.getTime() >= nextPrivateMaterialSweepAt) {
+            nextPrivateMaterialSweepAt = now.getTime()+60_000
+            swept += await privateMaterialScanStore.sweepExpired(now, config.workerBatchSize)
+          }
+          if (mediaScanStore && now.getTime() >= nextMediaSweepAt) {
+            nextMediaSweepAt = now.getTime()+60_000
+            swept += await mediaScanStore.sweepExpired(now, config.workerBatchSize)
+          }
+          return swept
         },
       }
     : {}),

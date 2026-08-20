@@ -77,6 +77,22 @@ import type {
   RevokeMaterialCommand,
   RevokeMaterialProjection,
 } from '@vibecheck/private-material'
+import type {
+  CompleteMediaResourceCommand,
+  CompleteMediaResourceProjection,
+  CreateMediaReferenceCommand,
+  DeleteMediaReferenceCommand,
+  GetMediaResourceCommand,
+  ListMediaReferencesCommand,
+  MediaReferencePage,
+  MediaReferenceProjection,
+  MediaResourceProjection,
+  PatchMediaReferenceCommand,
+  PrepareMediaResourceCommand,
+  PrepareMediaResourceProjection,
+  ReadMediaResourceContentCommand,
+  ReadMediaResourceContentProjection,
+} from '@vibecheck/media'
 import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
 import type {
   CheckSubmissionUrlCommand,
@@ -131,6 +147,7 @@ import {
   type ApiVerificationRequestService,
   type ApiOwnershipCaseService,
   type ApiPrivateMaterialService,
+  type ApiMediaService,
   type ApiSearchService,
   type ApiSubmissionService,
   type ApiWorkflowService,
@@ -171,6 +188,7 @@ async function start(
   verificationRequests?: ApiVerificationRequestService,
   privateMaterials?: ApiPrivateMaterialService,
   ownershipCases?: ApiOwnershipCaseService,
+  media?: ApiMediaService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -183,7 +201,7 @@ async function start(
           authCookieSecure: false,
         }
       : {}),
-    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests || privateMaterials || ownershipCases)
+    ...((identity || search || assetResolver || comparison || pendingActions || community || analytics || submission || workflow || adminOperations || reviewDecisions || notifications || projectUpdates || verificationRequests || privateMaterials || ownershipCases || media)
       ? { anonymousCookieSecret: 'test-anonymous-cookie-secret-at-least-32-bytes' }
       : {}),
     ...(staticDirectory ? { staticDirectory } : {}),
@@ -210,6 +228,7 @@ async function start(
     ...(verificationRequests ? { verificationRequests } : {}),
     ...(privateMaterials ? { privateMaterials } : {}),
     ...(ownershipCases ? { ownershipCases } : {}),
+    ...(media ? { media } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -2337,6 +2356,103 @@ test('private verification material routes bind ownership and return only applic
   } finally {
     await runtime.stop()
   }
+})
+
+const uploadingMedia: MediaResourceProjection = Object.freeze({
+  media_resource_id: '6b000000-0000-4000-8000-000000000001',
+  declared_mime: 'image/png', detected_mime: null, byte_size: 1024,
+  width: null, height: null, duration_ms: null, checksum_sha256: 'a'.repeat(64),
+  source: 'upload', status: 'uploading', scan_result: 'not_scanned',
+  rejection_reason_code: null, scan_attempt_count: 0, next_scan_at: null,
+  exif_removed: false, deletion_guard_active: false, version: 1,
+  created_at: '2026-08-10T00:00:00.000Z', updated_at: '2026-08-10T00:00:00.000Z',
+})
+
+class FakeMediaService implements ApiMediaService {
+  prepareCommand: PrepareMediaResourceCommand | null = null
+  completeCommand: CompleteMediaResourceCommand | null = null
+  getPrepareCommand(): PrepareMediaResourceCommand | null { return this.prepareCommand }
+  getCompleteCommand(): CompleteMediaResourceCommand | null { return this.completeCommand }
+  async prepareResource(command: PrepareMediaResourceCommand): Promise<PrepareMediaResourceProjection> {
+    this.prepareCommand = command
+    return Object.freeze({
+      media: uploadingMedia, upload_url: 'https://media.example/upload',
+      upload_headers: Object.freeze({ 'content-type': 'image/png' }),
+      upload_expires_at: '2026-08-10T00:15:00.000Z',
+    })
+  }
+  async completeResource(command: CompleteMediaResourceCommand): Promise<CompleteMediaResourceProjection> {
+    this.completeCommand = command
+    return Object.freeze({
+      media: Object.freeze({ ...uploadingMedia, status: 'uploaded' as const, detected_mime: 'image/png', version: 2 }),
+      scan_queued: true,
+    })
+  }
+  async readResourceContent(command: ReadMediaResourceContentCommand): Promise<ReadMediaResourceContentProjection> {
+    void command
+    return Object.freeze({ redirect_url: 'https://media.example/read' })
+  }
+  async getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection> { void command; return uploadingMedia }
+  async createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection> { void command; throw new Error('not used') }
+  async listReferences(command: ListMediaReferencesCommand): Promise<MediaReferencePage> { void command; return Object.freeze({ items: [], total_count: 0 }) }
+  async patchReference(command: PatchMediaReferenceCommand): Promise<MediaReferenceProjection> { void command; throw new Error('not used') }
+  async deleteReference(command: DeleteMediaReferenceCommand): Promise<void> { void command }
+}
+
+test('public cover media routes require authenticated CSRF and bind idempotent upload completion', async () => {
+  const media = new FakeMediaService()
+  const runtime = await start(...[
+    async () => undefined, new FakeIdentityService(),
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, media,
+  ] as Parameters<typeof start>)
+  const headers = {
+    'content-type': 'application/json', origin: 'https://web.example',
+    cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+    'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+    'idempotency-key': 'media-upload-prepare-0001',
+  }
+  try {
+    const rejected = await fetch(`${runtime.baseUrl}/api/v1/media-resources`, {
+      method: 'POST', headers: { ...headers, 'x-csrf-token': '' },
+      body: JSON.stringify({
+        purpose: 'project_cover', declared_mime: 'image/png', byte_size: 1024,
+        checksum_sha256: 'a'.repeat(64),
+      }),
+    })
+    assert.equal(rejected.status, 403)
+    assert.equal(media.prepareCommand, null)
+    const prepared = await fetch(`${runtime.baseUrl}/api/v1/media-resources`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        purpose: 'project_cover', declared_mime: 'image/png', byte_size: 1024,
+        checksum_sha256: 'a'.repeat(64),
+      }),
+    })
+    assert.equal(prepared.status, 201)
+    assert.equal(media.getPrepareCommand()?.userId, session.userId)
+    assert.equal(media.getPrepareCommand()?.idempotencyKey, 'media-upload-prepare-0001')
+    const preparedBody = await prepared.json() as Record<string, unknown>
+    assert.equal(Object.hasOwn(preparedBody, 'storage_key'), false)
+
+    const completed = await fetch(
+      `${runtime.baseUrl}/api/v1/media-resources/${uploadingMedia.media_resource_id}/complete`,
+      {
+        method: 'POST', headers: { ...headers, 'idempotency-key': 'media-upload-complete-0001' },
+        body: JSON.stringify({ checksum_sha256: 'a'.repeat(64), upload_receipt: 'fixture-etag' }),
+      },
+    )
+    assert.equal(completed.status, 202)
+    assert.equal(media.getCompleteCommand()?.mediaResourceId, uploadingMedia.media_resource_id)
+    assert.equal(media.getCompleteCommand()?.operationId, 'media-upload-complete-0001')
+    const content = await fetch(
+      `${runtime.baseUrl}/api/v1/media-resources/${uploadingMedia.media_resource_id}/content`,
+      { headers: { cookie: headers.cookie }, redirect: 'manual' },
+    )
+    assert.equal(content.status, 302)
+    assert.equal(content.headers.get('location'), 'https://media.example/read')
+  } finally { await runtime.stop() }
 })
 
 class FakePendingActionService implements ApiPendingActionService {

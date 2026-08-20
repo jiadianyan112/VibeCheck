@@ -3,15 +3,42 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 
 import { PostgresMediaStore } from '../postgres-store.js'
+import { MediaScanProcessor, PostgresMediaScanStore } from '../scan-processor.js'
 import { MediaService } from '../service.js'
+import type { MediaScanStorage, MediaStorage } from '../types.js'
 
 const { Pool } = pg
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 
 const pool = new Pool({ connectionString: databaseUrl })
+const uploadStorage: MediaStorage = Object.freeze({
+  async issueUpload(input: Parameters<MediaStorage['issueUpload']>[0]) {
+    return Object.freeze({
+      uploadUrl: 'https://media-fixture.example/upload',
+      uploadHeaders: Object.freeze({
+        'content-type': input.declaredMime, 'if-none-match': '*',
+        'x-amz-checksum-sha256': Buffer.from(input.checksumSha256, 'hex').toString('base64'),
+        'x-amz-server-side-encryption': 'AES256', 'x-amz-tagging': 'VibeCheckAccess=quarantined',
+      }),
+    })
+  },
+  async inspectUpload() {
+    return Object.freeze({ detectedMime: 'image/png', byteSize: 2048, checksumSha256: 'e'.repeat(64) })
+  },
+  async issueRead() { return Object.freeze({ readUrl: 'https://media-fixture.example/read' }) },
+})
+const scanStorage: MediaScanStorage = Object.freeze({
+  async getScanResult() { return 'clean' as const },
+  async sanitizeImage(input: Parameters<MediaScanStorage['sanitizeImage']>[0]) {
+    return Object.freeze({
+      finalStorageKey: `ready/${input.ownerUserId}/${input.mediaResourceId}`,
+      detectedMime: input.declaredMime, width: 1200, height: 800, exifRemoved: true as const,
+    })
+  },
+})
 const service = new MediaService(
-  new PostgresMediaStore(pool),
+  new PostgresMediaStore(pool), uploadStorage,
   () => new Date('2026-08-13T13:00:00.000Z'),
 )
 const userId = '93000000-0000-4000-8000-000000000001'
@@ -36,6 +63,46 @@ async function run(): Promise<void> {
      VALUES ($1,'active',$2,$2) ON CONFLICT (user_id) DO UPDATE SET status='active',updated_at=$2`,
     [userId, now],
   )
+  const prepared = await service.prepareResource({
+    userId, purpose: 'project_cover', declaredMime: 'image/png', byteSize: 2048,
+    checksumSha256: 'e'.repeat(64), idempotencyKey: 'media-fixture-upload-prepare-0001',
+    requestId: 'media-fixture-upload-request-0001',
+  })
+  assert.equal(prepared.media.status, 'uploading')
+  const completed = await service.completeResource({
+    userId, mediaResourceId: prepared.media.media_resource_id, checksumSha256: 'e'.repeat(64),
+    uploadReceipt: 'fixture-etag', operationId: 'media-fixture-upload-complete-0001',
+    requestId: 'media-fixture-upload-request-0002',
+  })
+  const completionReplay = await service.completeResource({
+    userId, mediaResourceId: prepared.media.media_resource_id, checksumSha256: 'e'.repeat(64),
+    uploadReceipt: 'fixture-etag', operationId: 'media-fixture-upload-complete-0001',
+    requestId: 'media-fixture-upload-request-0003',
+  })
+  assert.equal(completed.media.status, 'uploaded')
+  assert.equal(completionReplay.media.media_resource_id, completed.media.media_resource_id)
+  const queued = await pool.query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM ops.outbox_events
+     WHERE aggregate_type='media_resource' AND aggregate_id=$1 AND event_name='media_scan_requested'`,
+    [completed.media.media_resource_id],
+  )
+  assert.equal(queued.rows[0]?.count, 1)
+  await new MediaScanProcessor({
+    store: new PostgresMediaScanStore(pool),
+    storage: scanStorage, now: () => new Date('2026-08-13T13:00:10.000Z'),
+  }).process(completed.media.media_resource_id)
+  const ready = await service.getResource({
+    userId, mediaResourceId: completed.media.media_resource_id,
+    requestId: 'media-fixture-upload-request-0004',
+  })
+  assert.equal(ready.status, 'ready')
+  assert.equal(ready.scan_result, 'clean')
+  assert.equal(ready.exif_removed, true)
+  const content = await service.readResourceContent({
+    userId, mediaResourceId: completed.media.media_resource_id,
+    requestId: 'media-fixture-upload-request-0005',
+  })
+  assert.equal(content.redirect_url, 'https://media-fixture.example/read')
   await pool.query(
     `INSERT INTO workflow.submission_url_checks (
        check_id,owner_user_id,category_id,category_schema_version,input_hash,canonical_url,

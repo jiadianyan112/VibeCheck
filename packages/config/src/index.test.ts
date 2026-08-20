@@ -230,7 +230,11 @@ describe('loadServiceConfig', () => {
   it('keeps media and evidence control planes disabled until explicitly enabled', () => {
     assert.equal(loadMediaConfig({}).enabled, false)
     assert.equal(loadEvidenceConfig({}).enabled, false)
-    assert.equal(loadMediaConfig({ MEDIA_ENABLED: 'true' }).enabled, true)
+    assert.equal(loadMediaConfig({
+      MEDIA_ENABLED: 'true', MEDIA_AWS_REGION: 'ap-southeast-1',
+      MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
+    }).enabled, true)
+    assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'true' }), /CONFIG_MEDIA_AWS_REGION_REQUIRED/)
     assert.equal(loadEvidenceConfig({ EVIDENCE_ENABLED: 'true' }).enabled, true)
     assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'yes' }), /CONFIG_MEDIA_ENABLED_INVALID/)
   })

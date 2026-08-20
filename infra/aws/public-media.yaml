@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VibeCheck quarantined public-media ingest with GuardDuty scanning and sanitized ready objects.
+
+Parameters:
+  BucketName:
+    Type: String
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+  ObjectPrefix:
+    Type: String
+    Default: public-media/
+    AllowedPattern: '^[A-Za-z0-9][A-Za-z0-9/_-]{0,127}/$'
+  RuntimePrincipalArn:
+    Type: String
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]{1,128}$'
+  AllowedUploadOrigins:
+    Type: CommaDelimitedList
+    Description: Exact HTTPS origins allowed to PUT presigned quarantine uploads.
+
+Resources:
+  PublicMediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAbandonedQuarantine
+            Status: Enabled
+            Prefix: !Sub ${ObjectPrefix}quarantine/
+            ExpirationInDays: 7
+            NoncurrentVersionExpiration: { NoncurrentDays: 7 }
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: !Ref AllowedUploadOrigins
+            AllowedHeaders:
+              - content-type
+              - if-none-match
+              - x-amz-checksum-sha256
+              - x-amz-content-sha256
+              - x-amz-server-side-encryption
+              - x-amz-tagging
+            ExposedHeaders: [ETag, x-amz-checksum-sha256]
+            MaxAge: 300
+
+  GuardDutyMediaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: malware-protection-plan.guardduty.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GuardDutyMalwareProtectionForPublicMedia
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ManagedRuleLifecycle
+                Effect: Allow
+                Action: [events:PutRule, events:DeleteRule, events:PutTargets, events:RemoveTargets]
+                Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
+                Condition:
+                  StringLike:
+                    events:ManagedBy: malware-protection-plan.guardduty.amazonaws.com
+              - Sid: ManagedRuleInspection
+                Effect: Allow
+                Action: [events:DescribeRule, events:ListTargetsByRule]
+                Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*
+              - Sid: BucketControl
+                Effect: Allow
+                Action: [s3:PutBucketNotification, s3:GetBucketNotification, s3:ListBucket]
+                Resource: !GetAtt PublicMediaBucket.Arn
+              - Sid: ValidationObject
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${PublicMediaBucket.Arn}/malware-protection-resource-validation-object
+              - Sid: QuarantineScan
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetObjectTagging
+                  - s3:GetObjectVersionTagging
+                  - s3:PutObjectTagging
+                  - s3:PutObjectVersionTagging
+                Resource: !Sub ${PublicMediaBucket.Arn}/${ObjectPrefix}quarantine/*
+
+  PublicMediaMalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !GetAtt GuardDutyMediaRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref PublicMediaBucket
+          ObjectPrefixes:
+            - !Sub ${ObjectPrefix}quarantine/
+      Actions:
+        Tagging: { Status: ENABLED }
+      Tags:
+        - { Key: application, Value: vibecheck }
+        - { Key: data-classification, Value: public-media-quarantine }
+
+  PublicMediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PublicMediaBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt PublicMediaBucket.Arn
+              - !Sub ${PublicMediaBucket.Arn}/*
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } }
+          - Sid: AllowRuntimeMediaPipeline
+            Effect: Allow
+            Principal: { AWS: !Ref RuntimePrincipalArn }
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:GetObjectTagging
+            Resource: !Sub ${PublicMediaBucket.Arn}/${ObjectPrefix}*
+          - Sid: DenyNonConditionalQuarantineCreation
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub ${PublicMediaBucket.Arn}/${ObjectPrefix}quarantine/*
+            Condition:
+              Null: { 's3:if-none-match': 'true' }
+              Bool: { 's3:ObjectCreationOperation': 'true' }
+          - Sid: DenyQuarantineReadBeforeClean
+            Effect: Deny
+            Principal: '*'
+            Action: [s3:GetObject, s3:GetObjectVersion]
+            Resource: !Sub ${PublicMediaBucket.Arn}/${ObjectPrefix}quarantine/*
+            Condition:
+              StringNotEquals:
+                's3:ExistingObjectTag/GuardDutyMalwareScanStatus': NO_THREATS_FOUND
+              ArnNotLike:
+                'aws:PrincipalArn':
+                  - !GetAtt GuardDutyMediaRole.Arn
+                  - !Ref RuntimePrincipalArn
+
+Outputs:
+  BucketName: { Value: !Ref PublicMediaBucket }
+  ObjectPrefix: { Value: !Ref ObjectPrefix }
+  MalwareProtectionPlanId: { Value: !GetAtt PublicMediaMalwareProtectionPlan.MalwareProtectionPlanId }
+  GuardDutyRoleArn: { Value: !GetAtt GuardDutyMediaRole.Arn }

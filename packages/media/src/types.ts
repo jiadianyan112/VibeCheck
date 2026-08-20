@@ -13,6 +13,9 @@ export type MediaResourceStatus =
   | 'created' | 'uploading' | 'uploaded' | 'scanning'
   | 'processing' | 'ready' | 'rejected' | 'deleted'
 export type MediaScanResult = 'not_scanned' | 'clean' | 'malicious' | 'unscannable'
+export const publicMediaMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
+export type PublicMediaMime = (typeof publicMediaMimeTypes)[number]
+export type PublicMediaPurpose = 'project_cover'
 
 export interface MediaResourceProjection {
   readonly media_resource_id: string
@@ -61,6 +64,90 @@ export interface GetMediaResourceCommand {
   readonly userId: string
   readonly mediaResourceId: string
   readonly requestId: string
+}
+
+export interface ReadMediaResourceContentCommand {
+  readonly userId: string
+  readonly mediaResourceId: string
+  readonly requestId: string
+}
+
+export interface ReadMediaResourceContentProjection {
+  readonly redirect_url: string
+}
+
+export interface PrepareMediaResourceCommand {
+  readonly userId: string
+  readonly purpose: string
+  readonly declaredMime: string
+  readonly byteSize: number
+  readonly checksumSha256: string
+  readonly idempotencyKey: string
+  readonly requestId: string
+}
+
+export interface PrepareMediaResourceProjection {
+  readonly media: MediaResourceProjection
+  readonly upload_url: string
+  readonly upload_headers: Readonly<Record<string, string>>
+  readonly upload_expires_at: string
+}
+
+export interface CompleteMediaResourceCommand {
+  readonly userId: string
+  readonly mediaResourceId: string
+  readonly checksumSha256: string
+  readonly uploadReceipt: string
+  readonly operationId: string
+  readonly requestId: string
+}
+
+export interface CompleteMediaResourceProjection {
+  readonly media: MediaResourceProjection
+  readonly scan_queued: true
+}
+
+export interface MediaStorage {
+  issueUpload(input: Readonly<{
+    storageKey: string
+    declaredMime: PublicMediaMime
+    checksumSha256: string
+    expiresAt: Date
+  }>): Promise<Readonly<{
+    uploadUrl: string
+    uploadHeaders: Readonly<Record<string, string>>
+  }>>
+  inspectUpload(input: Readonly<{
+    storageKey: string
+    uploadReceipt: string
+  }>): Promise<Readonly<{
+    detectedMime: string
+    byteSize: number
+    checksumSha256: string
+  }>>
+  issueRead(input: Readonly<{
+    storageKey: string
+    expiresAt: Date
+  }>): Promise<Readonly<{ readUrl: string }>>
+}
+
+export type MediaProviderScanResult =
+  | 'pending' | 'clean' | 'malicious' | 'unscannable' | 'retryable_failure'
+
+export interface MediaScanStorage {
+  getScanResult(input: Readonly<{ storageKey: string }>): Promise<MediaProviderScanResult>
+  sanitizeImage(input: Readonly<{
+    storageKey: string
+    mediaResourceId: string
+    ownerUserId: string
+    declaredMime: PublicMediaMime
+  }>): Promise<Readonly<{
+    finalStorageKey: string
+    detectedMime: PublicMediaMime
+    width: number
+    height: number
+    exifRemoved: true
+  }>>
 }
 
 export interface CreateMediaReferenceCommand {

@@ -4,6 +4,7 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
 import { mediaError } from './errors.js'
 import type { MediaStore } from './store-port.js'
+import type { MediaCompletionReceipt, MediaCompletionResult, StoredContentResource, StoredUploadResource } from './store-port.js'
 import type {
   MediaReferencePage,
   MediaReferenceProjection,
@@ -16,6 +17,8 @@ import type {
 interface ResourceRow extends QueryResultRow {
   readonly media_resource_id: string
   readonly owner_user_id: string
+  readonly storage_key: string
+  readonly request_hash: string
   readonly declared_mime: string
   readonly detected_mime: string | null
   readonly byte_size: string
@@ -34,6 +37,8 @@ interface ResourceRow extends QueryResultRow {
   readonly version: number
   readonly created_at: Date
   readonly updated_at: Date
+  readonly upload_expires_at: Date | null
+  readonly processing_deadline_at: Date | null
 }
 
 interface ReferenceRow extends QueryResultRow {
@@ -66,6 +71,167 @@ interface SubmissionDraftRow extends QueryResultRow {
 
 export class PostgresMediaStore implements MediaStore {
   constructor(private readonly pool: Pool) {}
+
+  async prepareResource(input: Parameters<MediaStore['prepareResource']>[0]): Promise<StoredUploadResource> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const inserted = await client.query<ResourceRow>(
+        `INSERT INTO media.media_resources (
+           media_resource_id,owner_user_id,purpose,storage_key,declared_mime,byte_size,
+           checksum_sha256,status,scan_result,source,idempotency_key,request_hash,
+           upload_expires_at,created_at,updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'uploading','not_scanned','upload',$8,$9,$10,$11,$11)
+         ON CONFLICT (owner_user_id,idempotency_key) DO NOTHING RETURNING *`,
+        [input.mediaResourceId, input.userId, input.purpose, input.storageKey, input.declaredMime,
+          input.byteSize, input.checksumSha256, input.idempotencyKey, input.requestHash,
+          input.uploadExpiresAt, input.now],
+      )
+      let row = inserted.rows[0]
+      if (!row) {
+        row = (await client.query<ResourceRow>(
+          `SELECT * FROM media.media_resources
+           WHERE owner_user_id=$1 AND idempotency_key=$2 FOR UPDATE`,
+          [input.userId, input.idempotencyKey],
+        )).rows[0]
+        if (!row) throw mediaError('MEDIA_RESOURCE_CREATE_FAILED', 500, true)
+        if (row.request_hash !== input.requestHash) throw mediaError('MEDIA_IDEMPOTENCY_KEY_REUSED', 409)
+      } else {
+        await this.auditResource(client, {
+          operationId: 'OP-MEDIA-CREATE', userId: input.userId, targetId: row.media_resource_id,
+          requestId: input.requestId, reasonCode: 'media_upload_prepared',
+          before: null, after: this.resourceProjection(row), now: input.now,
+        })
+      }
+      if (!row.upload_expires_at) throw mediaError('MEDIA_RESOURCE_STATE_INVALID', 500, true)
+      await client.query('COMMIT')
+      return Object.freeze({
+        projection: this.resourceProjection(row), storageKey: row.storage_key,
+        uploadExpiresAt: row.upload_expires_at,
+      })
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
+  }
+
+  async getUploadResource(input: Parameters<MediaStore['getUploadResource']>[0]): Promise<StoredUploadResource> {
+    const result = await this.pool.query<ResourceRow>(
+      'SELECT * FROM media.media_resources WHERE media_resource_id=$1', [input.mediaResourceId],
+    )
+    const row = result.rows[0]
+    if (!row) throw mediaError('MEDIA_RESOURCE_NOT_FOUND', 404)
+    if (row.owner_user_id !== input.userId) throw mediaError('MEDIA_RESOURCE_FORBIDDEN', 403)
+    if (row.status === 'deleted') throw mediaError('MEDIA_RESOURCE_GONE', 410)
+    if (!row.upload_expires_at) throw mediaError('MEDIA_RESOURCE_STATE_INVALID', 500, true)
+    return Object.freeze({
+      projection: this.resourceProjection(row), storageKey: row.storage_key,
+      uploadExpiresAt: row.upload_expires_at,
+    })
+  }
+
+  async getContentResource(
+    input: Parameters<MediaStore['getContentResource']>[0],
+  ): Promise<StoredContentResource> {
+    const result = await this.pool.query<ResourceRow>(
+      'SELECT * FROM media.media_resources WHERE media_resource_id=$1', [input.mediaResourceId],
+    )
+    const row = result.rows[0]
+    if (!row) throw mediaError('MEDIA_RESOURCE_NOT_FOUND', 404)
+    if (row.owner_user_id !== input.userId) throw mediaError('MEDIA_RESOURCE_FORBIDDEN', 403)
+    if (row.status === 'deleted') throw mediaError('MEDIA_RESOURCE_GONE', 410)
+    if (row.status !== 'ready' || row.scan_result !== 'clean') {
+      throw mediaError('MEDIA_RESOURCE_NOT_READY', 409)
+    }
+    return Object.freeze({ projection: this.resourceProjection(row), storageKey: row.storage_key })
+  }
+
+  async getCompletionReceipt(
+    input: Parameters<MediaStore['getCompletionReceipt']>[0],
+  ): Promise<MediaCompletionReceipt | null> {
+    const result = await this.pool.query<ReceiptRow>(
+      `SELECT request_hash,response_json FROM media.media_resource_operation_receipts
+       WHERE owner_user_id=$1 AND media_resource_id=$2 AND operation_id=$3`,
+      [input.userId, input.mediaResourceId, input.operationId],
+    )
+    const row = result.rows[0]
+    return row ? Object.freeze({ requestHash: row.request_hash, response: row.response_json }) : null
+  }
+
+  async completeResource(
+    input: Parameters<MediaStore['completeResource']>[0],
+  ): Promise<MediaCompletionResult> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const existing = await client.query<ReceiptRow>(
+        `SELECT request_hash,response_json FROM media.media_resource_operation_receipts
+         WHERE owner_user_id=$1 AND media_resource_id=$2 AND operation_id=$3 FOR UPDATE`,
+        [input.userId, input.mediaResourceId, input.operationId],
+      )
+      if (existing.rows[0]) {
+        this.assertReceipt(existing.rows[0], input.requestHash)
+        const parsed = this.resourceCompletionReceipt(existing.rows[0].response_json)
+        await client.query('COMMIT')
+        return parsed
+      }
+      const locked = await client.query<ResourceRow>(
+        'SELECT * FROM media.media_resources WHERE media_resource_id=$1 FOR UPDATE',
+        [input.mediaResourceId],
+      )
+      const before = locked.rows[0]
+      if (!before) throw mediaError('MEDIA_RESOURCE_NOT_FOUND', 404)
+      if (before.owner_user_id !== input.userId) throw mediaError('MEDIA_RESOURCE_FORBIDDEN', 403)
+      if (before.status !== 'uploading') throw mediaError('MEDIA_RESOURCE_NOT_COMPLETABLE', 409)
+      if (!before.upload_expires_at || before.upload_expires_at <= input.now) {
+        throw mediaError('MEDIA_UPLOAD_EXPIRED', 410)
+      }
+      const status = input.accepted ? 'uploaded' : 'rejected'
+      const updated = await client.query<ResourceRow>(
+        `UPDATE media.media_resources SET detected_mime=$2,status=$3,
+           rejection_reason_code=$4,processing_deadline_at=$5,next_scan_at=$6,
+           version=version+1,updated_at=$6 WHERE media_resource_id=$1 RETURNING *`,
+        [input.mediaResourceId, input.detectedMime, status, input.rejectionReason,
+          input.accepted ? input.processingDeadlineAt : null, input.now],
+      )
+      const row = updated.rows[0]
+      if (!row) throw mediaError('MEDIA_RESOURCE_COMPLETE_FAILED', 500, true)
+      const projection = this.resourceProjection(row)
+      const response = Object.freeze({
+        media: projection, scan_queued: input.accepted,
+        error_code: input.rejectionReason,
+      })
+      await client.query(
+        `INSERT INTO media.media_resource_operation_receipts (
+           owner_user_id,media_resource_id,operation_id,operation_type,request_hash,
+           upload_receipt_hash,response_json,created_at
+         ) VALUES ($1,$2,$3,'complete',$4,$5,$6::jsonb,$7)`,
+        [input.userId, input.mediaResourceId, input.operationId, input.requestHash,
+          input.uploadReceiptHash, JSON.stringify(response), input.now],
+      )
+      if (input.accepted) {
+        await client.query(
+          `INSERT INTO ops.outbox_events (
+             event_id,aggregate_type,aggregate_id,event_name,event_version,payload_json,
+             transaction_id,status,created_at,next_attempt_at
+           ) VALUES ($1,'media_resource',$2,'media_scan_requested',1,
+             jsonb_build_object('media_resource_id',$2),$3,'pending',$4,$4)`,
+          [randomUUID(), input.mediaResourceId, randomUUID(), input.now],
+        )
+      }
+      await this.auditResource(client, {
+        operationId: 'OP-MEDIA-COMPLETE', userId: input.userId, targetId: row.media_resource_id,
+        requestId: input.requestId,
+        reasonCode: input.accepted ? 'media_upload_completed' : 'media_upload_rejected',
+        before: this.resourceProjection(before), after: projection, now: input.now,
+      })
+      await client.query('COMMIT')
+      return Object.freeze({ projection, errorCode: input.rejectionReason })
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
+  }
 
   async getResource(input: Parameters<MediaStore['getResource']>[0]): Promise<MediaResourceProjection> {
     const result = await this.pool.query<ResourceRow>(
@@ -428,6 +594,36 @@ export class PostgresMediaStore implements MediaStore {
         input.requestId.slice(0, 64), input.now,
       ],
     )
+  }
+
+  private auditResource(client: PoolClient, input: {
+    readonly operationId: string; readonly userId: string; readonly targetId: string
+    readonly requestId: string; readonly reasonCode: string
+    readonly before: unknown; readonly after: unknown; readonly now: Date
+  }): Promise<void> {
+    return client.query(
+      `INSERT INTO audit.audit_logs (
+         audit_id,operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+         before_hash,after_hash,diff_json,reason_code,request_id,result,created_at
+       ) VALUES ($1,$2,'user',$3,'["user"]'::jsonb,'media_resource',$4,$5,$6,$7::jsonb,$8,$9,'succeeded',$10)`,
+      [randomUUID(), input.operationId, createHash('sha256').update(input.userId).digest(),
+        input.targetId, input.before === null ? null : this.objectHash(input.before),
+        this.objectHash(input.after), JSON.stringify({ operation: input.reasonCode }),
+        input.reasonCode, input.requestId.slice(0, 64), input.now],
+    ).then(() => undefined)
+  }
+
+  private resourceCompletionReceipt(value: unknown): MediaCompletionResult {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw mediaError('MEDIA_OPERATION_RECEIPT_INVALID', 500, true)
+    }
+    const receipt = value as Record<string, unknown>
+    if (!receipt.media || typeof receipt.media !== 'object') {
+      throw mediaError('MEDIA_OPERATION_RECEIPT_INVALID', 500, true)
+    }
+    const errorCode = receipt.error_code === 'MIME_MISMATCH' || receipt.error_code === 'CHECKSUM_MISMATCH'
+      ? receipt.error_code : null
+    return Object.freeze({ projection: Object.freeze(receipt.media) as MediaResourceProjection, errorCode })
   }
 
   private resourceProjection(row: ResourceRow): MediaResourceProjection {

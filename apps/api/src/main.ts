@@ -47,7 +47,7 @@ import {
   PostgresPendingActionStore,
   ResendEmailSender,
 } from '@vibecheck/identity'
-import { MediaService, PostgresMediaStore } from '@vibecheck/media'
+import { AwsS3MediaStorage, MediaService, PostgresMediaStore } from '@vibecheck/media'
 import {
   AwsS3PrivateMaterialStorage,
   PostgresPrivateMaterialStore,
@@ -147,7 +147,14 @@ if (evidenceConfig.enabled && !submissionConfig.enabled) {
   throw new Error('CONFIG_EVIDENCE_REQUIRES_SUBMISSION')
 }
 const media = mediaConfig.enabled
-  ? new MediaService(new PostgresMediaStore(pool))
+  ? new MediaService(
+      new PostgresMediaStore(pool),
+      new AwsS3MediaStorage({
+        region: mediaConfig.awsRegion,
+        bucket: mediaConfig.bucket,
+        objectPrefix: mediaConfig.objectPrefix,
+      }),
+    )
   : undefined
 const evidence = evidenceConfig.enabled
   ? new EvidenceService({

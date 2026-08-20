@@ -59,6 +59,11 @@ export class PendingActionExecutor {
     if (action.payload.action_type === 'save_comparison') {
       return Object.freeze({ status: 'cancelled', reason: 'account_comparison_preserved' })
     }
+    if (action.payload.action_type === 'start_submission') {
+      // Login is the only protected effect. The trusted return_to opens P10/P11;
+      // URL checking and draft creation remain explicit authenticated operations.
+      return Object.freeze({ status: 'executed' })
+    }
     throw new IdentityError('PENDING_ACTION_EXECUTION_NOT_IMPLEMENTED', 501, false)
   }
 

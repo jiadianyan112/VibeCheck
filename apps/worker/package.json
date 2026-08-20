@@ -18,6 +18,7 @@
     "@vibecheck/community": "*",
     "@vibecheck/config": "*",
     "@vibecheck/database": "*",
+    "@vibecheck/media": "*",
     "@vibecheck/observability": "*",
     "@vibecheck/private-material": "*",
     "@vibecheck/submission": "*",

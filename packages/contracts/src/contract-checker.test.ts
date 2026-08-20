@@ -64,7 +64,10 @@ describe('OpenAPI contract', () => {
       'OP-CREATOR-LINK-LIST-ME',
       'OP-AUTHOR-RELATION-GET',
       'OP-AUTHOR-RELATION-LIST',
+      'OP-MEDIA-CREATE',
       'OP-MEDIA-STATUS',
+      'OP-MEDIA-COMPLETE',
+      'OP-MEDIA-CONTENT',
       'OP-MEDIA-REF-LIST',
       'OP-MEDIA-REF-CREATE',
       'OP-MEDIA-REF-PATCH',
@@ -100,7 +103,7 @@ describe('OpenAPI contract', () => {
       'OP-OWNERSHIP-WITHDRAW-REQUEST',
       'OP-OWNERSHIP-WITHDRAW-REJECT',
     ])
-    assert.equal(result.pathCount, 82)
+    assert.equal(result.pathCount, 85)
   })
 
   it('rejects a dangling local schema reference', () => {

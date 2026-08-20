@@ -87,6 +87,12 @@ services:
         value: "25"
       - key: MEDIA_ENABLED
         value: "false"
+      - key: MEDIA_AWS_REGION
+        value: ap-southeast-1
+      - key: MEDIA_S3_BUCKET
+        sync: false
+      - key: MEDIA_S3_PREFIX
+        value: public-media/
       - key: EVIDENCE_ENABLED
         value: "false"
       - key: PRIVATE_MATERIAL_ENABLED
@@ -128,6 +134,14 @@ services:
         value: "1000"
       - key: WORKER_BATCH_SIZE
         value: "25"
+      - key: MEDIA_ENABLED
+        value: "false"
+      - key: MEDIA_AWS_REGION
+        value: ap-southeast-1
+      - key: MEDIA_S3_BUCKET
+        sync: false
+      - key: MEDIA_S3_PREFIX
+        value: public-media/
       - key: PRIVATE_MATERIAL_ENABLED
         value: "false"
       - key: PRIVATE_MATERIAL_AWS_REGION

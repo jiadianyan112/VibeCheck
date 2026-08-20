@@ -1658,6 +1658,35 @@ paths:
         '200': { description: Public active relations plus expanded rows owned by the session., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AuthorRelation' } } } } }
         '401': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /api/v1/media-resources:
+    post:
+      tags: [Media]
+      operationId: OP-MEDIA-CREATE
+      summary: Prepare an owner-bound quarantined project cover upload
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MediaResourcePrepareRequest' }
+      responses:
+        '201':
+          description: Prepared resource and short-lived signed upload instructions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaResourcePrepareResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-resources/{media_resource_id}:
     get:
       tags: [Media]
@@ -1679,6 +1708,61 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/media-resources/{media_resource_id}/complete:
+    post:
+      tags: [Media]
+      operationId: OP-MEDIA-COMPLETE
+      summary: Verify an uploaded quarantine object and enqueue malware scanning
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: media_resource_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MediaResourceCompleteRequest' }
+      responses:
+        '202':
+          description: Upload accepted and scan queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaResourceCompleteResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/media-resources/{media_resource_id}/content:
+    get:
+      tags: [Media]
+      operationId: OP-MEDIA-CONTENT
+      summary: Redirect the owner to a short-lived sanitized ready-image URL
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: media_resource_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '302':
+          description: Short-lived private redirect; quarantine objects are never returned.
+          headers:
+            Location: { schema: { type: string, format: uri, pattern: '^https://' } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-references:
@@ -2821,6 +2905,40 @@ components:
         version: { type: integer, minimum: 1 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    MediaResourcePrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, declared_mime, byte_size, checksum_sha256]
+      properties:
+        purpose: { const: project_cover }
+        declared_mime: { enum: [image/jpeg, image/png, image/webp, image/avif] }
+        byte_size: { type: integer, minimum: 1, maximum: 5242880 }
+        checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+    MediaResourcePrepareResponse:
+      type: object
+      additionalProperties: false
+      required: [media, upload_url, upload_headers, upload_expires_at]
+      properties:
+        media: { $ref: '#/components/schemas/MediaResource' }
+        upload_url: { type: string, format: uri, pattern: '^https://' }
+        upload_headers:
+          type: object
+          additionalProperties: { type: string }
+        upload_expires_at: { type: string, format: date-time }
+    MediaResourceCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [checksum_sha256, upload_receipt]
+      properties:
+        checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        upload_receipt: { type: string, minLength: 1, maxLength: 4096 }
+    MediaResourceCompleteResponse:
+      type: object
+      additionalProperties: false
+      required: [media, scan_queued]
+      properties:
+        media: { $ref: '#/components/schemas/MediaResource' }
+        scan_queued: { const: true }
     MediaReference:
       type: object
       additionalProperties: false

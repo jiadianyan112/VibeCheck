@@ -16,7 +16,10 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "pg": "^8.16.3"
+    "@aws-sdk/client-s3": "^3.883.0",
+    "@aws-sdk/s3-request-presigner": "^3.883.0",
+    "pg": "^8.16.3",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/pg": "^8.15.5"

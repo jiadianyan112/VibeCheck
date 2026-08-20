@@ -1,13 +1,13 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0–4 步已完成，第 5 步待开始｜记录日期：2026-08-20**
+**版本：v1.0｜执行状态：第 0–4 步已完成，第 5 步进行中｜记录日期：2026-08-20**
 
 ## 1. 执行基线
 
 - 产品基线：`docs/VibeCheck首期MVP开发级PRD-v1.10.md`。
 - 技术基线：`docs/VibeCheck首期MVP技术实现方案-v1.0.md`。
-- 稳定代码基线：`59eece1`，正式完成至 WP-05B4。
-- 当前分支：`codex/wp-03-directory-discovery`。
+- 稳定代码基线：`6296652`，正式完成至第 4 步。
+- 当前分支：`codex/wp-05-submission-return`。
 - P0 范围：P01–P18、A01–A14；P19/P20 不进入首期 P0。
 - P09 不建立 DecisionRecord，不产生 `decision_submitted`。
 - 登录后只保留账号比较状态，不实现游客比较集合选择、替换或合并冲突流程。
@@ -22,7 +22,7 @@
 | 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 已完成 |
 | 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 已完成 |
 | 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 已完成 |
-| 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 待开始 |
+| 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 进行中：公开封面媒体闭环已实现，待 PostgreSQL CI 与后续切片 |
 | 6 | P14–P18 社区和个人闭环 | 互动幂等计数、作者主页、个人中心、通知和登录回放通过 | 待开始 |
 | 7 | A01–A14 正式后台 | 全路由无占位；高风险操作具备鉴权、预览、确认、原因、乐观锁和审计 | 待开始 |
 | 8 | 生产搜索与查同类 | 结构化+FTS 基线、可降级语义适配器、固定评估集和版本快照通过 | 待开始 |
@@ -154,3 +154,17 @@
 - PostgreSQL 18：40 个 append-only migration 新库/重复执行通过；目录、搜索导航归因、比较和既有全量夹具通过。
 - 本地契约、Lint、TypeScript、foundation tests 和生产构建通过；未修改或暂存 WorkBuddy 前端文件。
 - 详细边界见 `docs/development/WP-04-browse-search-comparison.md`；前端接入见 `docs/development/WP-04-workbuddy-handoff.md`。
+
+## 11. 第 5 步进行记录
+
+### 11.1 已完成切片：P11 公开封面媒体安全闭环
+
+- 追加 migration `000041_public_media_upload_control_plane.sql`，增加上传/处理期限、不可变完成回执、上传身份字段 Guard 和状态索引；历史 migration 未修改。
+- `POST /api/v1/media-resources` 只接受 `project_cover`、JPEG/PNG/WebP/AVIF、1–5 MiB 和 SHA-256，返回 15 分钟 S3 quarantine 条件上传指令。
+- `POST /api/v1/media-resources/{id}/complete` 通过 HeadObject 校验 ETag、MIME、长度和 checksum，原子写入完成回执并产生 `media_scan_requested`。
+- Worker 轮询 GuardDuty 标签；仅 `NO_THREATS_FOUND` 进入服务端 Sharp 真实解码、方向归一和元数据剥离，并写入独立 ready 对象后将数据库置为 `ready+clean`。恶意、不可扫描、超时和三次 provider failure 均进入不可引用的 rejected 终态。
+- `GET /api/v1/media-resources/{id}/content` 只允许资源所有者读取 `ready+clean` 的净化对象，返回最长 60 秒的私有 302，不暴露 storage key。
+- `start_submission` PendingAction 现只消费登录门禁并使用受信 `return_to` 进入 P10/P11；不会跳过 URL check 或自动创建草稿。
+- AWS 模板见 `infra/aws/public-media.yaml`；production `MEDIA_ENABLED` 仍为 false，真实 S3/GuardDuty/Staging 验收属于第 10 步外部门禁。
+- 本切片不开放视频、不提供公开 CDN、不实现资源物理删除 Saga；这些能力不能由前端 Mock 冒充。
+- 实现边界见 `docs/development/WP-05A-public-media.md`；WorkBuddy 接入见 `docs/development/WP-05A-workbuddy-handoff.md`。
