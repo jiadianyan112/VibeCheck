@@ -1,12 +1,12 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0–1 步已完成，第 2 步待开始｜记录日期：2026-08-20**
+**版本：v1.0｜执行状态：第 0–2 步已完成，第 3 步待开始｜记录日期：2026-08-20**
 
 ## 1. 执行基线
 
 - 产品基线：`docs/VibeCheck首期MVP开发级PRD-v1.10.md`。
 - 技术基线：`docs/VibeCheck首期MVP技术实现方案-v1.0.md`。
-- 稳定代码基线：`5648e47`，正式完成至 WP-05B2a。
+- 稳定代码基线：`9b0cfec`，正式完成至 WP-05B3a–d。
 - 当前分支：`codex/wp-03-directory-discovery`。
 - P0 范围：P01–P18、A01–A14；P19/P20 不进入首期 P0。
 - P09 不建立 DecisionRecord，不产生 `decision_submitted`。
@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | 0 | 恢复安全开发基线：文件归属、范围漂移、稳定测试证据 | 无用户/WorkBuddy 文件误纳入；冻结范围一致；稳定基线可追溯 | 已完成 |
 | 1 | WP-05B2b：S3 + GuardDuty 私密材料安全链 | 未扫描不可读；clean/malicious/unscannable/超时/重试通过；API/Worker/IaC/CI 完整 | 已完成 |
-| 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 待开始 |
+| 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 已完成 |
 | 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 待开始 |
 | 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 待开始 |
 | 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 待开始 |
@@ -97,3 +97,22 @@
 - 私密材料包：17 项单元/基础设施契约测试通过。
 - GitHub Actions：Run [#60](https://github.com/jiadianyan112/VibeCheck/actions/runs/32332867619) 成功；PostgreSQL 18 上第 35 个迁移重复执行、既有控制面 fixture 和新增 GuardDuty 扫描事务 fixture 全部通过。
 - 详细实现与激活规则见 `docs/development/WP-05B2b-private-material-scan.md`。
+
+## 8. 第 2 步完成记录
+
+### 8.1 交付基线
+
+- 工程基线提交：`9b0cfec`；核心实现起点为 `f555993`。
+- 追加 migration `000036_author_verification_lifecycle.sql`，完成提交快照、操作幂等收据、材料 read grant、verification ReviewDecision、AuthorRelation 来源/唯一性/迁移 Guard；历史 migration 未修改。
+- P12 完成 submit、supplement、withdraw 与六态本人投影；A06 完成领取、审核投影、一次性材料读取、changes-requested、reject、approve。
+- 三种 resolution 全部落为同一 PostgreSQL 事务中的公开事实；验证批准不创建 ProjectVersion/Event。
+- P08/P14 可读取 active 最小署名，P13 复用完整 AuthorAuthorization，P15 可读取本人 Link/Relation；公共端不能枚举 Link。
+- WorkBuddy 接入资料见 `docs/development/WP-05B3-workbuddy-handoff.md`；production Feature Flag 继续关闭至真实 AWS/Staging 验收。
+
+### 8.2 验证证据
+
+- OpenAPI：75 paths / 85 operations；SHA-256 `b761a81364f87680fcd6ce749cc3acb4304c39c478da6791bc6c554350c84775`。
+- GitHub Actions：Run [#32347906631](https://github.com/jiadianyan112/VibeCheck/actions/runs/32347906631) 成功。
+- PostgreSQL 18：36 个 append-only migration 新库/重复执行通过；create-new、claim owner、claim manager、use-existing、补充/拒绝/三类撤回、自审拦截、重复关系全回滚、一次性 read grant 与双审计通过。
+- 全仓契约、部署检查、Lint、TypeScript、测试、foundation tests、生产构建及后续既有 PostgreSQL 夹具全部通过。
+- 详细事务、安全边界和冲突处理见 `docs/development/WP-05B3-author-verification.md`。

@@ -1,6 +1,6 @@
 # WP-05B3 作者验证原子闭环交付记录
 
-**工作包：WP-05B3a–d｜基线：PRD v1.10｜状态：候选实现，待 GitHub Actions PostgreSQL 门禁确认｜日期：2026-08-20**
+**工作包：WP-05B3a–d｜基线：PRD v1.10｜状态：已完成｜日期：2026-08-20**
 
 ## 1. 交付范围
 
@@ -49,6 +49,11 @@
 ## 7. 验证证据
 
 - OpenAPI：75 paths / 85 operations，引用和 operationId 检查通过。
+- OpenAPI SHA-256：`b761a81364f87680fcd6ce749cc3acb4304c39c478da6791bc6c554350c84775`。
 - 本地：60 个前端测试文件、285 项测试通过；受影响 database/catalog/workflow/private-material/API/Worker 测试通过；完整类型检查通过。
-- 待远端门禁确认：PostgreSQL 18 新库/重复 migration、目录夹具升级、verification create-new 审批事务以及全量 CI。
+- PostgreSQL 18：新库和重复执行的 36 个 append-only migration 通过；CreatorAccountLink、AuthorAuthorization、公开/本人 Link/Relation 投影通过。
+- 作者验证事务：`create_new_creator`、claim-existing owner、claim-existing manager、`use_existing_link` 全部通过；changes-requested → supplement → pending → reject、draft/pending/changes-requested withdraw、自审拒绝和 supersession 链通过。
+- 原子性：Creator+Project 重复关系返回 `AUTHOR_RELATION_EXISTS`，Creator aggregate、Relation 数量、Request、ReviewDecision 均证明无半对象；验证审批未创建 ProjectVersion。
+- 私密材料：有效 claim/Session 下签发 grant、一次兑换、重放 410、材料撤销失效和双审计通过；存储坐标不进入公开投影。
+- GitHub Actions：Run [#32347906631](https://github.com/jiadianyan112/VibeCheck/actions/runs/32347906631) 成功；提交 `9b0cfec`。
 - production Feature Flag 保持关闭，直到 WorkBuddy 接入 P12/A06 且真实 AWS/Staging 验收完成。
