@@ -1,12 +1,13 @@
 # VibeCheck 首期 MVP 剩余开发执行计划
 
-**版本：v1.0｜执行状态：第 0–4 步已完成，第 5 步进行中｜记录日期：2026-08-20**
+**版本：v1.1｜执行状态：第 0–4 步已完成；第 5 步实现已提交但 CI 未通过；第 6 步后端基础存在、正式前端闭环未开始｜记录日期：2026-08-24**
 
 ## 1. 执行基线
 
 - 产品基线：`docs/VibeCheck首期MVP开发级PRD-v1.10.md`。
 - 技术基线：`docs/VibeCheck首期MVP技术实现方案-v1.0.md`。
-- 稳定代码基线：`6296652`，正式完成至第 4 步。
+- 最近完整绿色代码基线：`6296652`，对应 GitHub Actions Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)，正式完成至第 4 步。
+- 当前实现基线：`9c47e55`（`feat: authorize project update author evidence`），对应 GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494)，Run 结论为 failure：质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；Media fixture 失败；Evidence 及其后的 fixture 均 skipped。因此不能把当前 HEAD 记为全量绿色或第 5 步完成。
 - 当前分支：`codex/wp-05-submission-return`。
 - P0 范围：P01–P18、A01–A14；P19/P20 不进入首期 P0。
 - P09 不建立 DecisionRecord，不产生 `decision_submitted`。
@@ -22,8 +23,8 @@
 | 2 | 作者验证提交、审核、CreatorAccountLink、AuthorRelation | P12→A06→P08/P13/P14/P15 原子闭环及负向权限测试通过 | 已完成 |
 | 3 | 作者归属争议 | 立案、撤案、裁决、关系暂停/恢复及隐私隔离通过 | 已完成 |
 | 4 | P01–P09 浏览、搜索、比较真实链路 | 生产路径不读取 Mock；同品类比较及完成口径通过 | 已完成 |
-| 5 | P10–P13 发布、审核、回流真实链路 | URL 安全、草稿、媒体/证据、审核、发布、更新 E2E 通过 | 进行中：公开封面媒体闭环已实现，待 PostgreSQL CI 与后续切片 |
-| 6 | P14–P18 社区和个人闭环 | 互动幂等计数、作者主页、个人中心、通知和登录回放通过 | 待开始 |
+| 5 | P10–P13 发布、审核、回流真实链路 | 六个切片分别通过 URL-check、草稿、审核、首次发布、ProjectUpdate 回流和真实前端 E2E 门禁 | 进行中：实现已提交；当前 CI 在 Media fixture 失败，后续切片尚未全量验证 |
+| 6 | P14–P18 社区和个人闭环 | 六个切片分别通过互动评论、P14、P15、P16、P17 和 P18 门禁，并完成真实前端闭环 | 后端基础部分存在；正式前端闭环未开始 |
 | 7 | A01–A14 正式后台 | 全路由无占位；高风险操作具备鉴权、预览、确认、原因、乐观锁和审计 | 待开始 |
 | 8 | 生产搜索与查同类 | 结构化+FTS 基线、可降级语义适配器、固定评估集和版本快照通过 | 待开始 |
 | 9 | Analytics、埋点和指标 | 路径可还原、指标可直接计算、禁止废弃事件 | 待开始 |
@@ -155,25 +156,101 @@
 - 本地契约、Lint、TypeScript、foundation tests 和生产构建通过；未修改或暂存 WorkBuddy 前端文件。
 - 详细边界见 `docs/development/WP-04-browse-search-comparison.md`；前端接入见 `docs/development/WP-04-workbuddy-handoff.md`。
 
-## 11. 第 5 步进行记录
+## 11. 第 5 步切片执行计划：P10–P13
 
-### 11.1 已完成切片：P11 公开封面媒体安全闭环
+### 11.0 当前证据与执行顺序
 
-- 追加 migration `000041_public_media_upload_control_plane.sql`，增加上传/处理期限、不可变完成回执、上传身份字段 Guard 和状态索引；历史 migration 未修改。
-- `POST /api/v1/media-resources` 只接受 `project_cover`、JPEG/PNG/WebP/AVIF、1–5 MiB 和 SHA-256，返回 15 分钟 S3 quarantine 条件上传指令。
-- `POST /api/v1/media-resources/{id}/complete` 通过 HeadObject 校验 ETag、MIME、长度和 checksum，原子写入完成回执并产生 `media_scan_requested`。
-- Worker 轮询 GuardDuty 标签；仅 `NO_THREATS_FOUND` 进入服务端 Sharp 真实解码、方向归一和元数据剥离，并写入独立 ready 对象后将数据库置为 `ready+clean`。恶意、不可扫描、超时和三次 provider failure 均进入不可引用的 rejected 终态。
-- `GET /api/v1/media-resources/{id}/content` 只允许资源所有者读取 `ready+clean` 的净化对象，返回最长 60 秒的私有 302，不暴露 storage key。
-- `start_submission` PendingAction 现只消费登录门禁并使用受信 `return_to` 进入 P10/P11；不会跳过 URL check 或自动创建草稿。
-- AWS 模板见 `infra/aws/public-media.yaml`；production `MEDIA_ENABLED` 仍为 false，真实 S3/GuardDuty/Staging 验收属于第 10 步外部门禁。
-- 本切片不开放视频、不提供公开 CDN、不实现资源物理删除 Saga；这些能力不能由前端 Mock 冒充。
-- 实现边界见 `docs/development/WP-05A-public-media.md`；WorkBuddy 接入见 `docs/development/WP-05A-workbuddy-handoff.md`。
+- `9c47e55` 已提交公开封面媒体和 ProjectUpdate 媒体/证据绑定实现，但 Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 为 failure。质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；Media fixture 失败；Evidence 以及之后的提交、修订、审核、发布、ProjectUpdate 和通知 fixture 均 skipped。
+- 最近完整绿色基线是提交 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。它只证明该提交的全量质量链，不替代 `9c47e55` 的复验。
+- 切片必须按 5.1→5.2→5.3→5.4→5.5→5.6 顺序验收；上游失败时下游只能标记 skipped/未验证，不得顺延为通过。
 
-### 11.2 已完成实现、等待 PostgreSQL CI：P13 媒体与证据绑定
+### 11.1 URL 检查
 
-- 修复“契约允许 `project_update`、PostgreSQL Store 运行时返回 503”的实现断点；MediaReference 与 EvidenceDraft 现可绑定 editing ProjectUpdate。
-- 绑定和解绑在各自事务内同步更新 ProjectUpdate 引用数组并推进 optimistic version；公开 Project、Version、Event 不受影响。
-- ProjectUpdate 的 `bigint` 版本进入 Evidence 投影前执行安全整数转换，避免 Node `pg` 字符串与请求数字严格比较造成伪 409。
-- `verified_author_statement` 改为创建事务内校验 active Link＋Relation、exact permission profile 和字段权限交集；Session 角色不再被当作作者事实来源。
-- 修复 WP-05A 首次 CI 暴露的 Outbox 多态 JSON 参数 42P08，并将同类扫描重排、审计 SQL 一并显式定型。
-- PostgreSQL fixture 新增两类父对象的可重放验证；实现说明见 `docs/development/WP-05B-project-update-media-evidence.md`，WorkBuddy 接入见 `docs/development/WP-05B-workbuddy-handoff.md`。
+- **现状**：P10 URL-check 与不可变 SubmissionDraft 边界已实现；`9c47e55` 的 Run `32367557494` 中该 fixture 通过。服务端已覆盖规范化、SSRF/DNS 风险、重复候选、30 分钟 TTL、owner 绑定和同请求幂等。
+- **依赖/完成门槛**：必须先通过 `contracts:check`；相同 owner、规范输入和 `client_request_id` 重放返回同一 check，异载荷冲突；URL 过期、输入哈希/品类/最终跳转或安全结论变化必须强制复检；只有允许且无确定重复时才能进入草稿创建。
+- **验证命令**：`npm run contracts:check`；`npm run submission:fixture:verify`；再以带数据库的 quality workflow 复跑同一 fixture。
+- **禁止误报**：fixture 通过不等于 P10 前端已接真实 API；URL-check 通过不等于目标站点长期可用；不得把 `uncertain`、超时或依赖服务失败写成“安全通过”，也不得声称已自动创建 Project。
+
+### 11.2 草稿提交
+
+- **现状**：SubmissionDraft 的创建、编辑、预览绑定和提交服务已有实现；当前 Run 在 Media fixture 失败后没有执行提交 fixture，因此 `9c47e55` 的草稿提交闭环尚未被 PostgreSQL 全量验证。
+- **依赖/完成门槛**：依赖 11.1 的未过期 check；草稿 owner、schema/P0 字段、`ready+clean` 媒体、所需 `ready` EvidenceDraft、版本和 preview hash 必须在同一提交前置校验中成立；提交必须冻结快照、创建唯一 pending-review Submission，并保持原 Draft 只读。
+- **验证命令**：`npm run submission:submit:fixture:verify`；`npm run submission:revision:fixture:verify`；`npm run typecheck`；随后运行真实前端 E2E 的草稿创建/预览/提交场景。
+- **禁止误报**：创建 Draft 不等于创建 Project；`pending_review` 不等于已发布；提交 fixture skipped 不能计为通过；不得用前端 Mock 的媒体/证据 ID 绕过 owner、状态或 preview hash 门禁。
+
+### 11.3 审核决定
+
+- **现状**：通用审核队列、租约、提交审核决定和 ProjectUpdate 决定基础已存在；`9c47e55` 的 Run 在 Media fixture 处停止，审核决定 fixture 未执行，当前 HEAD 不具备全量绿色证据。
+- **依赖/完成门槛**：依赖已冻结的 Submission/ProjectUpdate 快照；领取、预览、确认、决定必须校验 work type/target、角色职责分离、租约和 expected version；决定不可变、同请求幂等、异决定冲突，并拒绝提交者或冲突主体自审。
+- **验证命令**：`npm run workflow:fixture:verify`；`npm run workflow:review-decision:fixture:verify`；`npm run deployment:check`；再复跑依赖的 submission fixture。
+- **禁止误报**：审核队列存在不等于决定已通过；approve 不单独等于发布成功；当前 Run 的 skipped 不能写成“审核 E2E 通过”；不得用 session 角色或客户端 payload 冒充作者授权事实。
+
+### 11.4 首次发布
+
+- **现状**：发布事务和 worker 基础实现已在最近绿色基线中存在，但 `9c47e55` 的发布 fixture 因上游 Media failure 被 skipped，当前 HEAD 尚未重新取得发布证据。
+- **依赖/完成门槛**：依赖有效 URL check、完整 Draft、ready 媒体/证据和不可变 approve 决定；发布必须原子创建唯一 Project、首个 Version、正式 Evidence/MediaReference、`first_published` Event、Outbox 和 receipt，并支持同决定幂等回放，不得留下半对象。
+- **验证命令**：`npm run submission:publication:fixture:verify`；`npm run test:foundation`；`npm run build`；随后用真实 API E2E 覆盖提交→审核→首次发布和重复投递。
+- **禁止误报**：批准、Outbox 入队或本地单测都不等于公开发布；不要把 `6296652` 的绿色结果直接标为 `9c47e55` 已验证；发布成功不得创建未授权 AuthorRelation，也不得在失败时留下 Project/Version/Event 半对象。
+
+### 11.5 ProjectUpdate 回流
+
+- **现状**：`9c47e55` 已提交 ProjectUpdate 的 MediaReference/EvidenceDraft 创建、绑定、解绑、版本推进和 `verified_author_statement` 授权校验；但 Media fixture 失败导致 Evidence、应用、搜索投影和通知回流 fixture 均未执行。
+- **依赖/完成门槛**：依赖 11.2–11.4 的事实和 WP-05B 的父对象绑定；更新稿必须是 owner 的 `editing`，沿 active CreatorAccountLink→canonical Creator→active AuthorRelation→exact permission profile 做字段权限交集；只有批准后的 Update 才能原子生成新 Version/Event、切换 Project 指针，并按 Outbox 可靠回流搜索与收件人隔离通知。
+- **验证命令**：`npm run media:fixture:verify`；`npm run evidence:fixture:verify`；`npm run workflow:review-decision:fixture:verify`；`npm run catalog:project-update:application:verify`；`npm run worker:project-updated:fixture:verify`；需要通知时再运行 `npm run community:notification:fixture:verify`。
+- **禁止误报**：绑定媒体/证据不等于公开更新；`editing` 或 `update_pending` 不得写成已应用；ProjectUpdate fixture skipped 不能计为回流通过；不得用客户端 `verified_author`、旧 creatorId 或 session 角色绕过真实授权链。
+
+### 11.6 前端真实 E2E
+
+- **现状**：仓库已有 P10–P13 低保真页面和原型 E2E，但页面仍主要使用 `src/mocks/**`；正式前端对真实 API 的端到端闭环尚未开始。
+- **依赖/完成门槛**：依赖 11.1–11.5 的 PostgreSQL 绿色证据、冻结的 OpenAPI SHA/生成客户端、可运行 API/Worker、认证和媒体测试环境；真实 E2E 必须通过 URL 检查→草稿→预览/提交→审核→首次发布→ProjectUpdate 回流，检查网络请求没有 Mock 兜底，并覆盖权限、过期、重复和失败状态。
+- **验证命令**：新增真实 API 场景后运行 `npm run build`；`npm run test:e2e -- --project=desktop-chromium`；完整交付运行 `npm run test:e2e` 和第 5 步全部 fixture 命令。
+- **禁止误报**：现有 prototype task、截图、静态页面或 `localStorage` 场景不能计为真实 E2E；只通过 `npm run test:e2e` 也不能证明后端链路，必须记录 API/数据库/Worker 证据；未配置真实 API 时不得标记完成。
+
+## 12. 第 6 步切片执行计划：P14–P18
+
+### 12.0 共同状态与门禁
+
+- 六个切片的共同状态是“后端基础部分存在；正式前端闭环未开始”。现有页面和 prototype E2E 只能证明原型覆盖，不能证明正式 MVP；每个切片都必须新增真实 API 接入、权限/错误态和真实 E2E 证据后才可关闭。
+- 依赖顺序建议为 12.1 互动评论→12.2 P14 作者主页→12.3 P15 个人中心→12.4 P16 通知→12.5 P17 认证回放→12.6 P18 可信机制；通知依赖发布/更新 Outbox，认证回放依赖真实认证配置，可信机制依赖版本化配置与证据投影。
+
+### 12.1 互动评论
+
+- **现状**：`@vibecheck/community` 已有互动最终状态、幂等计数、评论、举报、撤回和审核工作项基础；`npm run community:fixture:verify` 在 Run `32367557494` 中于 Media failure 前通过。正式 P08/P14/P15 前端互动闭环未开始。
+- **依赖/完成门槛**：评论创建、列表、举报、作者撤回必须按当前用户/公开状态/版本和速率限制校验；收藏、点赞、关注和评论计数必须由服务端事实与事件驱动，重复请求不重复计数；真实页面必须覆盖登录、pending moderation、可见/折叠/撤回和权限错误。
+- **验证命令**：`npm run community:fixture:verify`；`npm run test:foundation`；真实页面接入后运行 `npm run test:e2e -- --project=desktop-chromium`。
+- **禁止误报**：交互 fixture 通过不等于评论 UI 已接后端；pending 评论不得显示为公开评论；前端乐观计数、Mock 事件和 localStorage 状态不能替代数据库计数；评论不应被当作通知或可信证据。
+
+### 12.2 P14 作者主页
+
+- **现状**：公开 Creator 投影、active AuthorRelation 的最小署名和作者授权读取基础已存在；相关 catalog/authorization fixture 在当前 Run 的 Media failure 前通过。`/creator/:id` 仍是原型页面，正式真实 API 闭环未开始。
+- **依赖/完成门槛**：公开接口只能返回 canonical Creator、公开档案和已发布作品；必须隔离 Link、VerificationRequest 材料和审核细节，正确显示 active/suspended/disputed/ended 状态、来源与更新时间；前端必须覆盖不存在、隐私隔离、争议和无作品状态。
+- **验证命令**：`npm run catalog:authorization:verify`；`npm run contracts:check`；`npm run build`；真实 P14 页面接入后运行 `npm run test:e2e`。
+- **禁止误报**：路由存在、原型有作者卡片或 `creatorId` 可读取不等于 P14 正式完成；不能公开枚举 CreatorAccountLink；`verified_author` session 角色不等于 active AuthorRelation，也不能把作者主页显示为所有权证明。
+
+### 12.3 P15 个人中心
+
+- **现状**：当前账号状态、作者 Link/Relation 的 owner-bound 投影和 PendingAction 相关基础存在；个人资产/草稿/通知入口已有原型页面，但正式 API 接入和完整账户闭环未开始。
+- **依赖/完成门槛**：所有列表和详情按 session user_id 服务端隔离；P15 需覆盖草稿、提交、作者验证、ProjectUpdate、收藏/关注/比较和通知入口的状态汇总，分页/游标、空态、过期、受限账号和跨用户拒绝均有确定响应；任何敏感材料只走专用授权读取。
+- **验证命令**：`npm run catalog:authorization:verify`；`npm run identity:pending:verify`；`npm run contracts:check`；真实 P15 接入后运行 `npm run test:e2e`。
+- **禁止误报**：localStorage 的个人状态不等于账户数据；“固定身份选择”不等于真实认证；仅能看到自己数据不代表所有 P15 写操作已闭环；不能把 Link/Relation 内部字段渲染为公开个人信息。
+
+### 12.4 P16 通知
+
+- **现状**：Notification 事实、接收者隔离、游标读取、不可逆已读收据和发布/更新 worker 基础已存在；当前 Run 因 Media fixture 失败，通知 fixture skipped。正式 `/notifications` 前端闭环未开始。
+- **依赖/完成门槛**：依赖首次发布和 ProjectUpdate 应用/投影 Outbox；通知必须按 recipient、目标和 dedup key 幂等，未读优先且 cursor 绑定用户，跨用户读取/批量已读整批拒绝；P16 只承诺站内通知，不扩展邮件、短信或推送。
+- **验证命令**：按依赖顺序运行 `npm run submission:publication:fixture:verify`、`npm run worker:project-updated:fixture:verify`、`npm run community:notification:fixture:verify`；真实页面接入后运行 `npm run test:e2e`。
+- **禁止误报**：当前 notification fixture 是 skipped，不是通过；存在通知表不等于前端已展示正确；发布/更新异步失败时不得伪造成功通知；站内通知不能写成邮件/推送已实现。
+
+### 12.5 P17 认证回放
+
+- **现状**：加密 PendingAction、purpose 绑定的 IdentityLink、consume/cancel/expire 和一次性真实领域回放基础存在；`npm run identity:pending:verify` 在当前 Run 的 Media failure 前通过。`/auth` 仍使用原型固定身份，正式认证回调与前端闭环未开始。
+- **依赖/完成门槛**：需要真实认证/OTP、Cookie、Origin、CSRF 和密钥配置；`return_to` 必须同源 allowlist，pending payload 最小化并加密，业务写成功后才消费且只能回放一次，过期/取消/刷新不得重复执行；不得恢复未批准的游客比较合并流程。
+- **验证命令**：`npm run identity:pending:verify`；`npm run test`；真实认证环境接入后运行 `npm run test:e2e -- --project=desktop-chromium`，覆盖成功回跳、外跳拒绝、重复刷新和业务失败保留 pending。
+- **禁止误报**：PendingAction fixture 通过不等于真实身份认证已接入；服务端回放基础不等于浏览器回跳安全已验收；不能把客户端 execution receipt、role 或 return_to 当作可信授权；一次成功不得因刷新再次执行。
+
+### 12.6 P18 可信机制
+
+- **现状**：Catalog 的版本化事实/证据类型、作者关联和状态投影基础存在；`/about` 和项目详情的可信说明仍是原型静态内容，正式版本化可信规则配置、缓存回退和真实前端闭环未开始。
+- **依赖/完成门槛**：建立只读的已发布规则配置版本，覆盖双品类边界、事实/推断、证据类型、状态和纠错说明；配置失败时只能显示最近已发布版本及时间，不显示未发布草稿；页面不能把异常、数量或推断升级为商业成功、质量或失败结论。
+- **验证命令**：`npm run contracts:check`；`npm run catalog:fixture:verify`；`npm run build`；可信配置与页面接入后运行 `npm run test:e2e`，覆盖当前版本、缓存回退、未知状态和争议状态。
+- **禁止误报**：静态 `/about` 通过不等于可信配置服务完成；Evidence 类型存在不等于每条事实都有充分证据；“可信”不能写成平台保证或商业判断；缓存回退不得展示未发布规则。

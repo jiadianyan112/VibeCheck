@@ -1,6 +1,6 @@
 # WP-05B：P13 项目更新媒体与证据绑定闭环
 
-**状态：实现完成，等待 PostgreSQL CI｜日期：2026-08-20**
+**状态：实现已提交（HEAD `9c47e55`）；当前 CI 失败，未全量验证｜日期：2026-08-24**
 
 ## 1. 交付目标
 
@@ -22,12 +22,15 @@
 
 上一切片的 PostgreSQL media fixture 暴露 Outbox SQL 42P08：同一参数同时用于 `varchar` aggregate 和 `jsonb_build_object(any)` 时无法推断类型。本切片为上传完成、扫描重排和扫描审计中的 JSON 参数增加显式类型，不改变事件结构或公开契约。
 
-## 4. 验证范围
+## 4. 当前 CI 状态与验证范围
+
+- GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 对应 HEAD `9c47e55`，结论为 `failure`。质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；Media fixture 失败；本工作包的 Evidence fixture 以及后续提交、审核、应用、搜索投影和通知 fixture 均 skipped。
+- 最近完整绿色基线为提交 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。该 Run 不能替代当前 HEAD 对 `project_update` Media/Evidence 事务的验证。
 
 - Media PostgreSQL fixture 覆盖 `submission_draft` 与 `project_update` 的创建、数组写入、解绑、版本推进和重放后终态。
 - Evidence PostgreSQL fixture 覆盖 `project_update` 的 create→bind→patch→complete→withdraw，验证绑定数组和版本从 3→4→5；另覆盖无作者链 403，以及普通 Session 角色通过真实 active Link＋Relation 创建 `verified_author_statement`。
-- 全仓 Lint 0 error、TypeScript、60 个前端测试文件/285 项测试、foundation tests、契约和生产构建均通过。
-- 本地无 PostgreSQL；最终事务证据以 GitHub Actions PostgreSQL 18 为准。
+- 本地静态检查、TypeScript、契约和生产构建可作为实现信号，但不能替代 PostgreSQL 事务证据；不再将固定的前端测试文件/项目数写成当前验收结论。
+- 本地无 PostgreSQL；最终门禁必须在 PostgreSQL 18 上先通过 `npm run media:fixture:verify`，再运行 `npm run evidence:fixture:verify`，并继续完成后续应用/回流 fixture。
 
 ## 5. 边界
 

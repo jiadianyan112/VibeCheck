@@ -1,6 +1,6 @@
 # WP-05A：P11 公开封面媒体安全闭环
 
-**状态：实现完成，等待 PostgreSQL CI｜日期：2026-08-20**
+**状态：实现已提交（HEAD `9c47e55`）；当前 CI 失败，未全量验证｜日期：2026-08-24**
 
 ## 1. 交付目标
 
@@ -36,11 +36,17 @@
 
 稳定错误包括 `MEDIA_MIME_UNSUPPORTED`、`MEDIA_SIZE_INVALID`、`MEDIA_UPLOAD_EXPIRED`、`MEDIA_UPLOAD_RECEIPT_MISMATCH`、`MEDIA_MIME_MISMATCH`、`MEDIA_CHECKSUM_MISMATCH`、`MEDIA_RESOURCE_NOT_READY`、`MEDIA_SCAN_VERSION_CONFLICT` 和 `MEDIA_STORAGE_*` 503。
 
-## 5. 验证
+## 5. 当前 CI 状态
+
+- GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 对应 HEAD `9c47e55`，结论为 `failure`。质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；本工作包的 `media:fixture:verify` 失败；Evidence 及后续 fixture 因工作流顺序被 skipped。
+- 最近完整绿色基线为提交 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。该 Run 不能替代当前 HEAD 的 Media fixture 证据。
+- 因此本文件中的实现边界和本地测试说明不等于 PostgreSQL 验收完成；生产 `MEDIA_ENABLED` 仍保持关闭。
+
+## 6. 验证与复跑门槛
 
 - OpenAPI：85 paths / 95 operations；SHA-256 `2adb1e176ba08370d16146fb6e9adef95287ab263c94dc46a1fcc6996993a9de`。
 - Media 单元测试覆盖输入上限、prepare/complete、GuardDuty 五类映射、处理失败重试、真实图片重编码与 EXIF 移除、AWS 模板门禁。
 - API 测试覆盖登录、Origin、CSRF、幂等键、命令绑定及 owner-only 302。
 - Worker 测试覆盖事件 aggregate/payload 绑定。
 - `npm audit --omit=dev`：0 vulnerability；Sharp 使用已修复 libvips 公告的 0.35.3。
-- 本地没有 PostgreSQL 服务；migration、完整 media fixture 和 41 个迁移重复执行以 GitHub Actions PostgreSQL 18 为最终证据。
+- 本地没有 PostgreSQL 服务；最终门禁必须在 PostgreSQL 18 上复跑 `npm run db:migrate` 两次、确认 41 个 migration，再运行 `npm run media:fixture:verify`。在该命令成功前，不得把 ready-resource guard、不可变 unlink receipt 或 WP-05A 标为完成。

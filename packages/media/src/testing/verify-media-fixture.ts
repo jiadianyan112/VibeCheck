@@ -62,8 +62,9 @@ async function verifyProjectUpdateReference(): Promise<void> {
      JOIN media.media_resources resource ON resource.media_resource_id=reference.media_resource_id
      JOIN catalog.project_updates project_update ON project_update.update_id=reference.target_id
      WHERE resource.owner_user_id=$1
-       AND reference.client_request_id='media-fixture-project-update-reference-0001'`,
-    [userId],
+       AND reference.target_type='project_update'
+       AND reference.target_id=$2`,
+    [userId, projectUpdateId],
   )
   if (existing.rows[0]) {
     assert.deepEqual(existing.rows[0], {
