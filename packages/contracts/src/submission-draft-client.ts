@@ -1,6 +1,6 @@
 /**
- * Typed browser client for OP-DRAFT-CREATE, OP-DRAFT-GET, and
- * OP-DRAFT-PATCH.  Preview, submit, revision, media, and evidence remain
+ * Typed browser client for OP-DRAFT-CREATE, OP-DRAFT-GET, OP-DRAFT-PATCH,
+ * OP-DRAFT-PREVIEW, and OP-SUBMIT.  Revision, media, and evidence remain
  * deliberately outside this module.
  */
 
@@ -23,6 +23,55 @@ export interface SubmissionDraftPatchRequest {
   readonly patch: Readonly<Record<string, unknown>>
   readonly operation_id: string
 }
+
+export interface SubmissionPreviewRequest {
+  readonly expected_version: number
+  readonly check_id: string
+}
+
+export interface SubmissionPreview {
+  readonly draft_id: string
+  readonly draft_version: number
+  readonly check_id: string
+  readonly preview_hash: string
+  readonly payload_snapshot: Readonly<Record<string, unknown>>
+  readonly media_reference_ids: readonly string[]
+  readonly evidence_draft_ids: readonly string[]
+  readonly validation: Readonly<{
+    readonly valid: true
+    readonly issue_count: 0
+  }>
+  readonly generated_at: string
+}
+
+export type SubmissionPreviewProjection = SubmissionPreview
+
+export interface SubmissionCreateRequest {
+  readonly draft_id: string
+  readonly draft_version: number
+  readonly check_id: string
+  readonly preview_hash: string
+  readonly submission_key: string
+}
+
+export type SubmissionSubmitRequest = SubmissionCreateRequest
+
+export interface Submission {
+  readonly submission_id: string
+  readonly submission_chain_id: string
+  readonly draft_id: string
+  readonly snapshot_version: number
+  readonly review_status: 'pending_review'
+  readonly review_work_item_id: string
+  readonly media_reference_ids: readonly string[]
+  readonly evidence_draft_ids: readonly string[]
+  readonly preview_hash: string
+  readonly version: number
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+export type SubmissionProjection = Submission
 
 /** The exact JSON projection described by the SubmissionDraft schema. */
 export interface SubmissionDraft {
@@ -155,11 +204,22 @@ export interface SubmissionDraftClientContract {
     request: SubmissionDraftPatchRequest,
     options?: SubmissionDraftRequestOptions,
   ): Promise<SubmissionDraft>
+  preview(
+    draftId: string,
+    request: SubmissionPreviewRequest,
+    options?: SubmissionDraftRequestOptions,
+  ): Promise<SubmissionPreview>
+  submit(
+    request: SubmissionCreateRequest,
+    options?: SubmissionDraftRequestOptions,
+  ): Promise<Submission>
 }
 
 const collectionPath = '/api/v1/submission-drafts'
+const submissionCollectionPath = '/api/v1/submissions'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const requestIdPattern = /^[A-Za-z0-9._:-]{8,128}$/
+const previewHashPattern = /^[a-f0-9]{64}$/
 const dateTimePattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 const draftKeys = [
@@ -182,6 +242,31 @@ const draftKeys = [
   'saved_at',
   'expires_at',
 ] as const
+const previewKeys = [
+  'draft_id',
+  'draft_version',
+  'check_id',
+  'preview_hash',
+  'payload_snapshot',
+  'media_reference_ids',
+  'evidence_draft_ids',
+  'validation',
+  'generated_at',
+] as const
+const submissionKeys = [
+  'submission_id',
+  'submission_chain_id',
+  'draft_id',
+  'snapshot_version',
+  'review_status',
+  'review_work_item_id',
+  'media_reference_ids',
+  'evidence_draft_ids',
+  'preview_hash',
+  'version',
+  'created_at',
+  'updated_at',
+] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -199,7 +284,7 @@ function isUuid(value: unknown): value is string {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 1
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
 }
 
 function isCategoryId(value: unknown): value is SubmissionDraftCategoryId {
@@ -290,14 +375,36 @@ function validPatchRequest(value: unknown): value is SubmissionDraftPatchRequest
     isClientRequestId(value.operation_id)
 }
 
-function isUniqueUuidArray(value: unknown, maxItems: number): value is readonly string[] {
+function validPreviewRequest(value: unknown): value is SubmissionPreviewRequest {
+  return isRecord(value) &&
+    hasExactKeys(value, ['expected_version', 'check_id']) &&
+    isPositiveInteger(value.expected_version) &&
+    isUuid(value.check_id)
+}
+
+function validSubmitRequest(value: unknown): value is SubmissionCreateRequest {
+  return isRecord(value) &&
+    hasExactKeys(value, ['draft_id', 'draft_version', 'check_id', 'preview_hash', 'submission_key']) &&
+    isUuid(value.draft_id) &&
+    isPositiveInteger(value.draft_version) &&
+    isUuid(value.check_id) &&
+    typeof value.preview_hash === 'string' && previewHashPattern.test(value.preview_hash) &&
+    isClientRequestId(value.submission_key)
+}
+
+function isUniqueUuidArray(
+  value: unknown,
+  maxItems: number,
+  minItems = 0,
+): value is readonly string[] {
   return Array.isArray(value) &&
+    value.length >= minItems &&
     value.length <= maxItems &&
     value.every(isUuid) &&
     new Set(value).size === value.length
 }
 
-function validProjection(value: unknown): value is SubmissionDraft {
+function validSubmissionDraftProjection(value: unknown): value is SubmissionDraft {
   if (!isRecord(value) || !hasExactKeys(value, draftKeys)) return false
   if (!isUuid(value.draft_id) || !isUuid(value.submission_chain_id) ||
       !isCategoryId(value.category_id) || !isCategorySchemaVersion(value.category_schema_version) ||
@@ -315,6 +422,30 @@ function validProjection(value: unknown): value is SubmissionDraft {
     isDateTime(value.updated_at) &&
     isDateTime(value.saved_at) &&
     isDateTime(value.expires_at)
+}
+
+function validPreviewProjection(value: unknown): value is SubmissionPreview {
+  if (!isRecord(value) || !hasExactKeys(value, previewKeys)) return false
+  if (!isUuid(value.draft_id) || !isPositiveInteger(value.draft_version) ||
+      !isUuid(value.check_id) || typeof value.preview_hash !== 'string' ||
+      !previewHashPattern.test(value.preview_hash) || !isJsonObject(value.payload_snapshot)) return false
+  if (!isUniqueUuidArray(value.media_reference_ids, 20, 1) ||
+      !isUniqueUuidArray(value.evidence_draft_ids, 50, 1)) return false
+  if (!isRecord(value.validation) || !hasExactKeys(value.validation, ['valid', 'issue_count']) ||
+      value.validation.valid !== true || value.validation.issue_count !== 0) return false
+  return isDateTime(value.generated_at)
+}
+
+function validSubmissionProjection(value: unknown): value is Submission {
+  if (!isRecord(value) || !hasExactKeys(value, submissionKeys)) return false
+  if (!isUuid(value.submission_id) || !isUuid(value.submission_chain_id) ||
+      !isUuid(value.draft_id) || !isPositiveInteger(value.snapshot_version) ||
+      value.review_status !== 'pending_review' || !isUuid(value.review_work_item_id) ||
+      !isUniqueUuidArray(value.media_reference_ids, 20, 1) ||
+      !isUniqueUuidArray(value.evidence_draft_ids, 50, 1) ||
+      typeof value.preview_hash !== 'string' || !previewHashPattern.test(value.preview_hash) ||
+      !isPositiveInteger(value.version)) return false
+  return isDateTime(value.created_at) && isDateTime(value.updated_at)
 }
 
 function normalizeBaseUrl(baseUrl: string | URL | undefined): string {
@@ -473,7 +604,7 @@ function draftPath(draftId: string): string {
   return `${collectionPath}/${encodeURIComponent(draftId)}`
 }
 
-/** Independent typed client for the three P10→P11 draft HTTP operations. */
+/** Independent typed client for the five P10→P11 draft HTTP operations. */
 export class SubmissionDraftClient implements SubmissionDraftClientContract {
   private readonly requestFetch: SubmissionDraftFetch
   private readonly baseUrl: string
@@ -493,7 +624,10 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
   ): Promise<SubmissionDraft> {
     if (!validCreateRequest(request)) throw new TypeError('Invalid SubmissionDraftCreateRequest')
     const body = serializeBody(request, 'SubmissionDraftCreateRequest')
-    return this.sendJson('POST', `${this.baseUrl}${collectionPath}`, body, requestOptions, 201)
+    return this.sendJson(
+      'POST', `${this.baseUrl}${collectionPath}`, body, requestOptions, 201,
+      validSubmissionDraftProjection, 'submission draft',
+    )
   }
 
   async get(
@@ -501,7 +635,10 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
     requestOptions: SubmissionDraftRequestOptions = {},
   ): Promise<SubmissionDraft> {
     if (!isUuid(draftId)) throw new TypeError('Invalid SubmissionDraft draft_id')
-    return this.send('GET', `${this.baseUrl}${draftPath(draftId)}`, requestOptions, 200)
+    return this.send(
+      'GET', `${this.baseUrl}${draftPath(draftId)}`, requestOptions, 200,
+      validSubmissionDraftProjection, 'submission draft',
+    )
   }
 
   async patch(
@@ -512,16 +649,47 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
     if (!isUuid(draftId)) throw new TypeError('Invalid SubmissionDraft draft_id')
     if (!validPatchRequest(request)) throw new TypeError('Invalid SubmissionDraftPatchRequest')
     const body = serializeBody(request, 'SubmissionDraftPatchRequest')
-    return this.sendJson('PATCH', `${this.baseUrl}${draftPath(draftId)}`, body, requestOptions, 200)
+    return this.sendJson(
+      'PATCH', `${this.baseUrl}${draftPath(draftId)}`, body, requestOptions, 200,
+      validSubmissionDraftProjection, 'submission draft',
+    )
   }
 
-  private async sendJson(
+  async preview(
+    draftId: string,
+    request: SubmissionPreviewRequest,
+    requestOptions: SubmissionDraftRequestOptions = {},
+  ): Promise<SubmissionPreview> {
+    if (!isUuid(draftId)) throw new TypeError('Invalid SubmissionDraft draft_id')
+    if (!validPreviewRequest(request)) throw new TypeError('Invalid SubmissionPreviewRequest')
+    const body = serializeBody(request, 'SubmissionPreviewRequest')
+    return this.sendJson(
+      'POST', `${this.baseUrl}${draftPath(draftId)}/preview`, body, requestOptions, 200,
+      validPreviewProjection, 'submission preview',
+    )
+  }
+
+  async submit(
+    request: SubmissionCreateRequest,
+    requestOptions: SubmissionDraftRequestOptions = {},
+  ): Promise<Submission> {
+    if (!validSubmitRequest(request)) throw new TypeError('Invalid SubmissionCreateRequest')
+    const body = serializeBody(request, 'SubmissionCreateRequest')
+    return this.sendJson(
+      'POST', `${this.baseUrl}${submissionCollectionPath}`, body, requestOptions, 202,
+      validSubmissionProjection, 'submission',
+    )
+  }
+
+  private async sendJson<T>(
     method: 'POST' | 'PATCH',
     url: string,
     body: string,
     requestOptions: SubmissionDraftRequestOptions,
     expectedStatus: number,
-  ): Promise<SubmissionDraft> {
+    validateProjection: (value: unknown) => value is T,
+    projectionName: string,
+  ): Promise<T> {
     const requestId = this.requestIdGenerator()
     const csrf = await this.csrfToken()
     const init: RequestInit = {
@@ -536,15 +704,17 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
       body,
     }
     if (requestOptions.signal !== undefined) init.signal = requestOptions.signal
-    return this.sendWithRequestId(url, init, requestId, expectedStatus)
+    return this.sendWithRequestId(url, init, requestId, expectedStatus, validateProjection, projectionName)
   }
 
-  private async send(
+  private async send<T>(
     method: 'GET',
     url: string,
     requestOptions: SubmissionDraftRequestOptions,
     expectedStatus: number,
-  ): Promise<SubmissionDraft> {
+    validateProjection: (value: unknown) => value is T,
+    projectionName: string,
+  ): Promise<T> {
     const requestId = this.requestIdGenerator()
     const init: RequestInit = {
       method,
@@ -555,15 +725,17 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
       credentials: 'include',
     }
     if (requestOptions.signal !== undefined) init.signal = requestOptions.signal
-    return this.sendWithRequestId(url, init, requestId, expectedStatus)
+    return this.sendWithRequestId(url, init, requestId, expectedStatus, validateProjection, projectionName)
   }
 
-  private async sendWithRequestId(
+  private async sendWithRequestId<T>(
     url: string,
     init: RequestInit,
     requestId: string,
     expectedStatus: number,
-  ): Promise<SubmissionDraft> {
+    validateProjection: (value: unknown) => value is T,
+    projectionName: string,
+  ): Promise<T> {
     let response: Response
     try {
       response = await this.requestFetch(url, init)
@@ -584,9 +756,9 @@ export class SubmissionDraftClient implements SubmissionDraftClientContract {
     }
 
     if (response.status !== expectedStatus) throw httpError(response, payload, requestId)
-    if (!validProjection(payload)) {
+    if (!validateProjection(payload)) {
       throw protocolError(
-        'The API returned an invalid submission draft projection.',
+        `The API returned an invalid ${projectionName} projection.`,
         headerValue(response, 'x-request-id') ?? requestId,
         response.status,
         payload,

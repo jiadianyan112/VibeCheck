@@ -7,6 +7,10 @@ import {
   type SubmissionDraft,
   type SubmissionDraftCreateRequest,
   type SubmissionDraftPatchRequest,
+  type Submission,
+  type SubmissionCreateRequest,
+  type SubmissionPreview,
+  type SubmissionPreviewRequest,
 } from './submission-draft-client.js'
 
 const draftId = '84000000-0000-4000-8000-000000000002'
@@ -14,6 +18,8 @@ const chainId = '84000000-0000-4000-8000-000000000003'
 const checkId = '84000000-0000-4000-8000-000000000004'
 const mediaId = '84000000-0000-4000-8000-000000000005'
 const evidenceId = '84000000-0000-4000-8000-000000000006'
+const workItemId = '84000000-0000-4000-8000-000000000007'
+const previewHash = 'a'.repeat(64)
 
 const createRequest: SubmissionDraftCreateRequest = {
   check_id: checkId,
@@ -54,6 +60,53 @@ const projection: SubmissionDraft = {
   updated_at: '2026-08-24T10:05:00.000Z',
   saved_at: '2026-08-24T10:05:00.000Z',
   expires_at: '2026-08-24T10:30:00.000Z',
+}
+
+const previewRequest: SubmissionPreviewRequest = {
+  expected_version: 3,
+  check_id: checkId,
+}
+
+const previewProjection: SubmissionPreview = {
+  draft_id: draftId,
+  draft_version: 3,
+  check_id: checkId,
+  preview_hash: previewHash,
+  payload_snapshot: {
+    project_core: {
+      name: 'A preserved draft name',
+    },
+  },
+  media_reference_ids: [mediaId],
+  evidence_draft_ids: [evidenceId],
+  validation: {
+    valid: true,
+    issue_count: 0,
+  },
+  generated_at: '2026-08-24T10:10:00.000Z',
+}
+
+const submitRequest: SubmissionCreateRequest = {
+  draft_id: draftId,
+  draft_version: 3,
+  check_id: checkId,
+  preview_hash: previewHash,
+  submission_key: 'submission-key-kept-01',
+}
+
+const submissionProjection: Submission = {
+  submission_id: '84000000-0000-4000-8000-000000000008',
+  submission_chain_id: chainId,
+  draft_id: draftId,
+  snapshot_version: 3,
+  review_status: 'pending_review',
+  review_work_item_id: workItemId,
+  media_reference_ids: [mediaId],
+  evidence_draft_ids: [evidenceId],
+  preview_hash: previewHash,
+  version: 1,
+  created_at: '2026-08-24T10:11:00.000Z',
+  updated_at: '2026-08-24T10:11:00.000Z',
 }
 
 function jsonResponse(body: unknown, status = 200, contentType = 'application/json; charset=utf-8'): Response {
@@ -226,6 +279,330 @@ describe('SubmissionDraftClient', () => {
     })
     assert.deepEqual(await client.patch(draftId, patchRequest), projection)
   })
+
+  it('sends the exact preview request to a custom origin with CSRF, signal, and credentials', async () => {
+    const controller = new AbortController()
+    let calls = 0
+    let seenUrl: string | URL | undefined
+    let seenInit: RequestInit | undefined
+    const client = createSubmissionDraftClient({
+      baseUrl: 'https://api.example.test///',
+      fetch: async (url, init) => {
+        calls += 1
+        seenUrl = url
+        seenInit = init
+        return jsonResponse(previewProjection, 200)
+      },
+      getCsrfToken: () => 'csrf-preview-01',
+      requestIdGenerator: () => 'preview-request-id',
+    })
+
+    assert.deepEqual(await client.preview(draftId, previewRequest, { signal: controller.signal }), previewProjection)
+    assert.equal(calls, 1)
+    assert.equal(seenUrl, `https://api.example.test/api/v1/submission-drafts/${draftId}/preview`)
+    assert.equal(seenInit?.method, 'POST')
+    assert.equal(seenInit?.credentials, 'include')
+    assert.equal(seenInit?.signal, controller.signal)
+    assert.deepEqual(seenInit?.headers, {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': 'csrf-preview-01',
+      'X-Request-Id': 'preview-request-id',
+    })
+    assert.deepEqual(JSON.parse(String(seenInit?.body)), previewRequest)
+  })
+
+  it('sends the exact submit request to the same-origin endpoint with CSRF and signal', async () => {
+    const controller = new AbortController()
+    let seenUrl: string | URL | undefined
+    let seenInit: RequestInit | undefined
+    const client = createSubmissionDraftClient({
+      fetch: async (url, init) => {
+        seenUrl = url
+        seenInit = init
+        return jsonResponse(submissionProjection, 202)
+      },
+      getCsrfToken: () => 'csrf-submit-01',
+      requestIdGenerator: () => 'submit-request-id',
+    })
+
+    assert.deepEqual(await client.submit(submitRequest, { signal: controller.signal }), submissionProjection)
+    assert.equal(seenUrl, '/api/v1/submissions')
+    assert.equal(seenInit?.method, 'POST')
+    assert.equal(seenInit?.credentials, 'include')
+    assert.equal(seenInit?.signal, controller.signal)
+    assert.deepEqual(seenInit?.headers, {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': 'csrf-submit-01',
+      'X-Request-Id': 'submit-request-id',
+    })
+    assert.deepEqual(JSON.parse(String(seenInit?.body)), submitRequest)
+  })
+
+  it('obtains a fresh CSRF token for preview and submit without changing their stable fields', async () => {
+    const csrfTokens: string[] = []
+    let calls = 0
+    const client = createSubmissionDraftClient({
+      fetch: async (url) => {
+        calls += 1
+        return String(url).endsWith('/preview')
+          ? jsonResponse(previewProjection, 200)
+          : jsonResponse(submissionProjection, 202)
+      },
+      getCsrfToken: () => {
+        const token = `csrf-${csrfTokens.length + 1}`
+        csrfTokens.push(token)
+        return token
+      },
+      requestIdGenerator: () => 'request-id-stable',
+    })
+
+    await client.preview(draftId, previewRequest)
+    await client.submit(submitRequest)
+    assert.equal(calls, 2)
+    assert.deepEqual(csrfTokens, ['csrf-1', 'csrf-2'])
+    assert.equal(submitRequest.submission_key, 'submission-key-kept-01')
+    assert.equal(submitRequest.preview_hash, previewHash)
+  })
+
+  it('returns the strict preview projection from status 200', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse(previewProjection, 200),
+      getCsrfToken: () => 'csrf-preview-01',
+      requestIdGenerator: () => 'preview-request-id',
+    })
+    assert.deepEqual(await client.preview(draftId, previewRequest), previewProjection)
+  })
+
+  it('returns the strict pending-review submission projection from status 202', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse(submissionProjection, 202),
+      getCsrfToken: () => 'csrf-submit-01',
+      requestIdGenerator: () => 'submit-request-id',
+    })
+    assert.deepEqual(await client.submit(submitRequest), submissionProjection)
+  })
+
+  for (const status of [401, 403, 404, 409, 410, 422]) {
+    it(`preserves standard preview error fields for ${status}`, async () => {
+      const client = createSubmissionDraftClient({
+        fetch: async () => jsonResponse(errorBody('DRAFT_PREVIEW_REJECTED'), status),
+        getCsrfToken: () => 'csrf-preview-01',
+        requestIdGenerator: () => 'preview-request-id',
+      })
+
+      const thrown = await rejected(() => client.preview(draftId, previewRequest))
+      assert.equal(thrown.kind, 'http')
+      assert.equal(thrown.status, status)
+      assert.equal(thrown.code, 'DRAFT_PREVIEW_REJECTED')
+      assert.equal(thrown.request_id, 'server-request-01')
+      assert.equal(thrown.retryable, true)
+      assert.equal(thrown.retry_after_ms, 1500)
+      assert.deepEqual(thrown.field_errors, [{ path: '/expected_version', code: 'conflict' }])
+      assert.deepEqual(thrown.details, {
+        field_errors: [{ path: '/expected_version', code: 'conflict' }],
+        conflict: { current_version: 4 },
+        preserved: 'details are not discarded',
+      })
+    })
+  }
+
+  for (const status of [401, 403, 404, 409, 410, 422]) {
+    it(`preserves standard submit error fields for ${status}`, async () => {
+      const client = createSubmissionDraftClient({
+        fetch: async () => jsonResponse(errorBody('SUBMIT_REJECTED', true), status),
+        getCsrfToken: () => 'csrf-submit-01',
+        requestIdGenerator: () => 'submit-request-id',
+      })
+
+      const thrown = await rejected(() => client.submit(submitRequest))
+      assert.equal(thrown.kind, 'http')
+      assert.equal(thrown.status, status)
+      assert.equal(thrown.code, 'SUBMIT_REJECTED')
+      assert.equal(thrown.requestId, 'server-request-01')
+      assert.deepEqual(thrown.fieldErrors, [{ path: '/expected_version', code: 'conflict' }])
+      assert.deepEqual(thrown.details, {
+        conflict: { current_version: 4 },
+        preserved: 'details are not discarded',
+      })
+    })
+  }
+
+  it('maps preview network failure to transport and performs one fetch', async () => {
+    let calls = 0
+    const client = createSubmissionDraftClient({
+      fetch: async () => {
+        calls += 1
+        throw new Error('preview offline')
+      },
+      getCsrfToken: () => 'csrf-preview-01',
+      requestIdGenerator: () => 'preview-network-id',
+    })
+
+    const thrown = await rejected(() => client.preview(draftId, previewRequest))
+    assert.equal(thrown.kind, 'transport')
+    assert.equal(thrown.code, 'TRANSPORT_NETWORK_ERROR')
+    assert.equal(calls, 1)
+  })
+
+  it('maps submit network failure to transport and performs one fetch', async () => {
+    let calls = 0
+    const client = createSubmissionDraftClient({
+      fetch: async () => {
+        calls += 1
+        throw new Error('submit offline')
+      },
+      getCsrfToken: () => 'csrf-submit-01',
+      requestIdGenerator: () => 'submit-network-id',
+    })
+
+    const thrown = await rejected(() => client.submit(submitRequest))
+    assert.equal(thrown.kind, 'transport')
+    assert.equal(thrown.code, 'TRANSPORT_NETWORK_ERROR')
+    assert.equal(calls, 1)
+  })
+
+  for (const operation of ['preview', 'submit'] as const) {
+    it(`maps a non-JSON ${operation} response to protocol`, async () => {
+      const client = createSubmissionDraftClient({
+        fetch: async () => new Response('<html>gateway failure</html>', {
+          status: 503,
+          headers: { 'content-type': 'text/html', 'x-request-id': `${operation}-server-503` },
+        }),
+        getCsrfToken: () => `csrf-${operation}-01`,
+        requestIdGenerator: () => `${operation}-protocol-id`,
+      })
+
+      const thrown = await rejected(() => operation === 'preview'
+        ? client.preview(draftId, previewRequest)
+        : client.submit(submitRequest))
+      assert.equal(thrown.kind, 'protocol')
+      assert.equal(thrown.code, 'PROTOCOL_INVALID_RESPONSE')
+      assert.equal(thrown.status, 503)
+      assert.equal(thrown.requestId, `${operation}-server-503`)
+    })
+  }
+
+  it('maps a preview status mismatch to protocol instead of accepting a 202 body', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse(previewProjection, 202),
+      getCsrfToken: () => 'csrf-preview-01',
+      requestIdGenerator: () => 'preview-status-id',
+    })
+
+    const thrown = await rejected(() => client.preview(draftId, previewRequest))
+    assert.equal(thrown.kind, 'protocol')
+    assert.equal(thrown.status, 202)
+  })
+
+  it('maps a submit status mismatch to protocol instead of accepting a 200 body', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse(submissionProjection, 200),
+      getCsrfToken: () => 'csrf-submit-01',
+      requestIdGenerator: () => 'submit-status-id',
+    })
+
+    const thrown = await rejected(() => client.submit(submitRequest))
+    assert.equal(thrown.kind, 'protocol')
+    assert.equal(thrown.status, 200)
+  })
+
+  const invalidPreviewProjections: readonly [string, unknown][] = [
+    ['extra top-level key', { ...previewProjection, unexpected: true }],
+    ['63-character preview hash', { ...previewProjection, preview_hash: 'a'.repeat(63) }],
+    ['empty media references', { ...previewProjection, media_reference_ids: [] }],
+    ['invalid validation state', { ...previewProjection, validation: { valid: false, issue_count: 1 } }],
+    ['extra validation key', { ...previewProjection, validation: { valid: true, issue_count: 0, extra: true } }],
+    ['invalid generated date', { ...previewProjection, generated_at: '2026-02-30T10:00:00.000Z' }],
+  ]
+
+  for (const [label, invalidProjection] of invalidPreviewProjections) {
+    it(`rejects preview projection with ${label}`, async () => {
+      const client = createSubmissionDraftClient({
+        fetch: async () => jsonResponse(invalidProjection, 200),
+        getCsrfToken: () => 'csrf-preview-01',
+        requestIdGenerator: () => 'preview-invalid-id',
+      })
+
+      const thrown = await rejected(() => client.preview(draftId, previewRequest))
+      assert.equal(thrown.kind, 'protocol')
+      assert.equal(thrown.code, 'PROTOCOL_INVALID_RESPONSE')
+    })
+  }
+
+  const invalidSubmissionProjections: readonly [string, unknown][] = [
+    ['extra top-level key', { ...submissionProjection, unexpected: true }],
+    ['wrong review status', { ...submissionProjection, review_status: 'published' }],
+    ['empty evidence references', { ...submissionProjection, evidence_draft_ids: [] }],
+    ['uppercase preview hash', { ...submissionProjection, preview_hash: previewHash.toUpperCase() }],
+    ['non-positive version', { ...submissionProjection, version: 0 }],
+    ['invalid updated date', { ...submissionProjection, updated_at: 'not-a-date' }],
+  ]
+
+  for (const [label, invalidProjection] of invalidSubmissionProjections) {
+    it(`rejects submit projection with ${label}`, async () => {
+      const client = createSubmissionDraftClient({
+        fetch: async () => jsonResponse(invalidProjection, 202),
+        getCsrfToken: () => 'csrf-submit-01',
+        requestIdGenerator: () => 'submit-invalid-id',
+      })
+
+      const thrown = await rejected(() => client.submit(submitRequest))
+      assert.equal(thrown.kind, 'protocol')
+      assert.equal(thrown.code, 'PROTOCOL_INVALID_RESPONSE')
+    })
+  }
+
+  for (const [label, draftIdValue, request] of [
+    ['invalid path uuid', 'not-a-uuid', previewRequest],
+    ['zero expected version', draftId, { ...previewRequest, expected_version: 0 }],
+    ['fractional expected version', draftId, { ...previewRequest, expected_version: 1.5 }],
+    ['invalid check uuid', draftId, { ...previewRequest, check_id: 'not-a-uuid' }],
+    ['extra request key', draftId, { ...previewRequest, unexpected: true }],
+  ] as const) {
+    it(`rejects local preview input with ${label} before fetch`, async () => {
+      let calls = 0
+      const client = createSubmissionDraftClient({
+        fetch: async () => {
+          calls += 1
+          return jsonResponse(previewProjection, 200)
+        },
+        getCsrfToken: () => 'csrf-preview-01',
+      })
+
+      await assert.rejects(
+        () => client.preview(draftIdValue, request as SubmissionPreviewRequest),
+        TypeError,
+      )
+      assert.equal(calls, 0)
+    })
+  }
+
+  for (const [label, request] of [
+    ['extra request key', { ...submitRequest, unexpected: true }],
+    ['invalid draft uuid', { ...submitRequest, draft_id: 'not-a-uuid' }],
+    ['zero draft version', { ...submitRequest, draft_version: 0 }],
+    ['invalid check uuid', { ...submitRequest, check_id: 'not-a-uuid' }],
+    ['63-character preview hash', { ...submitRequest, preview_hash: 'a'.repeat(63) }],
+    ['uppercase preview hash', { ...submitRequest, preview_hash: previewHash.toUpperCase() }],
+    ['invalid submission key', { ...submitRequest, submission_key: 'short' }],
+    ['illegal submission key character', { ...submitRequest, submission_key: 'submission key 01' }],
+  ] as const) {
+    it(`rejects local submit input with ${label} before fetch`, async () => {
+      let calls = 0
+      const client = createSubmissionDraftClient({
+        fetch: async () => {
+          calls += 1
+          return jsonResponse(submissionProjection, 202)
+        },
+        getCsrfToken: () => 'csrf-submit-01',
+      })
+
+      await assert.rejects(() => client.submit(request as SubmissionCreateRequest), TypeError)
+      assert.equal(calls, 0)
+    })
+  }
 
   for (const status of [401, 403, 409, 410, 422]) {
     it(`preserves standard create error fields for ${status} without retrying`, async () => {

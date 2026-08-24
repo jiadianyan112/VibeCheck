@@ -1,9 +1,11 @@
-目标：交付 P10→P11 SubmissionDraft Typed HTTP Client，仅实现 create/get/patch。
-顺序：基线门禁 → 核对 OpenAPI/现有模式 → 客户端与测试 → 文档/门禁 → 白名单提交。
-基线：2026-08-24，HEAD 4445def；contracts:check=85 paths/95 operations，contracts=62 pass。
-当前：SubmissionDraftClient、根导出与测试已完成；contracts=62 pass/0 fail/skip/todo。
-最大风险：Draft 精确投影/错误映射、CSRF 与同源 URL 细节可能影响契约正确性。
-取舍：遵守白名单与“契约正确 > 权限安全 > 覆盖完整 > 开发速度”，不新增依赖。
-验证：contracts:check=85/95；npm test=60 文件/285 项；contracts test/typecheck、foundation test/typecheck、build、diff check 均通过。
-质量：lint=0 error/16 warnings；已推送 4445def，GitHub Actions Run #32720210701 success；contracts/后端质量门已通过，真实前端 E2E 未开始；BLOCKED.md=无。
-下一步：不将第 5 步或真实前端 E2E 标记完成；后续每轮在本地门禁通过后自动 commit、push 并监控 CI。
+目标：扩展现有 SubmissionDraftClient，新增 OP-DRAFT-PREVIEW 与 OP-SUBMIT，仅实现 preview/submit。
+顺序：基线 → 核对 OpenAPI/现有 client → 实现与测试 → 反向验证 → 全门禁/提交/CI。
+基线：2026-08-24，HEAD 781929f49b8672690100573682c76b29ec03738d；OpenAPI=85 paths/95 operations，contracts=62 pass。
+范围：不实现 revision/withdraw/media/evidence，不接前端，不修改 OpenAPI、apps、src、public、e2e 或既有未跟踪文件。
+最大风险：preview/submit 精确投影、哈希/版本幂等字段、409/410 错误与 CSRF 请求边界。
+取舍：遵守“OpenAPI正确 > 幂等/版本安全 > 兼容既有客户端 > 速度”，不新增依赖；调整须记录。
+验证：diff quiet/staged quiet、rev-parse、contracts:check、contracts test/typecheck 通过；基线 contracts=62。
+实现/测试：已导出 create/get/patch/preview/submit；contracts=110 pass/0 fail/skip/todo，覆盖请求、CSRF、signal、错误、网络和本地拒绝。
+反向验证：临时 `previewHash='a'.repeat(63)` 后 contracts=90 pass/20 fail；恢复 64 位后 contracts=110 pass/0 fail。
+文档/边界：已更新五方法顺序、CSRF、409/410、pending_review/no Project；真实前端 E2E 未开始；BLOCKED.md=无。
+全量门禁：`npm test`=60/285、foundation test/typecheck、lint=0/16、build、diff check 均通过；下一步白名单 commit/push/CI。
