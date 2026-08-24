@@ -174,7 +174,7 @@
 ### 11.2 草稿提交
 
 - **现状**：SubmissionDraft 的创建、编辑、预览绑定和提交服务已有实现；`0067aaa` 的 Run `32691188138` 已通过 Submission 相关后端 fixture，草稿提交链取得 PostgreSQL 绿色证据。
-- **本轮状态**：typed client 本地完成，已扩展 `create/get/patch/preview/submit` 五个 HTTP 方法；远端 CI 待验证；真实前端 E2E 未开始。
+- **本轮状态**：typed client 已完成，已扩展 `create/get/patch/preview/submit` 五个 HTTP 方法；代码提交 `c5bd20ac8fe707079fa45738d02c662b5dffd762` 的 GitHub Actions Run [#32734441188](https://github.com/jiadianyan112/VibeCheck/actions/runs/32734441188) 成功；真实前端 E2E 未开始。
 - **客户端边界**：`preview` 只接受 `validation={ valid: true, issue_count: 0 }` 并原样传递 preview hash；`submit` 成功只产生 `pending_review` Submission，不创建 Project。409 版本冲突和 410 过期由上层处理，客户端不重试、不递增版本。
 - **依赖/完成门槛**：依赖 11.1 的未过期 check；草稿 owner、schema/P0 字段、`ready+clean` 媒体、所需 `ready` EvidenceDraft、版本和 preview hash 必须在同一提交前置校验中成立；提交必须冻结快照、创建唯一 pending-review Submission，并保持原 Draft 只读。
 - **验证命令**：`npm run submission:submit:fixture:verify`；`npm run submission:revision:fixture:verify`；`npm run typecheck`；随后运行真实前端 E2E 的草稿创建/预览/提交场景。

@@ -10,7 +10,7 @@
 - 版本冲突映射：`409`（尤其 `SUBMISSION_DRAFT_VERSION_CONFLICT`）是明确的 HTTP 错误；保留当前草稿和错误详情，由上层重新读取并决定刷新/合并，不能自动重试或递增 `expected_version`。过期映射：`410` 表示草稿不可继续编辑；丢弃过期草稿状态，重新完成有效 URL check 后创建新草稿。
 - `preview` 必须在 Draft、媒体和 EvidenceDraft 前置条件满足后调用，并原样保留 `draft_version`、`check_id`、`preview_hash`；`submit` 只发送已返回的 Draft 版本和 preview hash，以及调用方提供的 `submission_key`。客户端不替换字段、不自动递增版本、不隐式重试，也不吞掉 `409`/`410`。
 - 版本冲突映射：`409`（尤其 `SUBMISSION_DRAFT_VERSION_CONFLICT`）是明确的 HTTP 错误；保留当前草稿和错误详情，由上层重新读取并决定刷新/合并，不能自动重试或递增 `expected_version`。过期映射：`410` 表示草稿或预览不可继续使用；丢弃过期状态，重新完成有效 URL check 后创建新草稿并重新预览。
-- `submit` 成功只表示创建 `review_status=pending_review` 的 Submission 快照（`202`）；不表示已审核或发布，也不创建 Project。真实前端 E2E 未开始。
+- `submit` 成功只表示创建 `review_status=pending_review` 的 Submission 快照（`202`）；不表示已审核或发布，也不创建 Project。typed client 已完成，代码提交 `c5bd20ac8fe707079fa45738d02c662b5dffd762` 的 GitHub Actions Run [#32734441188](https://github.com/jiadianyan112/VibeCheck/actions/runs/32734441188) 成功；真实前端 E2E 未开始。
 
 ## 1. P10/P11 调用顺序
 
