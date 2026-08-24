@@ -174,7 +174,7 @@
 ### 11.2 草稿提交
 
 - **现状**：SubmissionDraft 的创建、编辑、预览绑定和提交服务已有实现；`0067aaa` 的 Run `32691188138` 已通过 Submission 相关后端 fixture，草稿提交链取得 PostgreSQL 绿色证据。
-- **本轮状态**：typed client 本地完成、远端CI待验证、真实前端E2E未开始。
+- **本轮状态**：typed client 已提交并推送（`4445def`）；GitHub Actions Run [#32720210701](https://github.com/jiadianyan112/VibeCheck/actions/runs/32720210701) 成功，contracts/后端质量门已通过；真实前端 E2E 未开始。
 - **依赖/完成门槛**：依赖 11.1 的未过期 check；草稿 owner、schema/P0 字段、`ready+clean` 媒体、所需 `ready` EvidenceDraft、版本和 preview hash 必须在同一提交前置校验中成立；提交必须冻结快照、创建唯一 pending-review Submission，并保持原 Draft 只读。
 - **验证命令**：`npm run submission:submit:fixture:verify`；`npm run submission:revision:fixture:verify`；`npm run typecheck`；随后运行真实前端 E2E 的草稿创建/预览/提交场景。
 - **禁止误报**：创建 Draft 不等于创建 Project；`pending_review` 不等于已发布；未执行或 skipped 的 fixture 不能计为通过；不得用前端 Mock 的媒体/证据 ID 绕过 owner、状态或 preview hash 门禁。
