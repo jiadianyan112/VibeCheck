@@ -1,6 +1,6 @@
 # WP-05A：P11 公开封面媒体安全闭环
 
-**状态：实现已提交（HEAD `9c47e55`）；当前 CI 失败，未全量验证｜日期：2026-08-24**
+**状态：后端 PostgreSQL 验收完成（`0067aaa`）；AWS Staging/production flag 尚未验收｜日期：2026-08-24**
 
 ## 1. 交付目标
 
@@ -38,9 +38,9 @@
 
 ## 5. 当前 CI 状态
 
-- GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 对应 HEAD `9c47e55`，结论为 `failure`。质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；本工作包的 `media:fixture:verify` 失败；Evidence 及后续 fixture 因工作流顺序被 skipped。
-- 最近完整绿色基线为提交 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。该 Run 不能替代当前 HEAD 的 Media fixture 证据。
-- 因此本文件中的实现边界和本地测试说明不等于 PostgreSQL 验收完成；生产 `MEDIA_ENABLED` 仍保持关闭。
+- GitHub Actions Run [#32691188138](https://github.com/jiadianyan112/VibeCheck/actions/runs/32691188138) 对应绿色基线 `0067aaa`，结论为 `success`。该 Run 两次执行 41 个 append-only migrations，并通过 URL-check、Media、Evidence、Submission、Workflow、ProjectUpdate、首次发布和通知后端链路；本工作包的 `media:fixture:verify` 已通过。
+- 旧失败 Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 仅保留作历史记录，不再作为当前状态。
+- 后端 PostgreSQL 验收已完成；AWS Staging 真实上传/扫描演练、生产 `MEDIA_ENABLED` flag 和正式 AWS/IAM/CORS 门禁尚未验收，因此不能写成生产发布完成。
 
 ## 6. 验证与复跑门槛
 
@@ -49,4 +49,4 @@
 - API 测试覆盖登录、Origin、CSRF、幂等键、命令绑定及 owner-only 302。
 - Worker 测试覆盖事件 aggregate/payload 绑定。
 - `npm audit --omit=dev`：0 vulnerability；Sharp 使用已修复 libvips 公告的 0.35.3。
-- 本地没有 PostgreSQL 服务；最终门禁必须在 PostgreSQL 18 上复跑 `npm run db:migrate` 两次、确认 41 个 migration，再运行 `npm run media:fixture:verify`。在该命令成功前，不得把 ready-resource guard、不可变 unlink receipt 或 WP-05A 标为完成。
+- GitHub Actions Run `32691188138` 已在 PostgreSQL 18 上两次执行 `npm run db:migrate`，确认 41 个 migration，并通过 `npm run media:fixture:verify` 及其依赖后端链路；本地仍无 PostgreSQL 服务。ready-resource guard、不可变 unlink receipt 和 WP-05A 后端验收可标记完成，但 AWS Staging/production flag 仍待真实环境门禁。

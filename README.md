@@ -5,7 +5,7 @@ VibeCheck 是面向 Vibe Coding 创作者的作品发现、比较、发布与生
 ## 当前交付口径
 
 - **低保真原型**：P01–P18 和主要后台路径已有可运行页面、固定场景与原型测试覆盖，主要用于确认信息架构、交互和视觉验收。
-- **正式 MVP**：第 0–4 步已取得绿色基线；第 5 步的媒体与 ProjectUpdate 实现已提交于 `9c47e55`，但 GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 在 Media fixture 失败，后续 fixture 未完成；第 6 步目前只有后端基础，正式前端闭环尚未开始。最近完整绿色基线为 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。
+- **正式 MVP**：第 0–4 步已取得绿色基线；第 5 步后端切片 5.1–5.5 已在 `0067aaa` 取得绿色 PostgreSQL 验收，GitHub Actions Run [#32691188138](https://github.com/jiadianyan112/VibeCheck/actions/runs/32691188138) 成功。该 Run 两次执行 41 个 append-only migrations，并通过 URL-check、Media、Evidence、Submission、Workflow、ProjectUpdate、首次发布和通知后端链路；5.6 真实前端 E2E 尚未开始，WP-05A 的 AWS Staging/production flag 也尚未验收。第 6 步目前只有后端基础，正式前端闭环尚未开始。
 - **完成判定**：原型验收不等于正式 MVP 验收；正式 MVP 只按对应 PostgreSQL fixture、API/Worker 契约、权限与真实前端 E2E 证据关闭。
 
 ## 环境要求

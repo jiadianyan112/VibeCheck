@@ -1,6 +1,6 @@
 # WP-05B：P13 项目更新媒体与证据绑定闭环
 
-**状态：实现已提交（HEAD `9c47e55`）；当前 CI 失败，未全量验证｜日期：2026-08-24**
+**状态：相关 PostgreSQL fixtures 已通过（`0067aaa`）；真实前端 E2E 未开始｜日期：2026-08-24**
 
 ## 1. 交付目标
 
@@ -24,13 +24,13 @@
 
 ## 4. 当前 CI 状态与验证范围
 
-- GitHub Actions Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 对应 HEAD `9c47e55`，结论为 `failure`。质量门、41 个 migration 新库/重复执行和 URL-check fixture 通过；Media fixture 失败；本工作包的 Evidence fixture 以及后续提交、审核、应用、搜索投影和通知 fixture 均 skipped。
-- 最近完整绿色基线为提交 `6296652` / Run [#32362566696](https://github.com/jiadianyan112/VibeCheck/actions/runs/32362566696)。该 Run 不能替代当前 HEAD 对 `project_update` Media/Evidence 事务的验证。
+- GitHub Actions Run [#32691188138](https://github.com/jiadianyan112/VibeCheck/actions/runs/32691188138) 对应绿色基线 `0067aaa`，结论为 `success`。该 Run 两次执行 41 个 append-only migrations，并通过 URL-check、Media、Evidence、Submission、Workflow、ProjectUpdate、首次发布和通知后端链路；本工作包的 Media/Evidence/ProjectUpdate 相关 fixtures 已通过。
+- 旧失败 Run [#32367557494](https://github.com/jiadianyan112/VibeCheck/actions/runs/32367557494) 仅保留作历史记录，不再作为当前状态；当前后端验证以 `0067aaa` / Run `32691188138` 为准。
 
 - Media PostgreSQL fixture 覆盖 `submission_draft` 与 `project_update` 的创建、数组写入、解绑、版本推进和重放后终态。
 - Evidence PostgreSQL fixture 覆盖 `project_update` 的 create→bind→patch→complete→withdraw，验证绑定数组和版本从 3→4→5；另覆盖无作者链 403，以及普通 Session 角色通过真实 active Link＋Relation 创建 `verified_author_statement`。
-- 本地静态检查、TypeScript、契约和生产构建可作为实现信号，但不能替代 PostgreSQL 事务证据；不再将固定的前端测试文件/项目数写成当前验收结论。
-- 本地无 PostgreSQL；最终门禁必须在 PostgreSQL 18 上先通过 `npm run media:fixture:verify`，再运行 `npm run evidence:fixture:verify`，并继续完成后续应用/回流 fixture。
+- 本地静态检查、TypeScript、契约和生产构建可作为实现信号；Run `32691188138` 已提供 PostgreSQL 事务证据，不再将固定的前端测试文件/项目数写成当前验收结论。
+- 本地无 PostgreSQL；后端 Media/Evidence/ProjectUpdate 相关 fixtures 已在 PostgreSQL 18 绿色 Run 中通过。真实前端 E2E、AWS Staging/production flag 和正式发布门禁仍未开始或未验收。
 
 ## 5. 边界
 
