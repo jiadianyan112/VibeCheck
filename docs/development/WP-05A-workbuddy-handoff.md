@@ -2,6 +2,14 @@
 
 **OpenAPI：`packages/contracts/openapi/v1.yaml`｜SHA-256：`2adb1e176ba08370d16146fb6e9adef95287ab263c94dc46a1fcc6996993a9de`｜日期：2026-08-20**
 
+## 0. SubmissionDraft Typed HTTP Client（P10→P11）
+
+- contracts 已导出 `SubmissionDraftClient`、`createSubmissionDraftClient` 和 `createSubmissionDraftHttpClient`。三个方法分别是 `create(request)`（`POST /api/v1/submission-drafts`，成功 `201`）、`get(draftId)`（`GET /api/v1/submission-drafts/{draft_id}`，成功 `200`）和 `patch(draftId, request)`（`PATCH /api/v1/submission-drafts/{draft_id}`，成功 `200`）。请求体严格使用 OpenAPI 的 `SubmissionDraftCreateRequest` / `SubmissionDraftPatchRequest`。
+- 三个请求都使用 `credentials: include`、`Accept: application/json`、`X-Request-Id`，并透传 `AbortSignal`。`create`/`patch` 每次调用 `getCsrfToken()` 后发送 `Content-Type: application/json` 与 `X-CSRF-Token`；`get` 不读取或发送 CSRF，也不发送 `Content-Type`。
+- `client_request_id` 与 `operation_id` 原样放入请求体；客户端不替换、不递增、不隐式重试。HTTP 错误保留 `status`、`code`、`request_id`、`retryable`、`retry_after_ms`、`field_errors` 和 `details`。
+- 版本冲突映射：`409`（尤其 `SUBMISSION_DRAFT_VERSION_CONFLICT`）是明确的 HTTP 错误；保留当前草稿和错误详情，由上层重新读取并决定刷新/合并，不能自动重试或递增 `expected_version`。过期映射：`410` 表示草稿不可继续编辑；丢弃过期草稿状态，重新完成有效 URL check 后创建新草稿。
+- 本地 typed client 已完成；远端 CI 待验证；真实前端 E2E 未开始。该客户端不覆盖 preview、submit、revision、媒体或证据。
+
 ## 1. P10/P11 调用顺序
 
 1. 未登录点击发布：创建 `start_submission` PendingAction；OTP 成功并消费后只按服务端 `return_to` 进入发布入口，不期待自动创建 draft。
