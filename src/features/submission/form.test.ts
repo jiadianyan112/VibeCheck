@@ -1,4 +1,4 @@
-import type { ExtractionResult } from '../../services'
+import type { ExtractionResult } from './form'
 import { submissionDraftId, userId, type SubmissionDraft } from '../../types'
 import { applyExtraction, submissionCompleteness, updateDraftField, validateSubmissionStep } from './form'
 

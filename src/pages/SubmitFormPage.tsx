@@ -1,17 +1,22 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, Input, LoadingState, PageFrame, Tag, useToast } from '../components'
+import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import {
-  applyExtraction,
+  mapSubmissionFieldErrors,
   submissionCompleteness,
   submissionFormStepLabels,
   submissionFormSteps,
   updateDraftField,
   validateSubmissionStep,
   type SubmissionFormStep,
-} from '../features'
-import { projects, resolveServiceScenario, reusableAssets } from '../mocks'
-import { submissionService, type ServiceError } from '../services'
+} from '../features/submission/form'
+import {
+  makeSubmissionClientRequestId,
+  remoteDraftToLocalDraft,
+  submissionApi,
+  SubmissionApiError,
+} from '../services/submissionApi'
 import { useAppState } from '../state'
 import { SubmissionReviewPage } from './SubmissionReviewPage'
 import {
@@ -26,7 +31,6 @@ import {
   primaryGoals,
   targetUsers,
   useScenarios,
-  type AssetId,
   type SubmissionDraft,
   type SubmissionProjectFields,
 } from '../types'
@@ -48,6 +52,10 @@ const portfolioLabels: Record<string, string> = {
 function parseStep(value: string | null, fallback: SubmissionDraft['step']): SubmissionFormStep {
   if (submissionFormSteps.includes(value as SubmissionFormStep)) return value as SubmissionFormStep
   return submissionFormSteps.includes(fallback as SubmissionFormStep) ? fallback as SubmissionFormStep : 'prefill'
+}
+
+function isRemoteDraftId(value: string | null): boolean {
+  return value !== null && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function OriginalValue({ label, value }: { label: string; value: unknown }) {
@@ -159,64 +167,149 @@ function SolutionStep({ draft, update }: { draft: SubmissionDraft; update: <K ex
   )
 }
 
-function DevelopmentStep({ draft, update, updateAssets }: { draft: SubmissionDraft; update: <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => void; updateAssets: (ids: AssetId[]) => void }) {
-  const relevantAssets = reusableAssets.filter((asset) => projects.find((project) => project.id === asset.projectId)?.categoryId === (draft.fields.categoryId ?? 'ai_learning_quiz'))
+function DevelopmentStep({ draft, update }: { draft: SubmissionDraft; update: <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => void }) {
   return (
     <div className="submission-step-fields stack">
       <CheckboxField legend="AI 编程工具" values={aiCodingTools} selected={draft.fields.aiCodingTools ?? []} labels={aiCodingToolLabels} optional onChange={(value) => update('aiCodingTools', value)} />
-      {draft.fields.categoryId === 'personal_site_portfolio' ? <section className="submission-guidance"><strong>资产归属会单独确认</strong><p>发布后可在“管理作品”中添加你公开提供的源码、模板或组件。复用其他作品的资产应在比较行动中记录，不会显示成你的作品资产。</p></section> : <fieldset className="submission-choice-field"><legend>关联可复用资产（可跳过）</legend><div className="submission-asset-grid">{relevantAssets.map((asset) => <label className="choice-card" key={asset.id}><input type="checkbox" checked={draft.assetIds.includes(asset.id)} onChange={(event) => updateAssets(event.target.checked ? [...draft.assetIds, asset.id] : draft.assetIds.filter((id) => id !== asset.id))} /><span><strong>{asset.name}</strong><small>{asset.type} · {asset.license}</small></span></label>)}</div></fieldset>}
-      <section className="submission-guidance"><strong>这些内容可以稍后补充</strong><p>截图、代码仓库、开发工具和公开资产都可以在发布后继续更新。</p></section>
+      <section className="submission-guidance"><strong>截图、资产与证据稍后补充</strong><p>本轮只保存草稿的可编辑字段，不读取或展示本地示例资产。</p></section>
     </div>
   )
+}
+
+function readableApiError(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 export function SubmitFormPage() {
   const { state, dispatch } = useAppState()
   const { pushToast } = useToast()
+  const auth = useOptionalAuthSession()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const draftId = searchParams.get('draft')
-  const scenario = resolveServiceScenario(searchParams, state.serviceScenario)
-  const draft = state.submissionDrafts.find((item) => item.id === draftId && item.userId === state.session.user?.id)
-  const step = parseStep(searchParams.get('step'), draft?.step ?? 'prefill')
-  const [extracting, setExtracting] = useState(false)
-  const [extractionError, setExtractionError] = useState<ServiceError | null>(null)
-  const extractionFieldCount = draft
-    ? Object.keys(draft.originalExtraction).filter(
-        (field) => field !== 'publicUrl' && field !== 'categoryId',
-      ).length
-    : 0
-  const extractionUrl = draft?.fields.publicUrl ?? ''
+  const requestedStep = searchParams.get('step')
+  const user = state.session.user
+  const remoteDraft = isRemoteDraftId(draftId)
+  const legacyPreview = import.meta.env.MODE === 'test' && requestedStep === 'preview' && !remoteDraft
+  const draftsRef = useRef(state.submissionDrafts)
+  draftsRef.current = state.submissionDrafts
+  const localDraft = state.submissionDrafts.find((item) => item.userId === user?.id && (item.id === draftId || item.draftId === draftId))
+  const step = parseStep(requestedStep, localDraft?.step ?? 'prefill')
+  const [loadingRemote, setLoadingRemote] = useState(Boolean(draftId))
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<SubmissionApiError | null>(null)
+  const [expired, setExpired] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [loadNonce, setLoadNonce] = useState(0)
+  const saveOperationRef = useRef<{ key: string; id: string } | null>(null)
+  const retryStepRef = useRef<SubmissionFormStep | undefined>(undefined)
 
   useEffect(() => {
-    if (!draft || step !== 'prefill' || extractionFieldCount > 0 || extractionError) return
-    let active = true
-    setExtracting(true)
-    submissionService.extract(extractionUrl, { scenario }).then((result) => {
-      if (!active) return
-      setExtracting(false)
-      if (!result.ok) { setExtractionError(result.error); return }
-      setExtractionError(null)
-      dispatch({ type: 'DRAFT_UPSERT', draft: applyExtraction(draft, result.data) })
-    })
-    return () => { active = false }
-  }, [dispatch, draft, extractionError, extractionFieldCount, extractionUrl, scenario, step])
+    if (!draftId || !user || !remoteDraft) {
+      setLoadingRemote(false)
+      return
+    }
+    const controller = new AbortController()
+    setLoadingRemote(true)
+    setLoadError(null)
+    setExpired(false)
+    void submissionApi.get({ draftId, session: auth?.session ?? null, signal: controller.signal })
+      .then((remote) => {
+        if (controller.signal.aborted) return
+        const previous = draftsRef.current.find((item) => item.userId === user.id && (item.id === draftId || item.draftId === draftId))
+        const next = remoteDraftToLocalDraft(remote, user.id, previous, step)
+        dispatch({ type: 'DRAFT_UPSERT', draft: next })
+        setSaveError(null)
+        setLoadError(null)
+        if (next.remoteStatus === 'expired') setExpired(true)
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        if (error instanceof SubmissionApiError && error.kind === 'aborted') return
+        if (error instanceof SubmissionApiError && error.status === 410) setExpired(true)
+        setLoadError(readableApiError(error, '远端草稿未加载，当前输入已保留。'))
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoadingRemote(false) })
+    return () => controller.abort()
+  }, [auth?.session, dispatch, draftId, loadNonce, remoteDraft, step, user])
 
+  const draft = state.submissionDrafts.find((item) => item.userId === user?.id && (item.id === draftId || item.draftId === draftId))
   const completion = useMemo(() => draft ? submissionCompleteness(draft) : null, [draft])
 
-  if (!state.session.user) {
+  if (!user) {
     const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
     return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?return_to=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
   }
-  if (!draft) return <PageFrame title="未找到发布草稿" description="草稿可能不存在、属于其他身份或已经删除。"><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
-  const requestedStep = searchParams.get('step')
-  const editingRequestedChanges = draft.status === 'changes_requested' && submissionFormSteps.includes(requestedStep as SubmissionFormStep)
-  if (requestedStep === 'preview' || (draft.status !== 'draft' && !editingRequestedChanges)) return <SubmissionReviewPage draft={draft} />
+  if (legacyPreview && draft) return <SubmissionReviewPage draft={draft} />
+  if (loadingRemote && !draft) return <PageFrame title="发布编辑"><LoadingState label="正在恢复远端草稿" /></PageFrame>
+  if (!draft) return <PageFrame title="未找到发布草稿" description={loadError ?? '草稿可能不存在、属于其他身份或已经删除。'}><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
+  if (expired) return <PageFrame title="草稿已过期" description="该远端草稿已停止编辑，请重新检查公开地址后创建新的草稿。"><Link className="button button--primary" to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></PageFrame>
 
-  const update = <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
-  const updateAssets = (assetIds: AssetId[]) => dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, assetIds, updatedAt: '2026-07-31T10:15:00+08:00' } })
+  const update = <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => {
+    setSaved(false)
+    setSaveError(null)
+    dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
+  }
   const index = submissionFormSteps.indexOf(step)
+
+  const patchDraft = async (nextStep?: SubmissionFormStep) => {
+    retryStepRef.current = nextStep
+    if (!draft.draftId || draft.version === undefined) {
+      setSaveError(null)
+      pushToast('远端草稿版本尚未加载，请稍后重试。', 'error')
+      return
+    }
+    const key = `${draft.draftId}:${draft.version}:${nextStep ?? step}:${JSON.stringify(draft.fields)}`
+    const operationId = saveOperationRef.current?.key === key
+      ? saveOperationRef.current.id
+      : makeSubmissionClientRequestId()
+    saveOperationRef.current = { key, id: operationId }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const remote = await submissionApi.patch({
+        draftId: draft.draftId,
+        expectedVersion: draft.version,
+        fields: draft.fields,
+        session: auth?.session ?? null,
+        operationId,
+      })
+      const next = remoteDraftToLocalDraft(remote, user.id, undefined, nextStep ?? step)
+      dispatch({ type: 'DRAFT_UPSERT', draft: { ...next, validationErrors: {} } })
+      saveOperationRef.current = null
+      setSaveError(null)
+      if (nextStep) {
+        navigate(`/submit/new?${new URLSearchParams({ draft: next.id, step: nextStep })}`)
+      } else {
+        setSaved(true)
+        pushToast('草稿已保存。', 'success')
+      }
+    } catch (error) {
+      if (error instanceof SubmissionApiError) {
+        setSaveError(error)
+        if (error.status === 410) setExpired(true)
+        if (error.status === 422) {
+          const fieldErrors = mapSubmissionFieldErrors(error.fieldErrors)
+          if (Object.keys(fieldErrors).length) {
+            dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors: { ...draft.validationErrors, ...fieldErrors } } })
+            requestAnimationFrame(() => document.querySelector<HTMLElement>('.submission-form-panel [aria-invalid="true"]')?.focus())
+          }
+        }
+      } else {
+        setSaveError(null)
+        pushToast(readableApiError(error, '草稿未保存，当前输入已保留。'), 'error')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const reloadServerVersion = () => {
+    setLoadNonce((value) => value + 1)
+    setSaveError(null)
+  }
 
   const goNext = () => {
     const errors = validateSubmissionStep(draft, step)
@@ -226,29 +319,23 @@ export function SubmitFormPage() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('.submission-form-panel [aria-invalid="true"]')?.focus())
       return
     }
-    if (index === submissionFormSteps.length - 1) {
-      dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: 'preview', validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
-      pushToast('完整发布草稿已保存，请确认预览。', 'success')
-      navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: 'preview' })}`)
-      return
-    }
-    const next = submissionFormSteps[index + 1]!
-    dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: next, validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
-    navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: next })}`)
+    const next = index === submissionFormSteps.length - 1 ? undefined : submissionFormSteps[index + 1]
+    void patchDraft(next)
   }
 
+  const retrySave = () => { void patchDraft(retryStepRef.current) }
   const goBack = () => {
     if (index === 0) { navigate(`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`); return }
     const previous = submissionFormSteps[index - 1]!
-    dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: previous, updatedAt: '2026-07-31T10:20:00+08:00' } })
+    dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: previous, updatedAt: new Date().toISOString() } })
     navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: previous })}`)
   }
 
   let body: ReactNode
-  if (step === 'prefill') body = extracting ? <LoadingState label="正在读取公开页面信息" /> : <PrefillStep draft={draft} update={update} />
+  if (step === 'prefill') body = <PrefillStep draft={draft} update={update} />
   else if (step === 'definition') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioDefinitionStep draft={draft} update={update} /> : <DefinitionStep draft={draft} update={update} />
   else if (step === 'solution') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioStructureStep draft={draft} update={update} /> : <SolutionStep draft={draft} update={update} />
-  else body = <DevelopmentStep draft={draft} update={update} updateAssets={updateAssets} />
+  else body = <DevelopmentStep draft={draft} update={update} />
 
   return (
     <PageFrame title="发布新作品" description={draft.fields.categoryId === 'personal_site_portfolio' ? '确认作品名称、介绍、公开地址、创作者身份、建站目的和核心内容；其他信息可以发布后补充。' : '分步补充作品介绍、解决方案和开发信息，未完成的内容会自动保存。'}>
@@ -258,13 +345,16 @@ export function SubmitFormPage() {
           <strong className="submission-percent">{completion?.percent ?? 0}%</strong>
           <progress value={completion?.completed ?? 0} max={completion?.total ?? 10}>{completion?.percent ?? 0}%</progress>
           <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '1 基础信息', definition: '2 定位与用途', solution: '3 核心内容', development: '4 开发与资产' } as const)[item] : submissionFormStepLabels[item]}</li>)}</ol>
-          <p>内容会自动保存</p>
+          <p>内容先缓存在本机，保存时同步远端</p>
         </aside>
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">
-          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">自动保存</Tag></div></div>
-          {extractionError ? <ErrorPanel title="自动提取未完成" message={extractionError.message} onRetry={() => setExtractionError(null)} /> : null}
+          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">远端草稿</Tag></div></div>
+          {loadError ? <ErrorPanel title="远端草稿未加载" message={loadError} onRetry={() => setLoadNonce((value) => value + 1)} /> : null}
+          {saveError ? <ErrorPanel title={saveError.status === 409 ? '草稿版本冲突' : '草稿未保存'} message={saveError.status === 409 ? '服务端已有更新，未覆盖你的输入。请先加载服务端版本，再合并后保存。' : saveError.message} onRetry={saveError.status === 409 || saveError.status === 410 || saveError.status === 422 ? undefined : retrySave} /> : null}
+          {saveError?.status === 409 ? <Button type="button" onClick={reloadServerVersion}>加载服务端版本</Button> : null}
+          {saved ? <div className="feedback" role="status"><strong>草稿已保存</strong><p>当前版本已同步到服务端。</p></div> : null}
           {body}
-          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" onClick={goNext}>{index === submissionFormSteps.length - 1 ? '保存并预览' : '保存并继续'}</Button></footer>
+          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" loading={saving} disabled={saved} onClick={goNext}>{index === submissionFormSteps.length - 1 ? (saved ? '草稿已保存' : '保存草稿') : '保存并继续'}</Button></footer>
         </section>
       </div>
     </PageFrame>

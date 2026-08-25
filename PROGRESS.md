@@ -1,10 +1,9 @@
-目标：扩展现有 SubmissionDraftClient，新增 OP-DRAFT-PREVIEW 与 OP-SUBMIT，仅实现 preview/submit。
-顺序：基线 → 核对 OpenAPI/现有 client → 实现与测试 → 反向验证 → 全门禁/提交/CI。
-基线：2026-08-24，HEAD 781929f49b8672690100573682c76b29ec03738d；OpenAPI=85 paths/95 operations，contracts=62 pass。
-范围：不实现 revision/withdraw/media/evidence，不接前端，不修改 OpenAPI、apps、src、public、e2e 或既有未跟踪文件。
-最大风险：preview/submit 精确投影、哈希/版本幂等字段、409/410 错误与 CSRF 请求边界。
-取舍：遵守“OpenAPI正确 > 幂等/版本安全 > 兼容既有客户端 > 速度”，不新增依赖；调整须记录。
-验证/实现：diff quiet/staged quiet、rev-parse、contracts:check、contracts test/typecheck 通过；已导出 create/get/patch/preview/submit，contracts=110 pass/0 fail/skip/todo，覆盖请求、CSRF、signal、错误、网络和本地拒绝；基线 contracts=62。
-反向验证：临时 `previewHash='a'.repeat(63)` 后 contracts=90 pass/20 fail；恢复 64 位后 contracts=110 pass/0 fail。
-文档/边界：已更新五方法顺序、CSRF、409/410、pending_review/no Project；BLOCKED.md=无；真实前端 E2E 未开始。
-全量门禁：`npm test`=60/285、foundation test/typecheck、lint=0/16、build、diff check 均通过；代码 commit `c5bd20ac8fe707079fa45738d02c662b5dffd762`、Run `32734441188`=success；文档 sync commit `0e081c919c2799185be612b429475478e8ce7b7f`、Run `32734853849`=success。
+目标：P10 URL-check→create 与 P11 get→patch 接入真实 API（@vibecheck/contracts typed clients），仅 URL-check/create/get/patch 四操作；preview/submit、Media/Evidence、审核发布、ProjectUpdate 留后续。
+顺序：基线 → submissionApi 网关（CSRF/Abort/错误保留） → P10 映射矩阵+创建（只认 can_create_draft，client_request_id 幂等，201 后保存导航） → P11 远端元数据+payload_snapshot 双向映射+get/patch/409/410/422 → 单测/反向验证 → 全门禁/提交/CI。
+基线：2026-08-24，HEAD 78aefc6；contracts:check=85 paths/95 ops；相关 3 测试文件 21 passed；Playwright --list=72 tests/9 files；build:libraries 通过；@vibecheck/contracts 正式导入通过。
+范围：仅任务书白名单文件；生产路径不回退 Mock；MEDIA_ENABLED=false，最后一步只显示草稿已保存文案，不发 preview/submit。
+最大风险：真实 API/storageState/唯一测试 URL 缺失导致真实 E2E 无法执行（证据见 BLOCKED.md）；409 冲突分支的“服务端事实优先”取舍；payload_snapshot snake_case 映射遗漏。
+取舍：服务端事实 > 数据安全 > 用户输入不丢 > 交付速度；409 不静默覆盖，410 停止编辑，401/403 保留输入。
+验证：DTO/CSRF/Abort/映射矩阵/重复候选/同 ID 重试/201 导航/GET 刷新/PATCH 版本递增/409/410/422/无 Mock 回退单测；反向验证 blocked→passed 与陈旧 expected_version 两处，恢复后全绿。
+状态：开工前任务 0 完成；真实 API E2E 前置条件缺失，已记 BLOCKED.md；任务 1/2 未开始（已纠正 WorkBuddy 状态）。
+实现：任务 1/2/3/4 已完成代码与测试；全门禁、clean clone、push 与当前 SHA quality CI 仍待最终核验。

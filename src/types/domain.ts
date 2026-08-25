@@ -740,6 +740,7 @@ export interface ComparisonSession {
 
 export interface SubmissionProjectFields {
   categoryId?: ProjectCategoryId
+  categorySchemaVersion?: CategorySchemaVersion
   currentName: string
   publicUrl: string
   screenshotUrl: string | null
@@ -795,6 +796,15 @@ export interface SubmissionDraft {
   updatedAt: string
   submittedAt: string | null
   withdrawnAt: string | null
+  /** Server-owned draft identity and receipt metadata. */
+  draftId?: SubmissionDraftId
+  checkId?: string
+  version?: number
+  schemaVersion?: CategorySchemaVersion
+  savedAt?: string
+  expiresAt?: string
+  remoteStatus?: 'editing' | 'submitted' | 'closed' | 'expired'
+  payloadSnapshot?: Readonly<Record<string, unknown>>
 }
 
 export interface AuthorVerificationRequest {

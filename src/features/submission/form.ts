@@ -1,5 +1,9 @@
-import type { ExtractionResult } from '../../services'
 import type { SubmissionDraft, SubmissionProjectFields } from '../../types'
+
+export interface ExtractionResult {
+  fields: Partial<SubmissionProjectFields>
+  failedFields: Array<keyof SubmissionProjectFields>
+}
 
 export const submissionFormSteps = ['prefill', 'definition', 'solution', 'development'] as const
 export type SubmissionFormStep = (typeof submissionFormSteps)[number]
@@ -111,4 +115,62 @@ export function updateDraftField<K extends keyof SubmissionProjectFields>(
     validationErrors: remainingErrors,
     updatedAt: now,
   }
+}
+
+const serverFieldNames: Record<string, keyof SubmissionProjectFields> = {
+  category_id: 'categoryId',
+  category_schema_version: 'categorySchemaVersion',
+  public_url: 'publicUrl',
+  current_name: 'currentName',
+  screenshot_url: 'screenshotUrl',
+  access_status: 'accessStatus',
+  repository_url: 'repositoryUrl',
+  one_line_definition: 'oneLineDefinition',
+  target_users: 'targetUsers',
+  core_problem: 'coreProblem',
+  use_scenarios: 'useScenarios',
+  main_inputs: 'mainInputs',
+  main_outputs: 'mainOutputs',
+  core_flow: 'coreFlow',
+  practice_formats: 'practiceFormats',
+  feedback_methods: 'feedbackMethods',
+  ai_coding_tools: 'aiCodingTools',
+  site_type: 'siteType',
+  creator_roles: 'creatorRoles',
+  primary_goals: 'primaryGoals',
+  page_model: 'pageModel',
+  navigation_pattern: 'navigationPattern',
+  core_modules: 'coreModules',
+  project_showcase_format: 'projectShowcaseFormat',
+  case_study_depth: 'caseStudyDepth',
+  visual_styles: 'visualStyles',
+  layout_patterns: 'layoutPatterns',
+  color_character: 'colorCharacter',
+  theme_mode: 'themeMode',
+  interaction_level: 'interactionLevel',
+  interaction_patterns: 'interactionPatterns',
+  responsive_support: 'responsiveSupport',
+  blog_support: 'blogSupport',
+}
+
+function errorPathField(path: string) {
+  const segments = path.split('/').filter(Boolean)
+  const last = segments.at(-1)?.replace(/\[\d+\]$/, '') ?? path
+  return serverFieldNames[last] ?? serverFieldNames[path] ?? null
+}
+
+export type SubmissionFieldErrorValue = string | { readonly path: string; readonly code: string }
+
+/** Convert the contract's snake_case validation paths into form field errors. */
+export function mapSubmissionFieldErrors(
+  fieldErrors: readonly SubmissionFieldErrorValue[],
+): Record<string, string> {
+  return Object.fromEntries(
+    fieldErrors.flatMap((fieldError) => {
+      const path = typeof fieldError === 'string' ? fieldError : fieldError.path
+      const code = typeof fieldError === 'string' ? 'invalid' : fieldError.code
+      const field = errorPathField(path)
+      return field ? [[field, `服务端校验未通过（${code}）。`]] : []
+    }),
+  )
 }
