@@ -6,4 +6,4 @@
 取舍：服务端事实 > 数据安全 > 用户输入不丢 > 交付速度；409 不静默覆盖，410 停止编辑，401/403 保留输入。
 验证：DTO/CSRF/Abort/映射矩阵/重复候选/同 ID 重试/201 导航/GET 刷新/PATCH 版本递增/409/410/422/无 Mock 回退单测；反向验证 blocked→passed 与陈旧 expected_version 两处，恢复后全绿。
 状态：开工前任务 0 完成；真实 API E2E 前置条件缺失，已记 BLOCKED.md；任务 1/2 未开始（已纠正 WorkBuddy 状态）。
-实现：任务 1/2/3/4 已完成代码与测试；全门禁、clean clone、push 与当前 SHA quality CI 仍待最终核验。
+实现：任务 1/2/3/4 已完成代码与测试；全门禁、clean clone、push 完成；quality CI 已以 cf0972c593bdb6963a17db05590746ce5addb579 通过（run 32807812891）。
