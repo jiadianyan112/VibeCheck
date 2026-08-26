@@ -1,7 +1,4 @@
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
-previews:
-  generation: manual
-
 services:
   - type: web
     name: vibecheck-web
