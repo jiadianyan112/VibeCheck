@@ -16,20 +16,7 @@ export const errorResponseSchema = {
         request_id: { type: 'string', minLength: 1, maxLength: 64 },
         retryable: { type: 'boolean' },
         retry_after_ms: { type: ['integer', 'null'], minimum: 0 },
-        field_errors: {
-          type: 'array',
-          maxItems: 50,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['path', 'code'],
-            properties: {
-              path: { type: 'string', minLength: 1, maxLength: 256 },
-              code: { type: 'string', minLength: 1, maxLength: 64 },
-            },
-          },
-        },
-        conflict: { type: ['object', 'null'], additionalProperties: true },
+        details: { type: 'object', additionalProperties: true },
       },
     },
   },
@@ -61,11 +48,6 @@ export interface ErrorResponse {
     readonly retryable: boolean
     readonly retry_after_ms: number | null
     readonly details?: Readonly<Record<string, unknown>>
-    readonly field_errors?: readonly {
-      readonly path: string
-      readonly code: string
-    }[]
-    readonly conflict?: Readonly<Record<string, unknown>> | null
   }
 }
 
@@ -129,3 +111,5 @@ export type AuthVerificationResponse =
 
 export * from './submission-url-check-client.js'
 export * from './submission-draft-client.js'
+export * from './media-client.js'
+export * from './evidence-client.js'

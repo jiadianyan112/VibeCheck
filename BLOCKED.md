@@ -1,11 +1,13 @@
 # BLOCKED — 真实 API 专项 E2E（e2e/submission-real-api.spec.ts）
 
-时间：2026-08-24。结论：clean 环境缺少真实 E2E 前置条件，按任务书约定不绕过、不创建该 spec，证据如下。
+时间：2026-08-26。旧的“API 不可达”结论已修正：Media/Evidence 路由契约已存在，typed clients 已通过本地注入 fetch 的契约测试；这些测试不等同真实网络路由可达。本文件仅记录真实部署与真实 E2E 尚未验收的前置条件；按任务书约定不绕过、不创建该 spec。
 
-1. **无可用真实 API（AUTH/IDENTITY/SUBMISSION）**
-   - 生产部署（render.yaml `vibecheck-web`，SUBMISSION_ENABLED=true）不可达：`curl -m 90 https://vibecheck-web.onrender.com/health/ready` 与 `/` 均超时（exit 28，HTTP 000），代理与 `--noproxy '*'` 直连两种路径同样超时；DNS 可解析（216.24.57.7/15）。
-   - 本地无法启动真实 API：`apps/api/src/main.ts` 强制依赖 PostgreSQL（`createDatabasePool`、`PostgresSubmissionStore`、`PostgresIdentityStore`）；本机 `docker: command not found`、`psql: command not found`，compose.yaml 的 pgvector 容器无法启动。
+1. **真实部署与数据依赖尚未验收（AUTH/IDENTITY/SUBMISSION）**
+   - 已有记录显示生产部署（render.yaml `vibecheck-web`，SUBMISSION_ENABLED=true）在 2026-08-24 的探测中超时：`curl -m 90 https://vibecheck-web.onrender.com/health/ready` 与 `/` 均 exit 28、HTTP 000；这只能说明当次真实部署验收失败，不否定本地 API 路由和客户端契约。
+   - 本地真实 API 仍无法启动：`apps/api/src/main.ts` 强制依赖 PostgreSQL（`createDatabasePool`、`PostgresSubmissionStore`、`PostgresIdentityStore`）；当时本机 `docker: command not found`、`psql: command not found`，compose.yaml 的 pgvector 容器无法启动。
 2. **无已登录 storageState**：`playwright.config.ts` 与 `e2e/` 全部 spec 均无 storageState 配置或登录态文件（grep 无匹配）。
 3. **无预置唯一公开测试 URL**：docs 与配置中未定义可用于 URL-check 访问探测且保证不撞查重的唯一公开 URL。
 
-处置：未使用源码相对路径导入 contracts、未使用 page.route、未构造假 Session；`e2e/submission-real-api.spec.ts` 不创建（避免向 CI 引入必失败或用 skip 规避的用例）。待 Render 服务恢复/本地 Postgres 可用、预置登录态与唯一测试 URL 到位后补建。
+4. **AWS signed upload / scan 与部署 flag 未验收**：真实 S3/对象存储 signed URL、上传回执、扫描器清理 EXIF 并返回 clean/ready 的链路尚未在 AWS 环境验证；`SUBMISSION_ENABLED` 等部署 flag 也未开启或验收。本轮只验证客户端边界，不把本地 mock fetch 当作真实上传扫描。
+
+处置：未使用源码相对路径导入 contracts、未使用 page.route、未构造假 Session；`e2e/submission-real-api.spec.ts` 不创建（避免向 CI 引入必失败或用 skip 规避的用例）。待真实部署/本地 Postgres、storageState、唯一测试 URL、AWS signed-upload/scan 与 flag 到位后补建。
