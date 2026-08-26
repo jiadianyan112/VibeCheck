@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from 'pg'
+﻿import type { Pool, PoolClient } from 'pg'
 
 import { identityError } from './errors.js'
 import type { AccountStatus, AuthPurpose, IdentityRole } from './types.js'
@@ -715,7 +715,7 @@ export class PostgresIdentityStore {
     if (!row) return null
     await this.pool.query(
       `UPDATE iam.sessions SET last_seen_at=$2
-       WHERE session_id_hash=$1 AND last_seen_at<$2-make_interval(mins => 5)`,
+       WHERE session_id_hash=$1 AND last_seen_at<$2::timestamptz-make_interval(mins => 5)`,
       [sessionHash, now],
     )
     return Object.freeze({
@@ -787,3 +787,4 @@ export class PostgresIdentityStore {
     )
   }
 }
+
