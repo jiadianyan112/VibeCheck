@@ -6,12 +6,18 @@ import {
 } from './submissionAssetsApi'
 
 const draftId = '11111111-1111-4111-8111-111111111111'
-const mediaId = '22222222-2222-4222-8222-222222222222'
-const referenceId = '33333333-3333-4333-8333-333333333333'
-const evidenceId = '44444444-4444-4444-8444-444444444444'
 const session: SubmissionAssetsApiSession = { csrf_token: 'csrf-token-for-assets-tests' }
 
-const mediaBase = {
+function runtimeAssetIds() {
+  return {
+    mediaId: crypto.randomUUID(),
+    referenceId: crypto.randomUUID(),
+    evidenceId: crypto.randomUUID(),
+  }
+}
+
+function mediaBase(mediaId: string) {
+  return {
   media_resource_id: mediaId,
   declared_mime: 'image/png',
   detected_mime: 'image/png',
@@ -30,9 +36,11 @@ const mediaBase = {
   version: 1,
   created_at: '2026-08-26T10:00:00.000Z',
   updated_at: '2026-08-26T10:00:00.000Z',
+  }
 }
 
-const reference = {
+function referenceFixture(mediaId: string, referenceId: string) {
+  return {
   media_reference_id: referenceId,
   media_resource_id: mediaId,
   target_type: 'submission_draft' as const,
@@ -46,9 +54,11 @@ const reference = {
   version: 1,
   created_at: '2026-08-26T10:00:00.000Z',
   updated_at: '2026-08-26T10:00:00.000Z',
+  }
 }
 
-const evidenceDraft = {
+function evidenceDraftFixture(evidenceId: string, draftId = '11111111-1111-4111-8111-111111111111') {
+  return {
   evidence_draft_id: evidenceId,
   collector_actor_type: 'user' as const,
   parent_type: 'submission_draft' as const,
@@ -77,14 +87,17 @@ const evidenceDraft = {
   version: 3,
   created_at: '2026-08-26T10:00:00.000Z',
   updated_at: '2026-08-26T10:00:00.000Z',
+  }
 }
 
-const binding = {
+function bindingFixture(evidenceId: string, draftId = '11111111-1111-4111-8111-111111111111') {
+  return {
   parent_type: 'submission_draft' as const,
   parent_id: draftId,
   evidence_draft_ids: [evidenceId],
   parent_version: 8,
   evidence_draft_version: 2,
+  }
 }
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -159,13 +172,15 @@ describe('submissionAssetsApi production gateway', () => {
   })
 
   it('hashes, prepares, uploads with credentials omitted, then completes as pending', async () => {
+    const { mediaId } = runtimeAssetIds()
+    const base = mediaBase(mediaId)
     const prepared = {
-      media: { ...mediaBase, status: 'uploading' as const },
+      media: { ...base, status: 'uploading' as const },
       upload_url: 'https://uploads.example.test/object',
       upload_headers: { 'content-type': 'image/png', 'x-amz-checksum-sha256': 'signed-value' },
       upload_expires_at: '2026-08-26T10:30:00.000Z',
     }
-    const completed = { media: { ...mediaBase, status: 'processing' as const }, scan_queued: true as const }
+    const completed = { media: { ...base, status: 'processing' as const }, scan_queued: true as const }
     const { api, apiFetch, uploadFetch } = apiWithResponses([
       jsonResponse(prepared, 201),
       jsonResponse(completed, 202),
@@ -212,8 +227,9 @@ describe('submissionAssetsApi production gateway', () => {
   })
 
   it('does not create a cover reference while media is processing', async () => {
+    const { mediaId } = runtimeAssetIds()
     const { api, apiFetch } = apiWithResponses([
-      jsonResponse({ ...mediaBase, status: 'processing' as const }, 200),
+      jsonResponse({ ...mediaBase(mediaId), status: 'processing' as const }, 200),
     ])
 
     await expect(api.createCoverReference({
@@ -226,8 +242,11 @@ describe('submissionAssetsApi production gateway', () => {
   })
 
   it('creates the fixed cover reference only for ready clean sanitized media', async () => {
+    const { mediaId, referenceId } = runtimeAssetIds()
+    const base = mediaBase(mediaId)
+    const reference = referenceFixture(mediaId, referenceId)
     const readyMedia = {
-      ...mediaBase,
+      ...base,
       status: 'ready' as const,
       scan_result: 'clean' as const,
       exif_removed: true,
@@ -261,6 +280,9 @@ describe('submissionAssetsApi production gateway', () => {
   })
 
   it('executes evidence create, bind, patch, complete with server-returned versions', async () => {
+    const { evidenceId } = runtimeAssetIds()
+    const evidenceDraft = evidenceDraftFixture(evidenceId)
+    const binding = bindingFixture(evidenceId)
     const { api, apiFetch } = apiWithResponses([
       jsonResponse({ ...evidenceDraft, status: 'editing' as const, bound: false, version: 1, source_url: null }, 201),
       jsonResponse(binding, 200),
@@ -301,6 +323,9 @@ describe('submissionAssetsApi production gateway', () => {
   })
 
   it('preserves a server 422 when evidence has no source', async () => {
+    const { evidenceId } = runtimeAssetIds()
+    const evidenceDraft = evidenceDraftFixture(evidenceId)
+    const binding = bindingFixture(evidenceId)
     const { api, apiFetch } = apiWithResponses([
       jsonResponse({ ...evidenceDraft, status: 'editing' as const, bound: false, version: 1, source_url: null }, 201),
       jsonResponse(binding, 200),

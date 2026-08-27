@@ -406,8 +406,8 @@ export interface SubmissionAssetsApi {
 }
 
 export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = {}): SubmissionAssetsApi {
-  const apiFetch = options.fetch ?? globalThis.fetch.bind(globalThis)
-  const uploadFetch = options.uploadFetch ?? globalThis.fetch.bind(globalThis)
+  const resolveApiFetch = () => options.fetch ?? globalThis.fetch.bind(globalThis)
+  const resolveUploadFetch = () => options.uploadFetch ?? globalThis.fetch.bind(globalThis)
 
   return {
     async uploadCover(input) {
@@ -417,7 +417,7 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
         const checksumSha256 = await sha256(input.file)
         const prepareIdempotencyKey = requireRequestId(input.prepareIdempotencyKey, 'prepareIdempotencyKey')
         const completeIdempotencyKey = requireRequestId(input.completeIdempotencyKey, 'completeIdempotencyKey')
-        const client = makeMediaClient({ ...options, fetch: apiFetch }, input.session)
+        const client = makeMediaClient({ ...options, fetch: resolveApiFetch() }, input.session)
         const prepared = await client.prepare({
           purpose: 'project_cover',
           declared_mime: file.mime,
@@ -428,7 +428,7 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
             prepared.media.declared_mime !== file.mime || prepared.media.byte_size !== file.size) {
           throw protocolFailure('服务端返回的媒体资源与本次上传不匹配。')
         }
-        const uploadReceipt = await putSignedUpload(uploadFetch, {
+        const uploadReceipt = await putSignedUpload(resolveUploadFetch(), {
           uploadUrl: prepared.upload_url,
           uploadHeaders: prepared.upload_headers,
           file: input.file,
@@ -450,7 +450,7 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
 
     async getMediaStatus(input) {
       try {
-        const client = makeMediaClient({ ...options, fetch: apiFetch }, input.session)
+        const client = makeMediaClient({ ...options, fetch: resolveApiFetch() }, input.session)
         const media = await client.get(input.mediaResourceId, { signal: input.signal })
         if (media.media_resource_id !== input.mediaResourceId) {
           throw protocolFailure('服务端返回了与请求不同的媒体资源。')
@@ -464,7 +464,7 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
     async ensureCoverReference(input) {
       try {
         requireDraftId(input.draftId)
-        const client = makeMediaClient({ ...options, fetch: apiFetch }, input.session)
+        const client = makeMediaClient({ ...options, fetch: resolveApiFetch() }, input.session)
         const media = await client.get(input.mediaResourceId, { signal: input.signal })
         if (media.media_resource_id !== input.mediaResourceId) {
           throw protocolFailure('服务端返回了与请求不同的媒体资源。')
@@ -514,7 +514,7 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
         const parentId = requireDraftId(input.parentId)
         if (!Number.isSafeInteger(input.parentVersion) || input.parentVersion < 1) throw new TypeError('parentVersion must be a positive integer')
         const sourceUrl = safeSourceUrl(input.sourceUrl)
-        const client = makeEvidenceClient({ ...options, fetch: apiFetch }, input.session)
+        const client = makeEvidenceClient({ ...options, fetch: resolveApiFetch() }, input.session)
         const createClientRequestId = requireRequestId(input.createClientRequestId, 'createClientRequestId')
         const bindOperationId = requireRequestId(input.bindOperationId, 'bindOperationId')
         const patchOperationId = requireRequestId(input.patchOperationId, 'patchOperationId')

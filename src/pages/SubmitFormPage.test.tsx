@@ -29,12 +29,13 @@ const initialWireFields: WireFields = {
   core_flow: [{ order: 1, name: '上传材料' }],
 }
 
-function payloadSnapshot(fields: WireFields = initialWireFields): Readonly<Record<string, unknown>> {
+function payloadSnapshot(fields: WireFields = initialWireFields, coverMediaReferenceIds: readonly string[] = []): Readonly<Record<string, unknown>> {
   return {
     project_core: {
       public_url: 'https://example.test/real-draft',
       category_id: 'ai_learning_quiz',
       category_schema_version: 'learning.v1',
+      cover_media_reference_ids: coverMediaReferenceIds,
       category_data: fields,
     },
     original_extraction: {
@@ -44,7 +45,13 @@ function payloadSnapshot(fields: WireFields = initialWireFields): Readonly<Recor
   }
 }
 
-function draftDto(overrides: Partial<ContractSubmissionDraft> = {}, fields: WireFields = initialWireFields): ContractSubmissionDraft {
+function draftDto(
+  overrides: Partial<ContractSubmissionDraft> = {},
+  fields: WireFields = initialWireFields,
+  assets: { readonly mediaReferenceIds?: readonly string[]; readonly evidenceDraftIds?: readonly string[] } = {},
+): ContractSubmissionDraft {
+  const mediaReferenceIds = assets.mediaReferenceIds ?? []
+  const evidenceDraftIds = assets.evidenceDraftIds ?? []
   return {
     draft_id: draftUuid,
     submission_chain_id: chainUuid,
@@ -54,9 +61,9 @@ function draftDto(overrides: Partial<ContractSubmissionDraft> = {}, fields: Wire
     draft_revision: 1,
     supersedes_draft_id: null,
     base_submission_id: null,
-    payload_snapshot: payloadSnapshot(fields),
-    media_reference_ids: [],
-    evidence_draft_ids: [],
+    payload_snapshot: payloadSnapshot(fields, mediaReferenceIds),
+    media_reference_ids: mediaReferenceIds,
+    evidence_draft_ids: evidenceDraftIds,
     asset_drafts: [],
     status: 'editing',
     version: 3,
@@ -100,7 +107,10 @@ function installTransport(options: TransportOptions = {}) {
   let serverFields = { ...initialWireFields }
   const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = String(input)
-    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+    let body: Record<string, unknown> | undefined
+    if (typeof init?.body === 'string') {
+      try { body = JSON.parse(init.body) as Record<string, unknown> } catch { body = undefined }
+    }
     requests.push({ url, init, body })
     if (url.match(/\/submission-drafts\/[0-9a-f-]+$/i) && init?.method === 'GET') {
       return options.get ? options.get(init) : jsonResponse(draftDto({ version: serverVersion }, serverFields))
@@ -116,6 +126,199 @@ function installTransport(options: TransportOptions = {}) {
   })
   vi.stubGlobal('fetch', fetchMock)
   return { fetchMock, requests }
+}
+
+type MaterialsTransportOptions = {
+  mediaStatus?: 'processing' | 'ready' | 'rejected'
+  mediaScanResult?: 'not_scanned' | 'clean' | 'malicious'
+  mediaExifRemoved?: boolean
+  mediaDeletionGuardActive?: boolean
+  evidenceStatus?: 'editing' | 'ready' | 'withdrawn'
+  failAt?: 'patch' | 'upload' | 'media' | 'reference' | 'cover-get' | 'evidence' | 'final-get'
+}
+
+function mediaProjection(mediaResourceId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    media_resource_id: mediaResourceId,
+    declared_mime: 'image/png',
+    detected_mime: 'image/png',
+    byte_size: 1_048_576,
+    width: null,
+    height: null,
+    duration_ms: null,
+    checksum_sha256: '0a69c09f7c1eca87a0a6fb108e3aeb1929a2e4bb732a021612730325fd5875b2',
+    source: 'upload' as const,
+    status: 'ready' as const,
+    scan_result: 'clean' as const,
+    rejection_reason_code: null,
+    scan_attempt_count: 1,
+    next_scan_at: null,
+    exif_removed: true,
+    deletion_guard_active: false,
+    version: 2,
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  }
+}
+
+function referenceProjection(mediaResourceId: string, mediaReferenceId: string): Record<string, unknown> {
+  return {
+    media_reference_id: mediaReferenceId,
+    media_resource_id: mediaResourceId,
+    target_type: 'submission_draft',
+    target_id: draftUuid,
+    role: 'cover',
+    alt_text: '提交作品封面',
+    sort_order: 0,
+    crop_focus: null,
+    variant: null,
+    source_media_reference_id: null,
+    version: 1,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function evidenceProjection(evidenceDraftId: string, status: 'editing' | 'ready' | 'withdrawn', bound: boolean, version: number, sourceUrl: string | null): Record<string, unknown> {
+  return {
+    evidence_draft_id: evidenceDraftId,
+    collector_actor_type: 'user',
+    parent_type: 'submission_draft',
+    parent_id: draftUuid,
+    final_target_kind: 'project',
+    target_asset_draft_key: null,
+    evidence_type: 'trusted_external_source',
+    source_channel: 'official_site',
+    field_path: '/project_core/public_url',
+    requested_visibility: 'public',
+    source_url: sourceUrl,
+    text_excerpt: null,
+    attachment_drafts: [],
+    status,
+    bound,
+    source_hash: 'b'.repeat(64),
+    final_field_preview: {
+      source_summary: '公开来源',
+      captured_at: now,
+      collected_by: 'user',
+      confidence: 'high',
+      source_channel: 'official_site',
+    },
+    completed_at: status === 'ready' ? now : null,
+    promoted_evidence_id: null,
+    version,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
+  const ids = {
+    mediaResourceId: crypto.randomUUID(),
+    mediaReferenceId: crypto.randomUUID(),
+    evidenceDraftId: crypto.randomUUID(),
+  }
+  const requests: RequestRecord[] = []
+  let serverVersion = 3
+  let draftGetCount = 0
+  let referenceCreated = false
+  let evidenceReady = false
+  const mediaStatus = options.mediaStatus ?? 'ready'
+  const mediaScanResult = options.mediaScanResult ?? 'clean'
+  const mediaExifRemoved = options.mediaExifRemoved ?? true
+  const mediaDeletionGuardActive = options.mediaDeletionGuardActive ?? false
+  const evidenceStatus = options.evidenceStatus ?? 'ready'
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = String(input)
+    let body: Record<string, unknown> | undefined
+    if (typeof init?.body === 'string') {
+      try { body = JSON.parse(init.body) as Record<string, unknown> } catch { body = undefined }
+    }
+    requests.push({ url, init, body })
+
+    if (url.startsWith('https://uploads.example.test/')) {
+      if (options.failAt === 'upload') throw new Error('upload unavailable')
+      return new Response(null, { status: 200, headers: { etag: '"upload-receipt-runtime"' } })
+    }
+    if (url.match(/\/submission-drafts\/[0-9a-f-]+$/i) && init?.method === 'GET') {
+      draftGetCount += 1
+      if ((options.failAt === 'final-get' && draftGetCount >= 3) || (options.failAt === 'cover-get' && draftGetCount === 2)) throw new Error('draft unavailable')
+      const finalGet = draftGetCount >= 3
+      return jsonResponse(draftDto({ version: finalGet ? 6 : draftGetCount === 2 ? 5 : 3 }, initialWireFields, {
+        mediaReferenceIds: referenceCreated ? [ids.mediaReferenceId] : [],
+        evidenceDraftIds: evidenceReady ? [ids.evidenceDraftId] : [],
+      }))
+    }
+    if (url.match(/\/submission-drafts\/[0-9a-f-]+$/i) && init?.method === 'PATCH') {
+      if (options.failAt === 'patch') return errorResponse(409)
+      serverVersion += 1
+      return jsonResponse(draftDto({ version: serverVersion }, initialWireFields))
+    }
+    if (url.endsWith('/media-resources') && init?.method === 'POST') {
+      if (options.failAt === 'media') throw new Error('media unavailable')
+      return jsonResponse({
+        media: mediaProjection(ids.mediaResourceId, {
+          status: 'uploading',
+          scan_result: 'not_scanned',
+          exif_removed: false,
+          deletion_guard_active: false,
+          version: 1,
+        }),
+        upload_url: `https://uploads.example.test/${ids.mediaResourceId}`,
+        upload_headers: { 'content-type': 'image/png' },
+        upload_expires_at: '2026-08-26T10:30:00.000Z',
+      }, 201)
+    }
+    if (url.includes(`/media-resources/${ids.mediaResourceId}/complete`) && init?.method === 'POST') {
+      return jsonResponse({
+        media: mediaProjection(ids.mediaResourceId, {
+          status: mediaStatus === 'rejected' ? 'rejected' : 'processing',
+          scan_result: 'not_scanned',
+          exif_removed: false,
+          deletion_guard_active: false,
+          version: 2,
+        }),
+        scan_queued: true,
+      }, 202)
+    }
+    if (url.endsWith(`/media-resources/${ids.mediaResourceId}`) && init?.method === 'GET') {
+      return jsonResponse(mediaProjection(ids.mediaResourceId, {
+        status: mediaStatus,
+        scan_result: mediaScanResult,
+        exif_removed: mediaExifRemoved,
+        deletion_guard_active: mediaDeletionGuardActive,
+      }))
+    }
+    if (url.endsWith('/media-references') && init?.method === 'POST') {
+      if (options.failAt === 'reference') return errorResponse(422)
+      referenceCreated = true
+      return jsonResponse(referenceProjection(ids.mediaResourceId, ids.mediaReferenceId), 201)
+    }
+    if (url.endsWith('/evidence-drafts') && init?.method === 'POST') {
+      if (options.failAt === 'evidence') throw new Error('evidence unavailable')
+      return jsonResponse(evidenceProjection(ids.evidenceDraftId, 'editing', false, 1, null), 201)
+    }
+    if (url.includes(`/evidence-drafts/${ids.evidenceDraftId}/binding`) && init?.method === 'POST') {
+      return jsonResponse({
+        parent_type: 'submission_draft',
+        parent_id: draftUuid,
+        evidence_draft_ids: [ids.evidenceDraftId],
+        parent_version: body?.expected_parent_version,
+        evidence_draft_version: 2,
+      })
+    }
+    if (url.endsWith(`/evidence-drafts/${ids.evidenceDraftId}`) && init?.method === 'PATCH') {
+      return jsonResponse(evidenceProjection(ids.evidenceDraftId, 'editing', true, 3, 'https://example.test/real-draft'))
+    }
+    if (url.includes(`/evidence-drafts/${ids.evidenceDraftId}/complete`) && init?.method === 'POST') {
+      evidenceReady = evidenceStatus === 'ready'
+      return jsonResponse(evidenceProjection(ids.evidenceDraftId, evidenceStatus, true, 4, 'https://example.test/real-draft'))
+    }
+    return errorResponse(404)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock, requests, ids }
 }
 
 function seedDraft() {
@@ -207,10 +410,10 @@ describe('remote P11 draft GET/PATCH form', () => {
     await waitFor(() => expect(router.state.location.search).toContain('step=definition'))
     const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH')
     expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
-    expect(patchRequest?.body?.patch).toMatchObject({ current_name: '本地修改后的名称' })
-    expect(patchRequest?.body?.patch).not.toHaveProperty('public_url')
-    expect(patchRequest?.body?.patch).not.toHaveProperty('category_id')
-    expect(patchRequest?.body?.patch).not.toHaveProperty('category_schema_version')
+    expect((patchRequest?.body?.patch as WireFields).project_core).toMatchObject({ current_name: '本地修改后的名称' })
+    expect((patchRequest?.body?.patch as WireFields).project_core).toHaveProperty('public_url', 'https://example.test/real-draft')
+    expect(patchRequest?.body?.patch).toHaveProperty('category_id', 'ai_learning_quiz')
+    expect(patchRequest?.body?.patch).toHaveProperty('category_schema_version', 'learning.v1')
     await waitFor(() => expect(persistedDraft()).toMatchObject({ version: 4, step: 'definition', draftId: draftUuid }))
   })
 
@@ -301,16 +504,69 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.find((request) => request.init?.method === 'PATCH')?.body).toMatchObject({ expected_version: 3 })
   })
 
-  it('saves the final step by PATCH and remains on 草稿已保存 without preview or submit', async () => {
-    const transport = installTransport()
+  it('prepares one cover and one public URL evidence before navigating to preview', async () => {
+    const transport = installMaterialsTransport()
     const user = userEvent.setup()
     const { router } = renderForm('development')
     await screen.findByRole('heading', { name: '开发与资产' })
-    expect(screen.getByText('本轮只保存草稿的可编辑字段，不读取或展示本地示例资产。')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '保存草稿' }))
-    expect(await screen.findByText('当前版本已同步到服务端。')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/submit/new')
-    expect(screen.getByRole('button', { name: '草稿已保存' })).toBeDisabled()
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
+    expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
+    expect((patchRequest?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [] })
+    const referenceRequest = transport.requests.find((request) => request.url.endsWith('/media-references') && request.init?.method === 'POST')
+    expect(referenceRequest?.body).toMatchObject({ media_resource_id: transport.ids.mediaResourceId, target_id: draftUuid, role: 'cover' })
+    const evidenceCreate = transport.requests.find((request) => request.url.endsWith('/evidence-drafts') && request.init?.method === 'POST')
+    expect(evidenceCreate?.body).toMatchObject({
+      parent_type: 'submission_draft', parent_id: draftUuid, field_path: '/project_core/public_url',
+      requested_visibility: 'public', source_channel: 'official_site',
+    })
+    expect(evidenceCreate?.body?.client_request_id).toEqual(expect.any(String))
+    const evidenceRequests = transport.requests.filter((request) => request.url.includes(`/evidence-drafts/${transport.ids.evidenceDraftId}`))
+    expect(evidenceRequests.map((request) => request.init?.method)).toEqual(['POST', 'PATCH', 'POST'])
+    expect(transport.requests.filter((request) => request.init?.method === 'GET' && request.url.includes('/submission-drafts/'))).toHaveLength(3)
+    expect(persistedDraft()).toMatchObject({ version: 6, step: 'preview', draftId: draftUuid })
+    expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(false)
+  })
+
+  it('requires a selected cover and keeps the final step without a field-only PATCH', async () => {
+    const transport = installMaterialsTransport()
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请选择一张封面图片')
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
+  })
+
+  it('stops after a pending media check and exposes an explicit retry', async () => {
+    const transport = installMaterialsTransport({ mediaStatus: 'processing' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('媒体仍在安全处理中')
+    expect(screen.getByRole('button', { name: '重试准备提交材料' })).toBeInTheDocument()
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => request.url.endsWith('/media-references'))).toBe(false)
+    expect(transport.requests.some((request) => request.url.endsWith('/evidence-drafts'))).toBe(false)
+  })
+
+  it('stops after non-ready evidence and keeps the final step', async () => {
+    const transport = installMaterialsTransport({ evidenceStatus: 'editing' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('证据仍未准备就绪')
+    expect(screen.getByRole('button', { name: '重试准备提交材料' })).toBeInTheDocument()
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.filter((request) => request.init?.method === 'GET' && request.url.includes('/submission-drafts/'))).toHaveLength(2)
     expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(false)
   })
 

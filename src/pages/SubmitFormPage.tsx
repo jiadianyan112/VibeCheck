@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { Button, ErrorPanel, Input, LoadingState, PageFrame, Tag, useToast } from '../components'
 import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import {
+  buildLearningV1Snapshot,
   mapSubmissionFieldErrors,
   submissionCompleteness,
   submissionFormStepLabels,
@@ -17,6 +18,11 @@ import {
   submissionApi,
   SubmissionApiError,
 } from '../services/submissionApi'
+import {
+  SubmissionAssetsApiError,
+  submissionAssetsApi,
+  type SubmissionAssetReadiness,
+} from '../services/submissionAssetsApi'
 import { useAppState } from '../state'
 import { SubmissionReviewPage } from './SubmissionReviewPage'
 import {
@@ -167,11 +173,88 @@ function SolutionStep({ draft, update }: { draft: SubmissionDraft; update: <K ex
   )
 }
 
-function DevelopmentStep({ draft, update }: { draft: SubmissionDraft; update: <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => void }) {
+type MaterialsOperationIds = Readonly<{
+  patch: string
+  prepare: string
+  complete: string
+  reference: string
+  evidenceCreate: string
+  evidenceBind: string
+  evidencePatch: string
+  evidenceComplete: string
+}>
+
+type MaterialsStage = 'patch' | 'upload' | 'cover' | 'cover_refresh' | 'evidence' | 'final_refresh' | 'complete'
+
+type MaterialsProgress = {
+  key: string
+  ids: MaterialsOperationIds
+  stage: MaterialsStage
+  mediaResourceId?: string
+  coverReferenceId?: string
+  parentVersion?: number
+  evidenceDraftId?: string
+}
+
+type MaterialsFeedback = {
+  title: string
+  message: string
+  retryable: boolean
+}
+
+function makeMaterialsOperationIds(): MaterialsOperationIds {
+  return {
+    patch: makeSubmissionClientRequestId(),
+    prepare: makeSubmissionClientRequestId(),
+    complete: makeSubmissionClientRequestId(),
+    reference: makeSubmissionClientRequestId(),
+    evidenceCreate: makeSubmissionClientRequestId(),
+    evidenceBind: makeSubmissionClientRequestId(),
+    evidencePatch: makeSubmissionClientRequestId(),
+    evidenceComplete: makeSubmissionClientRequestId(),
+  }
+}
+
+function materialErrorMessage(error: unknown): string {
+  if (error instanceof SubmissionAssetsApiError) {
+    if (error.status === 409) return '服务端版本发生冲突，材料尚未准备完成，请重试。'
+    if (error.status === 422) return '服务端校验未通过，材料尚未准备完成，请检查后重试。'
+    if (error.kind === 'transport') return '网络连接不可用，当前输入已保留，请重试。'
+    return error.message || '材料准备未完成，请重试。'
+  }
+  if (error instanceof SubmissionApiError) {
+    if (error.status === 409) return '服务端版本发生冲突，当前输入已保留，请重试。'
+    if (error.status === 422) return '服务端校验未通过，当前输入已保留，请检查后重试。'
+    return error.message || '草稿未保存，当前输入已保留，请重试。'
+  }
+  return readableApiError(error, '网络连接不可用，当前输入已保留，请重试。')
+}
+
+function readinessFeedback(kind: '媒体' | '证据', status: SubmissionAssetReadiness): MaterialsFeedback {
+  if (status === 'terminal') return { title: `${kind}无法使用`, message: `${kind}未通过检查，尚未准备完成，请更换后重试。`, retryable: true }
+  return { title: `${kind}仍未准备就绪`, message: `${kind}仍在安全处理中，请稍后点击“重试准备提交材料”。`, retryable: true }
+}
+
+function DevelopmentStep({
+  draft,
+  update,
+  coverFile,
+  onCoverChange,
+}: {
+  draft: SubmissionDraft
+  update: <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => void
+  coverFile: File | null
+  onCoverChange: (file: File | null) => void
+}) {
+  const isLearning = draft.fields.categoryId !== 'personal_site_portfolio'
   return (
     <div className="submission-step-fields stack">
       <CheckboxField legend="AI 编程工具" values={aiCodingTools} selected={draft.fields.aiCodingTools ?? []} labels={aiCodingToolLabels} optional onChange={(value) => update('aiCodingTools', value)} />
-      <section className="submission-guidance"><strong>截图、资产与证据稍后补充</strong><p>本轮只保存草稿的可编辑字段，不读取或展示本地示例资产。</p></section>
+      {isLearning ? <>
+        <label className="field" htmlFor="submission-cover"><span className="field__label">作品封面（必选）</span><input id="submission-cover" className="input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => onCoverChange(event.currentTarget.files?.[0] ?? null)} /><span className="field__hint">请选择一张 1–5 MiB 的 JPEG、PNG、WebP 或 AVIF 图片。</span></label>
+        {coverFile ? <p className="original-extraction" role="status">已选择封面：{coverFile.name}</p> : null}
+        <section className="submission-guidance"><strong>准备封面与公开地址证据</strong><p>提交前会先同步当前字段，再上传一张封面并为公开地址创建一条证据。</p></section>
+      </> : <section className="submission-guidance"><strong>资产与证据稍后补充</strong><p>个人主页与作品集的资产准备将在后续流程开放。</p></section>}
     </div>
   )
 }
@@ -191,6 +274,7 @@ export function SubmitFormPage() {
   const requestedStep = searchParams.get('step')
   const user = state.session.user
   const remoteDraft = isRemoteDraftId(draftId)
+  const previewRequested = requestedStep === 'preview'
   const legacyPreview = import.meta.env.MODE === 'test' && requestedStep === 'preview' && !remoteDraft
   const draftsRef = useRef(state.submissionDrafts)
   draftsRef.current = state.submissionDrafts
@@ -202,12 +286,15 @@ export function SubmitFormPage() {
   const [expired, setExpired] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [materialsFeedback, setMaterialsFeedback] = useState<MaterialsFeedback | null>(null)
   const [loadNonce, setLoadNonce] = useState(0)
   const saveOperationRef = useRef<{ key: string; id: string } | null>(null)
   const retryStepRef = useRef<SubmissionFormStep | undefined>(undefined)
+  const materialsProgressRef = useRef<MaterialsProgress | null>(null)
 
   useEffect(() => {
-    if (!draftId || !user || !remoteDraft) {
+    if (!draftId || !user || !remoteDraft || previewRequested) {
       setLoadingRemote(false)
       return
     }
@@ -233,7 +320,7 @@ export function SubmitFormPage() {
       })
       .finally(() => { if (!controller.signal.aborted) setLoadingRemote(false) })
     return () => controller.abort()
-  }, [auth?.session, dispatch, draftId, loadNonce, remoteDraft, step, user])
+  }, [auth?.session, dispatch, draftId, loadNonce, previewRequested, remoteDraft, step, user])
 
   const draft = state.submissionDrafts.find((item) => item.userId === user?.id && (item.id === draftId || item.draftId === draftId))
   const completion = useMemo(() => draft ? submissionCompleteness(draft) : null, [draft])
@@ -247,10 +334,20 @@ export function SubmitFormPage() {
   if (!draft) return <PageFrame title="未找到发布草稿" description={loadError ?? '草稿可能不存在、属于其他身份或已经删除。'}><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
   if (expired) return <PageFrame title="草稿已过期" description="该远端草稿已停止编辑，请重新检查公开地址后创建新的草稿。"><Link className="button button--primary" to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></PageFrame>
 
+  const invalidateMaterials = () => {
+    materialsProgressRef.current = null
+    setMaterialsFeedback(null)
+  }
+
   const update = <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => {
     setSaved(false)
     setSaveError(null)
+    invalidateMaterials()
     dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
+  }
+  const onCoverChange = (file: File | null) => {
+    setCoverFile(file)
+    invalidateMaterials()
   }
   const index = submissionFormSteps.indexOf(step)
 
@@ -269,14 +366,19 @@ export function SubmitFormPage() {
     setSaving(true)
     setSaveError(null)
     try {
+      const snapshot = buildLearningV1Snapshot({
+        fields: draft.fields,
+        coverMediaReferenceIds: [],
+        observedAt: new Date().toISOString(),
+      })
       const remote = await submissionApi.patch({
         draftId: draft.draftId,
         expectedVersion: draft.version,
-        fields: draft.fields,
+        snapshot,
         session: auth?.session ?? null,
         operationId,
       })
-      const next = remoteDraftToLocalDraft(remote, user.id, undefined, nextStep ?? step)
+      const next = remoteDraftToLocalDraft(remote, user.id, draft, nextStep ?? step)
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...next, validationErrors: {} } })
       saveOperationRef.current = null
       setSaveError(null)
@@ -306,6 +408,133 @@ export function SubmitFormPage() {
     }
   }
 
+  const prepareSubmissionMaterials = async () => {
+    if (draft.fields.categoryId === 'personal_site_portfolio') {
+      await patchDraft()
+      return
+    }
+    if (coverFile === null) {
+      setMaterialsFeedback({ title: '还缺少封面', message: '请选择一张封面图片后再准备提交材料。', retryable: false })
+      return
+    }
+    const initialDraftId = draft.draftId
+    const initialDraftVersion = draft.version
+    if (!initialDraftId || initialDraftVersion === undefined) {
+      setMaterialsFeedback({ title: '草稿版本尚未加载', message: '远端草稿版本尚未加载，请稍后重试。', retryable: true })
+      return
+    }
+
+    const coverKey = `${coverFile.name}:${coverFile.size}:${coverFile.lastModified}:${coverFile.type}`
+    const key = `${initialDraftId}:${JSON.stringify(draft.fields)}:${coverKey}`
+    let progress = materialsProgressRef.current
+    if (progress === null || progress.key !== key) {
+      progress = { key, ids: makeMaterialsOperationIds(), stage: 'patch' }
+      materialsProgressRef.current = progress
+    }
+
+    setSaving(true)
+    setMaterialsFeedback(null)
+    try {
+      let currentDraft = draft
+      if (progress.stage === 'patch') {
+        const snapshot = buildLearningV1Snapshot({
+          fields: currentDraft.fields,
+          coverMediaReferenceIds: [],
+          observedAt: new Date().toISOString(),
+        })
+        const remote = await submissionApi.patch({
+          draftId: initialDraftId,
+          expectedVersion: initialDraftVersion,
+          snapshot,
+          session: auth?.session ?? null,
+          operationId: progress.ids.patch,
+        })
+        currentDraft = remoteDraftToLocalDraft(remote, user.id, currentDraft, 'development')
+        dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, validationErrors: {} } })
+        progress.stage = 'upload'
+      }
+
+      if (progress.stage === 'upload') {
+        const uploaded = await submissionAssetsApi.uploadCover({
+          draftId: currentDraft.draftId!,
+          file: coverFile,
+          session: auth?.session ?? null,
+          prepareIdempotencyKey: progress.ids.prepare,
+          completeIdempotencyKey: progress.ids.complete,
+        })
+        progress.mediaResourceId = uploaded.media.media_resource_id
+        progress.stage = 'cover'
+      }
+
+      if (progress.stage === 'cover') {
+        if (progress.mediaResourceId === undefined) throw new Error('上传响应缺少媒体资源 ID。')
+        const cover = await submissionAssetsApi.ensureCoverReference({
+          draftId: currentDraft.draftId!,
+          mediaResourceId: progress.mediaResourceId,
+          altText: '提交作品封面',
+          referenceClientRequestId: progress.ids.reference,
+          session: auth?.session ?? null,
+        })
+        if (cover.status !== 'ready') {
+          setMaterialsFeedback(readinessFeedback('媒体', cover.status))
+          return
+        }
+        if (cover.reference === undefined) throw new Error('封面引用响应缺少引用 ID。')
+        progress.coverReferenceId = cover.reference.media_reference_id
+        progress.stage = 'cover_refresh'
+      }
+
+      if (progress.stage === 'cover_refresh') {
+        const refreshed = await submissionApi.get({ draftId: currentDraft.draftId!, session: auth?.session ?? null })
+        currentDraft = remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'development')
+        if (currentDraft.version === undefined) throw new Error('封面引用刷新响应缺少草稿版本。')
+        progress.parentVersion = currentDraft.version
+        dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, validationErrors: {} } })
+        progress.stage = 'evidence'
+      }
+
+      if (progress.stage === 'evidence') {
+        if (progress.parentVersion === undefined) throw new Error('证据绑定缺少草稿版本。')
+        const evidence = await submissionAssetsApi.createEvidence({
+          parentId: currentDraft.draftId!,
+          parentVersion: progress.parentVersion,
+          finalTargetKind: 'project',
+          targetAssetDraftKey: null,
+          fieldPath: '/project_core/public_url',
+          requestedVisibility: 'public',
+          evidenceType: 'trusted_external_source',
+          sourceChannel: 'official_site',
+          sourceUrl: currentDraft.fields.publicUrl ?? null,
+          createClientRequestId: progress.ids.evidenceCreate,
+          bindOperationId: progress.ids.evidenceBind,
+          patchOperationId: progress.ids.evidencePatch,
+          completeOperationId: progress.ids.evidenceComplete,
+          session: auth?.session ?? null,
+        })
+        progress.evidenceDraftId = evidence.evidence.evidence_draft_id
+        if (evidence.status !== 'ready') {
+          setMaterialsFeedback(readinessFeedback('证据', evidence.status))
+          return
+        }
+        progress.stage = 'final_refresh'
+      }
+
+      if (progress.stage === 'final_refresh') {
+        const refreshed = await submissionApi.get({ draftId: currentDraft.draftId!, session: auth?.session ?? null })
+        currentDraft = remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'preview')
+        dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, step: 'preview', validationErrors: {} } })
+        progress.stage = 'complete'
+        materialsProgressRef.current = progress
+        navigate(`/submit/new?${new URLSearchParams({ draft: currentDraft.id, step: 'preview' })}`)
+      }
+    } catch (error) {
+      if (error instanceof SubmissionApiError && error.status === 410) setExpired(true)
+      setMaterialsFeedback({ title: '材料准备未完成', message: materialErrorMessage(error), retryable: true })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const reloadServerVersion = () => {
     setLoadNonce((value) => value + 1)
     setSaveError(null)
@@ -319,11 +548,21 @@ export function SubmitFormPage() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('.submission-form-panel [aria-invalid="true"]')?.focus())
       return
     }
+    if (index === submissionFormSteps.length - 1 && draft.fields.categoryId !== 'personal_site_portfolio') {
+      void prepareSubmissionMaterials()
+      return
+    }
     const next = index === submissionFormSteps.length - 1 ? undefined : submissionFormSteps[index + 1]
     void patchDraft(next)
   }
 
-  const retrySave = () => { void patchDraft(retryStepRef.current) }
+  const retrySave = () => {
+    if (step === 'development' && draft.fields.categoryId !== 'personal_site_portfolio' && materialsFeedback !== null) {
+      void prepareSubmissionMaterials()
+      return
+    }
+    void patchDraft(retryStepRef.current)
+  }
   const goBack = () => {
     if (index === 0) { navigate(`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`); return }
     const previous = submissionFormSteps[index - 1]!
@@ -335,7 +574,12 @@ export function SubmitFormPage() {
   if (step === 'prefill') body = <PrefillStep draft={draft} update={update} />
   else if (step === 'definition') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioDefinitionStep draft={draft} update={update} /> : <DefinitionStep draft={draft} update={update} />
   else if (step === 'solution') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioStructureStep draft={draft} update={update} /> : <SolutionStep draft={draft} update={update} />
-  else body = <DevelopmentStep draft={draft} update={update} />
+  else body = <DevelopmentStep draft={draft} update={update} coverFile={coverFile} onCoverChange={onCoverChange} />
+
+  const isLearningFinalStep = index === submissionFormSteps.length - 1 && draft.fields.categoryId !== 'personal_site_portfolio'
+  const finalActionLabel = isLearningFinalStep
+    ? materialsFeedback?.retryable ? '重试准备提交材料' : '准备提交材料'
+    : saved ? '草稿已保存' : '保存草稿'
 
   return (
     <PageFrame title="发布新作品" description={draft.fields.categoryId === 'personal_site_portfolio' ? '确认作品名称、介绍、公开地址、创作者身份、建站目的和核心内容；其他信息可以发布后补充。' : '分步补充作品介绍、解决方案和开发信息，未完成的内容会自动保存。'}>
@@ -352,9 +596,10 @@ export function SubmitFormPage() {
           {loadError ? <ErrorPanel title="远端草稿未加载" message={loadError} onRetry={() => setLoadNonce((value) => value + 1)} /> : null}
           {saveError ? <ErrorPanel title={saveError.status === 409 ? '草稿版本冲突' : '草稿未保存'} message={saveError.status === 409 ? '服务端已有更新，未覆盖你的输入。请先加载服务端版本，再合并后保存。' : saveError.message} onRetry={saveError.status === 409 || saveError.status === 410 || saveError.status === 422 ? undefined : retrySave} /> : null}
           {saveError?.status === 409 ? <Button type="button" onClick={reloadServerVersion}>加载服务端版本</Button> : null}
+          {materialsFeedback ? <ErrorPanel title={materialsFeedback.title} message={materialsFeedback.message} onRetry={materialsFeedback.retryable ? () => { void prepareSubmissionMaterials() } : undefined} /> : null}
           {saved ? <div className="feedback" role="status"><strong>草稿已保存</strong><p>当前版本已同步到服务端。</p></div> : null}
           {body}
-          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" loading={saving} disabled={saved} onClick={goNext}>{index === submissionFormSteps.length - 1 ? (saved ? '草稿已保存' : '保存草稿') : '保存并继续'}</Button></footer>
+          <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" loading={saving} disabled={!isLearningFinalStep && saved} onClick={goNext}>{index === submissionFormSteps.length - 1 ? finalActionLabel : '保存并继续'}</Button></footer>
         </section>
       </div>
     </PageFrame>
