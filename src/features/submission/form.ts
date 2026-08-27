@@ -26,7 +26,7 @@ export interface LearningV1Snapshot {
     readonly cover_media_reference_ids: readonly string[]
     readonly one_line_definition: string
     readonly ai_coding_tools: Readonly<{
-      readonly knowledge_state: 'known_values' | 'known_empty' | 'unknown'
+      readonly knowledge_state: 'known_values' | 'unknown'
       readonly values: readonly string[]
       readonly source_type: 'platform_verified_fact' | 'verified_author_statement' | 'trusted_external_source' | 'system_inference'
       readonly observed_at: string

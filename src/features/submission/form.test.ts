@@ -94,6 +94,7 @@ describe('multi-step submission helpers', () => {
       },
     })
     expect(snapshot.category_data.core_flow).toEqual([{ order: 1, name: '上传材料' }])
+    expect(snapshot.project_core.ai_coding_tools.knowledge_state).not.toBe('known_empty')
   })
 
   it('does not manufacture required learning fields from an incomplete form', () => {

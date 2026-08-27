@@ -445,8 +445,8 @@ function isCanonicalAiCodingTools(value: unknown): boolean {
   const state = value.knowledge_state
   const valuesValid = state === 'known_values'
     ? isStringList(value.values, 1, 8)
-    : isStringList(value.values, 0, 0)
-  return (state === 'known_values' || state === 'known_empty' || state === 'unknown') &&
+    : state === 'unknown' ? isStringList(value.values, 0, 0) : false
+  return (state === 'known_values' || state === 'unknown') &&
     valuesValid &&
     (value.source_type === 'platform_verified_fact' || value.source_type === 'verified_author_statement' || value.source_type === 'trusted_external_source' || value.source_type === 'system_inference') &&
     isText(value.observed_at) && !Number.isNaN(Date.parse(value.observed_at))
@@ -459,7 +459,7 @@ function isCanonicalLearningSnapshot(value: unknown): value is LearningV1Snapsho
   if (!isRecord(projectCore) || !hasExactKeys(projectCore, projectCoreSnapshotKeys) ||
       !isText(projectCore.current_name) || !isText(projectCore.public_url) ||
       !isNullableText(projectCore.repository_url) || !isNullableText(projectCore.original_platform) ||
-      !isStringList(projectCore.cover_media_reference_ids, 1, 20) ||
+      !isStringList(projectCore.cover_media_reference_ids, 0, 20) ||
       !projectCore.cover_media_reference_ids.every((id) => canonicalUuidPattern.test(id)) ||
       !isText(projectCore.one_line_definition) || !isCanonicalAiCodingTools(projectCore.ai_coding_tools) ||
       !isStringList(projectCore.tech_stack, 0, 30) || !isNullableText(projectCore.deployment_platform) ||

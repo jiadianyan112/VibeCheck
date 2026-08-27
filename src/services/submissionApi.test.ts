@@ -307,6 +307,37 @@ describe('submissionApi typed production gateway', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('rejects a known_empty AI-tools fact at the PATCH boundary', async () => {
+    const snapshot = {
+      ...previewProjection.payload_snapshot,
+      project_core: {
+        ...previewProjection.payload_snapshot.project_core,
+        ai_coding_tools: {
+          ...previewProjection.payload_snapshot.project_core.ai_coding_tools,
+          knowledge_state: 'known_empty',
+          values: [],
+        },
+      },
+    }
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await expect(submissionApi.patch({ draftId, expectedVersion: 3, snapshot: snapshot as unknown as LearningV1Snapshot, session: csrf, operationId: 'patch-known-empty-01' })).rejects.toThrow('canonical learning.v1 snapshot')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('allows a canonical draft snapshot without cover references until the asset gate runs', async () => {
+    const snapshot = {
+      ...previewProjection.payload_snapshot,
+      project_core: {
+        ...previewProjection.payload_snapshot.project_core,
+        cover_media_reference_ids: [],
+      },
+    }
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await submissionApi.patch({ draftId, expectedVersion: 3, snapshot: snapshot as unknown as LearningV1Snapshot, session: csrf, operationId: 'patch-no-cover-01' })
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as { readonly patch: { readonly project_core: { readonly cover_media_reference_ids: readonly string[] } } }
+    expect(body.patch.project_core.cover_media_reference_ids).toEqual([])
+  })
+
   it.each([
     [401, 'AUTH_REQUIRED'], [403, 'FORBIDDEN'], [409, 'DRAFT_VERSION_CONFLICT'], [410, 'DRAFT_EXPIRED'], [422, 'DRAFT_INVALID'],
   ] as const)('keeps the typed error status and details for PATCH %s', async (status, code) => {
