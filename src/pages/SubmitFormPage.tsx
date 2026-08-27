@@ -275,7 +275,6 @@ export function SubmitFormPage() {
   const user = state.session.user
   const remoteDraft = isRemoteDraftId(draftId)
   const previewRequested = requestedStep === 'preview'
-  const legacyPreview = import.meta.env.MODE === 'test' && requestedStep === 'preview' && !remoteDraft
   const draftsRef = useRef(state.submissionDrafts)
   draftsRef.current = state.submissionDrafts
   const localDraft = state.submissionDrafts.find((item) => item.userId === user?.id && (item.id === draftId || item.draftId === draftId))
@@ -292,9 +291,11 @@ export function SubmitFormPage() {
   const saveOperationRef = useRef<{ key: string; id: string } | null>(null)
   const retryStepRef = useRef<SubmissionFormStep | undefined>(undefined)
   const materialsProgressRef = useRef<MaterialsProgress | null>(null)
+  const previewReadyRef = useRef<string | null>(null)
+  const previewReady = previewReadyRef.current === draftId
 
   useEffect(() => {
-    if (!draftId || !user || !remoteDraft || previewRequested) {
+    if (!draftId || !user || !remoteDraft || (previewRequested && previewReadyRef.current === draftId)) {
       setLoadingRemote(false)
       return
     }
@@ -307,6 +308,7 @@ export function SubmitFormPage() {
         if (controller.signal.aborted) return
         const previous = draftsRef.current.find((item) => item.userId === user.id && (item.id === draftId || item.draftId === draftId))
         const next = remoteDraftToLocalDraft(remote, user.id, previous, step)
+        if (previewRequested) previewReadyRef.current = draftId
         dispatch({ type: 'DRAFT_UPSERT', draft: next })
         setSaveError(null)
         setLoadError(null)
@@ -329,13 +331,15 @@ export function SubmitFormPage() {
     const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
     return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?return_to=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
   }
-  if (legacyPreview && draft) return <SubmissionReviewPage draft={draft} />
+  if (previewRequested && remoteDraft && !previewReady && loadingRemote) return <PageFrame title="发布编辑"><LoadingState label="正在恢复远端草稿" /></PageFrame>
+  if (previewRequested && draft && (previewReady || !remoteDraft)) return <SubmissionReviewPage draft={draft} />
   if (loadingRemote && !draft) return <PageFrame title="发布编辑"><LoadingState label="正在恢复远端草稿" /></PageFrame>
   if (!draft) return <PageFrame title="未找到发布草稿" description={loadError ?? '草稿可能不存在、属于其他身份或已经删除。'}><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
   if (expired) return <PageFrame title="草稿已过期" description="该远端草稿已停止编辑，请重新检查公开地址后创建新的草稿。"><Link className="button button--primary" to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></PageFrame>
 
   const invalidateMaterials = () => {
     materialsProgressRef.current = null
+    previewReadyRef.current = null
     setMaterialsFeedback(null)
   }
 
@@ -353,6 +357,11 @@ export function SubmitFormPage() {
 
   const patchDraft = async (nextStep?: SubmissionFormStep) => {
     retryStepRef.current = nextStep
+    if (draft.fields.categoryId === 'personal_site_portfolio') {
+      setSaveError(null)
+      pushToast('个人主页与作品集的远端保存将在后续流程开放，当前输入已保留。', 'error')
+      return
+    }
     if (!draft.draftId || draft.version === undefined) {
       setSaveError(null)
       pushToast('远端草稿版本尚未加载，请稍后重试。', 'error')
@@ -525,10 +534,14 @@ export function SubmitFormPage() {
         dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, step: 'preview', validationErrors: {} } })
         progress.stage = 'complete'
         materialsProgressRef.current = progress
+        previewReadyRef.current = currentDraft.draftId ?? null
         navigate(`/submit/new?${new URLSearchParams({ draft: currentDraft.id, step: 'preview' })}`)
       }
     } catch (error) {
-      if (error instanceof SubmissionApiError && error.status === 410) setExpired(true)
+      if (error instanceof SubmissionApiError) {
+        setSaveError(error)
+        if (error.status === 410) setExpired(true)
+      }
       setMaterialsFeedback({ title: '材料准备未完成', message: materialErrorMessage(error), retryable: true })
     } finally {
       setSaving(false)

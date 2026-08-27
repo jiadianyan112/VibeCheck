@@ -9,7 +9,7 @@ import { prototypeUsers } from '../mocks'
 import { APP_STORAGE_KEY, appReducer, createInitialAppState, persistAppState } from '../state'
 import { submissionDraftId, type SubmissionDraft } from '../types'
 
-const draftUuid = '22222222-2222-4222-8222-222222222222'
+const draftUuid = crypto.randomUUID()
 const checkUuid = '11111111-1111-4111-8111-111111111111'
 const chainUuid = '33333333-3333-4333-8333-333333333333'
 const now = '2026-08-25T08:00:00Z'
@@ -29,12 +29,20 @@ const initialWireFields: WireFields = {
   core_flow: [{ order: 1, name: '上传材料' }],
 }
 
-function payloadSnapshot(fields: WireFields = initialWireFields, coverMediaReferenceIds: readonly string[] = []): Readonly<Record<string, unknown>> {
+const portfolioWireFields: WireFields = {
+  current_name: '作品集服务端名称',
+  one_line_definition: '展示个人作品与经历',
+  creator_roles: ['developer'],
+  primary_goals: ['showcase_projects'],
+  core_modules: ['hero', 'projects'],
+}
+
+function payloadSnapshot(fields: WireFields = initialWireFields, coverMediaReferenceIds: readonly string[] = [], categoryId = 'ai_learning_quiz', categorySchemaVersion = 'learning.v1'): Readonly<Record<string, unknown>> {
   return {
     project_core: {
       public_url: 'https://example.test/real-draft',
-      category_id: 'ai_learning_quiz',
-      category_schema_version: 'learning.v1',
+      category_id: categoryId,
+      category_schema_version: categorySchemaVersion,
       cover_media_reference_ids: coverMediaReferenceIds,
       category_data: fields,
     },
@@ -49,19 +57,21 @@ function draftDto(
   overrides: Partial<ContractSubmissionDraft> = {},
   fields: WireFields = initialWireFields,
   assets: { readonly mediaReferenceIds?: readonly string[]; readonly evidenceDraftIds?: readonly string[] } = {},
+  categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 'ai_learning_quiz',
+  categorySchemaVersion: 'learning.v1' | 'portfolio.v1' = 'learning.v1',
 ): ContractSubmissionDraft {
   const mediaReferenceIds = assets.mediaReferenceIds ?? []
   const evidenceDraftIds = assets.evidenceDraftIds ?? []
   return {
     draft_id: draftUuid,
     submission_chain_id: chainUuid,
-    category_id: 'ai_learning_quiz',
-    category_schema_version: 'learning.v1',
+    category_id: categoryId,
+    category_schema_version: categorySchemaVersion,
     check_id: checkUuid,
     draft_revision: 1,
     supersedes_draft_id: null,
     base_submission_id: null,
-    payload_snapshot: payloadSnapshot(fields, mediaReferenceIds),
+    payload_snapshot: payloadSnapshot(fields, mediaReferenceIds, categoryId, categorySchemaVersion),
     media_reference_ids: mediaReferenceIds,
     evidence_draft_ids: evidenceDraftIds,
     asset_drafts: [],
@@ -73,6 +83,10 @@ function draftDto(
     expires_at: expiresAt,
     ...overrides,
   }
+}
+
+function portfolioDraftDto(overrides: Partial<ContractSubmissionDraft> = {}): ContractSubmissionDraft {
+  return draftDto(overrides, portfolioWireFields, {}, 'personal_site_portfolio', 'portfolio.v1')
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -134,6 +148,8 @@ type MaterialsTransportOptions = {
   mediaExifRemoved?: boolean
   mediaDeletionGuardActive?: boolean
   evidenceStatus?: 'editing' | 'ready' | 'withdrawn'
+  patchConflictOnce?: boolean
+  failOnceAt?: 'evidence-complete'
   failAt?: 'patch' | 'upload' | 'media' | 'reference' | 'cover-get' | 'evidence' | 'final-get'
 }
 
@@ -222,6 +238,8 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
   const requests: RequestRecord[] = []
   let serverVersion = 3
   let draftGetCount = 0
+  let patchAttemptCount = 0
+  let failOnceConsumed = false
   let referenceCreated = false
   let evidenceReady = false
   const mediaStatus = options.mediaStatus ?? 'ready'
@@ -245,12 +263,16 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       draftGetCount += 1
       if ((options.failAt === 'final-get' && draftGetCount >= 3) || (options.failAt === 'cover-get' && draftGetCount === 2)) throw new Error('draft unavailable')
       const finalGet = draftGetCount >= 3
-      return jsonResponse(draftDto({ version: finalGet ? 6 : draftGetCount === 2 ? 5 : 3 }, initialWireFields, {
+      const version = finalGet ? 6 : draftGetCount === 2 ? 5 : 3
+      serverVersion = Math.max(serverVersion, version)
+      return jsonResponse(draftDto({ version }, initialWireFields, {
         mediaReferenceIds: referenceCreated ? [ids.mediaReferenceId] : [],
         evidenceDraftIds: evidenceReady ? [ids.evidenceDraftId] : [],
       }))
     }
     if (url.match(/\/submission-drafts\/[0-9a-f-]+$/i) && init?.method === 'PATCH') {
+      patchAttemptCount += 1
+      if (options.patchConflictOnce && patchAttemptCount === 1) return errorResponse(409, { details: { current_version: 5 } })
       if (options.failAt === 'patch') return errorResponse(409)
       serverVersion += 1
       return jsonResponse(draftDto({ version: serverVersion }, initialWireFields))
@@ -312,6 +334,10 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       return jsonResponse(evidenceProjection(ids.evidenceDraftId, 'editing', true, 3, 'https://example.test/real-draft'))
     }
     if (url.includes(`/evidence-drafts/${ids.evidenceDraftId}/complete`) && init?.method === 'POST') {
+      if (options.failOnceAt === 'evidence-complete' && !failOnceConsumed) {
+        failOnceConsumed = true
+        return errorResponse(503)
+      }
       evidenceReady = evidenceStatus === 'ready'
       return jsonResponse(evidenceProjection(ids.evidenceDraftId, evidenceStatus, true, 4, 'https://example.test/real-draft'))
     }
@@ -321,22 +347,57 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
   return { fetchMock, requests, ids }
 }
 
-function seedDraft() {
+function requestKind(request: RequestRecord): string {
+  const method = request.init?.method ?? 'GET'
+  const { url } = request
+  if (method === 'PUT' && url.startsWith('https://uploads.example.test/')) return 'upload-put'
+  if (url.match(/\/submission-drafts\/[0-9a-f-]+$/i)) return method === 'PATCH' ? 'draft-patch' : 'draft-get'
+  if (url.endsWith('/media-resources') && method === 'POST') return 'media-prepare'
+  if (url.includes('/media-resources/') && url.endsWith('/complete') && method === 'POST') return 'media-complete'
+  if (url.includes('/media-resources/') && method === 'GET') return 'media-inspect'
+  if (url.endsWith('/media-references') && method === 'POST') return 'media-reference'
+  if (url.endsWith('/evidence-drafts') && method === 'POST') return 'evidence-create'
+  if (url.includes('/evidence-drafts/') && url.endsWith('/binding') && method === 'POST') return 'evidence-bind'
+  if (url.includes('/evidence-drafts/') && url.endsWith('/complete') && method === 'POST') return 'evidence-complete'
+  if (url.includes('/evidence-drafts/') && method === 'PATCH') return 'evidence-patch'
+  return `${method.toLowerCase()}-other`
+}
+
+function seedDraft(categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 'ai_learning_quiz') {
   const id = submissionDraftId(draftUuid)
+  const portfolio = categoryId === 'personal_site_portfolio'
   let state = appReducer(createInitialAppState(), { type: 'LOGIN_COMPLETED', user: prototypeUsers[0]! })
   const draft: SubmissionDraft = {
     id,
     userId: prototypeUsers[0]!.id,
     status: 'draft',
     step: 'prefill',
-    fields: {
+    fields: portfolio ? {
       publicUrl: 'https://example.test/real-draft',
-      categoryId: 'ai_learning_quiz',
+      categoryId,
+      categorySchemaVersion: 'portfolio.v1',
+      currentName: '作品集服务端名称',
+      oneLineDefinition: '展示个人作品与经历',
+      creatorRoles: ['developer'],
+      primaryGoals: ['showcase_projects'],
+      coreModules: ['hero', 'projects'],
+    } : {
+      publicUrl: 'https://example.test/real-draft',
+      categoryId,
       categorySchemaVersion: 'learning.v1',
     },
-    originalExtraction: {
+    originalExtraction: portfolio ? {
       publicUrl: 'https://example.test/real-draft',
-      categoryId: 'ai_learning_quiz',
+      categoryId,
+      categorySchemaVersion: 'portfolio.v1',
+      currentName: '作品集服务端名称',
+      oneLineDefinition: '展示个人作品与经历',
+      creatorRoles: ['developer'],
+      primaryGoals: ['showcase_projects'],
+      coreModules: ['hero', 'projects'],
+    } : {
+      publicUrl: 'https://example.test/real-draft',
+      categoryId,
       categorySchemaVersion: 'learning.v1',
     },
     assetIds: [],
@@ -355,11 +416,11 @@ function seedDraft() {
     draftId: id,
     checkId: checkUuid,
     version: 3,
-    schemaVersion: 'learning.v1',
+    schemaVersion: portfolio ? 'portfolio.v1' : 'learning.v1',
     savedAt: now,
     expiresAt,
     remoteStatus: 'editing',
-    payloadSnapshot: payloadSnapshot(),
+    payloadSnapshot: portfolio ? payloadSnapshot(portfolioWireFields, [], categoryId, 'portfolio.v1') : payloadSnapshot(),
   }
   state = appReducer(state, { type: 'DRAFT_UPSERT', draft })
   persistAppState(state)
@@ -504,6 +565,20 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.find((request) => request.init?.method === 'PATCH')?.body).toMatchObject({ expected_version: 3 })
   })
 
+  it('blocks the deferred Portfolio save without building or sending a Learning snapshot', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const transport = installTransport({ get: () => jsonResponse(portfolioDraftDto()) })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.click(screen.getByRole('button', { name: '保存草稿' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('个人主页与作品集的远端保存将在后续流程开放')
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
+  })
+
   it('prepares one cover and one public URL evidence before navigating to preview', async () => {
     const transport = installMaterialsTransport()
     const user = userEvent.setup()
@@ -513,6 +588,11 @@ describe('remote P11 draft GET/PATCH form', () => {
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
 
     await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    expect(transport.requests.map(requestKind)).toEqual([
+      'draft-get', 'draft-patch', 'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
+      'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete', 'draft-get',
+    ])
     const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
     expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
     expect((patchRequest?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [] })
@@ -529,6 +609,60 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.filter((request) => request.init?.method === 'GET' && request.url.includes('/submission-drafts/'))).toHaveLength(3)
     expect(persistedDraft()).toMatchObject({ version: 6, step: 'preview', draftId: draftUuid })
     expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(false)
+  })
+
+  it('reloads the latest draft version before retrying a materials PATCH conflict and preserves the cover', async () => {
+    const transport = installMaterialsTransport({ patchConflictOnce: true })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    expect(await screen.findByText('材料准备未完成')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '加载服务端版本' })).toBeInTheDocument()
+    expect(screen.getByText('已选择封面：cover.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '加载服务端版本' }))
+    await waitFor(() => expect(persistedDraft().version).toBe(5))
+    expect(screen.getByText('已选择封面：cover.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
+
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    const patchRequests = transport.requests.filter((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
+    expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5])
+  })
+
+  it('reuses material operation keys and runtime evidence ID after an intermediate retry', async () => {
+    const transport = installMaterialsTransport({ failOnceAt: 'evidence-complete' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    expect(await screen.findByText('材料准备未完成')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
+
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    const evidenceCreates = transport.requests.filter((request) => requestKind(request) === 'evidence-create')
+    const evidenceBinds = transport.requests.filter((request) => requestKind(request) === 'evidence-bind')
+    const evidencePatches = transport.requests.filter((request) => requestKind(request) === 'evidence-patch')
+    const evidenceCompletes = transport.requests.filter((request) => requestKind(request) === 'evidence-complete')
+    expect(evidenceCreates).toHaveLength(2)
+    expect(evidenceBinds).toHaveLength(2)
+    expect(evidencePatches).toHaveLength(2)
+    expect(evidenceCompletes).toHaveLength(2)
+    expect(evidenceCreates.every((request) => request.url.endsWith('/evidence-drafts'))).toBe(true)
+    expect(evidenceCreates.map((request) => request.body?.client_request_id)[0]).toBe(evidenceCreates[1]?.body?.client_request_id)
+    expect(evidenceBinds.map((request) => request.body?.operation_id)[0]).toBe(evidenceBinds[1]?.body?.operation_id)
+    expect((evidencePatches[0]?.init?.headers as Record<string, string>)['Idempotency-Key']).toBe((evidencePatches[1]?.init?.headers as Record<string, string>)['Idempotency-Key'])
+    expect(evidenceCompletes.map((request) => request.body?.operation_id)[0]).toBe(evidenceCompletes[1]?.body?.operation_id)
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-prepare')).toHaveLength(1)
+    expect(transport.requests.filter((request) => requestKind(request) === 'upload-put')).toHaveLength(1)
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-complete')).toHaveLength(1)
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-reference')).toHaveLength(1)
+    expect(evidenceBinds.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
+    expect(evidencePatches.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
+    expect(evidenceCompletes.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
   })
 
   it('requires a selected cover and keeps the final step without a field-only PATCH', async () => {
