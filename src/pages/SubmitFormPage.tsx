@@ -37,6 +37,7 @@ import {
   primaryGoals,
   targetUsers,
   useScenarios,
+  submissionDraftPreviewFingerprint,
   type SubmissionDraft,
   type SubmissionProjectFields,
 } from '../types'
@@ -62,6 +63,21 @@ function parseStep(value: string | null, fallback: SubmissionDraft['step']): Sub
 
 function isRemoteDraftId(value: string | null): boolean {
   return value !== null && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function carryRemoteReceipt(next: SubmissionDraft, previous?: SubmissionDraft): SubmissionDraft {
+  if (!previous) return next
+  const preview = previous.preview && previous.preview.inputFingerprint === submissionDraftPreviewFingerprint(next)
+    ? previous.preview
+    : undefined
+  return {
+    ...next,
+    ...(preview ? { preview } : {}),
+    ...(previous.submissionKey ? { submissionKey: previous.submissionKey } : {}),
+    ...(previous.submissionId ? { submissionId: previous.submissionId } : {}),
+    ...(previous.reviewWorkItemId ? { reviewWorkItemId: previous.reviewWorkItemId } : {}),
+    ...(previous.reviewStatus ? { reviewStatus: previous.reviewStatus } : {}),
+  }
 }
 
 function OriginalValue({ label, value }: { label: string; value: unknown }) {
@@ -307,7 +323,7 @@ export function SubmitFormPage() {
       .then((remote) => {
         if (controller.signal.aborted) return
         const previous = draftsRef.current.find((item) => item.userId === user.id && (item.id === draftId || item.draftId === draftId))
-        const next = remoteDraftToLocalDraft(remote, user.id, previous, step)
+        const next = carryRemoteReceipt(remoteDraftToLocalDraft(remote, user.id, previous, step), previous)
         if (previewRequested) previewReadyRef.current = draftId
         dispatch({ type: 'DRAFT_UPSERT', draft: next })
         setSaveError(null)
@@ -347,11 +363,21 @@ export function SubmitFormPage() {
     setSaved(false)
     setSaveError(null)
     invalidateMaterials()
-    dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
+    const nextDraft = updateDraftField(draft, field, value)
+    const { preview: _preview, submissionKey: _submissionKey, ...withoutPreview } = nextDraft
+    void _preview
+    void _submissionKey
+    dispatch({ type: 'DRAFT_UPSERT', draft: withoutPreview })
   }
   const onCoverChange = (file: File | null) => {
     setCoverFile(file)
     invalidateMaterials()
+    if (draft.preview || draft.submissionKey) {
+      const { preview: _preview, submissionKey: _submissionKey, ...withoutPreview } = draft
+      void _preview
+      void _submissionKey
+      dispatch({ type: 'DRAFT_UPSERT', draft: withoutPreview })
+    }
   }
   const index = submissionFormSteps.indexOf(step)
 

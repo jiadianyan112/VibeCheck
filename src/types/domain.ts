@@ -778,6 +778,19 @@ export interface SubmissionProjectFields {
   blogSupport?: BlogSupport
 }
 
+/** Server-owned preview identity and the frozen snapshot used for submission. */
+export interface SubmissionDraftPreview {
+  draftVersion: number
+  checkId: string
+  previewHash: string
+  frozenSnapshot: Readonly<Record<string, unknown>>
+  mediaReferenceIds: readonly string[]
+  evidenceDraftIds: readonly string[]
+  generatedAt: string
+  /** Captures the exact local draft inputs used to request this preview. */
+  inputFingerprint: string
+}
+
 export interface SubmissionDraft {
   id: SubmissionDraftId
   userId: UserId
@@ -808,6 +821,31 @@ export interface SubmissionDraft {
   expiresAt?: string
   remoteStatus?: 'editing' | 'submitted' | 'closed' | 'expired'
   payloadSnapshot?: Readonly<Record<string, unknown>>
+  preview?: SubmissionDraftPreview
+  submissionKey?: string
+  submissionId?: string
+  reviewWorkItemId?: string
+  reviewStatus?: 'pending_review'
+}
+
+/**
+ * A preview is bound to every input that can change the server-owned result.
+ * Keeping this fingerprint with the preview lets callers reject stale data
+ * even when a draft was restored from local storage.
+ */
+export function submissionDraftPreviewFingerprint(
+  draft: Pick<SubmissionDraft, 'id' | 'draftId' | 'version' | 'checkId' | 'fields' | 'assetIds' | 'submittedAssetIds' | 'payloadSnapshot'>,
+): string {
+  return JSON.stringify({
+    id: draft.id,
+    draftId: draft.draftId ?? null,
+    version: draft.version ?? null,
+    checkId: draft.checkId ?? null,
+    fields: draft.fields,
+    assetIds: draft.assetIds,
+    submittedAssetIds: draft.submittedAssetIds,
+    payloadSnapshot: draft.payloadSnapshot ?? null,
+  })
 }
 
 export interface AuthorVerificationRequest {

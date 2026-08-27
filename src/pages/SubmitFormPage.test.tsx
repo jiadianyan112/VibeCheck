@@ -317,6 +317,19 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       referenceCreated = true
       return jsonResponse(referenceProjection(ids.mediaResourceId, ids.mediaReferenceId), 201)
     }
+    if (url.includes(`/submission-drafts/${draftUuid}/preview`) && init?.method === 'POST') {
+      return jsonResponse({
+        draft_id: draftUuid,
+        draft_version: serverVersion,
+        check_id: checkUuid,
+        preview_hash: 'c'.repeat(64),
+        payload_snapshot: payloadSnapshot(initialWireFields, [ids.mediaReferenceId]),
+        media_reference_ids: [ids.mediaReferenceId],
+        evidence_draft_ids: [ids.evidenceDraftId],
+        validation: { valid: true, issue_count: 0 },
+        generated_at: now,
+      }, 200)
+    }
     if (url.endsWith('/evidence-drafts') && init?.method === 'POST') {
       if (options.failAt === 'evidence') throw new Error('evidence unavailable')
       return jsonResponse(evidenceProjection(ids.evidenceDraftId, 'editing', false, 1, null), 201)
@@ -359,6 +372,7 @@ function requestKind(request: RequestRecord): string {
   if (url.endsWith('/evidence-drafts') && method === 'POST') return 'evidence-create'
   if (url.includes('/evidence-drafts/') && url.endsWith('/binding') && method === 'POST') return 'evidence-bind'
   if (url.includes('/evidence-drafts/') && url.endsWith('/complete') && method === 'POST') return 'evidence-complete'
+  if (url.includes('/submission-drafts/') && url.endsWith('/preview') && method === 'POST') return 'draft-preview'
   if (url.includes('/evidence-drafts/') && method === 'PATCH') return 'evidence-patch'
   return `${method.toLowerCase()}-other`
 }
@@ -592,6 +606,7 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.map(requestKind)).toEqual([
       'draft-get', 'draft-patch', 'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
       'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete', 'draft-get',
+      'draft-preview',
     ])
     const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
     expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
@@ -608,7 +623,7 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(evidenceRequests.map((request) => request.init?.method)).toEqual(['POST', 'PATCH', 'POST'])
     expect(transport.requests.filter((request) => request.init?.method === 'GET' && request.url.includes('/submission-drafts/'))).toHaveLength(3)
     expect(persistedDraft()).toMatchObject({ version: 6, step: 'preview', draftId: draftUuid })
-    expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(false)
+    expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(true)
   })
 
   it('reloads the latest draft version before retrying a materials PATCH conflict and preserves the cover', async () => {
