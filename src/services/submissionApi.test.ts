@@ -68,6 +68,67 @@ const draftProjection: ContractSubmissionDraft = {
   expires_at: '2026-08-25T10:35:00.000Z',
 }
 
+const previewProjection = {
+  draft_id: draftId,
+  draft_version: 8,
+  check_id: checkId,
+  preview_hash: 'b'.repeat(64),
+  payload_snapshot: {
+    project_core: {
+      current_name: '服务端名称',
+      public_url: 'https://example.test/learning',
+      repository_url: null,
+      original_platform: null,
+      cover_media_reference_ids: ['55555555-5555-4555-8555-555555555555'],
+      one_line_definition: '服务端定义',
+      ai_coding_tools: { knowledge_state: 'unknown', values: [], source_type: 'system_inference', observed_at: '2026-08-25T10:00:00.000Z' },
+      tech_stack: [],
+      deployment_platform: null,
+      access_status: 'normal',
+      maintenance_signal: 'unknown',
+      status_note: null,
+    },
+    category_id: 'ai_learning_quiz',
+    category_schema_version: 'learning.v1',
+    category_data: {
+      target_users: ['university_students'],
+      core_problem: '服务端问题',
+      use_scenarios: ['question_generation'],
+      main_inputs: ['pdf'],
+      main_outputs: ['questions'],
+      core_flow: [{ order: 1, name: '上传材料' }],
+      content_processing: [],
+      practice_formats: [],
+      feedback_methods: [],
+      learning_records: [],
+      differentiation: null,
+      core_features: [],
+      secondary_features: [],
+      login_requirement: 'unknown',
+      sharing_capability: 'unknown',
+    },
+  },
+  media_reference_ids: ['55555555-5555-4555-8555-555555555555'],
+  evidence_draft_ids: ['66666666-6666-4666-8666-666666666666'],
+  validation: { valid: true, issue_count: 0 },
+  generated_at: '2026-08-25T10:00:00.000Z',
+} as const
+
+const submissionProjection = {
+  submission_id: '77777777-7777-4777-8777-777777777777',
+  submission_chain_id: chainId,
+  draft_id: draftId,
+  snapshot_version: 8,
+  review_status: 'pending_review',
+  review_work_item_id: '88888888-8888-4888-8888-888888888888',
+  media_reference_ids: previewProjection.media_reference_ids,
+  evidence_draft_ids: previewProjection.evidence_draft_ids,
+  preview_hash: previewProjection.preview_hash,
+  version: 1,
+  created_at: '2026-08-25T10:00:00.000Z',
+  updated_at: '2026-08-25T10:00:00.000Z',
+} as const
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -223,7 +284,10 @@ describe('submissionApi typed production gateway', () => {
       coreFlow: [{ id: 'one', order: 1, label: '输入', description: 'ignored description' }],
       targetUsers: ['university_students'],
     })
-    expect(patch).toEqual({ current_name: '人工名称', one_line_definition: '人工定义', core_flow: [{ order: 1, name: '输入' }], target_users: ['university_students'] })
+    expect(patch).toEqual({
+      project_core: { current_name: '人工名称', one_line_definition: '人工定义' },
+      category_data: { core_flow: [{ order: 1, name: '输入' }], target_users: ['university_students'] },
+    })
     expect(patch).not.toHaveProperty('public_url')
     expect(patch).not.toHaveProperty('category_id')
     expect(patch).not.toHaveProperty('category_schema_version')
@@ -234,7 +298,7 @@ describe('submissionApi typed production gateway', () => {
     await submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '新名称' }, session: csrf, operationId: 'patch-operation-01' })
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
     expect(init.method).toBe('PATCH')
-    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, patch: { current_name: '新名称' }, operation_id: 'patch-operation-01' })
+    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, patch: { project_core: { current_name: '新名称' } }, operation_id: 'patch-operation-01' })
     expect(init.headers).toMatchObject({ 'X-CSRF-Token': csrf.csrf_token })
   })
 
@@ -256,5 +320,57 @@ describe('submissionApi typed production gateway', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '保留输入' }, session: csrf, operationId: 'no-retry-operation-01' })).rejects.toMatchObject({ kind: 'transport', retryable: true })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('previews the requested current draft version and exposes the frozen snapshot and reference summary', async () => {
+    const fetchMock = installFetch(jsonResponse(previewProjection, 200))
+    const preview = await submissionApi.preview({
+      draftId,
+      expectedVersion: previewProjection.draft_version,
+      checkId,
+      session: csrf,
+      clientRequestId: 'preview-request-01',
+    })
+
+    expect(preview).toMatchObject({
+      draft_id: draftId,
+      draft_version: 8,
+      check_id: checkId,
+      preview_hash: previewProjection.preview_hash,
+      previewHash: previewProjection.preview_hash,
+      frozenSnapshot: previewProjection.payload_snapshot,
+      referenceSummary: {
+        mediaReferenceIds: previewProjection.media_reference_ids,
+        evidenceDraftIds: previewProjection.evidence_draft_ids,
+      },
+    })
+    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({ expected_version: 8, check_id: checkId })
+  })
+
+  it('submits the exact preview identity with a stable submission key and accepts only pending_review', async () => {
+    const fetchMock = installFetch(jsonResponse(submissionProjection, 202))
+    const result = await submissionApi.submit({
+      draftId,
+      draftVersion: previewProjection.draft_version,
+      checkId,
+      previewHash: previewProjection.preview_hash,
+      submissionKey: 'stable-submission-key-01',
+      session: csrf,
+      clientRequestId: 'submit-request-01',
+    })
+
+    expect(result).toMatchObject({
+      submission_id: submissionProjection.submission_id,
+      submissionId: submissionProjection.submission_id,
+      review_status: 'pending_review',
+      reviewWorkItemId: submissionProjection.review_work_item_id,
+    })
+    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+      draft_id: draftId,
+      draft_version: 8,
+      check_id: checkId,
+      preview_hash: previewProjection.preview_hash,
+      submission_key: 'stable-submission-key-01',
+    })
   })
 })

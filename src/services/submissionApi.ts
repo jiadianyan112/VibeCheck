@@ -5,6 +5,8 @@ import {
   SubmissionUrlCheckClientError,
   type SubmissionDraft as ContractSubmissionDraft,
   type SubmissionDraftFieldErrorValue,
+  type Submission as ContractSubmission,
+  type SubmissionPreview as ContractSubmissionPreview,
   type SubmissionUrlCheck as ContractUrlCheck,
   type SubmissionUrlCheckFieldErrorValue,
 } from '@vibecheck/contracts'
@@ -56,6 +58,22 @@ export interface UrlCheckResult {
 export type RemoteSubmissionDraft = ContractSubmissionDraft & {
   readonly fields: Partial<SubmissionProjectFields>
   readonly originalExtraction: Partial<SubmissionProjectFields>
+}
+
+/** Preview projection plus stable UI names for the frozen server snapshot. */
+export type RemoteSubmissionPreview = ContractSubmissionPreview & {
+  readonly previewHash: ContractSubmissionPreview['preview_hash']
+  readonly frozenSnapshot: ContractSubmissionPreview['payload_snapshot']
+  readonly referenceSummary: Readonly<{
+    readonly mediaReferenceIds: ContractSubmissionPreview['media_reference_ids']
+    readonly evidenceDraftIds: ContractSubmissionPreview['evidence_draft_ids']
+  }>
+}
+
+/** Submitted projection plus the server-issued review identifiers. */
+export type RemoteSubmission = ContractSubmission & {
+  readonly submissionId: ContractSubmission['submission_id']
+  readonly reviewWorkItemId: ContractSubmission['review_work_item_id']
 }
 
 export type SubmissionApiErrorKind = 'aborted' | 'transport' | 'protocol' | 'http'
@@ -121,6 +139,8 @@ const editableFieldNames: Partial<Record<keyof SubmissionProjectFields, string>>
   practiceFormats: 'practice_formats',
   feedbackMethods: 'feedback_methods',
   differentiation: 'differentiation',
+  loginRequirement: 'login_requirement',
+  sharingCapability: 'sharing_capability',
   aiCodingTools: 'ai_coding_tools',
   siteType: 'site_type',
   creatorRoles: 'creator_roles',
@@ -213,11 +233,11 @@ function mapError(error: unknown, signal?: AbortSignal): SubmissionApiError {
   })
 }
 
-function clients(session: SubmissionApiSession | null) {
+function clients(session: SubmissionApiSession | null, requestIdGenerator = makeSubmissionClientRequestId) {
   const getCsrfToken = () => session?.csrf_token ?? ''
   return {
-    url: createSubmissionUrlCheckClient({ baseUrl: apiBase, getCsrfToken }),
-    draft: createSubmissionDraftClient({ baseUrl: apiBase, getCsrfToken }),
+    url: createSubmissionUrlCheckClient({ baseUrl: apiBase, getCsrfToken, requestIdGenerator }),
+    draft: createSubmissionDraftClient({ baseUrl: apiBase, getCsrfToken, requestIdGenerator }),
   }
 }
 
@@ -291,6 +311,13 @@ function readFlow(value: unknown): SubmissionProjectFields['coreFlow'] | undefin
   })
 }
 
+function readAiCodingTools(value: unknown): SubmissionProjectFields['aiCodingTools'] | undefined {
+  if (!isRecord(value) || !Array.isArray(value.values)) return undefined
+  const values = value.values.filter((item): item is string => typeof item === 'string')
+  if (value.knowledge_state === 'unknown') return ['unknown']
+  return values as SubmissionProjectFields['aiCodingTools']
+}
+
 function payloadFields(payload: Readonly<Record<string, unknown>>): Partial<SubmissionProjectFields> {
   const fields: Partial<SubmissionProjectFields> = {}
   const projectCore = isRecord(payload.project_core) ? payload.project_core : {}
@@ -301,6 +328,9 @@ function payloadFields(payload: Readonly<Record<string, unknown>>): Partial<Subm
       if (wireName === 'core_flow') {
         const flow = readFlow(source[wireName])
         if (flow !== undefined) setIfDefined(fields, field, flow)
+      } else if (wireName === 'ai_coding_tools') {
+        const tools = readAiCodingTools(source[wireName])
+        if (tools !== undefined) setIfDefined(fields, field, tools)
       } else if (source[wireName] !== undefined) {
         setIfDefined(fields, field, source[wireName])
       }
@@ -377,27 +407,54 @@ export function remoteDraftToLocalDraft(
   }
 }
 
+const projectCorePatchFields = new Set(['currentName', 'accessStatus', 'repositoryUrl', 'oneLineDefinition'])
+
+function aiCodingToolsPatch(value: unknown, observedAt: string): Readonly<Record<string, unknown>> {
+  const values = Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === 'string' && item !== 'unknown'))]
+    : []
+  return {
+    knowledge_state: values.length > 0 ? 'known_values' : 'unknown',
+    values,
+    source_type: values.length > 0 ? 'verified_author_statement' : 'system_inference',
+    observed_at: observedAt,
+  }
+}
+
 /** Build the only editable portion sent inside OP-DRAFT-PATCH. */
-export function editableFieldsToPatch(fields: Partial<SubmissionProjectFields>): Readonly<Record<string, unknown>> {
-  const patch: Record<string, unknown> = {}
+export function editableFieldsToPatch(
+  fields: Partial<SubmissionProjectFields>,
+  observedAt = new Date().toISOString(),
+): Readonly<Record<string, unknown>> {
+  const projectCore: Record<string, unknown> = {}
+  const categoryData: Record<string, unknown> = {}
   for (const [key, wireName] of Object.entries(editableFieldNames)) {
     const value = fields[key as keyof SubmissionProjectFields]
     if (value === undefined || wireName === undefined) continue
+    // Screenshots are legacy form state; the media service owns canonical cover references.
+    if (key === 'screenshotUrl') continue
     if (key === 'coreFlow' && Array.isArray(value)) {
       const flow = value as SubmissionProjectFields['coreFlow']
-      patch[wireName] = flow.map((node, index) => ({ order: node.order ?? index + 1, name: node.label }))
+      categoryData[wireName] = flow.map((node, index) => ({ order: index + 1, name: node.label }))
+    } else if (key === 'aiCodingTools') {
+      projectCore[wireName] = aiCodingToolsPatch(value, observedAt)
+    } else if (projectCorePatchFields.has(key)) {
+      projectCore[wireName] = value
     } else {
-      patch[wireName] = value
+      categoryData[wireName] = value
     }
   }
-  return patch
+  return {
+    ...(Object.keys(projectCore).length > 0 ? { project_core: projectCore } : {}),
+    ...(Object.keys(categoryData).length > 0 ? { category_data: categoryData } : {}),
+  }
 }
 
 export const submissionApi = {
   async check(input: { readonly rawUrl: string; readonly categoryId: ProjectCategoryId } & SubmissionApiRequestOptions): Promise<UrlCheckResult> {
     const clientRequestId = input.clientRequestId ?? makeSubmissionClientRequestId()
     try {
-      const source = await clients(input.session).url.check({ raw_url: input.rawUrl.trim(), category_hint: input.categoryId, client_request_id: clientRequestId }, { signal: input.signal })
+      const source = await clients(input.session, () => clientRequestId).url.check({ raw_url: input.rawUrl.trim(), category_hint: input.categoryId, client_request_id: clientRequestId }, { signal: input.signal })
       return mapUrlCheck(source, input.rawUrl)
     } catch (error) {
       throw mapError(error, input.signal)
@@ -407,7 +464,7 @@ export const submissionApi = {
   async create(input: { readonly checkId: string; readonly categoryId: ProjectCategoryId } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
     const clientRequestId = input.clientRequestId ?? makeSubmissionClientRequestId()
     try {
-      const source = await clients(input.session).draft.create({ check_id: input.checkId, category_id: input.categoryId, client_request_id: clientRequestId }, { signal: input.signal })
+      const source = await clients(input.session, () => clientRequestId).draft.create({ check_id: input.checkId, category_id: input.categoryId, client_request_id: clientRequestId }, { signal: input.signal })
       return { ...source, fields: payloadFields(source.payload_snapshot), originalExtraction: extractionFields(source.payload_snapshot) ?? payloadFields(source.payload_snapshot) }
     } catch (error) {
       throw mapError(error, input.signal)
@@ -423,11 +480,50 @@ export const submissionApi = {
     }
   },
 
-  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly fields: Partial<SubmissionProjectFields> } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
+  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly fields?: Partial<SubmissionProjectFields>; readonly payloadSnapshot?: Readonly<Record<string, unknown>> } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
     const operationId = input.operationId ?? makeSubmissionClientRequestId()
     try {
-      const source = await clients(input.session).draft.patch(input.draftId, { expected_version: input.expectedVersion, patch: editableFieldsToPatch(input.fields), operation_id: operationId }, { signal: input.signal })
+      const patch = input.payloadSnapshot ?? editableFieldsToPatch(input.fields ?? {})
+      const source = await clients(input.session, () => operationId).draft.patch(input.draftId, { expected_version: input.expectedVersion, patch, operation_id: operationId }, { signal: input.signal })
       return { ...source, fields: payloadFields(source.payload_snapshot), originalExtraction: extractionFields(source.payload_snapshot) ?? payloadFields(source.payload_snapshot) }
+    } catch (error) {
+      throw mapError(error, input.signal)
+    }
+  },
+
+  async preview(input: { readonly draftId: string; readonly expectedVersion: number; readonly checkId: string } & SubmissionApiRequestOptions): Promise<RemoteSubmissionPreview> {
+    const clientRequestId = input.clientRequestId ?? makeSubmissionClientRequestId()
+    try {
+      const source = await clients(input.session, () => clientRequestId).draft.preview(input.draftId, { expected_version: input.expectedVersion, check_id: input.checkId }, { signal: input.signal })
+      return {
+        ...source,
+        previewHash: source.preview_hash,
+        frozenSnapshot: source.payload_snapshot,
+        referenceSummary: {
+          mediaReferenceIds: source.media_reference_ids,
+          evidenceDraftIds: source.evidence_draft_ids,
+        },
+      }
+    } catch (error) {
+      throw mapError(error, input.signal)
+    }
+  },
+
+  async submit(input: { readonly draftId: string; readonly draftVersion: number; readonly checkId: string; readonly previewHash: string; readonly submissionKey: string } & SubmissionApiRequestOptions): Promise<RemoteSubmission> {
+    const clientRequestId = input.clientRequestId ?? makeSubmissionClientRequestId()
+    try {
+      const source = await clients(input.session, () => clientRequestId).draft.submit({
+        draft_id: input.draftId,
+        draft_version: input.draftVersion,
+        check_id: input.checkId,
+        preview_hash: input.previewHash,
+        submission_key: input.submissionKey,
+      }, { signal: input.signal })
+      return {
+        ...source,
+        submissionId: source.submission_id,
+        reviewWorkItemId: source.review_work_item_id,
+      }
     } catch (error) {
       throw mapError(error, input.signal)
     }

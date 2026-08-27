@@ -1,6 +1,6 @@
 import type { ExtractionResult } from './form'
 import { submissionDraftId, userId, type SubmissionDraft } from '../../types'
-import { applyExtraction, submissionCompleteness, updateDraftField, validateSubmissionStep } from './form'
+import { applyExtraction, buildLearningV1Snapshot, submissionCompleteness, updateDraftField, validateSubmissionStep } from './form'
 
 const baseDraft: SubmissionDraft = {
   id: submissionDraftId('draft-form-test'),
@@ -36,6 +36,66 @@ const extraction: ExtractionResult = {
 }
 
 describe('multi-step submission helpers', () => {
+  it('builds the exact canonical learning.v1 snapshot with safe unknown defaults', () => {
+    const snapshot = buildLearningV1Snapshot({
+      fields: {
+        ...applyExtraction(baseDraft, extraction).fields,
+        currentName: '确认后的名称',
+        publicUrl: 'https://example.test/learning',
+        oneLineDefinition: '把资料变成可练习内容',
+        accessStatus: 'normal',
+        targetUsers: ['university_students'],
+        coreProblem: '复习材料难以转成练习',
+        useScenarios: ['question_generation'],
+        mainInputs: ['pdf'],
+        mainOutputs: ['questions'],
+        coreFlow: [{ id: 'one', order: 1, label: '上传材料', description: 'ignored' }],
+        practiceFormats: [],
+        feedbackMethods: [],
+        aiCodingTools: [],
+      },
+      coverMediaReferenceIds: ['55555555-5555-4555-8555-555555555555'],
+      observedAt: '2026-08-25T10:00:00.000Z',
+    })
+
+    expect(Object.keys(snapshot)).toEqual(['project_core', 'category_id', 'category_schema_version', 'category_data'])
+    expect(snapshot).toMatchObject({
+      category_id: 'ai_learning_quiz',
+      category_schema_version: 'learning.v1',
+      project_core: {
+        current_name: '确认后的名称',
+        public_url: 'https://example.test/learning',
+        one_line_definition: '把资料变成可练习内容',
+        access_status: 'normal',
+        repository_url: 'https://example.test/repo',
+        original_platform: null,
+        cover_media_reference_ids: ['55555555-5555-4555-8555-555555555555'],
+        ai_coding_tools: {
+          knowledge_state: 'unknown',
+          values: [],
+          source_type: 'system_inference',
+          observed_at: '2026-08-25T10:00:00.000Z',
+        },
+        tech_stack: [],
+        deployment_platform: null,
+        maintenance_signal: 'unknown',
+        status_note: null,
+      },
+      category_data: {
+        content_processing: [],
+        practice_formats: [],
+        feedback_methods: [],
+        learning_records: [],
+        differentiation: null,
+        core_features: [],
+        secondary_features: [],
+        login_requirement: 'unknown',
+        sharing_capability: 'unknown',
+      },
+    })
+    expect(snapshot.category_data.core_flow).toEqual([{ order: 1, name: '上传材料' }])
+  })
+
   it('keeps original extraction after an automatic field is corrected', () => {
     const extracted = applyExtraction(baseDraft, extraction)
     const corrected = updateDraftField(extracted, 'currentName', '人工纠正名称')

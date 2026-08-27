@@ -757,6 +757,9 @@ export interface SubmissionProjectFields {
   feedbackMethods: FeedbackMethod[]
   differentiation: string
   aiCodingTools: AiCodingTool[]
+  /** LearningSchemaV1 fields that the current form may leave unknown. */
+  loginRequirement?: LoginRequirement
+  sharingCapability?: SharingCapability
   siteType?: SiteType
   creatorRoles?: CreatorRole[]
   primaryGoals?: PrimaryGoal[]

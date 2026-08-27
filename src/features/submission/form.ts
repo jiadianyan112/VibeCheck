@@ -1,8 +1,61 @@
-import type { SubmissionDraft, SubmissionProjectFields } from '../../types'
+import {
+  learningCategoryId,
+  learningSchemaVersion,
+  type SubmissionDraft,
+  type SubmissionProjectFields,
+} from '../../types'
 
 export interface ExtractionResult {
   fields: Partial<SubmissionProjectFields>
   failedFields: Array<keyof SubmissionProjectFields>
+}
+
+export interface LearningV1SnapshotInput {
+  readonly fields: Partial<SubmissionProjectFields>
+  /** Media references are created and owned by the media service. */
+  readonly coverMediaReferenceIds: readonly string[]
+  readonly observedAt: string
+}
+
+export interface LearningV1Snapshot {
+  readonly project_core: Readonly<{
+    readonly current_name: string
+    readonly public_url: string
+    readonly repository_url: string | null
+    readonly original_platform: string | null
+    readonly cover_media_reference_ids: readonly string[]
+    readonly one_line_definition: string
+    readonly ai_coding_tools: Readonly<{
+      readonly knowledge_state: 'known_values' | 'unknown'
+      readonly values: readonly string[]
+      readonly source_type: 'verified_author_statement' | 'system_inference'
+      readonly observed_at: string
+    }>
+    readonly tech_stack: readonly string[]
+    readonly deployment_platform: string | null
+    readonly access_status: 'normal' | 'login_required' | 'partial_abnormal' | 'link_unavailable' | 'suspected_migration' | 'paused' | 'ended' | 'unknown'
+    readonly maintenance_signal: 'unknown'
+    readonly status_note: null
+  }>
+  readonly category_id: typeof learningCategoryId
+  readonly category_schema_version: typeof learningSchemaVersion
+  readonly category_data: Readonly<{
+    readonly target_users: readonly string[]
+    readonly core_problem: string
+    readonly use_scenarios: readonly string[]
+    readonly main_inputs: readonly string[]
+    readonly main_outputs: readonly string[]
+    readonly core_flow: readonly Readonly<{ readonly order: number; readonly name: string }>[]
+    readonly content_processing: readonly string[]
+    readonly practice_formats: readonly string[]
+    readonly feedback_methods: readonly string[]
+    readonly learning_records: readonly string[]
+    readonly differentiation: string | null
+    readonly core_features: readonly string[]
+    readonly secondary_features: readonly string[]
+    readonly login_requirement: 'none' | 'partial' | 'required' | 'unknown'
+    readonly sharing_capability: 'none' | 'link' | 'result' | 'question_bank' | 'collaboration' | 'unknown'
+  }>
 }
 
 export const submissionFormSteps = ['prefill', 'definition', 'solution', 'development'] as const
@@ -36,6 +89,100 @@ function hasValue(value: unknown) {
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === 'string') return value.trim().length > 0
   return value !== null && value !== undefined
+}
+
+function requiredText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): string {
+  const value = fields[field]
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new TypeError(`Learning snapshot requires ${String(field)}`)
+  }
+  return value.trim()
+}
+
+function stringList(value: unknown, field: keyof SubmissionProjectFields, required: boolean): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`Learning snapshot requires ${String(field)}`)
+  }
+  const items = value as unknown[]
+  const strings = items.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  if ((required && strings.length === 0) || strings.length !== items.length) {
+    throw new TypeError(`Learning snapshot requires ${String(field)}`)
+  }
+  return strings.map((item) => item.trim())
+}
+
+function requiredList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): readonly string[] {
+  return stringList(fields[field], field, true)
+}
+
+function optionalList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): readonly string[] {
+  const value = fields[field]
+  return Array.isArray(value) ? stringList(value, field, false) : []
+}
+
+function optionalNullableText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): string | null {
+  const value = fields[field]
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function canonicalAccessStatus(value: SubmissionProjectFields['accessStatus'] | undefined): LearningV1Snapshot['project_core']['access_status'] {
+  if (value === 'normal' || value === 'login_required' || value === 'partial_abnormal' || value === 'link_unavailable' || value === 'suspected_migration' || value === 'paused' || value === 'ended') return value
+  return 'unknown'
+}
+
+function canonicalAiCodingTools(
+  values: SubmissionProjectFields['aiCodingTools'] | undefined,
+  observedAt: string,
+): LearningV1Snapshot['project_core']['ai_coding_tools'] {
+  const knownValues = [...new Set((values ?? []).filter((value) => value !== 'unknown'))]
+  return knownValues.length > 0
+    ? { knowledge_state: 'known_values', values: knownValues, source_type: 'verified_author_statement', observed_at: observedAt }
+    : { knowledge_state: 'unknown', values: [], source_type: 'system_inference', observed_at: observedAt }
+}
+
+/** Build the exact server-owned learning.v1 payload shape used by preview/submit. */
+export function buildLearningV1Snapshot(input: LearningV1SnapshotInput): LearningV1Snapshot {
+  const { fields } = input
+  const flow = fields.coreFlow
+  if (!Array.isArray(flow) || flow.length === 0 || flow.some((node) => typeof node.label !== 'string' || node.label.trim().length === 0)) {
+    throw new TypeError('Learning snapshot requires coreFlow')
+  }
+
+  return {
+    project_core: {
+      current_name: requiredText(fields, 'currentName'),
+      public_url: requiredText(fields, 'publicUrl'),
+      repository_url: optionalNullableText(fields, 'repositoryUrl'),
+      original_platform: null,
+      cover_media_reference_ids: [...input.coverMediaReferenceIds],
+      one_line_definition: requiredText(fields, 'oneLineDefinition'),
+      ai_coding_tools: canonicalAiCodingTools(fields.aiCodingTools, input.observedAt),
+      tech_stack: [],
+      deployment_platform: null,
+      access_status: canonicalAccessStatus(fields.accessStatus),
+      maintenance_signal: 'unknown',
+      status_note: null,
+    },
+    category_id: learningCategoryId,
+    category_schema_version: learningSchemaVersion,
+    category_data: {
+      target_users: requiredList(fields, 'targetUsers'),
+      core_problem: requiredText(fields, 'coreProblem'),
+      use_scenarios: requiredList(fields, 'useScenarios'),
+      main_inputs: requiredList(fields, 'mainInputs'),
+      main_outputs: requiredList(fields, 'mainOutputs'),
+      core_flow: flow.map((node, index) => ({ order: index + 1, name: node.label.trim() })),
+      content_processing: [],
+      practice_formats: optionalList(fields, 'practiceFormats'),
+      feedback_methods: optionalList(fields, 'feedbackMethods'),
+      learning_records: [],
+      differentiation: optionalNullableText(fields, 'differentiation'),
+      core_features: [],
+      secondary_features: [],
+      login_requirement: fields.loginRequirement ?? 'unknown',
+      sharing_capability: fields.sharingCapability ?? 'unknown',
+    },
+  }
 }
 
 export function submissionCompleteness(draft: SubmissionDraft) {
@@ -134,6 +281,8 @@ const serverFieldNames: Record<string, keyof SubmissionProjectFields> = {
   core_flow: 'coreFlow',
   practice_formats: 'practiceFormats',
   feedback_methods: 'feedbackMethods',
+  login_requirement: 'loginRequirement',
+  sharing_capability: 'sharingCapability',
   ai_coding_tools: 'aiCodingTools',
   site_type: 'siteType',
   creator_roles: 'creatorRoles',
