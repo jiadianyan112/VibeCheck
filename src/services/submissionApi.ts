@@ -11,6 +11,7 @@ import {
   type SubmissionUrlCheckFieldErrorValue,
 } from '@vibecheck/contracts'
 import type { AuthSessionDto } from './authService'
+import type { LearningV1Snapshot } from '../features/submission/form'
 import {
   projectId,
   submissionDraftId,
@@ -407,47 +408,89 @@ export function remoteDraftToLocalDraft(
   }
 }
 
-const projectCorePatchFields = new Set(['currentName', 'accessStatus', 'repositoryUrl', 'oneLineDefinition'])
+const canonicalSnapshotKeys = ['project_core', 'category_id', 'category_schema_version', 'category_data'] as const
+const projectCoreSnapshotKeys = [
+  'current_name', 'public_url', 'repository_url', 'original_platform',
+  'cover_media_reference_ids', 'one_line_definition', 'ai_coding_tools',
+  'tech_stack', 'deployment_platform', 'access_status', 'maintenance_signal', 'status_note',
+] as const
+const learningSnapshotKeys = [
+  'target_users', 'core_problem', 'use_scenarios', 'main_inputs', 'main_outputs',
+  'core_flow', 'content_processing', 'practice_formats', 'feedback_methods',
+  'learning_records', 'differentiation', 'core_features', 'secondary_features',
+  'login_requirement', 'sharing_capability',
+] as const
+const canonicalUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-function aiCodingToolsPatch(value: unknown, observedAt: string): Readonly<Record<string, unknown>> {
-  const values = Array.isArray(value)
-    ? [...new Set(value.filter((item): item is string => typeof item === 'string' && item !== 'unknown'))]
-    : []
-  return {
-    knowledge_state: values.length > 0 ? 'known_values' : 'unknown',
-    values,
-    source_type: values.length > 0 ? 'verified_author_statement' : 'system_inference',
-    observed_at: observedAt,
-  }
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return actual.length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
 }
 
-/** Build the only editable portion sent inside OP-DRAFT-PATCH. */
-export function editableFieldsToPatch(
-  fields: Partial<SubmissionProjectFields>,
-  observedAt = new Date().toISOString(),
-): Readonly<Record<string, unknown>> {
-  const projectCore: Record<string, unknown> = {}
-  const categoryData: Record<string, unknown> = {}
-  for (const [key, wireName] of Object.entries(editableFieldNames)) {
-    const value = fields[key as keyof SubmissionProjectFields]
-    if (value === undefined || wireName === undefined) continue
-    // Screenshots are legacy form state; the media service owns canonical cover references.
-    if (key === 'screenshotUrl') continue
-    if (key === 'coreFlow' && Array.isArray(value)) {
-      const flow = value as SubmissionProjectFields['coreFlow']
-      categoryData[wireName] = flow.map((node, index) => ({ order: index + 1, name: node.label }))
-    } else if (key === 'aiCodingTools') {
-      projectCore[wireName] = aiCodingToolsPatch(value, observedAt)
-    } else if (projectCorePatchFields.has(key)) {
-      projectCore[wireName] = value
-    } else {
-      categoryData[wireName] = value
-    }
-  }
-  return {
-    ...(Object.keys(projectCore).length > 0 ? { project_core: projectCore } : {}),
-    ...(Object.keys(categoryData).length > 0 ? { category_data: categoryData } : {}),
-  }
+function isText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isStringList(value: unknown, minimum: number, maximum: number, unique = true): value is readonly string[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum || !value.every(isText)) return false
+  return !unique || new Set(value).size === value.length
+}
+
+function isNullableText(value: unknown): value is string | null {
+  return value === null || isText(value)
+}
+
+function isCanonicalAiCodingTools(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ['knowledge_state', 'values', 'source_type', 'observed_at'])) return false
+  const state = value.knowledge_state
+  const valuesValid = state === 'known_values'
+    ? isStringList(value.values, 1, 8)
+    : isStringList(value.values, 0, 0)
+  return (state === 'known_values' || state === 'known_empty' || state === 'unknown') &&
+    valuesValid &&
+    (value.source_type === 'platform_verified_fact' || value.source_type === 'verified_author_statement' || value.source_type === 'trusted_external_source' || value.source_type === 'system_inference') &&
+    isText(value.observed_at) && !Number.isNaN(Date.parse(value.observed_at))
+}
+
+function isCanonicalLearningSnapshot(value: unknown): value is LearningV1Snapshot {
+  if (!isRecord(value) || !hasExactKeys(value, canonicalSnapshotKeys) ||
+      value.category_id !== 'ai_learning_quiz' || value.category_schema_version !== 'learning.v1') return false
+  const projectCore = value.project_core
+  if (!isRecord(projectCore) || !hasExactKeys(projectCore, projectCoreSnapshotKeys) ||
+      !isText(projectCore.current_name) || !isText(projectCore.public_url) ||
+      !isNullableText(projectCore.repository_url) || !isNullableText(projectCore.original_platform) ||
+      !isStringList(projectCore.cover_media_reference_ids, 1, 20) ||
+      !projectCore.cover_media_reference_ids.every((id) => canonicalUuidPattern.test(id)) ||
+      !isText(projectCore.one_line_definition) || !isCanonicalAiCodingTools(projectCore.ai_coding_tools) ||
+      !isStringList(projectCore.tech_stack, 0, 30) || !isNullableText(projectCore.deployment_platform) ||
+      !['normal', 'login_required', 'partial_abnormal', 'link_unavailable', 'suspected_migration', 'paused', 'ended', 'unknown'].includes(projectCore.access_status as string) ||
+      !['repository_updated', 'page_updated', 'author_updated', 'no_public_change', 'unknown'].includes(projectCore.maintenance_signal as string) ||
+      !isNullableText(projectCore.status_note)) return false
+
+  const categoryData = value.category_data
+  if (!isRecord(categoryData) || !hasExactKeys(categoryData, learningSnapshotKeys) ||
+      !isStringList(categoryData.target_users, 1, 3) || !isText(categoryData.core_problem) ||
+      !isStringList(categoryData.use_scenarios, 1, 5) || !isStringList(categoryData.main_inputs, 1, 5) ||
+      !isStringList(categoryData.main_outputs, 1, 5) || !Array.isArray(categoryData.core_flow) ||
+      categoryData.core_flow.length < 1 || categoryData.core_flow.length > 10 ||
+      !categoryData.core_flow.every((step, index) => isRecord(step) && hasExactKeys(step, ['order', 'name']) && step.order === index + 1 && isText(step.name)) ||
+      !isStringList(categoryData.content_processing, 0, 10) || !isStringList(categoryData.practice_formats, 0, 9) ||
+      !isStringList(categoryData.feedback_methods, 0, 7) || !isStringList(categoryData.learning_records, 0, 10) ||
+      !isNullableText(categoryData.differentiation) || !isStringList(categoryData.core_features, 0, 20) ||
+      !isStringList(categoryData.secondary_features, 0, 30) ||
+      !['none', 'partial', 'required', 'unknown'].includes(categoryData.login_requirement as string) ||
+      !['none', 'link', 'result', 'question_bank', 'collaboration', 'unknown'].includes(categoryData.sharing_capability as string)) return false
+  return true
+}
+
+function requireCanonicalLearningSnapshot(value: unknown): LearningV1Snapshot {
+  if (!isCanonicalLearningSnapshot(value)) throw new TypeError('Invalid canonical learning.v1 snapshot')
+  return value
+}
+
+/** Validate and return the exact snapshot sent inside OP-DRAFT-PATCH. */
+export function editableFieldsToPatch(snapshot: LearningV1Snapshot): Readonly<Record<string, unknown>> {
+  return requireCanonicalLearningSnapshot(snapshot) as unknown as Readonly<Record<string, unknown>>
 }
 
 export const submissionApi = {
@@ -480,10 +523,11 @@ export const submissionApi = {
     }
   },
 
-  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly fields?: Partial<SubmissionProjectFields>; readonly payloadSnapshot?: Readonly<Record<string, unknown>> } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
+  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly snapshot?: LearningV1Snapshot; readonly fields?: Partial<SubmissionProjectFields> } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
+    if (input.snapshot === undefined) throw new TypeError('canonical learning.v1 snapshot required')
+    const patch = editableFieldsToPatch(input.snapshot)
     const operationId = input.operationId ?? makeSubmissionClientRequestId()
     try {
-      const patch = input.payloadSnapshot ?? editableFieldsToPatch(input.fields ?? {})
       const source = await clients(input.session, () => operationId).draft.patch(input.draftId, { expected_version: input.expectedVersion, patch, operation_id: operationId }, { signal: input.signal })
       return { ...source, fields: payloadFields(source.payload_snapshot), originalExtraction: extractionFields(source.payload_snapshot) ?? payloadFields(source.payload_snapshot) }
     } catch (error) {

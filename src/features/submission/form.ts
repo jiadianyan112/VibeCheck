@@ -26,16 +26,16 @@ export interface LearningV1Snapshot {
     readonly cover_media_reference_ids: readonly string[]
     readonly one_line_definition: string
     readonly ai_coding_tools: Readonly<{
-      readonly knowledge_state: 'known_values' | 'unknown'
+      readonly knowledge_state: 'known_values' | 'known_empty' | 'unknown'
       readonly values: readonly string[]
-      readonly source_type: 'verified_author_statement' | 'system_inference'
+      readonly source_type: 'platform_verified_fact' | 'verified_author_statement' | 'trusted_external_source' | 'system_inference'
       readonly observed_at: string
     }>
     readonly tech_stack: readonly string[]
     readonly deployment_platform: string | null
     readonly access_status: 'normal' | 'login_required' | 'partial_abnormal' | 'link_unavailable' | 'suspected_migration' | 'paused' | 'ended' | 'unknown'
-    readonly maintenance_signal: 'unknown'
-    readonly status_note: null
+    readonly maintenance_signal: 'repository_updated' | 'page_updated' | 'author_updated' | 'no_public_change' | 'unknown'
+    readonly status_note: string | null
   }>
   readonly category_id: typeof learningCategoryId
   readonly category_schema_version: typeof learningSchemaVersion

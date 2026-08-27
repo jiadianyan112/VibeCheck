@@ -96,6 +96,14 @@ describe('multi-step submission helpers', () => {
     expect(snapshot.category_data.core_flow).toEqual([{ order: 1, name: '上传材料' }])
   })
 
+  it('does not manufacture required learning fields from an incomplete form', () => {
+    expect(() => buildLearningV1Snapshot({
+      fields: { currentName: '只有名称' },
+      coverMediaReferenceIds: [],
+      observedAt: '2026-08-25T10:00:00.000Z',
+    })).toThrow('Learning snapshot requires coreFlow')
+  })
+
   it('keeps original extraction after an automatic field is corrected', () => {
     const extracted = applyExtraction(baseDraft, extraction)
     const corrected = updateDraftField(extracted, 'currentName', '人工纠正名称')

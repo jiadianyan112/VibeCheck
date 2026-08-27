@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubmissionDraft as ContractSubmissionDraft, SubmissionUrlCheck } from '@vibecheck/contracts'
+import type { LearningV1Snapshot } from '../features/submission/form'
 import {
   editableFieldsToPatch,
   makeSubmissionClientRequestId,
@@ -274,39 +275,43 @@ describe('submissionApi typed production gateway', () => {
     expect((local.payloadSnapshot as Record<string, unknown>).unknown_top_level).toEqual({ preserve: true })
   })
 
-  it('maps editable fields to snake_case, maps core_flow to order/name and excludes immutable identity', () => {
-    const patch = editableFieldsToPatch({
-      publicUrl: 'https://should-not-change.test',
-      categoryId: 'personal_site_portfolio',
-      categorySchemaVersion: 'portfolio.v1',
-      currentName: '人工名称',
-      oneLineDefinition: '人工定义',
-      coreFlow: [{ id: 'one', order: 1, label: '输入', description: 'ignored description' }],
-      targetUsers: ['university_students'],
-    })
-    expect(patch).toEqual({
-      project_core: { current_name: '人工名称', one_line_definition: '人工定义' },
-      category_data: { core_flow: [{ order: 1, name: '输入' }], target_users: ['university_students'] },
-    })
-    expect(patch).not.toHaveProperty('public_url')
-    expect(patch).not.toHaveProperty('category_id')
-    expect(patch).not.toHaveProperty('category_schema_version')
+  it('accepts only an exact canonical snapshot for the PATCH payload', () => {
+    expect(editableFieldsToPatch(previewProjection.payload_snapshot)).toEqual(previewProjection.payload_snapshot)
   })
 
-  it('PATCH sends the current expected version and operation id with CSRF', async () => {
+  it('PATCH sends the exact canonical snapshot with the current expected version and operation id', async () => {
     const fetchMock = installFetch(jsonResponse(draftProjection, 200))
-    await submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '新名称' }, session: csrf, operationId: 'patch-operation-01' })
+    await submissionApi.patch({ draftId, expectedVersion: 3, snapshot: previewProjection.payload_snapshot, session: csrf, operationId: 'patch-operation-01' })
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
     expect(init.method).toBe('PATCH')
-    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, patch: { project_core: { current_name: '新名称' } }, operation_id: 'patch-operation-01' })
+    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, patch: previewProjection.payload_snapshot, operation_id: 'patch-operation-01' })
     expect(init.headers).toMatchObject({ 'X-CSRF-Token': csrf.csrf_token })
+  })
+
+  it('rejects the default legacy fields PATCH path before making a request', async () => {
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await expect(submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '不完整快照' }, session: csrf, operationId: 'patch-legacy-01' })).rejects.toThrow('canonical learning.v1 snapshot required')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing category_id', (() => {
+      const snapshot = { ...previewProjection.payload_snapshot } as Record<string, unknown>
+      delete snapshot.category_id
+      return snapshot
+    })()],
+    ['extra root key', { ...previewProjection.payload_snapshot, legacy_learning_field: 'reject-me' }],
+  ] as const)('rejects an explicit snapshot with %s before making a request', async (_label, snapshot) => {
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await expect(submissionApi.patch({ draftId, expectedVersion: 3, snapshot: snapshot as unknown as LearningV1Snapshot, session: csrf, operationId: 'patch-invalid-shape-01' })).rejects.toThrow('canonical learning.v1 snapshot')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it.each([
     [401, 'AUTH_REQUIRED'], [403, 'FORBIDDEN'], [409, 'DRAFT_VERSION_CONFLICT'], [410, 'DRAFT_EXPIRED'], [422, 'DRAFT_INVALID'],
   ] as const)('keeps the typed error status and details for PATCH %s', async (status, code) => {
     installFetch(jsonResponse(errorBody(code), status))
-    const thrown = await submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '保留输入' }, session: csrf, operationId: `patch-${status}-01` }).catch((error: unknown) => error as SubmissionApiError) as SubmissionApiError
+    const thrown = await submissionApi.patch({ draftId, expectedVersion: 3, snapshot: previewProjection.payload_snapshot, session: csrf, operationId: `patch-${status}-01` }).catch((error: unknown) => error as SubmissionApiError) as SubmissionApiError
     expect(thrown).toMatchObject({ status, code, fieldErrors: [{ path: '/patch/current_name', code: 'invalid' }] })
     expect(thrown.details).toMatchObject({ conflict: { current_version: 4 } })
   })
@@ -318,7 +323,7 @@ describe('submissionApi typed production gateway', () => {
       throw new Error('offline')
     })
     vi.stubGlobal('fetch', fetchMock)
-    await expect(submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '保留输入' }, session: csrf, operationId: 'no-retry-operation-01' })).rejects.toMatchObject({ kind: 'transport', retryable: true })
+    await expect(submissionApi.patch({ draftId, expectedVersion: 3, snapshot: previewProjection.payload_snapshot, session: csrf, operationId: 'no-retry-operation-01' })).rejects.toMatchObject({ kind: 'transport', retryable: true })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
