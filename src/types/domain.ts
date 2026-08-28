@@ -805,6 +805,10 @@ export interface SubmissionDraft {
   /** Immutable copy of the author-visible fields at the first submission. */
   submittedFields: Partial<SubmissionProjectFields> | null
   submittedAssetIds: AssetId[]
+  /** Server-owned media references currently attached to this remote draft. */
+  mediaReferenceIds?: readonly string[]
+  /** Server-owned evidence drafts currently attached to this remote draft. */
+  evidenceDraftIds?: readonly string[]
   supplementalMaterial: string
   publishedProjectId: ProjectId | null
   publishedEventId: LifecycleEventId | null
@@ -834,7 +838,7 @@ export interface SubmissionDraft {
  * even when a draft was restored from local storage.
  */
 export function submissionDraftPreviewFingerprint(
-  draft: Pick<SubmissionDraft, 'id' | 'draftId' | 'version' | 'checkId' | 'fields' | 'assetIds' | 'submittedAssetIds' | 'payloadSnapshot'>,
+  draft: Pick<SubmissionDraft, 'id' | 'draftId' | 'version' | 'checkId' | 'fields' | 'assetIds' | 'submittedAssetIds' | 'mediaReferenceIds' | 'evidenceDraftIds' | 'payloadSnapshot'>,
 ): string {
   return JSON.stringify({
     id: draft.id,
@@ -844,6 +848,8 @@ export function submissionDraftPreviewFingerprint(
     fields: draft.fields,
     assetIds: draft.assetIds,
     submittedAssetIds: draft.submittedAssetIds,
+    mediaReferenceIds: draft.mediaReferenceIds ?? [],
+    evidenceDraftIds: draft.evidenceDraftIds ?? [],
     payloadSnapshot: draft.payloadSnapshot ?? null,
   })
 }

@@ -17,6 +17,7 @@ import {
   remoteDraftToLocalDraft,
   submissionApi,
   SubmissionApiError,
+  type RemoteSubmissionDraft,
 } from '../services/submissionApi'
 import {
   SubmissionAssetsApiError,
@@ -65,19 +66,53 @@ function isRemoteDraftId(value: string | null): boolean {
   return value !== null && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function withRemoteReferences(next: SubmissionDraft, remote: Pick<RemoteSubmissionDraft, 'media_reference_ids' | 'evidence_draft_ids'>): SubmissionDraft {
+  return {
+    ...next,
+    mediaReferenceIds: [...remote.media_reference_ids],
+    evidenceDraftIds: [...remote.evidence_draft_ids],
+  }
+}
+
+function hasRemoteReceipt(draft?: SubmissionDraft): boolean {
+  return Boolean(draft?.submissionId && draft.reviewWorkItemId && draft.reviewStatus === 'pending_review' && draft.remoteStatus === 'submitted')
+}
+
 function carryRemoteReceipt(next: SubmissionDraft, previous?: SubmissionDraft): SubmissionDraft {
   if (!previous) return next
-  const preview = previous.preview && previous.preview.inputFingerprint === submissionDraftPreviewFingerprint(next)
-    ? previous.preview
-    : undefined
+  const samePreviewInputs = previous.preview !== undefined && previous.preview.inputFingerprint === submissionDraftPreviewFingerprint(next)
+  const preview = samePreviewInputs ? previous.preview : undefined
+  const preserveReceipt = hasRemoteReceipt(previous) && next.remoteStatus !== 'closed' && next.remoteStatus !== 'expired'
   return {
     ...next,
     ...(preview ? { preview } : {}),
-    ...(previous.submissionKey ? { submissionKey: previous.submissionKey } : {}),
-    ...(previous.submissionId ? { submissionId: previous.submissionId } : {}),
-    ...(previous.reviewWorkItemId ? { reviewWorkItemId: previous.reviewWorkItemId } : {}),
-    ...(previous.reviewStatus ? { reviewStatus: previous.reviewStatus } : {}),
+    ...(preview && previous.submissionKey ? { submissionKey: previous.submissionKey } : {}),
+    ...(preserveReceipt ? {
+      status: 'pending_review' as const,
+      remoteStatus: 'submitted' as const,
+      reviewStatus: previous.reviewStatus,
+      submissionId: previous.submissionId,
+      reviewWorkItemId: previous.reviewWorkItemId,
+      submittedFields: previous.submittedFields,
+      submittedAssetIds: previous.submittedAssetIds,
+      submittedAt: previous.submittedAt,
+    } : {}),
   }
+}
+
+function withoutRemotePreviewAndReferences(draft: SubmissionDraft): SubmissionDraft {
+  const {
+    preview: _preview,
+    submissionKey: _submissionKey,
+    mediaReferenceIds: _mediaReferenceIds,
+    evidenceDraftIds: _evidenceDraftIds,
+    ...rest
+  } = draft
+  void _preview
+  void _submissionKey
+  void _mediaReferenceIds
+  void _evidenceDraftIds
+  return { ...rest, mediaReferenceIds: [], evidenceDraftIds: [] }
 }
 
 function OriginalValue({ label, value }: { label: string; value: unknown }) {
@@ -323,7 +358,7 @@ export function SubmitFormPage() {
       .then((remote) => {
         if (controller.signal.aborted) return
         const previous = draftsRef.current.find((item) => item.userId === user.id && (item.id === draftId || item.draftId === draftId))
-        const next = carryRemoteReceipt(remoteDraftToLocalDraft(remote, user.id, previous, step), previous)
+        const next = carryRemoteReceipt(withRemoteReferences(remoteDraftToLocalDraft(remote, user.id, previous, step), remote), previous)
         if (previewRequested) previewReadyRef.current = draftId
         dispatch({ type: 'DRAFT_UPSERT', draft: next })
         setSaveError(null)
@@ -364,19 +399,13 @@ export function SubmitFormPage() {
     setSaveError(null)
     invalidateMaterials()
     const nextDraft = updateDraftField(draft, field, value)
-    const { preview: _preview, submissionKey: _submissionKey, ...withoutPreview } = nextDraft
-    void _preview
-    void _submissionKey
-    dispatch({ type: 'DRAFT_UPSERT', draft: withoutPreview })
+    dispatch({ type: 'DRAFT_UPSERT', draft: withoutRemotePreviewAndReferences(nextDraft) })
   }
   const onCoverChange = (file: File | null) => {
     setCoverFile(file)
     invalidateMaterials()
-    if (draft.preview || draft.submissionKey) {
-      const { preview: _preview, submissionKey: _submissionKey, ...withoutPreview } = draft
-      void _preview
-      void _submissionKey
-      dispatch({ type: 'DRAFT_UPSERT', draft: withoutPreview })
+    if (draft.preview || draft.submissionKey || draft.mediaReferenceIds?.length || draft.evidenceDraftIds?.length) {
+      dispatch({ type: 'DRAFT_UPSERT', draft: withoutRemotePreviewAndReferences(draft) })
     }
   }
   const index = submissionFormSteps.indexOf(step)
@@ -413,7 +442,7 @@ export function SubmitFormPage() {
         session: auth?.session ?? null,
         operationId,
       })
-      const next = remoteDraftToLocalDraft(remote, user.id, draft, nextStep ?? step)
+      const next = withRemoteReferences(remoteDraftToLocalDraft(remote, user.id, draft, nextStep ?? step), remote)
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...next, validationErrors: {} } })
       saveOperationRef.current = null
       setSaveError(null)
@@ -484,7 +513,7 @@ export function SubmitFormPage() {
           session: auth?.session ?? null,
           operationId: progress.ids.patch,
         })
-        currentDraft = remoteDraftToLocalDraft(remote, user.id, currentDraft, 'development')
+        currentDraft = withRemoteReferences(remoteDraftToLocalDraft(remote, user.id, currentDraft, 'development'), remote)
         dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, validationErrors: {} } })
         progress.stage = 'upload'
       }
@@ -521,7 +550,7 @@ export function SubmitFormPage() {
 
       if (progress.stage === 'cover_refresh') {
         const refreshed = await submissionApi.get({ draftId: currentDraft.draftId!, session: auth?.session ?? null })
-        currentDraft = remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'development')
+        currentDraft = withRemoteReferences(remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'development'), refreshed)
         if (currentDraft.version === undefined) throw new Error('封面引用刷新响应缺少草稿版本。')
         progress.parentVersion = currentDraft.version
         dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, validationErrors: {} } })
@@ -556,7 +585,7 @@ export function SubmitFormPage() {
 
       if (progress.stage === 'final_refresh') {
         const refreshed = await submissionApi.get({ draftId: currentDraft.draftId!, session: auth?.session ?? null })
-        currentDraft = remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'preview')
+        currentDraft = withRemoteReferences(remoteDraftToLocalDraft(refreshed, user.id, currentDraft, 'preview'), refreshed)
         dispatch({ type: 'DRAFT_UPSERT', draft: { ...currentDraft, step: 'preview', validationErrors: {} } })
         progress.stage = 'complete'
         materialsProgressRef.current = progress

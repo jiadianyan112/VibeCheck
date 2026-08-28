@@ -9,7 +9,7 @@ import {
   withdrawSubmission,
 } from '../features'
 import { resolveServiceScenario } from '../mocks'
-import { makeSubmissionClientRequestId, submissionApi, SubmissionApiError, submissionService, type ServiceError } from '../services'
+import { makeSubmissionClientRequestId, remoteDraftToLocalDraft, submissionApi, SubmissionApiError, submissionService, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
 import { submissionDraftPreviewFingerprint, type CoreModule, type CreatorRole, type PrimaryGoal, type SubmissionDraft, type SubmissionDraftPreview, type SubmissionProjectFields } from '../types'
 import {
@@ -58,6 +58,21 @@ function withoutRemotePreview(draft: SubmissionDraft): SubmissionDraft {
   void _preview
   void _submissionKey
   return rest
+}
+
+function withoutRemotePreviewAndReferences(draft: SubmissionDraft): SubmissionDraft {
+  const {
+    preview: _preview,
+    submissionKey: _submissionKey,
+    mediaReferenceIds: _mediaReferenceIds,
+    evidenceDraftIds: _evidenceDraftIds,
+    ...rest
+  } = draft
+  void _preview
+  void _submissionKey
+  void _mediaReferenceIds
+  void _evidenceDraftIds
+  return { ...rest, mediaReferenceIds: [], evidenceDraftIds: [] }
 }
 
 function remotePreviewErrorMessage(error: SubmissionApiError): string {
@@ -175,6 +190,8 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const [remoteSubmitError, setRemoteSubmitError] = useState<SubmissionApiError | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewAttempt, setPreviewAttempt] = useState(0)
+  const [remoteRefreshing, setRemoteRefreshing] = useState(false)
+  const [remoteRefreshRequired, setRemoteRefreshRequired] = useState(false)
   const [material, setMaterial] = useState(draft.supplementalMaterial)
   const submissionKeyRef = useRef<string | null>(draft.submissionKey ?? null)
   const scenario = resolveServiceScenario(params, state.serviceScenario)
@@ -184,7 +201,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const isEditableSubmission = draft.status === 'draft' || draft.status === 'changes_requested'
 
   useEffect(() => {
-    if (!remoteLearning) return
+    if (!remoteLearning || remoteRefreshRequired) return
     const preview = draft.preview
     if (preview !== undefined && !previewMatchesDraft(draft)) {
       dispatch({ type: 'DRAFT_UPSERT', draft: withoutRemotePreview(draft) })
@@ -208,6 +225,11 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
       signal: controller.signal,
     }).then((preview) => {
       if (!active) return
+      const nextDraft = {
+        ...draft,
+        mediaReferenceIds: [...preview.media_reference_ids],
+        evidenceDraftIds: [...preview.evidence_draft_ids],
+      }
       const nextPreview: SubmissionDraftPreview = {
         draftVersion: preview.draft_version,
         checkId: preview.check_id,
@@ -216,10 +238,10 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         mediaReferenceIds: [...preview.media_reference_ids],
         evidenceDraftIds: [...preview.evidence_draft_ids],
         generatedAt: preview.generated_at,
-        inputFingerprint: submissionDraftPreviewFingerprint(draft),
+        inputFingerprint: submissionDraftPreviewFingerprint(nextDraft),
       }
       submissionKeyRef.current = null
-      dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, preview: nextPreview, submissionKey: undefined } })
+      dispatch({ type: 'DRAFT_UPSERT', draft: { ...nextDraft, preview: nextPreview, submissionKey: undefined } })
       setRemotePreviewError(null)
     }).catch((reason: unknown) => {
       if (!active || controller.signal.aborted) return
@@ -242,7 +264,42 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
       active = false
       controller.abort()
     }
-  }, [auth?.session, dispatch, draft, previewAttempt, remoteLearning])
+  }, [auth?.session, dispatch, draft, previewAttempt, remoteLearning, remoteRefreshRequired])
+
+  async function refreshRemoteDraftAfterConflict(staleDraft: SubmissionDraft) {
+    if (remoteRefreshing || !staleDraft.draftId) return
+    setRemoteRefreshing(true)
+    setPreviewLoading(true)
+    setRemotePreviewError(null)
+    try {
+      const remote = await submissionApi.get({ draftId: staleDraft.draftId, session: auth?.session ?? null })
+      const cleared = withoutRemotePreviewAndReferences(staleDraft)
+      const mapped = remoteDraftToLocalDraft(remote, staleDraft.userId, cleared, 'preview')
+      const latest: SubmissionDraft = {
+        ...mapped,
+        mediaReferenceIds: [...remote.media_reference_ids],
+        evidenceDraftIds: [...remote.evidence_draft_ids],
+      }
+      dispatch({ type: 'DRAFT_UPSERT', draft: latest })
+      setRemoteRefreshRequired(false)
+    } catch (reason: unknown) {
+      const nextError = reason instanceof SubmissionApiError
+        ? reason
+        : new SubmissionApiError({
+            kind: 'transport',
+            code: 'CLIENT_REQUEST_FAILED',
+            message: '服务端草稿未刷新，当前输入已保留，请重试。',
+            status: null,
+            requestId: null,
+            retryable: true,
+            retryAfterMs: null,
+          })
+      setRemotePreviewError(nextError)
+    } finally {
+      setRemoteRefreshing(false)
+      setPreviewLoading(false)
+    }
+  }
 
   async function submitRemote() {
     if (!isEditableSubmission || busy || !remoteLearning || !currentRemotePreview || !draft.draftId) {
@@ -304,6 +361,13 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
             retryAfterMs: null,
           })
       setRemoteSubmitError(nextError)
+      if (nextError.status === 409) {
+        const staleDraft = withoutRemotePreviewAndReferences(draft)
+        submissionKeyRef.current = null
+        setRemoteRefreshRequired(true)
+        dispatch({ type: 'DRAFT_UPSERT', draft: staleDraft })
+        void refreshRemoteDraftAfterConflict(staleDraft)
+      }
     } finally {
       setBusy(false)
     }
@@ -351,12 +415,17 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
     if (remoteLearning) {
       const previewError = remotePreviewError ?? remoteSubmitError
       const previewReady = currentRemotePreview !== null
+      const retryRemoteError = previewError?.retryable
+        ? remoteRefreshRequired
+          ? () => { void refreshRemoteDraftAfterConflict(draft) }
+          : previewError === remoteSubmitError ? submitRemote : () => setPreviewAttempt((value) => value + 1)
+        : undefined
       return (
         <PageFrame title="发布预览" description="确认服务端生成的冻结快照、媒体和证据引用；只有有效预览才可以提交审核。">
           <div className="stack">
             <PreviewSummary draft={draft} />
             {previewReady ? <RemotePreviewSummary preview={currentRemotePreview} /> : <section className="feedback" role="status"><strong>{previewLoading ? '正在生成服务端预览' : '等待服务端预览'}</strong><p>{previewLoading ? '正在使用最新草稿版本和检查结果生成冻结快照。' : '没有有效的服务端预览，暂时不能提交。'}</p></section>}
-            {previewError ? <ErrorPanel title={previewError === remoteSubmitError ? '提交未完成' : '服务端预览未生成'} message={previewError === remoteSubmitError ? remoteSubmitErrorMessage(previewError) : remotePreviewErrorMessage(previewError)} onRetry={previewError.retryable ? (previewError === remoteSubmitError ? submitRemote : () => setPreviewAttempt((value) => value + 1)) : undefined} /> : null}
+            {previewError ? <ErrorPanel title={previewError === remoteSubmitError ? '提交未完成' : '服务端预览未生成'} message={previewError === remoteSubmitError ? remoteSubmitErrorMessage(previewError) : remotePreviewErrorMessage(previewError)} onRetry={retryRemoteError} /> : null}
             {previewError?.status === 422 || (!previewReady && !previewLoading && !previewError) ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link> : null}
             <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请核对服务端冻结的作品内容。封面和公开地址证据必须已经准备就绪，提交不会创建本地作品或动态。</p></aside>
             <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy || previewLoading || !previewReady} onClick={() => setConfirming(true)}>{busy ? '提交中…' : previewReady ? '确认并提交审核' : '等待服务端预览'}</Button></div>

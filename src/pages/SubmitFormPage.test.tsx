@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -622,8 +622,50 @@ describe('remote P11 draft GET/PATCH form', () => {
     const evidenceRequests = transport.requests.filter((request) => request.url.includes(`/evidence-drafts/${transport.ids.evidenceDraftId}`))
     expect(evidenceRequests.map((request) => request.init?.method)).toEqual(['POST', 'PATCH', 'POST'])
     expect(transport.requests.filter((request) => request.init?.method === 'GET' && request.url.includes('/submission-drafts/'))).toHaveLength(3)
-    expect(persistedDraft()).toMatchObject({ version: 6, step: 'preview', draftId: draftUuid })
+    expect(persistedDraft()).toMatchObject({
+      version: 6,
+      step: 'preview',
+      draftId: draftUuid,
+      mediaReferenceIds: [transport.ids.mediaReferenceId],
+      evidenceDraftIds: [transport.ids.evidenceDraftId],
+    })
     expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(true)
+  })
+
+  it('invalidates the remote preview and references after a field or cover change', async () => {
+    const transport = installMaterialsTransport()
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    expect(await screen.findByText('c'.repeat(64))).toBeInTheDocument()
+    expect(persistedDraft().preview).toBeDefined()
+    expect(persistedDraft().mediaReferenceIds).toEqual([transport.ids.mediaReferenceId])
+    expect(persistedDraft().evidenceDraftIds).toEqual([transport.ids.evidenceDraftId])
+
+    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=prefill`) })
+    const name = await screen.findByRole('textbox', { name: '作品名称' })
+    await user.clear(name)
+    await user.type(name, '字段变化后必须重新预览')
+    await waitFor(() => {
+      expect(persistedDraft().preview).toBeUndefined()
+      expect(persistedDraft().mediaReferenceIds).toEqual([])
+      expect(persistedDraft().evidenceDraftIds).toEqual([])
+    })
+
+    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=preview`) })
+    expect(await screen.findByText('c'.repeat(64))).toBeInTheDocument()
+    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=development`) })
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover-2.png', { type: 'image/png' }))
+    await waitFor(() => {
+      expect(persistedDraft().preview).toBeUndefined()
+      expect(persistedDraft().mediaReferenceIds).toEqual([])
+      expect(persistedDraft().evidenceDraftIds).toEqual([])
+    })
   })
 
   it('reloads the latest draft version before retrying a materials PATCH conflict and preserves the cover', async () => {
