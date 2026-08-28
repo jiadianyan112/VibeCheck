@@ -149,6 +149,8 @@ type MaterialsTransportOptions = {
   mediaDeletionGuardActive?: boolean
   evidenceStatus?: 'editing' | 'ready' | 'withdrawn'
   patchConflictOnce?: boolean
+  patchCommitThenLoseResponseOnce?: boolean
+  existingCoverReference?: boolean
   failSubmitOnce?: boolean
   failOnceAt?: 'evidence-complete'
   failAt?: 'patch' | 'upload' | 'media' | 'reference' | 'cover-get' | 'evidence' | 'final-get'
@@ -240,9 +242,10 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
   let serverVersion = 3
   let draftGetCount = 0
   let patchAttemptCount = 0
+  let lostPatchReplay: { operationId: unknown; body: string } | null = null
   let failOnceConsumed = false
   let submitFailureConsumed = false
-  let referenceCreated = false
+  let referenceCreated = options.existingCoverReference ?? false
   let evidenceReady = false
   const mediaStatus = options.mediaStatus ?? 'ready'
   const mediaScanResult = options.mediaScanResult ?? 'clean'
@@ -276,8 +279,19 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       patchAttemptCount += 1
       if (options.patchConflictOnce && patchAttemptCount === 1) return errorResponse(409, { details: { current_version: 5 } })
       if (options.failAt === 'patch') return errorResponse(409)
+      const serializedBody = JSON.stringify(body)
+      if (lostPatchReplay !== null && body?.operation_id === lostPatchReplay.operationId) {
+        if (serializedBody !== lostPatchReplay.body) return errorResponse(409, { code: 'IDEMPOTENCY_BODY_MISMATCH' })
+        return jsonResponse(draftDto({ version: serverVersion }, initialWireFields))
+      }
       serverVersion += 1
-      return jsonResponse(draftDto({ version: serverVersion }, initialWireFields))
+      if (options.patchCommitThenLoseResponseOnce && lostPatchReplay === null) {
+        lostPatchReplay = { operationId: body?.operation_id, body: serializedBody }
+        throw new Error('patch response lost after commit')
+      }
+      return jsonResponse(draftDto({ version: serverVersion }, initialWireFields, {
+        mediaReferenceIds: referenceCreated ? [ids.mediaReferenceId] : [],
+      }))
     }
     if (url.endsWith('/media-resources') && init?.method === 'POST') {
       if (options.failAt === 'media') throw new Error('media unavailable')
@@ -318,6 +332,16 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       if (options.failAt === 'reference') return errorResponse(422)
       referenceCreated = true
       return jsonResponse(referenceProjection(ids.mediaResourceId, ids.mediaReferenceId), 201)
+    }
+    if (url.includes('/media-references?') && init?.method === 'GET') {
+      return jsonResponse({
+        items: referenceCreated ? [referenceProjection(crypto.randomUUID(), ids.mediaReferenceId)] : [],
+        total_count: referenceCreated ? 1 : 0,
+      })
+    }
+    if (url.endsWith(`/media-references/${ids.mediaReferenceId}`) && init?.method === 'DELETE') {
+      referenceCreated = false
+      return new Response(null, { status: 204 })
     }
     if (url.includes(`/submission-drafts/${draftUuid}/preview`) && init?.method === 'POST') {
       return jsonResponse({
@@ -391,6 +415,8 @@ function requestKind(request: RequestRecord): string {
   if (url.includes('/media-resources/') && url.endsWith('/complete') && method === 'POST') return 'media-complete'
   if (url.includes('/media-resources/') && method === 'GET') return 'media-inspect'
   if (url.endsWith('/media-references') && method === 'POST') return 'media-reference'
+  if (url.includes('/media-references?') && method === 'GET') return 'media-reference-list'
+  if (url.includes('/media-references/') && method === 'DELETE') return 'media-reference-delete'
   if (url.endsWith('/evidence-drafts') && method === 'POST') return 'evidence-create'
   if (url.includes('/evidence-drafts/') && url.endsWith('/binding') && method === 'POST') return 'evidence-bind'
   if (url.includes('/evidence-drafts/') && url.endsWith('/complete') && method === 'POST') return 'evidence-complete'
@@ -494,7 +520,7 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.filter((request) => request.init?.method === 'GET')).toHaveLength(1)
   })
 
-  it('caches edits locally and PATCHes editable snake_case fields with the current version', async () => {
+  it('caches partial edits locally and advances without sending an incomplete canonical PATCH', async () => {
     const transport = installTransport()
     const user = userEvent.setup()
     const { router } = renderForm()
@@ -505,13 +531,8 @@ describe('remote P11 draft GET/PATCH form', () => {
     await user.click(screen.getByRole('button', { name: '保存并继续' }))
 
     await waitFor(() => expect(router.state.location.search).toContain('step=definition'))
-    const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH')
-    expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
-    expect((patchRequest?.body?.patch as WireFields).project_core).toMatchObject({ current_name: '本地修改后的名称' })
-    expect((patchRequest?.body?.patch as WireFields).project_core).toHaveProperty('public_url', 'https://example.test/real-draft')
-    expect(patchRequest?.body?.patch).toHaveProperty('category_id', 'ai_learning_quiz')
-    expect(patchRequest?.body?.patch).toHaveProperty('category_schema_version', 'learning.v1')
-    await waitFor(() => expect(persistedDraft()).toMatchObject({ version: 4, step: 'definition', draftId: draftUuid }))
+    expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
+    await waitFor(() => expect(persistedDraft()).toMatchObject({ version: 3, step: 'definition', draftId: draftUuid, fields: { currentName: '本地修改后的名称' } }))
   })
 
   it('preserves a cached edit after an unmount and remote GET recovery', async () => {
@@ -537,68 +558,6 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(await screen.findByText('请确认作品名称。')).toBeInTheDocument()
     expect(name).toHaveValue('')
     expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
-  })
-
-  it('handles 409 without bumping the version or overwriting local input', async () => {
-    let getCount = 0
-    const transport = installTransport({
-      get: () => {
-        getCount += 1
-        return jsonResponse(draftDto({ version: getCount === 1 ? 3 : 4 }))
-      },
-      patch: () => errorResponse(409, { details: { current_version: 4 } }),
-    })
-    const user = userEvent.setup()
-    renderForm()
-    const name = await screen.findByRole('textbox', { name: '作品名称' })
-    await user.clear(name)
-    await user.type(name, '冲突时保留')
-    await user.click(screen.getByRole('button', { name: '保存并继续' }))
-    expect(await screen.findByText('服务端已有更新，未覆盖你的输入。请先加载服务端版本，再合并后保存。')).toBeInTheDocument()
-    expect(name).toHaveValue('冲突时保留')
-    expect(persistedDraft().version).toBe(3)
-    expect(transport.requests.find((request) => request.init?.method === 'PATCH')?.body).toMatchObject({ expected_version: 3 })
-    await user.click(screen.getByRole('button', { name: '加载服务端版本' }))
-    await waitFor(() => expect(persistedDraft().version).toBe(4))
-    expect(screen.getByRole('textbox', { name: '作品名称' })).toHaveValue('冲突时保留')
-  })
-
-  it('stops editing on a 410 and sends the user back to URL check', async () => {
-    installTransport({ patch: () => errorResponse(410) })
-    const user = userEvent.setup()
-    renderForm()
-    await screen.findByRole('textbox', { name: '作品名称' })
-    await user.click(screen.getByRole('button', { name: '保存并继续' }))
-    expect(await screen.findByRole('heading', { name: '草稿已过期' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '重新检查地址' })).toHaveAttribute('href', expect.stringContaining('/submit?resumeUrl='))
-  })
-
-  it('maps 422 snake_case field errors onto the focused form field', async () => {
-    const transport = installTransport({
-      patch: () => errorResponse(422, { field_errors: [{ path: '/patch/current_name', code: 'too_short' }] }),
-    })
-    const user = userEvent.setup()
-    renderForm()
-    const name = await screen.findByRole('textbox', { name: '作品名称' })
-    await user.clear(name)
-    await user.type(name, 'x')
-    await user.click(screen.getByRole('button', { name: '保存并继续' }))
-    expect(await screen.findByText('服务端校验未通过（too_short）。')).toBeInTheDocument()
-    expect(name).toHaveAttribute('aria-invalid', 'true')
-    expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(true)
-  })
-
-  it.each([401, 403])('keeps local input after a %s PATCH response', async (status) => {
-    const transport = installTransport({ patch: () => errorResponse(status) })
-    const user = userEvent.setup()
-    renderForm()
-    const name = await screen.findByRole('textbox', { name: '作品名称' })
-    await user.clear(name)
-    await user.type(name, '登录失效仍保留')
-    await user.click(screen.getByRole('button', { name: '保存并继续' }))
-    expect(await screen.findByText('登录状态已失效，当前输入已保留，请重新登录后继续。')).toBeInTheDocument()
-    expect(name).toHaveValue('登录失效仍保留')
-    expect(transport.requests.find((request) => request.init?.method === 'PATCH')?.body).toMatchObject({ expected_version: 3 })
   })
 
   it('blocks the deferred Portfolio save without building or sending a Learning snapshot', async () => {
@@ -627,12 +586,13 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
     expect(transport.requests.map(requestKind)).toEqual([
       'draft-get', 'draft-patch', 'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
-      'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete', 'draft-get',
+      'draft-get', 'draft-patch', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete', 'draft-get',
       'draft-preview',
     ])
-    const patchRequest = transport.requests.find((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
-    expect(patchRequest?.body).toMatchObject({ expected_version: 3 })
-    expect((patchRequest?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [] })
+    const patchRequests = transport.requests.filter((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
+    expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5])
+    expect((patchRequests[0]?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [] })
+    expect((patchRequests[1]?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [transport.ids.mediaReferenceId] })
     const referenceRequest = transport.requests.find((request) => request.url.endsWith('/media-references') && request.init?.method === 'POST')
     expect(referenceRequest?.body).toMatchObject({ media_resource_id: transport.ids.mediaResourceId, target_id: draftUuid, role: 'cover' })
     const evidenceCreate = transport.requests.find((request) => request.url.endsWith('/evidence-drafts') && request.init?.method === 'POST')
@@ -654,7 +614,7 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.some((request) => request.url.includes('/preview') || request.url.includes('/submissions'))).toBe(true)
   })
 
-  it('invalidates the remote preview and references after a field or cover change', async () => {
+  it('invalidates remote material receipts after an edit and blocks direct preview bypass', async () => {
     const transport = installMaterialsTransport({ failSubmitOnce: true })
     const user = userEvent.setup()
     const { router } = renderForm('development')
@@ -687,28 +647,16 @@ describe('remote P11 draft GET/PATCH form', () => {
       expect(persistedDraft().evidenceDraftIds).toEqual([])
     })
 
+    const previewCount = transport.requests.filter((request) => request.url.includes('/preview')).length
+    const submitCount = transport.requests.filter((request) => request.url.endsWith('/submissions')).length
     await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=preview`) })
-    expect(await screen.findByText('c'.repeat(64))).toBeInTheDocument()
-    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=development`) })
-    await screen.findByRole('heading', { name: '开发与资产' })
-    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover-2.png', { type: 'image/png' }))
-    await waitFor(() => {
-      expect(persistedDraft().preview).toBeUndefined()
-      expect(persistedDraft().submissionKey).toBeUndefined()
-      expect(persistedDraft().mediaReferenceIds).toEqual([])
-      expect(persistedDraft().evidenceDraftIds).toEqual([])
-    })
-
-    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=preview`) })
-    expect(await screen.findByText('c'.repeat(64))).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
-    await user.click(screen.getByRole('button', { name: '确认提交' }))
-    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
-    const submitRequests = transport.requests.filter((request) => request.url.endsWith('/submissions'))
-    expect(submitRequests).toHaveLength(2)
-    expect(submitRequests[1]?.body?.submission_key).toEqual(expect.any(String))
-    expect(submitRequests[1]?.body?.submission_key).not.toBe(firstSubmissionKey)
-    expect(persistedDraft().submissionKey).toBe(submitRequests[1]?.body?.submission_key)
+    expect(await screen.findByRole('heading', { name: '开发与资产' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('作品字段或封面已经变化，请重新准备封面和证据后再预览')
+    expect(transport.requests.filter((request) => request.url.includes('/preview'))).toHaveLength(previewCount)
+    expect(transport.requests.filter((request) => request.url.endsWith('/submissions'))).toHaveLength(submitCount)
+    expect(persistedDraft().fields.currentName).toBe('字段变化后必须重新预览')
+    expect(persistedDraft().submissionKey).toBeUndefined()
+    expect(firstSubmissionKey).toEqual(expect.any(String))
   })
 
   it('reloads the latest draft version before retrying a materials PATCH conflict and preserves the cover', async () => {
@@ -729,7 +677,7 @@ describe('remote P11 draft GET/PATCH form', () => {
 
     await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
     const patchRequests = transport.requests.filter((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
-    expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5])
+    expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5, 6])
   })
 
   it('reuses material operation keys and runtime evidence ID after an intermediate retry', async () => {
@@ -763,6 +711,47 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(evidenceBinds.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
     expect(evidencePatches.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
     expect(evidenceCompletes.every((request) => request.url.includes(transport.ids.evidenceDraftId))).toBe(true)
+  })
+
+  it('replays the exact canonical PATCH after the server commits but its response is lost', async () => {
+    const transport = installMaterialsTransport({ patchCommitThenLoseResponseOnce: true })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    expect(await screen.findByText('材料准备未完成')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+
+    const patchRequests = transport.requests.filter((request) => requestKind(request) === 'draft-patch')
+    expect(patchRequests).toHaveLength(3)
+    expect(patchRequests[1]?.body).toEqual(patchRequests[0]?.body)
+    expect(patchRequests[1]?.body?.operation_id).toBe(patchRequests[0]?.body?.operation_id)
+    expect(patchRequests[2]?.body?.operation_id).not.toBe(patchRequests[0]?.body?.operation_id)
+  })
+
+  it('deletes the existing active cover before creating a replacement', async () => {
+    const transport = installMaterialsTransport({ existingCoverReference: true })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await waitFor(() => expect(persistedDraft().mediaReferenceIds).toEqual([transport.ids.mediaReferenceId]))
+
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'replacement.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+
+    const kinds = transport.requests.map(requestKind)
+    const listIndex = kinds.indexOf('media-reference-list')
+    const deleteIndex = kinds.indexOf('media-reference-delete')
+    const createIndex = kinds.lastIndexOf('media-reference')
+    expect(listIndex).toBeGreaterThan(-1)
+    expect(deleteIndex).toBeGreaterThan(listIndex)
+    expect(createIndex).toBeGreaterThan(deleteIndex)
+    const deleteRequest = transport.requests.find((request) => requestKind(request) === 'media-reference-delete')
+    expect(deleteRequest?.body).toMatchObject({ expected_version: 1, operation_id: expect.any(String) })
   })
 
   it('requires a selected cover and keeps the final step without a field-only PATCH', async () => {

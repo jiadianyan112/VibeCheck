@@ -91,15 +91,17 @@ function hasValue(value: unknown) {
   return value !== null && value !== undefined
 }
 
-function requiredText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): string {
+function requiredText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields, maximum: number): string {
   const value = fields[field]
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new TypeError(`Learning snapshot requires ${String(field)}`)
   }
-  return value.trim()
+  const normalized = value.trim()
+  if (normalized.length > maximum) throw new TypeError(`Learning snapshot exceeds ${String(field)} limit`)
+  return normalized
 }
 
-function stringList(value: unknown, field: keyof SubmissionProjectFields, required: boolean): readonly string[] {
+function stringList(value: unknown, field: keyof SubmissionProjectFields, required: boolean, maximumItems: number, maximumItemLength: number): readonly string[] {
   if (!Array.isArray(value)) {
     throw new TypeError(`Learning snapshot requires ${String(field)}`)
   }
@@ -108,21 +110,28 @@ function stringList(value: unknown, field: keyof SubmissionProjectFields, requir
   if ((required && strings.length === 0) || strings.length !== items.length) {
     throw new TypeError(`Learning snapshot requires ${String(field)}`)
   }
-  return strings.map((item) => item.trim())
+  const normalized = strings.map((item) => item.trim())
+  if (normalized.length > maximumItems || normalized.some((item) => item.length > maximumItemLength) || new Set(normalized).size !== normalized.length) {
+    throw new TypeError(`Learning snapshot exceeds ${String(field)} limit`)
+  }
+  return normalized
 }
 
-function requiredList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): readonly string[] {
-  return stringList(fields[field], field, true)
+function requiredList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields, maximumItems: number): readonly string[] {
+  return stringList(fields[field], field, true, maximumItems, 64)
 }
 
-function optionalList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): readonly string[] {
+function optionalList(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields, maximumItems: number): readonly string[] {
   const value = fields[field]
-  return Array.isArray(value) ? stringList(value, field, false) : []
+  return Array.isArray(value) ? stringList(value, field, false, maximumItems, 64) : []
 }
 
-function optionalNullableText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields): string | null {
+function optionalNullableText(fields: Partial<SubmissionProjectFields>, field: keyof SubmissionProjectFields, maximum: number): string | null {
   const value = fields[field]
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+  const normalized = value.trim()
+  if (normalized.length > maximum) throw new TypeError(`Learning snapshot exceeds ${String(field)} limit`)
+  return normalized
 }
 
 function canonicalAccessStatus(value: SubmissionProjectFields['accessStatus'] | undefined): LearningV1Snapshot['project_core']['access_status'] {
@@ -144,18 +153,18 @@ function canonicalAiCodingTools(
 export function buildLearningV1Snapshot(input: LearningV1SnapshotInput): LearningV1Snapshot {
   const { fields } = input
   const flow = fields.coreFlow
-  if (!Array.isArray(flow) || flow.length === 0 || flow.some((node) => typeof node.label !== 'string' || node.label.trim().length === 0)) {
+  if (!Array.isArray(flow) || flow.length === 0 || flow.length > 10 || flow.some((node) => typeof node.label !== 'string' || node.label.trim().length === 0 || node.label.trim().length > 80)) {
     throw new TypeError('Learning snapshot requires coreFlow')
   }
 
   return {
     project_core: {
-      current_name: requiredText(fields, 'currentName'),
-      public_url: requiredText(fields, 'publicUrl'),
-      repository_url: optionalNullableText(fields, 'repositoryUrl'),
+      current_name: requiredText(fields, 'currentName', 80),
+      public_url: requiredText(fields, 'publicUrl', 2_048),
+      repository_url: optionalNullableText(fields, 'repositoryUrl', 2_048),
       original_platform: null,
       cover_media_reference_ids: [...input.coverMediaReferenceIds],
-      one_line_definition: requiredText(fields, 'oneLineDefinition'),
+      one_line_definition: requiredText(fields, 'oneLineDefinition', 80),
       ai_coding_tools: canonicalAiCodingTools(fields.aiCodingTools, input.observedAt),
       tech_stack: [],
       deployment_platform: null,
@@ -166,17 +175,17 @@ export function buildLearningV1Snapshot(input: LearningV1SnapshotInput): Learnin
     category_id: learningCategoryId,
     category_schema_version: learningSchemaVersion,
     category_data: {
-      target_users: requiredList(fields, 'targetUsers'),
-      core_problem: requiredText(fields, 'coreProblem'),
-      use_scenarios: requiredList(fields, 'useScenarios'),
-      main_inputs: requiredList(fields, 'mainInputs'),
-      main_outputs: requiredList(fields, 'mainOutputs'),
+      target_users: requiredList(fields, 'targetUsers', 3),
+      core_problem: requiredText(fields, 'coreProblem', 500),
+      use_scenarios: requiredList(fields, 'useScenarios', 5),
+      main_inputs: requiredList(fields, 'mainInputs', 5),
+      main_outputs: requiredList(fields, 'mainOutputs', 5),
       core_flow: flow.map((node, index) => ({ order: index + 1, name: node.label.trim() })),
       content_processing: [],
-      practice_formats: optionalList(fields, 'practiceFormats'),
-      feedback_methods: optionalList(fields, 'feedbackMethods'),
+      practice_formats: optionalList(fields, 'practiceFormats', 9),
+      feedback_methods: optionalList(fields, 'feedbackMethods', 7),
       learning_records: [],
-      differentiation: optionalNullableText(fields, 'differentiation'),
+      differentiation: optionalNullableText(fields, 'differentiation', 1_000),
       core_features: [],
       secondary_features: [],
       login_requirement: fields.loginRequirement ?? 'unknown',

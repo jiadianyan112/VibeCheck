@@ -279,6 +279,46 @@ describe('submissionAssetsApi production gateway', () => {
     })
   })
 
+  it('removes the existing active cover before creating its replacement', async () => {
+    const { mediaId, referenceId } = runtimeAssetIds()
+    const oldMediaId = crypto.randomUUID()
+    const newReferenceId = crypto.randomUUID()
+    const readyMedia = {
+      ...mediaBase(mediaId),
+      status: 'ready' as const,
+      scan_result: 'clean' as const,
+      exif_removed: true,
+      version: 4,
+    }
+    const existingReference = referenceFixture(oldMediaId, referenceId)
+    const newReference = referenceFixture(mediaId, newReferenceId)
+    const { api, apiFetch } = apiWithResponses([
+      jsonResponse(readyMedia, 200),
+      jsonResponse({ items: [existingReference], total_count: 1 }, 200),
+      new Response(null, { status: 204 }),
+      jsonResponse(newReference, 201),
+    ])
+
+    const result = await api.ensureCoverReference({
+      draftId,
+      mediaResourceId: mediaId,
+      altText: '提交作品封面',
+      session,
+      existingCoverReferenceIds: [referenceId],
+      referenceClientRequestId: 'cover-reference-replacement-01',
+      replacementOperationId: () => 'cover-reference-delete-01',
+    })
+
+    expect(result.reference).toEqual(newReference)
+    expect(apiFetch.mock.calls.map((call) => (call[1] as RequestInit).method)).toEqual(['GET', 'GET', 'DELETE', 'POST'])
+    expect(String(apiFetch.mock.calls[1]?.[0])).toContain(`target_id=${draftId}`)
+    expect(String(apiFetch.mock.calls[1]?.[0])).toContain('role=cover')
+    expect(JSON.parse(String((apiFetch.mock.calls[2]?.[1] as RequestInit).body))).toEqual({
+      expected_version: existingReference.version,
+      operation_id: 'cover-reference-delete-01',
+    })
+  })
+
   it('executes evidence create, bind, patch, complete with server-returned versions', async () => {
     const { evidenceId } = runtimeAssetIds()
     const evidenceDraft = evidenceDraftFixture(evidenceId)

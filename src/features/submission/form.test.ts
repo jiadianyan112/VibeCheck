@@ -105,6 +105,24 @@ describe('multi-step submission helpers', () => {
     })).toThrow('Learning snapshot requires coreFlow')
   })
 
+  it('rejects catalog-invalid text before any material upload can begin', () => {
+    expect(() => buildLearningV1Snapshot({
+      fields: {
+        currentName: '超'.repeat(81),
+        publicUrl: 'https://example.test/learning',
+        oneLineDefinition: '定义',
+        targetUsers: ['university_students'],
+        coreProblem: '问题',
+        useScenarios: ['daily_practice'],
+        mainInputs: ['plain_text'],
+        mainOutputs: ['practice_set'],
+        coreFlow: [{ id: 'one', order: 1, label: '准备材料', description: '' }],
+      },
+      coverMediaReferenceIds: [],
+      observedAt: '2026-08-25T10:00:00.000Z',
+    })).toThrow('Learning snapshot exceeds currentName limit')
+  })
+
   it('keeps original extraction after an automatic field is corrected', () => {
     const extracted = applyExtraction(baseDraft, extraction)
     const corrected = updateDraftField(extracted, 'currentName', '人工纠正名称')

@@ -75,8 +75,23 @@ function withoutRemotePreviewAndReferences(draft: SubmissionDraft): SubmissionDr
   return { ...rest, mediaReferenceIds: [], evidenceDraftIds: [] }
 }
 
+const materialReadinessCodes = new Set([
+  'SUBMISSION_MEDIA_REQUIRED',
+  'SUBMISSION_COVER_MEDIA_REQUIRED',
+  'SUBMISSION_COVER_MEDIA_MISMATCH',
+  'SUBMISSION_EVIDENCE_REQUIRED',
+  'SUBMISSION_MEDIA_NOT_READY',
+  'SUBMISSION_EVIDENCE_NOT_READY',
+  'SUBMISSION_EVIDENCE_ATTACHMENT_NOT_READY',
+])
+
+function isMaterialReadinessError(error: SubmissionApiError): boolean {
+  return materialReadinessCodes.has(error.code)
+}
+
 function remotePreviewErrorMessage(error: SubmissionApiError): string {
-  if (error.status === 422) return '服务端尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。'
+  if (isMaterialReadinessError(error)) return '服务端尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。'
+  if (error.status === 422) return '服务端拒绝了当前作品字段，请返回表单修正内容后重新准备提交材料。'
   if (error.status === 409) return '服务端版本发生变化，未生成旧版本预览。请返回最终步骤加载最新版本后重试。'
   return error.message || '服务端预览未生成，当前输入已保留，请重试。'
 }
@@ -243,6 +258,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
       submissionKeyRef.current = null
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...nextDraft, preview: nextPreview, submissionKey: undefined } })
       setRemotePreviewError(null)
+      setRemoteSubmitError(null)
     }).catch((reason: unknown) => {
       if (!active || controller.signal.aborted) return
       const nextError = reason instanceof SubmissionApiError
@@ -274,7 +290,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
     try {
       const remote = await submissionApi.get({ draftId: staleDraft.draftId, session: auth?.session ?? null })
       const cleared = withoutRemotePreviewAndReferences(staleDraft)
-      const mapped = remoteDraftToLocalDraft(remote, staleDraft.userId, cleared, 'preview')
+      const mapped = remoteDraftToLocalDraft(remote, staleDraft.userId, cleared, 'preview', 'remote')
       const latest: SubmissionDraft = {
         ...mapped,
         mediaReferenceIds: [...remote.media_reference_ids],
@@ -426,7 +442,8 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
             <PreviewSummary draft={draft} />
             {previewReady ? <RemotePreviewSummary preview={currentRemotePreview} /> : <section className="feedback" role="status"><strong>{previewLoading ? '正在生成服务端预览' : '等待服务端预览'}</strong><p>{previewLoading ? '正在使用最新草稿版本和检查结果生成冻结快照。' : '没有有效的服务端预览，暂时不能提交。'}</p></section>}
             {previewError ? <ErrorPanel title={previewError === remoteSubmitError ? '提交未完成' : '服务端预览未生成'} message={previewError === remoteSubmitError ? remoteSubmitErrorMessage(previewError) : remotePreviewErrorMessage(previewError)} onRetry={retryRemoteError} /> : null}
-            {previewError?.status === 422 || (!previewReady && !previewLoading && !previewError) ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link> : null}
+            {previewError && (previewError.status === 422 || isMaterialReadinessError(previewError)) ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${isMaterialReadinessError(previewError) ? 'development' : 'prefill'}`}>{isMaterialReadinessError(previewError) ? '返回开发与资产' : '返回修正作品信息'}</Link> : null}
+            {!previewReady && !previewLoading && !previewError ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link> : null}
             <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请核对服务端冻结的作品内容。封面和公开地址证据必须已经准备就绪，提交不会创建本地作品或动态。</p></aside>
             <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy || previewLoading || !previewReady} onClick={() => setConfirming(true)}>{busy ? '提交中…' : previewReady ? '确认并提交审核' : '等待服务端预览'}</Button></div>
           </div>

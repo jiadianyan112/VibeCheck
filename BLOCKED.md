@@ -2,7 +2,7 @@
 
 时间：2026-08-28。旧的“API 不可达”结论已修正：Media/Evidence 路由契约已存在，typed clients 已通过本地注入 fetch 的契约测试；这些测试不等同真实网络路由可达。本文件仅记录真实部署与真实 E2E 尚未验收的前置条件；按任务书约定不绕过、不创建该 spec。
 
-本轮 P12B Task 1C2B 门禁补充：本地聚焦前端、contracts tests/check、lint、typecheck 与 build 均通过，且 stateful same-origin golden-path 测试通过；这些是本地客户端/契约/状态化证据，不是 production E2E。PostgreSQL fixture 未通过也未标绿：本机 `DATABASE_URL` 未设置，且无 `pg_isready` 命令或已发现的 PostgreSQL 服务；`npm run submission:submit:fixture:verify` 的精确失败为 `Error: CONFIG_DATABASE_URL_REQUIRED`（exit 1）。在本地环境可用或 CI 证明 pushed HEAD 前，CI 仍为 fixture 权威。
+本轮 P12B 主流程最终修正门禁补充：真实空草稿状态化 golden path 已覆盖四步填写、双 canonical PATCH、封面/证据、preview/submit 与 `pending_review`；本地聚焦前端、contracts tests/check、lint、typecheck 与 build 均通过。这些仍是本地客户端/契约/状态化证据，不是 production E2E。PostgreSQL fixture 未通过也未标绿：本机 `DATABASE_URL` 未设置；`npm run submission:submit:fixture:verify` 的精确失败为 `Error: CONFIG_DATABASE_URL_REQUIRED`（exit 1）。在本地环境可用或 CI 证明 pushed HEAD 前，CI 仍为 fixture 权威。
 
 1. **真实部署与数据依赖尚未验收（AUTH/IDENTITY/SUBMISSION）**
    - 已有记录显示生产部署（render.yaml `vibecheck-web`，SUBMISSION_ENABLED=true）在 2026-08-24 的探测中超时：`curl -m 90 https://vibecheck-web.onrender.com/health/ready` 与 `/` 均 exit 28、HTTP 000；这只能说明当次真实部署验收失败，不否定本地 API 路由和客户端契约。

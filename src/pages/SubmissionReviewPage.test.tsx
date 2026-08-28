@@ -25,9 +25,10 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function remotePayload() {
+function remotePayload(currentName = '服务端远端审核演示') {
   return {
     project_core: {
+      current_name: currentName,
       public_url: 'https://example.test/remote-review',
       server_owned_marker: 'preview-server-value',
     },
@@ -40,6 +41,7 @@ function remotePayload() {
 type RemoteProjectionOptions = {
   version?: number
   status?: ContractSubmissionDraft['status']
+  currentName?: string
   mediaReferenceIds?: readonly string[]
   evidenceDraftIds?: readonly string[]
 }
@@ -54,7 +56,7 @@ function remoteDraftProjection(options: RemoteProjectionOptions = {}): ContractS
     draft_revision: 1,
     supersedes_draft_id: null,
     base_submission_id: null,
-    payload_snapshot: remotePayload(),
+    payload_snapshot: remotePayload(options.currentName),
     media_reference_ids: options.mediaReferenceIds ?? [remoteMediaReferenceUuid],
     evidence_draft_ids: options.evidenceDraftIds ?? [remoteEvidenceDraftUuid],
     asset_drafts: [],
@@ -74,7 +76,7 @@ function remotePreviewProjection(options: RemoteProjectionOptions = {}): Contrac
     draft_version: draft.version,
     check_id: remoteCheckUuid,
     preview_hash: remotePreviewHash,
-    payload_snapshot: remotePayload(),
+    payload_snapshot: remotePayload(options.currentName),
     media_reference_ids: draft.media_reference_ids,
     evidence_draft_ids: draft.evidence_draft_ids,
     validation: { valid: true, issue_count: 0 },
@@ -170,6 +172,8 @@ function seedRemoteDraft() {
     expiresAt: '2026-09-28T00:00:00Z',
     remoteStatus: 'editing',
     payloadSnapshot: remotePayload(),
+    mediaReferenceIds: [remoteMediaReferenceUuid],
+    evidenceDraftIds: [remoteEvidenceDraftUuid],
   }
   state = appReducer(state, { type: 'DRAFT_UPSERT', draft })
   persistAppState(state)
@@ -195,19 +199,20 @@ function renderRemoteReview() {
   return { router, ...render(<AppProviders><RouterProvider router={router} /></AppProviders>) }
 }
 
-function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?: boolean; submit409Once?: boolean; stalePendingGet?: boolean } = {}) {
+function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?: boolean; preview422Code?: string; previewErrorStatus?: number; submit409Once?: boolean; stalePendingGet?: boolean; freshEditingGet?: boolean } = {}) {
   const requests: Array<{ url: string; init?: RequestInit; body?: Record<string, unknown> }> = []
   let failedSubmit = false
   let submitConflictConsumed = false
-  let serverVersion = 8
+  let serverVersion = options.freshEditingGet ? 9 : 8
   let serverPreviewHash = remotePreviewHash
+  let serverCurrentName = options.freshEditingGet ? '服务端新编辑版本' : '服务端远端审核演示'
   const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = String(input)
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : undefined
     requests.push({ url, init, body })
     if (url.endsWith(`/submission-drafts/${remoteDraftUuid}/preview`) && init?.method === 'POST') {
-      if (options.preview422) return jsonResponse({ error: { code: 'SUBMISSION_NOT_READY', message_key: 'submission.not_ready', request_id: 'preview-422', retryable: false, retry_after_ms: null } }, 422)
-      const preview = remotePreviewProjection({ version: serverVersion })
+      if (options.preview422 || options.preview422Code) return jsonResponse({ error: { code: options.preview422Code ?? 'SUBMISSION_COVER_MEDIA_REQUIRED', message_key: 'submission.not_ready', request_id: 'preview-error', retryable: false, retry_after_ms: null } }, options.previewErrorStatus ?? 422)
+      const preview = remotePreviewProjection({ version: serverVersion, currentName: serverCurrentName })
       return jsonResponse({ ...preview, preview_hash: serverPreviewHash })
     }
     if (url.endsWith('/submissions') && init?.method === 'POST') {
@@ -215,6 +220,7 @@ function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?
         submitConflictConsumed = true
         serverVersion = 9
         serverPreviewHash = remoteFreshPreviewHash
+        serverCurrentName = '服务端第九版名称'
         return jsonResponse({ error: { code: 'DRAFT_VERSION_CONFLICT', message_key: 'submission.version_conflict', request_id: 'submit-409', retryable: false, retry_after_ms: null } }, 409)
       }
       if (options.failSubmitOnce && !failedSubmit) {
@@ -225,7 +231,7 @@ function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?
     }
     if (url.endsWith(`/submission-drafts/${remoteDraftUuid}`) && init?.method === 'GET') {
       const stale = options.stalePendingGet
-      return jsonResponse(remoteDraftProjection({ version: stale ? 8 : serverVersion, status: 'editing' }))
+      return jsonResponse(remoteDraftProjection({ version: stale ? 8 : serverVersion, status: 'editing', currentName: serverCurrentName }))
     }
     return jsonResponse({ error: { code: 'NOT_FOUND', message_key: 'not_found', request_id: 'remote-test', retryable: false, retry_after_ms: null } }, 404)
   })
@@ -366,10 +372,12 @@ describe('submission preview and review status', () => {
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
 
-    expect(await screen.findByText('服务端版本发生变化，提交尚未创建。请返回最终步骤加载最新版本后重试。')).toBeInTheDocument()
     await waitFor(() => expect(transport.requests.filter((request) => request.url.endsWith(`/submission-drafts/${remoteDraftUuid}`) && request.init?.method === 'GET')).toHaveLength(2))
     expect(await screen.findByText(remoteFreshPreviewHash)).toBeInTheDocument()
+    expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('服务端第九版名称')
+    expect(screen.queryByText('服务端版本发生变化，提交尚未创建。请返回最终步骤加载最新版本后重试。')).not.toBeInTheDocument()
     expect(persistedRemoteDraft().preview?.previewHash).toBe(remoteFreshPreviewHash)
+    expect(persistedRemoteDraft().fields.currentName).toBe('服务端第九版名称')
     expect(persistedRemoteDraft().submissionKey).toBeUndefined()
 
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
@@ -380,6 +388,7 @@ describe('submission preview and review status', () => {
     expect(submitRequests[0]?.body).toMatchObject({ draft_version: 8, preview_hash: remotePreviewHash })
     expect(submitRequests[1]?.body).toMatchObject({ draft_version: 9, preview_hash: remoteFreshPreviewHash })
     expect(submitRequests[1]?.body?.submission_key).not.toBe(submitRequests[0]?.body?.submission_key)
+    expect(persistedRemoteDraft().submittedFields?.currentName).toBe('服务端第九版名称')
   })
 
   it('keeps a pending remote receipt when a lagging editing GET arrives after submit', async () => {
@@ -412,15 +421,53 @@ describe('submission preview and review status', () => {
     expect(laggingTransport.requests.filter((request) => request.init?.method === 'POST' && request.url.endsWith('/submissions'))).toHaveLength(0)
   })
 
-  it('blocks remote submission on a server readiness 422 and returns to the final materials step', async () => {
+  it('does not preserve an old pending receipt over a newer editable server version', async () => {
     localStorage.clear()
     seedRemoteDraft()
-    const transport = installRemoteTransport({ preview422: true })
+    const user = userEvent.setup()
+    installRemoteTransport()
+    const first = renderRemoteReview()
+
+    expect(await screen.findByText(remotePreviewHash)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    first.unmount()
+
+    installRemoteTransport({ freshEditingGet: true })
+    renderRemoteReview()
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    await waitFor(() => expect(persistedRemoteDraft().version).toBe(9))
+    expect(persistedRemoteDraft()).toMatchObject({ status: 'draft', remoteStatus: 'editing' })
+    expect(persistedRemoteDraft().fields.currentName).toBe('服务端新编辑版本')
+    expect(persistedRemoteDraft().submissionId).toBeUndefined()
+    expect(persistedRemoteDraft().submittedFields).toBeNull()
+    expect(persistedRemoteDraft().submittedAt).toBeNull()
+    expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('服务端新编辑版本')
+    expect(screen.getByRole('button', { name: '确认并提交审核' })).toBeInTheDocument()
+  })
+
+  it('blocks remote submission on a readiness error and returns to the final materials step', async () => {
+    localStorage.clear()
+    seedRemoteDraft()
+    const transport = installRemoteTransport({ preview422Code: 'SUBMISSION_COVER_MEDIA_MISMATCH', previewErrorStatus: 409 })
     renderRemoteReview()
 
     expect(await screen.findByText('服务端尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回开发与资产' })).toHaveAttribute('href', expect.stringContaining('step=development'))
     expect(screen.queryByRole('button', { name: '确认并提交审核' })).not.toBeInTheDocument()
+    expect(transport.requests.some((request) => request.url.endsWith('/submissions'))).toBe(false)
+  })
+
+  it('distinguishes a schema 422 from missing submission materials', async () => {
+    localStorage.clear()
+    seedRemoteDraft()
+    const transport = installRemoteTransport({ preview422Code: 'DRAFT_VALIDATION_FAILED' })
+    renderRemoteReview()
+
+    expect(await screen.findByText('服务端拒绝了当前作品字段，请返回表单修正内容后重新准备提交材料。')).toBeInTheDocument()
+    expect(screen.queryByText(/尚未确认封面或公开地址证据/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回修正作品信息' })).toHaveAttribute('href', expect.stringContaining('step=prefill'))
     expect(transport.requests.some((request) => request.url.endsWith('/submissions'))).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -95,57 +95,13 @@ function issueId(ids: IssuedIds, name: IdName): string {
   return ids[name]!
 }
 
-function learningSnapshot(mediaReferenceIds: readonly string[] = []): Readonly<Record<string, unknown>> {
+function emptyLearningDraftSnapshot(): Readonly<Record<string, unknown>> {
   return {
     project_core: {
-      current_name: '状态化黄金路径作品',
       public_url: publicUrl,
-      repository_url: null,
-      original_platform: null,
-      cover_media_reference_ids: [...mediaReferenceIds],
-      one_line_definition: '验证端到端提交状态流转。',
-      ai_coding_tools: {
-        knowledge_state: 'known_values',
-        values: ['codex'],
-        source_type: 'verified_author_statement',
-        observed_at: now,
-      },
-      tech_stack: [],
-      deployment_platform: null,
-      access_status: 'normal',
-      maintenance_signal: 'unknown',
-      status_note: null,
     },
     category_id: 'ai_learning_quiz',
     category_schema_version: 'learning.v1',
-    category_data: {
-      target_users: ['university_students'],
-      core_problem: '提交状态需要可验证。',
-      use_scenarios: ['daily_practice'],
-      main_inputs: ['plain_text'],
-      main_outputs: ['practice_set'],
-      core_flow: [{ order: 1, name: '准备并提交材料' }],
-      content_processing: [],
-      practice_formats: [],
-      feedback_methods: [],
-      learning_records: [],
-      differentiation: null,
-      core_features: [],
-      secondary_features: [],
-      login_requirement: 'none',
-      sharing_capability: 'link',
-    },
-  }
-}
-
-function snapshotWithReferences(snapshot: Readonly<Record<string, unknown>>, mediaReferenceIds: readonly string[]) {
-  const projectCore = snapshot.project_core as Record<string, unknown>
-  return {
-    ...snapshot,
-    project_core: {
-      ...projectCore,
-      cover_media_reference_ids: [...mediaReferenceIds],
-    },
   }
 }
 
@@ -165,7 +121,10 @@ function draftProjection(
     draft_revision: 1,
     supersedes_draft_id: null,
     base_submission_id: null,
-    payload_snapshot: snapshotWithReferences(snapshot, mediaReferenceIds),
+    // A create/GET projection contains only the URL/category until the author
+    // reaches the final materials action. References are metadata, not a
+    // shortcut that silently rewrites payload_snapshot.
+    payload_snapshot: snapshot,
     media_reference_ids: [...mediaReferenceIds],
     evidence_draft_ids: [...evidenceDraftIds],
     asset_drafts: [],
@@ -277,7 +236,7 @@ function previewProjection(
     draft_version: version,
     check_id: ids.checkId,
     preview_hash: previewHash,
-    payload_snapshot: snapshotWithReferences(snapshot, [mediaReferenceId]),
+    payload_snapshot: snapshot,
     media_reference_ids: [mediaReferenceId],
     evidence_draft_ids: [evidenceDraftId],
     validation: { valid: true, issue_count: 0 },
@@ -313,11 +272,12 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
   const draftRefreshes: DraftRefresh[] = []
   const invariantViolations: string[] = []
   let draftVersion = 3
-  let serverSnapshot = learningSnapshot()
+  let serverSnapshot = emptyLearningDraftSnapshot()
   let mediaChecksum = ''
   let uploadSeen = false
   let mediaCompleted = false
   let coverReferenceCreated = false
+  let coverSnapshotPatched = false
   let evidenceCreated = false
   let evidenceBound = false
   let evidencePatched = false
@@ -390,6 +350,11 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
         if (body?.expected_version !== draftVersion) return violation('draft patch did not use the current server version')
         if (typeof body.patch !== 'object' || body.patch === null || Array.isArray(body.patch)) return violation('draft patch omitted the canonical snapshot')
         serverSnapshot = body.patch as Readonly<Record<string, unknown>>
+        const projectCore = serverSnapshot.project_core
+        const coverIds = projectCore && typeof projectCore === 'object' && !Array.isArray(projectCore)
+          ? (projectCore as Record<string, unknown>).cover_media_reference_ids
+          : undefined
+        if (coverReferenceCreated && Array.isArray(coverIds) && coverIds.length === 1 && coverIds[0] === ids.mediaReferenceId) coverSnapshotPatched = true
         draftVersion += 1
         return jsonResponse(draftProjection(draftIds, draftVersion, serverSnapshot, mediaReferenceIds, evidenceDraftIds))
       }
@@ -453,16 +418,16 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
 
     const evidenceBindMatch = /^\/api\/v1\/evidence-drafts\/([^/]+)\/binding$/.exec(path)
     if (evidenceBindMatch !== null && method === 'POST') {
-      if (evidenceBindMatch[1] !== ids.evidenceDraftId || body?.parent_id !== ids.draftId || body?.expected_parent_version !== 5) return violation('evidence bind did not reuse the returned evidence ID or refreshed version')
+      if (evidenceBindMatch[1] !== ids.evidenceDraftId || body?.parent_id !== ids.draftId || body?.expected_parent_version !== 6 || !coverSnapshotPatched) return violation('evidence bind did not reuse the cover PATCH response version')
       if (!evidenceBound) {
         evidenceBound = true
-        draftVersion = 6
+        draftVersion = 7
       }
       const binding: EvidenceBinding = {
         parent_type: 'submission_draft',
         parent_id: ids.draftId!,
         evidence_draft_ids: [ids.evidenceDraftId!],
-        parent_version: 5,
+        parent_version: 6,
         evidence_draft_version: 2,
       }
       return jsonResponse(binding)
@@ -485,7 +450,13 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
     const previewMatch = /^\/api\/v1\/submission-drafts\/([^/]+)\/preview$/.exec(path)
     if (previewMatch !== null && method === 'POST') {
       if (previewMatch[1] !== ids.draftId || body?.expected_version !== draftVersion || body?.check_id !== ids.checkId) return violation('preview did not use the latest draft and check IDs')
-      if (!coverReferenceCreated || !evidenceCompletedReady) return errorResponse(422, 'SUBMISSION_NOT_READY')
+      if (coverReferenceCreated) {
+        const projectCore = serverSnapshot.project_core as Record<string, unknown> | undefined
+        const coverIds = Array.isArray(projectCore?.cover_media_reference_ids) ? projectCore.cover_media_reference_ids : []
+        if (coverIds.length !== 1 || coverIds[0] !== ids.mediaReferenceId) return errorResponse(409, 'SUBMISSION_COVER_MEDIA_MISMATCH')
+      }
+      if (!coverReferenceCreated) return errorResponse(422, 'SUBMISSION_COVER_MEDIA_REQUIRED')
+      if (!evidenceCompletedReady) return errorResponse(422, 'SUBMISSION_EVIDENCE_NOT_READY')
       previewIssued = true
       return jsonResponse(previewProjection({ draftId: ids.draftId!, checkId: ids.checkId! }, draftVersion, ids.mediaReferenceId!, ids.evidenceDraftId!, serverSnapshot))
     }
@@ -541,24 +512,36 @@ async function startAtDevelopment(transport: ReturnType<typeof installStatefulTr
   await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), publicUrl)
   await user.click(screen.getByRole('button', { name: '检查地址' }))
   expect(await screen.findByText('地址检查通过')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '保存地址草稿' }))
-
-  await waitFor(() => expect(transport.ids.checkId).toEqual(expect.any(String)))
-  await waitFor(() => expect(transport.ids.draftId).toEqual(expect.any(String)))
-  expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create'])
-
   await user.click(screen.getByRole('button', { name: '继续补充作品信息' }))
   await waitFor(() => expect(router.state.location.pathname).toBe('/submit/new'))
   expect(router.state.location.pathname).toBe('/submit/new')
   const handoffSearch = new URLSearchParams(router.state.location.search)
+  await waitFor(() => expect(transport.ids.checkId).toEqual(expect.any(String)))
+  await waitFor(() => expect(transport.ids.draftId).toEqual(expect.any(String)))
+  expect(transport.requests.map(requestKind).slice(0, 2)).toEqual(['url-check', 'draft-create'])
   expect(handoffSearch.get('draft')).toBe(transport.ids.draftId)
   expect(handoffSearch.get('step')).toBe('prefill')
 
-  await act(async () => {
-    await router.navigate(`/submit/new?draft=${transport.ids.draftId!}&step=development`)
-  })
+  expect(await screen.findByRole('heading', { name: '基础信息' })).toBeInTheDocument()
+  await user.clear(screen.getByRole('textbox', { name: '作品名称' }))
+  await user.type(screen.getByRole('textbox', { name: '作品名称' }), '状态化黄金路径作品')
+  await user.type(screen.getByRole('textbox', { name: '一句话定义' }), '验证端到端提交状态流转。')
+  await user.selectOptions(screen.getByRole('combobox', { name: '基础访问状态（必填）' }), 'normal')
+  await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+  expect(await screen.findByRole('heading', { name: '产品定义' })).toBeInTheDocument()
+  await user.click(screen.getByRole('checkbox', { name: '大学生' }))
+  await user.type(screen.getByRole('textbox', { name: '核心问题（必填）' }), '提交状态需要可验证。')
+  await user.click(screen.getByRole('checkbox', { name: '日常刷题' }))
+  await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+  expect(await screen.findByRole('heading', { name: '方案与功能' })).toBeInTheDocument()
+  await user.click(screen.getByRole('checkbox', { name: '纯文本' }))
+  await user.click(screen.getByRole('checkbox', { name: '练习集' }))
+  await user.type(screen.getByRole('textbox', { name: '核心流程（必填，每行一步）' }), '准备并提交材料')
+  await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
   expect(await screen.findByRole('heading', { name: '开发与资产' })).toBeInTheDocument()
-  await waitFor(() => expect(transport.draftRefreshes).toHaveLength(2))
   return { user, router }
 }
 
@@ -589,9 +572,9 @@ describe('stateful same-origin submission golden path integration', () => {
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
 
     expect(transport.requests.map(requestKind)).toEqual([
-      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-patch',
+      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-get', 'draft-get', 'draft-patch',
       'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
-      'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
+      'draft-get', 'draft-patch', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
       'draft-get', 'preview', 'submit',
     ])
     expect(transport.invariantViolations).toEqual([])
@@ -606,12 +589,18 @@ describe('stateful same-origin submission golden path integration', () => {
 
     const draftRequests = transport.requests.filter((request) => requestKind(request) === 'draft-get' || requestKind(request) === 'draft-patch')
     expect(draftRequests.every((request) => request.url.includes(transport.ids.draftId!))).toBe(true)
-    expect(draftRequests.find((request) => requestKind(request) === 'draft-patch')?.body?.expected_version).toBe(3)
+    const patchRequests = draftRequests.filter((request) => requestKind(request) === 'draft-patch')
+    expect(patchRequests).toHaveLength(2)
+    expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5])
+    expect((patchRequests[0]?.body?.patch as Record<string, unknown>).project_core).toMatchObject({ cover_media_reference_ids: [] })
+    expect((patchRequests[1]?.body?.patch as Record<string, unknown>).project_core).toMatchObject({ cover_media_reference_ids: [transport.ids.mediaReferenceId] })
     expect(transport.draftRefreshes).toEqual([
       { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
       { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
+      { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
+      { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
       { version: 5, mediaReferenceIds: [transport.ids.mediaReferenceId], evidenceDraftIds: [] },
-      { version: 6, mediaReferenceIds: [transport.ids.mediaReferenceId], evidenceDraftIds: [transport.ids.evidenceDraftId] },
+      { version: 7, mediaReferenceIds: [transport.ids.mediaReferenceId], evidenceDraftIds: [transport.ids.evidenceDraftId] },
     ])
 
     const uploadRequest = transport.requests.find((request) => requestKind(request) === 'upload-put')!
@@ -634,7 +623,7 @@ describe('stateful same-origin submission golden path integration', () => {
     expect(evidenceIdRequests.every((request) => request.url.includes(transport.ids.evidenceDraftId!))).toBe(true)
     expect(evidenceRequests.find((request) => requestKind(request) === 'evidence-bind')?.body).toMatchObject({
       parent_id: transport.ids.draftId,
-      expected_parent_version: 5,
+      expected_parent_version: 6,
     })
     expect(evidenceRequests.find((request) => requestKind(request) === 'evidence-create')?.body).toMatchObject({
       parent_id: transport.ids.draftId,
@@ -644,11 +633,11 @@ describe('stateful same-origin submission golden path integration', () => {
     })
 
     const previewRequest = transport.requests.find((request) => requestKind(request) === 'preview')!
-    expect(previewRequest.body).toEqual({ expected_version: 6, check_id: transport.ids.checkId })
+    expect(previewRequest.body).toEqual({ expected_version: 7, check_id: transport.ids.checkId })
     const submitRequest = transport.requests.find((request) => requestKind(request) === 'submit')!
     expect(submitRequest.body).toMatchObject({
       draft_id: transport.ids.draftId,
-      draft_version: 6,
+      draft_version: 7,
       check_id: transport.ids.checkId,
       preview_hash: previewHash,
       submission_key: expect.any(String),
@@ -675,7 +664,7 @@ describe('stateful same-origin submission golden path integration', () => {
 
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('请选择一张封面图片')
-    expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create', 'draft-get', 'draft-get'])
+    expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-get', 'draft-get'])
     expect(transport.requests.some((request) => ['preview', 'submit'].includes(requestKind(request)))).toBe(false)
 
     await user.upload(
@@ -685,14 +674,15 @@ describe('stateful same-origin submission golden path integration', () => {
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('证据仍未准备就绪')
     expect(transport.requests.map(requestKind)).toEqual([
-      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-patch',
+      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-get', 'draft-get', 'draft-patch',
       'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
-      'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
+      'draft-get', 'draft-patch', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
     ])
     expect(transport.requests.some((request) => ['preview', 'submit'].includes(requestKind(request)))).toBe(false)
 
     transport.setEvidenceReady(true)
     await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
+    await waitFor(() => expect(transport.invariantViolations).toEqual([]))
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
     expect(await screen.findByText(previewHash)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))

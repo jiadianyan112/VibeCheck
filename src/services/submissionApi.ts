@@ -361,6 +361,7 @@ export function remoteDraftToLocalDraft(
   userId: UserId,
   previous?: SubmissionDraft,
   step: SubmissionDraft['step'] = previous?.step ?? 'prefill',
+  fieldAuthority: 'local' | 'remote' = 'local',
 ): SubmissionDraft {
   const serverFields = {
     ...payloadFields(remote.payload_snapshot),
@@ -370,8 +371,8 @@ export function remoteDraftToLocalDraft(
     categorySchemaVersion: remote.category_schema_version,
   }
   const fields: Partial<SubmissionProjectFields> = {
-    ...serverFields,
-    ...(previous?.fields ?? {}),
+    ...(fieldAuthority === 'remote' ? previous?.fields : serverFields),
+    ...(fieldAuthority === 'remote' ? serverFields : previous?.fields),
     publicUrl: serverFields.publicUrl,
     categoryId: remote.category_id,
     categorySchemaVersion: remote.category_schema_version,
@@ -523,7 +524,7 @@ export const submissionApi = {
     }
   },
 
-  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly snapshot?: LearningV1Snapshot; readonly fields?: Partial<SubmissionProjectFields> } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
+  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly snapshot: LearningV1Snapshot; readonly fields?: never } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
     if (input.snapshot === undefined) throw new TypeError('canonical learning.v1 snapshot required')
     const patch = editableFieldsToPatch(input.snapshot)
     const operationId = input.operationId ?? makeSubmissionClientRequestId()

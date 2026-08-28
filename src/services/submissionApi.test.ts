@@ -290,6 +290,7 @@ describe('submissionApi typed production gateway', () => {
 
   it('rejects the default legacy fields PATCH path before making a request', async () => {
     const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    // @ts-expect-error fields-only PATCHes are intentionally excluded from the public client contract.
     await expect(submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '不完整快照' }, session: csrf, operationId: 'patch-legacy-01' })).rejects.toThrow('canonical learning.v1 snapshot required')
     expect(fetchMock).not.toHaveBeenCalled()
   })

@@ -55,6 +55,8 @@ export interface SubmissionCoverReferenceInput extends SubmissionAssetsApiReques
   readonly mediaResourceId: string
   readonly altText: string
   readonly referenceClientRequestId?: string
+  readonly existingCoverReferenceIds?: readonly string[]
+  readonly replacementOperationId?: (mediaReferenceId: string) => string
 }
 
 export interface SubmissionCoverReferenceResult extends SubmissionAssetReadinessResult {
@@ -471,6 +473,23 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
         }
         const status = readiness(media)
         if (status.status !== 'ready') return status
+        if ((input.existingCoverReferenceIds?.length ?? 0) > 0) {
+          if (input.replacementOperationId === undefined) throw new TypeError('replacementOperationId is required for cover replacement')
+          const existing = await client.listReferences({
+            target_type: 'submission_draft',
+            target_id: input.draftId,
+            role: 'cover',
+          }, { signal: input.signal })
+          const expectedIds = new Set(input.existingCoverReferenceIds)
+          for (const reference of existing.items) {
+            if (!expectedIds.has(reference.media_reference_id)) continue
+            if (reference.media_resource_id === media.media_resource_id) return { ...status, reference }
+            await client.deleteReference(reference.media_reference_id, {
+              expected_version: reference.version,
+              operation_id: requireRequestId(input.replacementOperationId(reference.media_reference_id), 'replacementOperationId'),
+            }, { signal: input.signal })
+          }
+        }
         const reference = await client.createReference({
           media_resource_id: media.media_resource_id,
           target_type: 'submission_draft',
