@@ -22,6 +22,8 @@ const publicUrl = 'https://example.test/golden-path'
 const now = '2026-08-28T00:00:00Z'
 const expiresAt = '2026-09-28T00:00:00Z'
 const previewHash = 'd'.repeat(64)
+const preparedUploadHeaders = { 'content-type': 'image/png', 'x-upload-token': 'golden-upload-token' }
+const uploadReceiptValue = 'golden-upload-receipt'
 
 type IdName =
   | 'checkId'
@@ -322,6 +324,7 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
   let evidenceCompletedReady = false
   let evidenceReady = options.evidenceReady ?? true
   let previewIssued = false
+  let uploadReceipt: string | null = null
 
   const violation = (message: string) => {
     invariantViolations.push(message)
@@ -341,7 +344,9 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
         return violation('signed upload did not use the media ID returned by prepare')
       }
       uploadSeen = true
-      return new Response(null, { status: 200, headers: { etag: 'golden-upload-receipt' } })
+      const uploadResponse = new Response(null, { status: 200, headers: { etag: uploadReceiptValue } })
+      uploadReceipt = uploadResponse.headers.get('etag')
+      return uploadResponse
     }
 
     if (path === '/api/v1/submission-url-checks' && method === 'POST') {
@@ -402,7 +407,7 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
           version: 1,
         }),
         upload_url: `https://uploads.example.test/${mediaResourceId}`,
-        upload_headers: { 'content-type': 'image/png' },
+        upload_headers: preparedUploadHeaders,
         upload_expires_at: '2026-08-28T01:00:00Z',
       }, 201)
     }
@@ -410,7 +415,7 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
     const mediaCompleteMatch = /^\/api\/v1\/media-resources\/([^/]+)\/complete$/.exec(path)
     if (mediaCompleteMatch !== null && method === 'POST') {
       if (mediaCompleteMatch[1] !== ids.mediaResourceId || !uploadSeen) return violation('media complete did not reuse the prepared media ID or upload receipt')
-      if (body?.checksum_sha256 !== mediaChecksum) return violation('media complete did not reuse the prepared checksum')
+      if (body?.checksum_sha256 !== mediaChecksum || body?.upload_receipt !== uploadReceipt) return violation('media complete did not reuse the prepared checksum or signed upload receipt')
       mediaCompleted = true
       return jsonResponse({
         media: mediaProjection(ids.mediaResourceId!, mediaChecksum, {
@@ -503,6 +508,7 @@ function installStatefulTransport(options: GoldenTransportOptions = {}) {
     ids,
     draftRefreshes,
     invariantViolations,
+    get uploadReceipt() { return uploadReceipt },
     setEvidenceReady: (value: boolean) => { evidenceReady = value },
   }
 }
@@ -541,11 +547,18 @@ async function startAtDevelopment(transport: ReturnType<typeof installStatefulTr
   await waitFor(() => expect(transport.ids.draftId).toEqual(expect.any(String)))
   expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create'])
 
+  await user.click(screen.getByRole('button', { name: '继续补充作品信息' }))
+  await waitFor(() => expect(router.state.location.pathname).toBe('/submit/new'))
+  expect(router.state.location.pathname).toBe('/submit/new')
+  const handoffSearch = new URLSearchParams(router.state.location.search)
+  expect(handoffSearch.get('draft')).toBe(transport.ids.draftId)
+  expect(handoffSearch.get('step')).toBe('prefill')
+
   await act(async () => {
     await router.navigate(`/submit/new?draft=${transport.ids.draftId!}&step=development`)
   })
   expect(await screen.findByRole('heading', { name: '开发与资产' })).toBeInTheDocument()
-  await waitFor(() => expect(transport.draftRefreshes).toHaveLength(1))
+  await waitFor(() => expect(transport.draftRefreshes).toHaveLength(2))
   return { user, router }
 }
 
@@ -576,7 +589,7 @@ describe('stateful same-origin submission golden path integration', () => {
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
 
     expect(transport.requests.map(requestKind)).toEqual([
-      'url-check', 'draft-create', 'draft-get', 'draft-patch',
+      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-patch',
       'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
       'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
       'draft-get', 'preview', 'submit',
@@ -596,14 +609,23 @@ describe('stateful same-origin submission golden path integration', () => {
     expect(draftRequests.find((request) => requestKind(request) === 'draft-patch')?.body?.expected_version).toBe(3)
     expect(transport.draftRefreshes).toEqual([
       { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
+      { version: 3, mediaReferenceIds: [], evidenceDraftIds: [] },
       { version: 5, mediaReferenceIds: [transport.ids.mediaReferenceId], evidenceDraftIds: [] },
       { version: 6, mediaReferenceIds: [transport.ids.mediaReferenceId], evidenceDraftIds: [transport.ids.evidenceDraftId] },
     ])
 
     const uploadRequest = transport.requests.find((request) => requestKind(request) === 'upload-put')!
     expect(uploadRequest.url).toContain(transport.ids.mediaResourceId!)
+    expect(uploadRequest.init?.credentials).toBe('omit')
+    expect(uploadRequest.init?.headers).toEqual(preparedUploadHeaders)
+    expect(uploadRequest.init?.body).toBeInstanceOf(Blob)
+    expect((uploadRequest.init?.body as Blob).size).toBe(1_048_576)
+    expect((uploadRequest.init?.body as Blob).type).toBe('image/png')
+    expect(transport.uploadReceipt).toBe(uploadReceiptValue)
     const mediaRequests = transport.requests.filter((request) => ['media-complete', 'media-inspect'].includes(requestKind(request)))
     expect(mediaRequests.every((request) => request.url.includes(transport.ids.mediaResourceId!))).toBe(true)
+    const mediaCompleteRequest = transport.requests.find((request) => requestKind(request) === 'media-complete')!
+    expect(mediaCompleteRequest.body?.upload_receipt).toBe(transport.uploadReceipt)
     const referenceRequest = transport.requests.find((request) => requestKind(request) === 'media-reference')!
     expect(referenceRequest.body).toMatchObject({ media_resource_id: transport.ids.mediaResourceId, target_id: transport.ids.draftId, role: 'cover' })
 
@@ -653,7 +675,7 @@ describe('stateful same-origin submission golden path integration', () => {
 
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('请选择一张封面图片')
-    expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create', 'draft-get'])
+    expect(transport.requests.map(requestKind)).toEqual(['url-check', 'draft-create', 'draft-get', 'draft-get'])
     expect(transport.requests.some((request) => ['preview', 'submit'].includes(requestKind(request)))).toBe(false)
 
     await user.upload(
@@ -663,7 +685,7 @@ describe('stateful same-origin submission golden path integration', () => {
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('证据仍未准备就绪')
     expect(transport.requests.map(requestKind)).toEqual([
-      'url-check', 'draft-create', 'draft-get', 'draft-patch',
+      'url-check', 'draft-create', 'draft-get', 'draft-get', 'draft-patch',
       'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
       'draft-get', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete',
     ])
