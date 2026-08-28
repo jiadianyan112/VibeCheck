@@ -149,6 +149,7 @@ type MaterialsTransportOptions = {
   mediaDeletionGuardActive?: boolean
   evidenceStatus?: 'editing' | 'ready' | 'withdrawn'
   patchConflictOnce?: boolean
+  failSubmitOnce?: boolean
   failOnceAt?: 'evidence-complete'
   failAt?: 'patch' | 'upload' | 'media' | 'reference' | 'cover-get' | 'evidence' | 'final-get'
 }
@@ -240,6 +241,7 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
   let draftGetCount = 0
   let patchAttemptCount = 0
   let failOnceConsumed = false
+  let submitFailureConsumed = false
   let referenceCreated = false
   let evidenceReady = false
   const mediaStatus = options.mediaStatus ?? 'ready'
@@ -329,6 +331,26 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
         validation: { valid: true, issue_count: 0 },
         generated_at: now,
       }, 200)
+    }
+    if (url.endsWith('/submissions') && init?.method === 'POST') {
+      if (options.failSubmitOnce && !submitFailureConsumed) {
+        submitFailureConsumed = true
+        throw new Error('submission unavailable')
+      }
+      return jsonResponse({
+        submission_id: crypto.randomUUID(),
+        submission_chain_id: chainUuid,
+        draft_id: draftUuid,
+        snapshot_version: body?.draft_version ?? serverVersion,
+        review_status: 'pending_review',
+        review_work_item_id: crypto.randomUUID(),
+        media_reference_ids: [ids.mediaReferenceId],
+        evidence_draft_ids: [ids.evidenceDraftId],
+        preview_hash: body?.preview_hash ?? 'c'.repeat(64),
+        version: 1,
+        created_at: now,
+        updated_at: now,
+      }, 202)
     }
     if (url.endsWith('/evidence-drafts') && init?.method === 'POST') {
       if (options.failAt === 'evidence') throw new Error('evidence unavailable')
@@ -633,7 +655,7 @@ describe('remote P11 draft GET/PATCH form', () => {
   })
 
   it('invalidates the remote preview and references after a field or cover change', async () => {
-    const transport = installMaterialsTransport()
+    const transport = installMaterialsTransport({ failSubmitOnce: true })
     const user = userEvent.setup()
     const { router } = renderForm('development')
     await screen.findByRole('heading', { name: '开发与资产' })
@@ -646,12 +668,21 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(persistedDraft().mediaReferenceIds).toEqual([transport.ids.mediaReferenceId])
     expect(persistedDraft().evidenceDraftIds).toEqual([transport.ids.evidenceDraftId])
 
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByText('网络连接不可用，当前内容已保留。')).toBeInTheDocument()
+    const firstSubmit = transport.requests.find((request) => request.url.endsWith('/submissions'))
+    const firstSubmissionKey = firstSubmit?.body?.submission_key
+    expect(firstSubmissionKey).toEqual(expect.any(String))
+    expect(persistedDraft().submissionKey).toBe(firstSubmissionKey)
+
     await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=prefill`) })
     const name = await screen.findByRole('textbox', { name: '作品名称' })
     await user.clear(name)
     await user.type(name, '字段变化后必须重新预览')
     await waitFor(() => {
       expect(persistedDraft().preview).toBeUndefined()
+      expect(persistedDraft().submissionKey).toBeUndefined()
       expect(persistedDraft().mediaReferenceIds).toEqual([])
       expect(persistedDraft().evidenceDraftIds).toEqual([])
     })
@@ -663,9 +694,21 @@ describe('remote P11 draft GET/PATCH form', () => {
     await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(1_048_576)], 'cover-2.png', { type: 'image/png' }))
     await waitFor(() => {
       expect(persistedDraft().preview).toBeUndefined()
+      expect(persistedDraft().submissionKey).toBeUndefined()
       expect(persistedDraft().mediaReferenceIds).toEqual([])
       expect(persistedDraft().evidenceDraftIds).toEqual([])
     })
+
+    await act(async () => { await router.navigate(`/submit/new?draft=${draftUuid}&step=preview`) })
+    expect(await screen.findByText('c'.repeat(64))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    const submitRequests = transport.requests.filter((request) => request.url.endsWith('/submissions'))
+    expect(submitRequests).toHaveLength(2)
+    expect(submitRequests[1]?.body?.submission_key).toEqual(expect.any(String))
+    expect(submitRequests[1]?.body?.submission_key).not.toBe(firstSubmissionKey)
+    expect(persistedDraft().submissionKey).toBe(submitRequests[1]?.body?.submission_key)
   })
 
   it('reloads the latest draft version before retrying a materials PATCH conflict and preserves the cover', async () => {
