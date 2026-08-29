@@ -1,9 +1,10 @@
 /*
- * The high-fidelity foundation is intentionally frontstage-only. The legacy
- * global layer remains the functional baseline for task and admin surfaces.
+ * The high-fidelity foundation is opt-in. Formal pages should add
+ * .highfi-scope under .app-shell; the legacy global layer remains the
+ * functional baseline for task and admin surfaces.
  */
 
-.app-shell {
+.highfi-scope {
   --color-canvas: var(--brand-canvas);
   --color-surface: #ecece7;
   --color-surface-raised: #ffffff;
@@ -22,48 +23,48 @@
   font-family: var(--font-body);
 }
 
-.app-shell h1,
-.app-shell h2,
-.app-shell h3,
-.app-shell .wordmark {
+.highfi-scope h1,
+.highfi-scope h2,
+.highfi-scope h3,
+.highfi-scope .wordmark {
   font-family: var(--font-display);
   font-weight: 900;
   letter-spacing: -0.045em;
 }
 
-.app-shell h1 {
+.highfi-scope h1 {
   max-width: 12ch;
   font-size: clamp(2.5rem, 8vw, 6.5rem);
   line-height: 0.94;
 }
 
-.app-shell h2 {
+.highfi-scope h2 {
   line-height: 1;
 }
 
-.app-shell :focus-visible {
+.highfi-scope :focus-visible {
   outline: 2px solid var(--brand-lime);
   outline-offset: 3px;
   box-shadow: 0 0 0 2px var(--brand-ink);
 }
 
 @media (min-width: 64rem) {
-  .app-shell {
+  .highfi-scope {
     --page-gutter: clamp(2rem, 5vw, 5rem);
   }
 }
 
 @media (max-width: 30rem) {
-  .app-shell {
+  .highfi-scope {
     --page-gutter: 1rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-shell,
-  .app-shell *,
-  .app-shell *::before,
-  .app-shell *::after {
+  .highfi-scope,
+  .highfi-scope *,
+  .highfi-scope *::before,
+  .highfi-scope *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;

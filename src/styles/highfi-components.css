@@ -1,28 +1,28 @@
-/* High-fidelity primitive variants. Keep all rules inside the frontstage shell. */
+/* High-fidelity primitive variants. Keep all rules inside an explicit scope. */
 
-.app-shell .button--accent {
+.highfi-scope .button--accent {
   border-color: var(--brand-ink);
   background: var(--brand-lime);
   color: var(--brand-ink);
   transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
 
-.app-shell .button--accent:hover:not(:disabled) {
+.highfi-scope .button--accent:hover:not(:disabled) {
   background: var(--brand-yellow);
   transform: translateY(-1px);
 }
 
-.app-shell .button--accent:active:not(:disabled) {
+.highfi-scope .button--accent:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.app-shell .tag--accent {
+.highfi-scope .tag--accent {
   border-color: var(--brand-ink);
   background: var(--brand-lime);
   color: var(--brand-ink);
 }
 
-.app-shell .tag--inverse {
+.highfi-scope .tag--inverse {
   border-color: var(--brand-ink);
   background: var(--brand-ink);
   color: var(--brand-canvas);

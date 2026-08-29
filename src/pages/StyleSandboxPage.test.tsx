@@ -1,5 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import '../styles/tokens.css'
+import '../styles/highfi-foundation.css'
+import '../styles/highfi-components.css'
 import { StyleSandboxPage } from './StyleSandboxPage'
 
 describe('StyleSandboxPage', () => {
@@ -19,6 +22,15 @@ describe('StyleSandboxPage', () => {
     expect(screen.getByRole('button', { name: '品牌操作' })).toHaveClass('button--accent')
     expect(screen.getByText('荧光状态')).toHaveClass('tag--accent')
     expect(screen.getByText('反相状态')).toHaveClass('tag--inverse')
+  })
+
+  it('opts the sandbox into the high-fidelity scope and applies accent color', () => {
+    render(<StyleSandboxPage />)
+    expect(screen.getByRole('main').closest('.highfi-scope')).not.toBeNull()
+    const accentButton = screen.getByRole('button', { name: '品牌操作' })
+    const accentStyle = getComputedStyle(accentButton)
+    expect(accentStyle.background).toBe('var(--brand-lime)')
+    expect(accentStyle.transition).toContain('background-color')
   })
 
   it('changes controlled tabs', async () => {
