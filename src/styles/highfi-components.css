@@ -163,3 +163,43 @@
 .app-shell .highfi-scope .vibe-lens__spark {
   fill: currentColor;
 }
+
+.app-shell .highfi-scope .project-media-stage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: clip;
+  border: 1px solid var(--brand-ink);
+  background: var(--color-surface);
+  isolation: isolate;
+}
+
+.app-shell .highfi-scope .project-media-stage--portrait {
+  aspect-ratio: 4 / 5;
+}
+
+.app-shell .highfi-scope .project-media-stage--square {
+  aspect-ratio: 1;
+}
+
+.app-shell .highfi-scope .project-media-stage > img,
+.app-shell .highfi-scope .project-media-stage > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: var(--brand-ink);
+  transition: opacity var(--motion-standard) ease, transform var(--motion-standard) ease;
+}
+
+.app-shell .highfi-scope .project-media-stage--fallback {
+  background: var(--brand-canvas);
+}
+
+.app-shell .highfi-scope .project-media-stage__fallback {
+  width: min(40%, 14rem);
+  min-width: 6rem;
+}
