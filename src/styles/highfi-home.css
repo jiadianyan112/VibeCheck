@@ -1,5 +1,658 @@
 /*
- * P01-only home selectors are reserved for the next task. Keeping this
- * entrypoint empty prevents the foundation from changing existing page
- * layouts before the Works Plaza composition is integrated.
+ * P01 high-fidelity composition.
+ * Design read: editorial works plaza for Vibe Coding creators, with an
+ * asymmetric light canvas and a deliberate lime, yellow, violet, cyan tone set.
+ * Dials: DESIGN_VARIANCE 8, MOTION_INTENSITY 5, VISUAL_DENSITY 4.
  */
+
+.app-shell .highfi-scope {
+  --home-canvas: #f7f7f2;
+  --home-surface: #e9e9e1;
+  --home-card: #f2f2eb;
+  --home-card-raised: #f8f8f2;
+  --home-ink: #111111;
+  --home-muted: #55554f;
+  --home-line: #bdbdb3;
+  --home-line-strong: #111111;
+  --home-lime: #b8ff3d;
+  --home-yellow: #ffd93d;
+  --home-violet: #b78cff;
+  --home-cyan: #61e7f2;
+  --home-radius: 0.35rem;
+
+  color: var(--home-ink);
+  background: var(--home-canvas);
+}
+
+.app-shell .highfi-scope.home-state {
+  min-height: 20rem;
+  padding-block: clamp(3rem, 7vw, 6rem);
+}
+
+.app-shell .highfi-scope.home-page {
+  padding-bottom: clamp(5rem, 10vw, 9rem);
+  overflow: clip;
+}
+
+.app-shell .highfi-scope .home-editorial-hero {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1.08fr) minmax(22rem, 0.92fr);
+  grid-template-areas:
+    'content artwork'
+    'tools artwork';
+  gap: 0 clamp(1.5rem, 4vw, 4.75rem);
+  align-items: stretch;
+  border-block: 1px solid var(--home-line-strong);
+  padding: clamp(3rem, 5vw, 5.75rem) max(var(--page-gutter), calc((100vw - var(--page-max)) / 2));
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__content {
+  grid-area: content;
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-width: 0;
+  padding-top: 0.25rem;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__header {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__eyebrow {
+  width: fit-content;
+  margin: 0;
+  border: 1px solid var(--home-ink);
+  border-radius: var(--home-radius);
+  background: var(--home-yellow);
+  padding: 0.42rem 0.68rem;
+  color: var(--home-ink);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope .home-editorial-hero h1 {
+  max-width: none;
+  margin: 0;
+  color: var(--home-ink);
+  font-size: clamp(3rem, 5vw, 4.5rem);
+  line-height: 0.94;
+  text-wrap: balance;
+}
+
+.app-shell .highfi-scope .home-editorial-hero h1 span {
+  display: block;
+  white-space: nowrap;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__description {
+  max-width: 35rem;
+  margin-top: 1.5rem;
+  color: var(--home-muted);
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  line-height: 1.65;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .button,
+.app-shell .highfi-scope .home-section__link,
+.app-shell .highfi-scope .home-explainer__link {
+  border-radius: var(--home-radius);
+  white-space: nowrap;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .button--accent {
+  border-color: var(--home-ink);
+  background: var(--home-lime);
+  color: var(--home-ink);
+}
+
+.app-shell .highfi-scope .home-editorial-hero .button--secondary {
+  border-color: var(--home-ink);
+  background: var(--home-card-raised);
+  color: var(--home-ink);
+}
+
+.app-shell .highfi-scope .home-hero-tools {
+  grid-area: tools;
+  display: grid;
+  align-content: end;
+  gap: 0.9rem;
+  max-width: 42rem;
+  margin-top: 2.25rem;
+}
+
+.app-shell .highfi-scope .home-hero-tools .hero-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.app-shell .highfi-scope .home-hero-tools .input {
+  min-width: 0;
+  min-height: var(--control-height);
+  border: 1px solid var(--home-ink);
+  border-radius: var(--home-radius);
+  background: var(--home-card-raised);
+  color: var(--home-ink);
+  padding-inline: 0.85rem;
+}
+
+.app-shell .highfi-scope .home-hero-tools .input::placeholder {
+  color: var(--home-muted);
+  opacity: 1;
+}
+
+.app-shell .highfi-scope .home-hero-tools .button--accent {
+  border-color: var(--home-ink);
+  border-radius: var(--home-radius);
+  background: var(--home-lime);
+  color: var(--home-ink);
+}
+
+.app-shell .highfi-scope .home-hero-tools .cluster[aria-label='快捷问题'] {
+  gap: 0.55rem;
+}
+
+.app-shell .highfi-scope .home-hero-tools .tag {
+  border-color: var(--home-line-strong);
+  border-radius: var(--home-radius);
+  background: var(--home-card-raised);
+  color: var(--home-ink);
+  padding: 0.4rem 0.65rem;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .home-hero-tools .tag:hover {
+  background: var(--home-cyan);
+}
+
+.app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork {
+  grid-area: artwork;
+  display: block;
+  min-height: 31rem;
+  border: 1px solid var(--home-line-strong);
+  border-radius: var(--home-radius);
+  background: var(--home-surface);
+  overflow: clip;
+}
+
+.app-shell .highfi-scope .home-artwork-frame {
+  height: 100%;
+  min-height: 31rem;
+}
+
+.app-shell .highfi-scope .home-artwork {
+  display: grid;
+  height: 100%;
+  min-height: 31rem;
+  grid-template-columns: 1.06fr 0.88fr 1fr;
+  gap: clamp(0.55rem, 1.6vw, 1.05rem);
+  align-items: stretch;
+  padding: clamp(0.7rem, 1.8vw, 1.2rem);
+  background:
+    linear-gradient(138deg, var(--home-cyan) 0 34%, transparent 34%),
+    var(--home-surface);
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage {
+  min-width: 0;
+  min-height: 0;
+  align-self: end;
+  border: 1px solid var(--home-line-strong);
+  border-radius: var(--home-radius);
+  background: var(--home-card-raised);
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(1) {
+  align-self: start;
+  margin-top: clamp(0.25rem, 2.5vw, 2rem);
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(2) {
+  align-self: center;
+  margin-top: clamp(1rem, 7vw, 5rem);
+  background: var(--home-yellow);
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(3) {
+  align-self: end;
+  margin-bottom: clamp(0.25rem, 2.5vw, 2rem);
+  background: var(--home-violet);
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage--fallback {
+  background: inherit;
+}
+
+.app-shell .highfi-scope .home-artwork .project-media-stage__fallback {
+  width: clamp(4.5rem, 9vw, 8rem);
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .home-section {
+  width: 100%;
+  margin: 0;
+  border-top: 1px solid var(--home-line);
+  padding: clamp(3.5rem, 7vw, 6.5rem) max(var(--page-gutter), calc((100vw - var(--page-max)) / 2));
+}
+
+.app-shell .highfi-scope .home-section--muted {
+  border-block: 1px solid var(--home-line);
+  background: var(--home-surface);
+}
+
+.app-shell .highfi-scope .home-section .section-lead__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) auto;
+  gap: 1.5rem clamp(1.5rem, 5vw, 6rem);
+  align-items: end;
+}
+
+.app-shell .highfi-scope .home-section .section-lead__copy {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .home-section .section-lead__eyebrow {
+  width: fit-content;
+  margin-bottom: 0.9rem;
+  color: var(--home-muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope .home-section h2 {
+  max-width: 17ch;
+  color: var(--home-ink);
+  font-size: clamp(2.25rem, 4.6vw, 4.65rem);
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.app-shell .highfi-scope .home-section .section-lead__description {
+  max-width: 42rem;
+  margin-top: 1.1rem;
+  color: var(--home-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.app-shell .highfi-scope .home-section .section-lead__action {
+  display: contents;
+}
+
+.app-shell .highfi-scope .home-section__link {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  border: 1px solid var(--home-ink);
+  background: var(--home-card-raised);
+  padding: 0.62rem 0.85rem;
+  color: var(--home-ink);
+  font-size: 0.875rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .home-section__link:hover {
+  background: var(--home-cyan);
+}
+
+.app-shell .highfi-scope .home-section__body {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  margin-top: clamp(2rem, 4vw, 3.5rem);
+}
+
+.app-shell .highfi-scope .home-section__body > .compact-list,
+.app-shell .highfi-scope .home-section__body > .home-editor-picks-grid,
+.app-shell .highfi-scope .home-section__body > .problem-grid {
+  width: 100%;
+}
+
+.app-shell .highfi-scope .compact-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem clamp(1rem, 2.5vw, 1.5rem);
+}
+
+.app-shell .highfi-scope .project-card {
+  min-width: 0;
+  border-radius: var(--home-radius);
+}
+
+.app-shell .highfi-scope .project-card--compact {
+  border-color: var(--home-line);
+  background: var(--home-card);
+  padding: clamp(1rem, 2vw, 1.35rem);
+}
+
+.app-shell .highfi-scope .project-card--compact:hover,
+.app-shell .highfi-scope .project-card--compact:focus-within {
+  border-color: var(--home-ink);
+  transform: translateY(-3px);
+}
+
+.app-shell .highfi-scope .home-editor-picks-anchor {
+  width: 100%;
+  scroll-margin-top: 5rem;
+}
+
+.app-shell .highfi-scope .home-editor-picks-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.22fr) repeat(2, minmax(0, 0.89fr));
+  gap: 1rem clamp(1rem, 2.5vw, 1.5rem);
+  align-items: start;
+}
+
+.app-shell .highfi-scope .project-card--standard,
+.app-shell .highfi-scope .project-card--featured {
+  border-color: var(--home-line);
+  background: var(--home-card-raised);
+  padding: clamp(1rem, 2vw, 1.35rem);
+}
+
+.app-shell .highfi-scope .project-card--featured {
+  border: 2px solid var(--home-ink);
+  background: #e3f0c0;
+}
+
+.app-shell .highfi-scope .project-card--standard:hover,
+.app-shell .highfi-scope .project-card--standard:focus-within,
+.app-shell .highfi-scope .project-card--featured:hover,
+.app-shell .highfi-scope .project-card--featured:focus-within {
+  transform: translateY(-4px);
+}
+
+.app-shell .highfi-scope .project-card--standard,
+.app-shell .highfi-scope .project-card--featured,
+.app-shell .highfi-scope .project-card--compact {
+  transition: transform var(--motion-standard) ease, opacity var(--motion-standard) ease;
+}
+
+.app-shell .highfi-scope .project-card .project-media-stage {
+  border-radius: var(--home-radius);
+  border-color: var(--home-ink);
+  background: var(--home-surface);
+}
+
+.app-shell .highfi-scope .project-card--featured .project-media-stage--featured {
+  min-height: clamp(18rem, 31vw, 29rem);
+  background: var(--home-lime);
+}
+
+.app-shell .highfi-scope .project-card .project-card__actions {
+  border-top-color: var(--home-line);
+}
+
+.app-shell .highfi-scope .home-section--latest .home-section__body {
+  margin-top: clamp(1.75rem, 3.5vw, 3rem);
+}
+
+.app-shell .highfi-scope .home-section--latest .marquee-strip {
+  border-block: 1px solid var(--home-ink);
+  border-radius: var(--home-radius);
+  background: #dcece3;
+  color: var(--home-ink);
+}
+
+.app-shell .highfi-scope .home-section--latest .marquee-strip__track {
+  gap: 1rem;
+  align-items: stretch;
+  padding: 0.85rem;
+}
+
+.app-shell .highfi-scope .home-section--latest .marquee-strip__track > .project-card {
+  flex: 0 0 clamp(19rem, 31vw, 27rem);
+  border-color: var(--home-ink);
+  background: var(--home-card-raised);
+}
+
+.app-shell .highfi-scope .home-section--latest .marquee-strip:focus-visible {
+  outline-color: var(--home-violet);
+}
+
+.app-shell .highfi-scope .problem-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.app-shell .highfi-scope .problem-grid a {
+  min-height: 12rem;
+  border-color: var(--home-line);
+  border-radius: var(--home-radius);
+  background: var(--home-card-raised);
+  color: var(--home-ink);
+  padding: clamp(1rem, 2vw, 1.35rem);
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .problem-grid a:first-child {
+  grid-column: span 2;
+  background: var(--home-violet);
+}
+
+.app-shell .highfi-scope .problem-grid a:hover,
+.app-shell .highfi-scope .problem-grid a:focus-within {
+  border-color: var(--home-ink);
+  transform: translateY(-3px);
+}
+
+.app-shell .highfi-scope .problem-grid a span:last-child {
+  margin-top: auto;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-shell .highfi-scope .home-explainer {
+  width: min(calc(100% - 2 * var(--page-gutter)), var(--page-max));
+  margin-inline: auto;
+  padding-block: clamp(3rem, 7vw, 6rem);
+}
+
+.app-shell .highfi-scope .home-explainer__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: clamp(1rem, 3vw, 3rem);
+  align-items: start;
+  border-top: 2px solid var(--home-ink);
+  padding-top: 1.35rem;
+}
+
+.app-shell .highfi-scope .home-explainer__inner > div {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 25rem;
+}
+
+.app-shell .highfi-scope .home-explainer__inner p {
+  color: var(--home-muted);
+  line-height: 1.6;
+}
+
+.app-shell .highfi-scope .home-explainer__link {
+  align-self: center;
+  border: 1px solid var(--home-ink);
+  background: var(--home-yellow);
+  padding: 0.65rem 0.85rem;
+  color: var(--home-ink);
+  font-size: 0.875rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .button,
+.app-shell .highfi-scope .home-section a,
+.app-shell .highfi-scope .home-explainer a,
+.app-shell .highfi-scope .project-card a,
+.app-shell .highfi-scope .project-card button {
+  transition: transform var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+
+.app-shell .highfi-scope .home-editorial-hero .button:active,
+.app-shell .highfi-scope .home-section a:active,
+.app-shell .highfi-scope .home-explainer a:active,
+.app-shell .highfi-scope .project-card a:active,
+.app-shell .highfi-scope .project-card button:active {
+  transform: translateY(1px);
+}
+
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  .app-shell .highfi-scope .home-editorial-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.85fr);
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero h1 {
+    font-size: clamp(3rem, 6vw, 4.75rem);
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork,
+  .app-shell .highfi-scope .home-artwork-frame,
+  .app-shell .highfi-scope .home-artwork {
+    min-height: 25rem;
+  }
+
+  .app-shell .highfi-scope .home-editor-picks-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell .highfi-scope .project-card--featured {
+    grid-column: 1 / -1;
+  }
+
+  .app-shell .highfi-scope .problem-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-shell .highfi-scope .problem-grid a:first-child {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .app-shell .highfi-scope .home-editorial-hero {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'content'
+      'tools'
+      'artwork';
+    gap: 0;
+    padding-block: 2.75rem 3.5rem;
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero h1 {
+    max-width: 12ch;
+    font-size: clamp(3rem, 14vw, 4.7rem);
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero h1 span {
+    display: inline;
+    white-space: normal;
+  }
+
+  .app-shell .highfi-scope .home-hero-tools {
+    margin-top: 2rem;
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork,
+  .app-shell .highfi-scope .home-artwork-frame,
+  .app-shell .highfi-scope .home-artwork {
+    min-height: 20rem;
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork {
+    margin-top: 2.5rem;
+  }
+
+  .app-shell .highfi-scope .home-artwork {
+    gap: 0.5rem;
+    padding: 0.65rem;
+  }
+
+  .app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(1) {
+    margin-top: 0.5rem;
+  }
+
+  .app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(2) {
+    margin-top: 2rem;
+  }
+
+  .app-shell .highfi-scope .home-artwork .project-media-stage:nth-child(3) {
+    margin-bottom: 0.5rem;
+  }
+
+  .app-shell .highfi-scope .home-section {
+    padding-block: 3.5rem 4rem;
+  }
+
+  .app-shell .highfi-scope .home-section .section-lead__header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .app-shell .highfi-scope .home-section__link {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    margin-top: 1.35rem;
+  }
+
+  .app-shell .highfi-scope .home-section__body {
+    margin-top: 2rem;
+  }
+
+  .app-shell .highfi-scope .compact-list,
+  .app-shell .highfi-scope .home-editor-picks-grid,
+  .app-shell .highfi-scope .problem-grid,
+  .app-shell .highfi-scope .home-explainer__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .highfi-scope .problem-grid a:first-child {
+    grid-column: auto;
+  }
+
+  .app-shell .highfi-scope .home-explainer {
+    padding-block: 3.5rem 5rem;
+  }
+
+  .app-shell .highfi-scope .home-explainer__inner {
+    gap: 1.5rem;
+  }
+
+  .app-shell .highfi-scope .home-explainer__link {
+    justify-self: start;
+  }
+
+  .app-shell .highfi-scope .home-hero-tools .hero-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .highfi-scope .home-editorial-hero .button,
+  .app-shell .highfi-scope .home-section a,
+  .app-shell .highfi-scope .home-explainer a,
+  .app-shell .highfi-scope .project-card,
+  .app-shell .highfi-scope .project-card a,
+  .app-shell .highfi-scope .project-card button {
+    transition: none;
+  }
+}
