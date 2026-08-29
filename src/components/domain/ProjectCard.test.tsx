@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { creatorsForProject, evidences, lifecycleEvents, projects } from '../../mocks'
+import { creatorsForProject, evidences, lifecycleEvents, projects, unknownFact } from '../../mocks'
 import { ProjectCard } from './ProjectCard'
 
 const project = projects[0]!
@@ -25,6 +25,29 @@ describe('ProjectCard', () => {
     renderCard(<ProjectCard project={project} variant="compact" />)
     expect(screen.queryByLabelText(/截图占位/)).not.toBeInTheDocument()
     expect(screen.getByText(project.oneLineDefinition.state === 'known' ? project.oneLineDefinition.value : '')).toBeInTheDocument()
+  })
+
+  it('renders a featured card through the centralized media stage', () => {
+    renderCard(<ProjectCard project={project} variant="featured" />)
+    expect(screen.getByRole('article')).toHaveClass('project-card--featured')
+    expect(screen.getByRole('img', { name: `${project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'}视觉占位` })).toBeInTheDocument()
+  })
+
+  it('uses the first cover item and falls back to the exact unknown title', () => {
+    const unnamedProject = {
+      ...project,
+      currentName: unknownFact<string>('作品名称尚未核验', { evidenceKey: 'project-card-unknown-name', lastVerifiedAt: null }),
+      coverMedia: [
+        { id: 'first-cover', kind: 'placeholder' as const, url: null, alt: '首张作品封面' },
+        { id: 'second-cover', kind: 'image' as const, url: '/second-cover.webp', alt: '第二张作品封面' },
+      ],
+    }
+
+    renderCard(<ProjectCard project={unnamedProject} variant="standard" />)
+
+    expect(screen.getByRole('img', { name: '名称未知的作品视觉占位' })).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '第二张作品封面' })).not.toBeInTheDocument()
+    expect(screen.getByRole('article')).toHaveClass('project-card--standard')
   })
 
   it('renders event variant with a separate historical event', () => {

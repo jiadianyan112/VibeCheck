@@ -173,33 +173,43 @@
   fill: currentColor;
 }
 
-.app-shell .highfi-scope .project-media-stage {
+/* ProjectMediaStage also appears in legacy frontstage cards. Keep this
+ * baseline structural layout token-free; the branded treatment below stays
+ * opt-in to .highfi-scope. */
+.app-shell .project-media-stage {
   position: relative;
   display: grid;
   width: 100%;
   aspect-ratio: 16 / 9;
   place-items: center;
   overflow: clip;
-  border: 1px solid var(--brand-ink);
-  background: var(--color-surface);
-  isolation: isolate;
 }
 
-.app-shell .highfi-scope .project-media-stage--portrait {
+.app-shell .project-media-stage--portrait {
   aspect-ratio: 4 / 5;
 }
 
-.app-shell .highfi-scope .project-media-stage--square {
+.app-shell .project-media-stage--square {
   aspect-ratio: 1;
 }
 
-.app-shell .highfi-scope .project-media-stage > img,
-.app-shell .highfi-scope .project-media-stage > video {
+.app-shell .project-media-stage > img,
+.app-shell .project-media-stage > video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center;
+}
+
+.app-shell .highfi-scope .project-media-stage {
+  border: 1px solid var(--brand-ink);
+  background: var(--color-surface);
+  isolation: isolate;
+}
+
+.app-shell .highfi-scope .project-media-stage > img,
+.app-shell .highfi-scope .project-media-stage > video {
   background: var(--brand-ink);
   transition: opacity var(--motion-standard) ease, transform var(--motion-standard) ease;
 }
@@ -211,6 +221,29 @@
 .app-shell .highfi-scope .project-media-stage__fallback {
   width: min(40%, 14rem);
   min-width: 6rem;
+}
+
+@media (hover: hover) {
+  .app-shell .highfi-scope .project-card--standard,
+  .app-shell .highfi-scope .project-card--featured {
+    transition: border-color var(--motion-standard) ease, transform var(--motion-standard) ease;
+  }
+
+  .app-shell .highfi-scope .project-card--standard:hover,
+  .app-shell .highfi-scope .project-card--featured:hover {
+    border-color: var(--brand-ink);
+    transform: translateY(-4px);
+  }
+}
+
+.app-shell .highfi-scope .project-card--standard:focus-within,
+.app-shell .highfi-scope .project-card--featured:focus-within {
+  border-color: var(--brand-ink);
+  transform: translateY(-4px);
+}
+
+.app-shell .highfi-scope .project-card--featured .project-media-stage--featured {
+  min-height: clamp(16rem, 30vw, 28rem);
 }
 
 .app-shell .highfi-scope .reveal {
