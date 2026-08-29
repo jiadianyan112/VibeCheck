@@ -28,6 +28,7 @@
   color: var(--brand-canvas);
 }
 
+.app-shell .brand-mark,
 .app-shell .highfi-scope .brand-mark {
   display: inline-flex;
   align-items: center;
@@ -37,6 +38,7 @@
   white-space: nowrap;
 }
 
+.app-shell .brand-mark__glyph,
 .app-shell .highfi-scope .brand-mark__glyph {
   display: block;
   width: 1.8rem;
@@ -45,12 +47,14 @@
   overflow: visible;
 }
 
+.app-shell .brand-mark__ring,
 .app-shell .highfi-scope .brand-mark__ring {
   fill: var(--brand-lime);
   stroke: var(--brand-ink);
   stroke-width: 2;
 }
 
+.app-shell .brand-mark__ellipse,
 .app-shell .highfi-scope .brand-mark__ellipse {
   fill: none;
   stroke: var(--brand-ink);
@@ -59,6 +63,7 @@
   transform-origin: center;
 }
 
+.app-shell .brand-mark__check,
 .app-shell .highfi-scope .brand-mark__check {
   fill: none;
   stroke: var(--brand-ink);
@@ -67,6 +72,7 @@
   stroke-width: 2.5;
 }
 
+.app-shell .brand-mark__name,
 .app-shell .highfi-scope .brand-mark__name {
   font-family: var(--font-display);
   font-size: 1rem;
@@ -74,15 +80,18 @@
   letter-spacing: -0.045em;
 }
 
+.app-shell .brand-mark--compact,
 .app-shell .highfi-scope .brand-mark--compact {
   gap: 0.35rem;
 }
 
+.app-shell .brand-mark--compact .brand-mark__glyph,
 .app-shell .highfi-scope .brand-mark--compact .brand-mark__glyph {
   width: 1.45rem;
   height: 1.45rem;
 }
 
+.app-shell .brand-mark--compact .brand-mark__name,
 .app-shell .highfi-scope .brand-mark--compact .brand-mark__name {
   font-size: 0.9rem;
 }
@@ -296,6 +305,66 @@
   gap: var(--space-6);
   align-items: center;
   padding: var(--space-3) 0;
+}
+
+.app-shell .site-footer {
+  border-top: 1px solid var(--brand-ink);
+  background: var(--brand-canvas);
+  color: var(--brand-ink);
+  padding: clamp(2rem, 5vw, 4rem) max(var(--page-gutter), calc((100vw - var(--page-max)) / 2));
+}
+
+.app-shell .site-footer__inner {
+  display: grid;
+  width: min(100%, var(--page-max));
+  margin-inline: auto;
+  gap: var(--space-8);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.app-shell .site-footer__identity {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 22rem;
+}
+
+.app-shell .site-footer__identity p {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.app-shell .site-footer__navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: flex-end;
+}
+
+.app-shell .site-footer__navigation a {
+  color: inherit;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.app-shell .site-footer__navigation a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-shell .site-footer--compact {
+  padding-block: var(--space-4);
+}
+
+@media (max-width: 48rem) {
+  .app-shell .site-footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-shell .site-footer__navigation {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 48rem) {

@@ -1,5 +1,6 @@
 export { AdminLayout } from './AdminLayout'
 export { FrontstageLayout } from './FrontstageLayout'
+export { SiteFooter } from './SiteFooter'
 export { PageFrame } from './PageFrame'
 export { ScenarioPanel } from './ScenarioPanel'
 export { UnifiedSearchForm } from './UnifiedSearchForm'

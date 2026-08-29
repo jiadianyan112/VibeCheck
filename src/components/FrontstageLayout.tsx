@@ -4,7 +4,9 @@ import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
 import { RouteScrollManager } from './RouteScrollManager'
 import { ScenarioPanel } from './ScenarioPanel'
+import { SiteFooter } from './SiteFooter'
 import { UnifiedSearchForm } from './UnifiedSearchForm'
+import { BrandMark } from './brand'
 
 const primaryNavigation = [
   { to: '/projects', label: '作品广场' },
@@ -49,7 +51,7 @@ function FrontstageContent() {
       <header className="global-header">
         <div className="global-header__inner">
           <Link className="wordmark" to="/projects" aria-label="VibeCheck 作品广场">
-            VibeCheck
+            <BrandMark />
           </Link>
           <nav className="desktop-navigation" aria-label="主导航">
             {primaryNavigation.map((item) => (
@@ -133,6 +135,10 @@ function FrontstageContent() {
       <div className="app-shell__content">
         <Outlet />
       </div>
+      <SiteFooter
+        submitPath={restrictedPath('/submit', isLoggedIn, '/submit')}
+        compact={isFocusedFlow}
+      />
       {isFocusedFlow ? null : <FloatingCompareBar />}
       {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
