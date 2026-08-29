@@ -44,6 +44,27 @@ describe('editorial structures', () => {
     expect(screen.getByRole('link', { name: '查看全部' })).toHaveAttribute('href', '#all-projects')
   })
 
+  it('keeps section content as a sibling after the header while action stays in the header', () => {
+    render(
+      <SectionLead
+        title="精选作品"
+        action={<a href="#all-projects">查看全部</a>}
+        id="section-with-body"
+      >
+        <div data-testid="section-body">正文内容</div>
+      </SectionLead>,
+    )
+
+    const section = screen.getByRole('heading', { name: '精选作品' }).closest('section')!
+    const header = section.querySelector('header')!
+    const body = screen.getByTestId('section-body')
+    expect(body.parentElement).toBe(section)
+    expect(Array.from(section.children)).toEqual([header, body])
+    expect(header).toContainElement(screen.getByRole('link', { name: '查看全部' }))
+    expect(header).not.toContainElement(body)
+    expect(section).toHaveAttribute('aria-labelledby', 'section-with-body')
+  })
+
   it('renders a user-scrollable marquee region without timers or duplicated content', () => {
     const setIntervalSpy = vi.spyOn(window, 'setInterval')
     const setTimeoutSpy = vi.spyOn(window, 'setTimeout')

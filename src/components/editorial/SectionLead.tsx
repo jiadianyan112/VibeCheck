@@ -5,11 +5,12 @@ export interface SectionLeadProps {
   title: ReactNode
   description?: ReactNode
   action?: ReactNode
+  children?: ReactNode
   id?: string
   className?: string
 }
 
-export function SectionLead({ eyebrow, title, description, action, id, className }: SectionLeadProps) {
+export function SectionLead({ eyebrow, title, description, action, children, id, className }: SectionLeadProps) {
   const rootClassName = ['section-lead', className].filter(Boolean).join(' ')
 
   return (
@@ -22,6 +23,7 @@ export function SectionLead({ eyebrow, title, description, action, id, className
         </div>
         {action !== undefined && <div className="section-lead__action">{action}</div>}
       </header>
+      {children}
     </section>
   )
 }

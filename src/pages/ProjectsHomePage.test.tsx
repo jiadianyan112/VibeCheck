@@ -35,6 +35,18 @@ describe('ProjectsHomePage', () => {
     const editorPicks = document.querySelector('#editor-picks')!
     expect(editorPicks.querySelector('.project-card')?.classList).toContain('project-card--featured')
     expect(JSON.parse(screen.getByTestId('state-probe').textContent ?? '{}').events).toContain('home_viewed')
+
+    const contentSections = Array.from(document.querySelectorAll('.home-section'))
+    expect(contentSections).toHaveLength(7)
+    contentSections.forEach((section) => {
+      const headingId = section.getAttribute('aria-labelledby')
+      expect(headingId).toBeTruthy()
+      expect(document.getElementById(headingId ?? '')?.tagName).toBe('H2')
+      const header = section.querySelector('header')!
+      expect(header.querySelectorAll('.project-card, .marquee-strip')).toHaveLength(0)
+      expect(header.querySelector('.home-section__body')).toBeNull()
+      expect(section.querySelector(':scope > .home-section__body')).not.toBeNull()
+    })
   })
 
   it('keeps homepage interactions outside reveal wrappers', async () => {
@@ -69,6 +81,22 @@ describe('ProjectsHomePage', () => {
     const error = await screen.findByRole('alert')
     expect(error.closest('.reveal')).toBeNull()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('renders a focused recovery state for empty results without empty content sections', async () => {
+    localStorage.setItem('vibecheck-prototype-state-v1', JSON.stringify({ schemaVersion: 1, serviceScenario: 'empty_results' }))
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/projects'] })
+    render(<AppProviders><RouterProvider router={router} /></AppProviders>)
+
+    const home = await screen.findByRole('main')
+    expect(within(home).getByRole('heading', { name: '暂时没有可展示的作品' })).toBeInTheDocument()
+    expect(within(home).queryByRole('heading', { name: '编辑精选' })).not.toBeInTheDocument()
+    expect(within(home).getAllByRole('search')).toHaveLength(1)
+    expect(within(home).getByLabelText('快捷问题')).toBeInTheDocument()
+    expect(within(home).getByRole('link', { name: '浏览全部分类' })).toHaveAttribute('href', '/categories')
+    expect(within(home).getByRole('link', { name: '查看个人主页与作品集' })).toHaveAttribute('href', '/categories/personal-sites-portfolios')
+    expect(within(home).getByRole('link', { name: '探索作品' })).toBeInTheDocument()
+    expect(within(home).getByRole('link', { name: '发布作品' })).toHaveAttribute('href', '/auth?return_to=%2Fsubmit')
   })
 
   it('renders homepage modules in the required order', async () => {

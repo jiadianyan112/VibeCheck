@@ -243,6 +243,90 @@
   min-width: 0;
 }
 
+.app-shell .highfi-scope .home-artwork--empty {
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  background:
+    linear-gradient(138deg, var(--home-cyan) 0 34%, transparent 34%),
+    var(--home-surface);
+}
+
+.app-shell .highfi-scope .home-artwork__empty-copy {
+  max-width: 12rem;
+  margin: 0;
+  border: 1px solid var(--home-ink);
+  border-radius: var(--home-radius);
+  background: var(--home-yellow);
+  padding: 1rem;
+  color: var(--home-ink);
+  font-weight: 750;
+  text-align: center;
+}
+
+.app-shell .highfi-scope .home-empty-state {
+  width: min(calc(100% - 2 * var(--page-gutter)), var(--page-max));
+  margin-inline: auto;
+  padding-block: clamp(4rem, 9vw, 8rem);
+}
+
+.app-shell .highfi-scope .home-empty-state__inner {
+  display: grid;
+  max-width: 50rem;
+  gap: 1.1rem;
+  border-block: 1px solid var(--home-ink);
+  background: var(--home-surface);
+  padding: clamp(2rem, 5vw, 4rem);
+}
+
+.app-shell .highfi-scope .home-empty-state__eyebrow {
+  width: fit-content;
+  margin: 0;
+  border: 1px solid var(--home-ink);
+  border-radius: var(--home-radius);
+  background: var(--home-violet);
+  padding: 0.4rem 0.65rem;
+  color: var(--home-ink);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope .home-empty-state h2 {
+  max-width: 14ch;
+  margin: 0;
+  color: var(--home-ink);
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.app-shell .highfi-scope .home-empty-state__inner > p:not(.home-empty-state__eyebrow) {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--home-muted);
+  line-height: 1.65;
+}
+
+.app-shell .highfi-scope .home-empty-state .cluster {
+  margin-top: 0.75rem;
+}
+
+.app-shell .highfi-scope .home-empty-state .button {
+  border-radius: var(--home-radius);
+  border-color: var(--home-ink);
+  color: var(--home-ink);
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .home-empty-state .button--accent {
+  background: var(--home-lime);
+}
+
+.app-shell .highfi-scope .home-empty-state .button--secondary {
+  background: var(--home-card-raised);
+}
+
 .app-shell .highfi-scope .home-section {
   width: 100%;
   margin: 0;
@@ -292,10 +376,6 @@
   line-height: 1.65;
 }
 
-.app-shell .highfi-scope .home-section .section-lead__action {
-  display: contents;
-}
-
 .app-shell .highfi-scope .home-section__link {
   grid-column: 2;
   grid-row: 1;
@@ -314,7 +394,6 @@
 }
 
 .app-shell .highfi-scope .home-section__body {
-  grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
   margin-top: clamp(2rem, 4vw, 3.5rem);
@@ -514,19 +593,32 @@
   transform: translateY(1px);
 }
 
-@media (min-width: 48rem) and (max-width: 63.999rem) {
+@media (min-width: 48rem) and (max-width: 64rem) {
   .app-shell .highfi-scope .home-editorial-hero {
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.85fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'content'
+      'tools'
+      'artwork';
+    gap: 0;
   }
 
   .app-shell .highfi-scope .home-editorial-hero h1 {
     font-size: clamp(3rem, 6vw, 4.75rem);
   }
 
+  .app-shell .highfi-scope .home-hero-tools {
+    margin-top: 2rem;
+  }
+
   .app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork,
   .app-shell .highfi-scope .home-artwork-frame,
   .app-shell .highfi-scope .home-artwork {
     min-height: 25rem;
+  }
+
+  .app-shell .highfi-scope .home-editorial-hero .editorial-hero__artwork {
+    margin-top: 2.5rem;
   }
 
   .app-shell .highfi-scope .home-editor-picks-grid {

@@ -28,13 +28,8 @@ function knownName(project: Project) {
   return project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'
 }
 
-function sectionAction(body: ReactNode, action?: ReactNode) {
-  return (
-    <>
-      {action}
-      <Reveal className="home-section__body">{body}</Reveal>
-    </>
-  )
+function sectionBody(body: ReactNode) {
+  return <Reveal className="home-section__body">{body}</Reveal>
 }
 
 export function ProjectsHomePage() {
@@ -73,6 +68,7 @@ export function ProjectsHomePage() {
     reusable: projects.filter((item) => item.assetIds.length > 0 && item.accessStatus.state === 'known' && item.accessStatus.value !== 'ended').slice(0, 4),
     endedReusable: projects.filter((item) => item.assetIds.length > 0 && item.accessStatus.state === 'known' && item.accessStatus.value === 'ended'),
   }), [projects])
+  const hasProjects = projects.length > 0
 
   function toggleFavorite(project: Project) {
     const action = { id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath: '/projects' } as const
@@ -101,12 +97,11 @@ export function ProjectsHomePage() {
         title={<><span className="sr-only">先看看别人怎么做，再决定自己怎么做。</span><span aria-hidden="true">先看看别人怎么做，</span><br aria-hidden="true" /><span aria-hidden="true">再决定自己怎么做。</span></>}
         description="发现 Vibe Coding 作品、创作者和构建工具，找到可以借鉴的实现。"
         label="作品广场首屏"
-        actions={<><Link className="button button--accent" to="#editor-picks">探索作品</Link><Link className="button button--secondary" to={state.session.user ? '/submit' : '/auth?return_to=%2Fsubmit'}>发布作品</Link></>}
+        actions={<><Link className="button button--accent" to={hasProjects ? '#editor-picks' : '#home-empty-recovery'}>探索作品</Link><Link className="button button--secondary" to={state.session.user ? '/submit' : '/auth?return_to=%2Fsubmit'}>发布作品</Link></>}
         artwork={
           <div className="home-artwork-frame">
-            <label className="sr-only" htmlFor="home-artwork-stage">本周作品舞台</label>
-            <output id="home-artwork-stage" className="home-artwork">
-              {sections.latest.slice(0, 3).map((project, index) => (
+            <div className={hasProjects ? 'home-artwork' : 'home-artwork home-artwork--empty'} aria-label="本周作品舞台">
+              {hasProjects ? sections.latest.slice(0, 3).map((project, index) => (
                 <ProjectMediaStage
                   key={project.id}
                   media={project.coverMedia[0]}
@@ -115,8 +110,8 @@ export function ProjectsHomePage() {
                   tone={index === 0 ? 'lime' : index === 1 ? 'cyan' : 'violet'}
                   priority={index === 0}
                 />
-              ))}
-            </output>
+              )) : <p className="home-artwork__empty-copy">新的作品会出现在这里。</p>}
+            </div>
           </div>
         }
       >
@@ -126,88 +121,109 @@ export function ProjectsHomePage() {
         </div>
       </EditorialHero>
 
-      <SectionLead
-        className="home-section home-section--muted"
-        eyebrow="新增品类"
-        title="个人主页与作品集"
-        description="按身份、建站目的、内容结构、视觉方向和复用资产寻找参考；原有 AI 学习工具品类继续保留。"
-        action={sectionAction(
-          <div className="compact-list">{sections.portfolios.map(renderCompact)}</div>,
-          <Link className="home-section__link" to="/categories/personal-sites-portfolios">进入品类专题 →</Link>,
-        )}
-      />
+      {hasProjects ? <>
+        <SectionLead
+          className="home-section home-section--muted"
+          eyebrow="新增品类"
+          title="个人主页与作品集"
+          description="按身份、建站目的、内容结构、视觉方向和复用资产寻找参考；原有 AI 学习工具品类继续保留。"
+          action={<Link className="home-section__link" to="/categories/personal-sites-portfolios">进入品类专题 →</Link>}
+          id="portfolio-heading"
+        >
+          {sectionBody(<div className="compact-list">{sections.portfolios.map(renderCompact)}</div>)}
+        </SectionLead>
 
-      <div id="editor-picks" className="home-editor-picks-anchor">
+        <div id="editor-picks" className="home-editor-picks-anchor">
+          <SectionLead
+            className="home-section"
+            title="编辑精选"
+            description="从值得参考的作品开始，看看创作者是怎么做的。"
+            id="editor-picks-heading"
+          >
+            {sectionBody(
+              <div className="home-editor-picks-grid">
+                {sections.curated.map((project, index) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    creators={creatorsForProject(project)}
+                    variant={index === 0 ? 'featured' : 'standard'}
+                    favorited={state.favoriteProjectIds.includes(project.id)}
+                    selectedForCompare={state.comparisonProjectIds.includes(project.id)}
+                    onToggleFavorite={toggleFavorite}
+                    onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)}
+                  />
+                ))}
+              </div>,
+            )}
+          </SectionLead>
+        </div>
+
+        <SectionLead
+          className="home-section home-section--muted home-section--latest"
+          title="最新发布"
+          id="latest-heading"
+        >
+          {sectionBody(<MarqueeStrip label="最新发布作品">{sections.latest.map(renderCompact)}</MarqueeStrip>)}
+        </SectionLead>
+
         <SectionLead
           className="home-section"
-          title="编辑精选"
-          description="从值得参考的作品开始，看看创作者是怎么做的。"
-          id="editor-picks-heading"
-          action={sectionAction(
-            <div className="home-editor-picks-grid">
-              {sections.curated.map((project, index) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  creators={creatorsForProject(project)}
-                  variant={index === 0 ? 'featured' : 'standard'}
-                  favorited={state.favoriteProjectIds.includes(project.id)}
-                  selectedForCompare={state.comparisonProjectIds.includes(project.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)}
-                />
-              ))}
+          title="最近更新"
+          description="看看近期有新版本或状态变化的作品。"
+          id="updated-heading"
+        >
+          {sectionBody(<div className="compact-list">{sections.updated.map(renderCompact)}</div>)}
+        </SectionLead>
+
+        <SectionLead
+          className="home-section home-section--muted"
+          title="开源可复用"
+          id="reusable-heading"
+        >
+          {sectionBody(<div className="compact-list">{sections.reusable.map(renderCompact)}</div>)}
+        </SectionLead>
+
+        <SectionLead
+          className="home-section"
+          title="按问题与品类探索"
+          id="explore-heading"
+        >
+          {sectionBody(
+            <div className="problem-grid">
+              <Link className="wire-card stack stack--small" to="/categories/personal-sites-portfolios"><strong>设计个人主页与作品集</strong><span>身份、结构、视觉与复用资产</span><span>查看新品类 →</span></Link>
+              {problemLinks.map((item) => <Link key={item.slug} className="wire-card stack stack--small" to={`/categories/${item.slug}`}><strong>{item.label}</strong><span>{item.hint}</span><span>查看专题 →</span></Link>)}
             </div>,
           )}
-        />
-      </div>
+        </SectionLead>
 
-      <SectionLead
-        className="home-section home-section--muted home-section--latest"
-        title="最新发布"
-        action={sectionAction(
-          <MarqueeStrip label="最新发布作品">{sections.latest.map(renderCompact)}</MarqueeStrip>,
-        )}
-      />
+        <SectionLead
+          className="home-section home-section--muted"
+          title="已结束，但仍可复用"
+          description="即使作品停止维护，其中的代码、模板或组件仍可能值得参考。"
+          id="ended-heading"
+        >
+          {sectionBody(sections.endedReusable.length ? <div className="compact-list">{sections.endedReusable.map(renderCompact)}</div> : <p>暂无符合条件的公开档案。</p>)}
+        </SectionLead>
 
-      <SectionLead
-        className="home-section"
-        title="最近更新"
-        description="看看近期有新版本或状态变化的作品。"
-        action={sectionAction(<div className="compact-list">{sections.updated.map(renderCompact)}</div>)}
-      />
-
-      <SectionLead
-        className="home-section home-section--muted"
-        title="开源可复用"
-        action={sectionAction(<div className="compact-list">{sections.reusable.map(renderCompact)}</div>)}
-      />
-
-      <SectionLead
-        className="home-section"
-        title="按问题与品类探索"
-        action={sectionAction(
-          <div className="problem-grid">
-            <Link className="wire-card stack stack--small" to="/categories/personal-sites-portfolios"><strong>设计个人主页与作品集</strong><span>身份、结构、视觉与复用资产</span><span>查看新品类 →</span></Link>
-            {problemLinks.map((item) => <Link key={item.slug} className="wire-card stack stack--small" to={`/categories/${item.slug}`}><strong>{item.label}</strong><span>{item.hint}</span><span>查看专题 →</span></Link>)}
-          </div>,
-        )}
-      />
-
-      <SectionLead
-        className="home-section home-section--muted"
-        title="已结束，但仍可复用"
-        description="即使作品停止维护，其中的代码、模板或组件仍可能值得参考。"
-        action={sectionAction(sections.endedReusable.length ? <div className="compact-list">{sections.endedReusable.map(renderCompact)}</div> : <p>暂无符合条件的公开档案。</p>)}
-      />
-
-      <section className="home-explainer page-container">
-        <Reveal className="home-explainer__inner">
-          <div><strong>信息更新有迹可循</strong><p>作品状态、历史和来源会分别记录，暂时无法确认的信息会明确标出。</p></div>
-          <div><strong>发现自己的作品？</strong><p>如需维护已有档案，可在详情页申请作者身份验证。</p></div>
-          <Link className="home-explainer__link" to="/about">了解收录与验证方式 →</Link>
-        </Reveal>
-      </section>
+        <section className="home-explainer page-container">
+          <Reveal className="home-explainer__inner">
+            <div><strong>信息更新有迹可循</strong><p>作品状态、历史和来源会分别记录，暂时无法确认的信息会明确标出。</p></div>
+            <div><strong>发现自己的作品？</strong><p>如需维护已有档案，可在详情页申请作者身份验证。</p></div>
+            <Link className="home-explainer__link" to="/about">了解收录与验证方式 →</Link>
+          </Reveal>
+        </section>
+      </> : <section id="home-empty-recovery" className="home-empty-state" aria-labelledby="home-empty-heading">
+        <div className="home-empty-state__inner">
+          <p className="home-empty-state__eyebrow">作品广场</p>
+          <h2 id="home-empty-heading">暂时没有可展示的作品</h2>
+          <p>还没有公开作品；先浏览分类，或发布第一个作品。</p>
+          <div className="cluster">
+            <Link className="button button--accent" to="/categories">浏览全部分类</Link>
+            <Link className="button button--secondary" to="/categories/personal-sites-portfolios">查看个人主页与作品集</Link>
+          </div>
+        </div>
+      </section>}
       <span className="sr-only">本页共展示 {projects.length} 个作品，首个为 {projects[0] ? knownName(projects[0]) : '无'}。</span>
     </main>
   )
