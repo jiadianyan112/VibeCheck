@@ -96,7 +96,7 @@
   font-size: 0.9rem;
 }
 
-.app-shell .highfi-scope .vibe-lens {
+.app-shell .vibe-lens {
   --vibe-lens-fill: var(--brand-lime);
   position: relative;
   display: inline-grid;
@@ -112,27 +112,27 @@
   transition: border-color var(--motion-standard) ease, background-color var(--motion-standard) ease;
 }
 
-.app-shell .highfi-scope .vibe-lens--yellow {
+.app-shell .vibe-lens--yellow {
   --vibe-lens-fill: var(--brand-yellow);
 }
 
-.app-shell .highfi-scope .vibe-lens--violet {
+.app-shell .vibe-lens--violet {
   --vibe-lens-fill: var(--brand-violet);
 }
 
-.app-shell .highfi-scope .vibe-lens--cyan {
+.app-shell .vibe-lens--cyan {
   --vibe-lens-fill: var(--brand-cyan);
 }
 
-.app-shell .highfi-scope .vibe-lens--active {
+.app-shell .vibe-lens--active {
   border-width: 3px;
 }
 
-.app-shell .highfi-scope .vibe-lens--pending {
+.app-shell .vibe-lens--pending {
   border-style: dashed;
 }
 
-.app-shell .highfi-scope .vibe-lens__svg {
+.app-shell .vibe-lens__svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -141,14 +141,14 @@
   transition: transform var(--motion-standard) ease;
 }
 
-.app-shell .highfi-scope .vibe-lens__outline {
+.app-shell .vibe-lens__outline {
   fill: none;
   stroke: currentColor;
   stroke-width: 4;
   vector-effect: non-scaling-stroke;
 }
 
-.app-shell .highfi-scope .vibe-lens__ellipse {
+.app-shell .vibe-lens__ellipse {
   fill: var(--vibe-lens-fill);
   fill-opacity: 0.44;
   stroke: currentColor;
@@ -156,11 +156,11 @@
   vector-effect: non-scaling-stroke;
 }
 
-.app-shell .highfi-scope .vibe-lens__ellipse--tall {
+.app-shell .vibe-lens__ellipse--tall {
   fill-opacity: 0.22;
 }
 
-.app-shell .highfi-scope .vibe-lens__notch {
+.app-shell .vibe-lens__notch {
   fill: none;
   stroke: currentColor;
   stroke-linecap: square;
@@ -169,13 +169,13 @@
   vector-effect: non-scaling-stroke;
 }
 
-.app-shell .highfi-scope .vibe-lens__spark {
+.app-shell .vibe-lens__spark {
   fill: currentColor;
 }
 
 /* ProjectMediaStage also appears in legacy frontstage cards. Keep this
- * baseline structural layout token-free; the branded treatment below stays
- * opt-in to .highfi-scope. */
+ * structural baseline frontstage-safe; page-specific surface treatment
+ * stays opt-in to .highfi-scope. */
 .app-shell .project-media-stage {
   position: relative;
   display: grid;

@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { creatorsForProject, evidences, lifecycleEvents, projects, unknownFact } from '../../mocks'
+import '../../styles/tokens.css'
+import '../../styles/highfi-components.css'
+import { VibeLens } from '../brand'
 import { ProjectCard } from './ProjectCard'
 
 const project = projects[0]!
@@ -48,6 +51,65 @@ describe('ProjectCard', () => {
     expect(screen.getByRole('img', { name: '名称未知的作品视觉占位' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '第二张作品封面' })).not.toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveClass('project-card--standard')
+  })
+
+  it('keeps standard-card fallback lenses fully styled outside high-fidelity scope', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <div className="app-shell">
+          <ProjectCard project={project} />
+          <VibeLens seed="yellow-state" tone="yellow" state="active" label="黄色活动占位" />
+          <VibeLens seed="cyan-state" tone="cyan" state="pending" label="青色等待占位" />
+        </div>
+      </MemoryRouter>,
+    )
+
+    const shell = container.querySelector('.app-shell')!
+    expect(shell.querySelector('.highfi-scope')).toBeNull()
+
+    const lens = screen.getByRole('img', { name: '题练工坊视觉占位' })
+    const lensStyle = getComputedStyle(lens)
+    expect(lensStyle.display).toBe('inline-grid')
+    expect(lensStyle.width).toBe('clamp(6rem, 16vw, 12rem)')
+    expect(lensStyle.background).toBe('var(--vibe-lens-fill)')
+    expect(lensStyle.color).toBe('var(--brand-ink)')
+    expect(lensStyle.borderRadius).toBe('50%')
+    expect(lensStyle.getPropertyValue('--vibe-lens-fill')).toBe('var(--brand-lime)')
+    expect(lens).toHaveClass('vibe-lens--lime', 'vibe-lens--idle')
+
+    const activeLens = screen.getByRole('img', { name: '黄色活动占位' })
+    const activeStyle = getComputedStyle(activeLens)
+    expect(activeStyle.getPropertyValue('--vibe-lens-fill')).toBe('var(--brand-yellow)')
+    expect(activeStyle.borderWidth).toBe('3px')
+
+    const pendingLens = screen.getByRole('img', { name: '青色等待占位' })
+    const pendingStyle = getComputedStyle(pendingLens)
+    expect(pendingStyle.getPropertyValue('--vibe-lens-fill')).toBe('var(--brand-cyan)')
+    expect(pendingStyle.borderStyle).toBe('dashed')
+
+    const svg = lens.querySelector('svg')!
+    const svgStyle = getComputedStyle(svg)
+    expect(svgStyle.display).toBe('block')
+    expect(svgStyle.width).toBe('100%')
+    expect(svgStyle.height).toBe('100%')
+    expect(svgStyle.transform).toContain('rotate(')
+
+    const outlineStyle = getComputedStyle(lens.querySelector('.vibe-lens__outline')!)
+    expect(outlineStyle.fill).toBe('none')
+    expect(outlineStyle.stroke).toBe('currentColor')
+    expect(outlineStyle.strokeWidth).toBe('4')
+
+    const ellipseStyle = getComputedStyle(lens.querySelector('.vibe-lens__ellipse--wide')!)
+    expect(ellipseStyle.fill).toBe('var(--vibe-lens-fill)')
+    expect(ellipseStyle.stroke).toBe('currentColor')
+    expect(ellipseStyle.strokeWidth).toBe('3')
+
+    const notchStyle = getComputedStyle(lens.querySelector('.vibe-lens__notch')!)
+    expect(notchStyle.fill).toBe('none')
+    expect(notchStyle.stroke).toBe('currentColor')
+    expect(notchStyle.strokeWidth).toBe('8')
+
+    expect(getComputedStyle(lens.querySelector('.vibe-lens__spark')!).fill).toBe('currentColor')
   })
 
   it('renders event variant with a separate historical event', () => {
