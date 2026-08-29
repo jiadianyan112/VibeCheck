@@ -1,28 +1,28 @@
 /* High-fidelity primitive variants. Keep all rules inside an explicit scope. */
 
-.highfi-scope .button--accent {
+.app-shell .highfi-scope .button--accent {
   border-color: var(--brand-ink);
   background: var(--brand-lime);
   color: var(--brand-ink);
   transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
 
-.highfi-scope .button--accent:hover:not(:disabled) {
+.app-shell .highfi-scope .button--accent:hover:not(:disabled) {
   background: var(--brand-yellow);
   transform: translateY(-1px);
 }
 
-.highfi-scope .button--accent:active:not(:disabled) {
+.app-shell .highfi-scope .button--accent:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.highfi-scope .tag--accent {
+.app-shell .highfi-scope .tag--accent {
   border-color: var(--brand-ink);
   background: var(--brand-lime);
   color: var(--brand-ink);
 }
 
-.highfi-scope .tag--inverse {
+.app-shell .highfi-scope .tag--inverse {
   border-color: var(--brand-ink);
   background: var(--brand-ink);
   color: var(--brand-canvas);

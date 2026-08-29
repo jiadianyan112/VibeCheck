@@ -40,9 +40,10 @@ export function StyleSandboxPage() {
   const [tab, setTab] = useState<'normal' | 'error'>('normal')
 
   return (
-    <div className="highfi-scope">
-      <PageFrame title="低保真组件沙盒" description="T12：所有基础组件、交互状态与窄屏行为的统一验证入口。">
-        <div className="sandbox-grid">
+    <div className="app-shell">
+      <div className="highfi-scope">
+        <PageFrame title="低保真组件沙盒" description="T12：所有基础组件、交互状态与窄屏行为的统一验证入口。">
+          <div className="sandbox-grid">
         <section className="wire-panel stack" aria-labelledby="sandbox-actions">
           <div className="section-heading"><p className="eyebrow">Controls</p><h2 id="sandbox-actions">操作与输入</h2></div>
           <div className="cluster">
@@ -79,13 +80,14 @@ export function StyleSandboxPage() {
           <p>支持 Esc、遮罩关闭与焦点返回。</p>
           <div className="cluster"><Button onClick={() => setModalOpen(true)}>打开弹层示例</Button><Button onClick={() => setDrawerOpen(true)}>打开抽屉示例</Button></div>
         </section>
-        </div>
+          </div>
 
-        <Modal open={modalOpen} title="保留当前操作上下文" onClose={() => setModalOpen(false)} footer={<Button variant="primary" onClick={() => setModalOpen(false)}>确认</Button>}>
-          <p>关闭后焦点会返回到触发按钮。</p>
-        </Modal>
-        <Drawer open={drawerOpen} title="证据详情" onClose={() => setDrawerOpen(false)}><p>抽屉用于承载不打断主任务的补充信息。</p></Drawer>
-      </PageFrame>
+          <Modal open={modalOpen} title="保留当前操作上下文" onClose={() => setModalOpen(false)} footer={<Button variant="primary" onClick={() => setModalOpen(false)}>确认</Button>}>
+            <p>关闭后焦点会返回到触发按钮。</p>
+          </Modal>
+          <Drawer open={drawerOpen} title="证据详情" onClose={() => setDrawerOpen(false)}><p>抽屉用于承载不打断主任务的补充信息。</p></Drawer>
+        </PageFrame>
+      </div>
     </div>
   )
 }

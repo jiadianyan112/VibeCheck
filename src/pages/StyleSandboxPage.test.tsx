@@ -26,7 +26,13 @@ describe('StyleSandboxPage', () => {
 
   it('opts the sandbox into the high-fidelity scope and applies accent color', () => {
     render(<StyleSandboxPage />)
-    expect(screen.getByRole('main').closest('.highfi-scope')).not.toBeNull()
+    const main = screen.getByRole('main')
+    const appShell = main.closest('.app-shell')
+    const highfiScope = main.closest('.highfi-scope')
+    expect(appShell).not.toBeNull()
+    expect(highfiScope).not.toBeNull()
+    expect(highfiScope).not.toBe(appShell)
+    expect(appShell?.contains(highfiScope)).toBe(true)
     const accentButton = screen.getByRole('button', { name: '品牌操作' })
     const accentStyle = getComputedStyle(accentButton)
     expect(accentStyle.background).toBe('var(--brand-lime)')
