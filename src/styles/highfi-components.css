@@ -1,0 +1,29 @@
+/* High-fidelity primitive variants. Keep all rules inside the frontstage shell. */
+
+.app-shell .button--accent {
+  border-color: var(--brand-ink);
+  background: var(--brand-lime);
+  color: var(--brand-ink);
+  transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.app-shell .button--accent:hover:not(:disabled) {
+  background: var(--brand-yellow);
+  transform: translateY(-1px);
+}
+
+.app-shell .button--accent:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.app-shell .tag--accent {
+  border-color: var(--brand-ink);
+  background: var(--brand-lime);
+  color: var(--brand-ink);
+}
+
+.app-shell .tag--inverse {
+  border-color: var(--brand-ink);
+  background: var(--brand-ink);
+  color: var(--brand-canvas);
+}

@@ -14,6 +14,13 @@ describe('StyleSandboxPage', () => {
     expect(screen.getByRole('region', { name: /可横向滚动/ })).toHaveAttribute('tabindex', '0')
   })
 
+  it('renders high-fidelity accent and inverse primitives', () => {
+    render(<StyleSandboxPage />)
+    expect(screen.getByRole('button', { name: '品牌操作' })).toHaveClass('button--accent')
+    expect(screen.getByText('荧光状态')).toHaveClass('tag--accent')
+    expect(screen.getByText('反相状态')).toHaveClass('tag--inverse')
+  })
+
   it('changes controlled tabs', async () => {
     const user = userEvent.setup()
     render(<StyleSandboxPage />)

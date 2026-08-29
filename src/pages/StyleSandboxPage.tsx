@@ -45,12 +45,12 @@ export function StyleSandboxPage() {
         <section className="wire-panel stack" aria-labelledby="sandbox-actions">
           <div className="section-heading"><p className="eyebrow">Controls</p><h2 id="sandbox-actions">操作与输入</h2></div>
           <div className="cluster">
-            <Button variant="primary">主要操作</Button><Button>次要操作</Button><Button variant="quiet">文字操作</Button>
+            <Button variant="primary">主要操作</Button><Button variant="accent">品牌操作</Button><Button>次要操作</Button><Button variant="quiet">文字操作</Button>
             <Button disabled>不可用</Button><Button loading>提交</Button>
           </div>
           <Input label="作品名称或完整想法" placeholder="例如：把 PDF 自动生成练习题" hint="支持作品名、功能词和完整产品想法。" />
           <Input label="错误示例" defaultValue="无效地址" error="请输入完整的 https:// 地址" />
-          <div className="cluster" aria-label="状态标签示例"><Tag>正常可访问</Tag><Tag tone="strong">需要登录</Tag><Tag tone="dashed">信息待验证</Tag></div>
+          <div className="cluster" aria-label="状态标签示例"><Tag>正常可访问</Tag><Tag tone="strong">需要登录</Tag><Tag tone="dashed">信息待验证</Tag><Tag tone="accent">荧光状态</Tag><Tag tone="inverse">反相状态</Tag></div>
         </section>
 
         <section className="wire-panel stack" aria-labelledby="sandbox-card">
