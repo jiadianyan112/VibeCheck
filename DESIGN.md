@@ -1,23 +1,6 @@
-# VibeCheck Low-fidelity Design Contract
+# VibeCheck Design Contract
 
-## Direction
+The active high-fidelity design specification is:
+`docs/superpowers/specs/2026-08-29-starboy-inspired-frontend-design.md`.
 
-本原型是用于验证信息结构、任务链路与状态的纯低保真界面。视觉保持灰阶、系统字体、1px 分隔线、标准表单控件和少量结构线框；不使用品牌插画、装饰渐变、彩色侧边条或嵌套卡片制造完成度错觉。
-
-## Category behavior
-
-- 全局导航、主路由、作品 ID、收藏、比较、发布、作者、生命周期和后台骨架跨品类共享。
-- 分类、搜索筛选、详情结构、比较矩阵与发布字段必须读取作品的 `categoryId` 和 `categorySchemaVersion`。
-- AI 学习与题库继续使用材料—练习—反馈的原有界面。
-- 个人主页与作品集使用身份—用途—结构—项目展示—视觉—交互—实现—复用的界面；缩略图使用可区分的 CSS 站点线框。
-- 混合比较只展示公共事实，并明确品类差异，不把“不适用”显示为“资料缺失”。
-
-## Responsive behavior
-
-- 360/390：单列内容，筛选折叠，比较横向滚动，操作按钮保持可触达。
-- 768：内容按逻辑分区，避免把标签与正文压成窄列。
-- 桌面：详情和后台可使用多列事实网格，但阅读行长受容器限制。
-
-## Accessibility
-
-键盘可完成品类选择、搜索、筛选、加入比较和发布；表单错误与字段关联；状态不只依赖颜色；CSS 线框具有可读的 `aria-label`，不向辅助技术暴露无意义的装饰节点。
+Public and task pages use the VibeCheck editorial visual system. Admin pages remain compact and tool-oriented. Existing business state, evidence, unknown facts, errors, permissions, and reduced-motion behavior remain mandatory.

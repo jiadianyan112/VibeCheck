@@ -32,6 +32,7 @@
     "dev:worker": "npm run dev -w @vibecheck/worker",
     "build": "npm run build:foundation && npm run build:web",
     "build:web": "tsc -b && vite build",
+    "frontend:budget": "node scripts/check-frontend-budgets.mjs",
     "prebuild:web": "npm run build -w @vibecheck/contracts",
     "build:libraries": "npm run build -w @vibecheck/config && npm run build -w @vibecheck/contracts && npm run build -w @vibecheck/database && npm run build -w @vibecheck/observability && npm run build -w @vibecheck/identity && npm run build -w @vibecheck/catalog && npm run build -w @vibecheck/community && npm run build -w @vibecheck/comparison && npm run build -w @vibecheck/analytics && npm run build -w @vibecheck/search && npm run build -w @vibecheck/submission && npm run build -w @vibecheck/workflow && npm run build -w @vibecheck/media && npm run build -w @vibecheck/evidence && npm run build -w @vibecheck/private-material",
     "build:foundation": "npm run build:libraries && npm run build -w @vibecheck/api && npm run build -w @vibecheck/worker",

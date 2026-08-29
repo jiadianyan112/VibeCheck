@@ -50,6 +50,7 @@ jobs:
       - run: npm test
       - run: npm run test:foundation
       - run: npm run build
+      - run: npm run frontend:budget
       - name: Verify migrations are repeatable
         run: |
           npm run db:migrate
