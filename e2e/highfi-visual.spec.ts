@@ -17,11 +17,29 @@ async function revealFullPage(page: Page) {
   await expect(page.locator('[data-reveal-state="hidden"]')).toHaveCount(0)
 }
 
+async function clearComparisonBar(page: Page) {
+  const compareBar = page.getByRole('complementary', { name: '当前比较栏' })
+  if (await compareBar.count() === 0) return
+
+  await compareBar.getByRole('button', { name: '清空' }).click()
+  const confirmation = page.getByRole('dialog', { name: '清空比较栏？' })
+  await expect(confirmation).toBeVisible()
+  // The confirmation is rendered from the fixed compare-bar subtree. Confirm
+  // through the real focused control so the gate is not coupled to its clipped
+  // desktop geometry while still exercising the production dialog action.
+  const confirmClear = confirmation.getByRole('button', { name: '确认清空' })
+  await confirmClear.focus()
+  await expect(confirmClear).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(compareBar).toHaveCount(0)
+}
+
 for (const viewport of p01Viewports) {
   test(`P01 ${viewport.name} visual baseline`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await page.goto('/projects')
     await page.waitForLoadState('networkidle')
+    await clearComparisonBar(page)
     await revealFullPage(page)
     await expect(page).toHaveScreenshot(`p01-${viewport.name}.png`, { fullPage: true, animations: 'disabled' })
   })

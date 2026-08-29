@@ -94,7 +94,7 @@ test.describe('T54 响应式关键路径', () => {
 
   test('360px 可完成发布地址检查并进入发布步骤', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 })
-    const mockAuth = await installMockAuth(page)
+    const mockAuth = await installMockAuth(page, { submission: true })
     await mockAuth.loginAs('mia', '/submit')
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('example.test/mobile-publish')
     await page.getByRole('button', { name: '检查地址' }).click()

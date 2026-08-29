@@ -74,15 +74,19 @@ function escapedUrl(path: string) {
   return new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
 }
 
+export interface MockAuthOptions {
+  readonly submission?: boolean
+}
+
 /**
- * Stubs only the browser-facing auth contract. The tests still fill and submit
- * the production email + six-digit OTP form; no app storage or test hook is used.
+ * Stubs the browser-facing auth contract. The tests still fill and submit the
+ * production email + six-digit OTP form; no app storage or test hook is used.
+ * Submission DTO routes are opt-in so public/auth-only cases stay network-clean.
  */
-export async function installMockAuth(page: Page) {
+export async function installMockAuth(page: Page, options: MockAuthOptions = {}) {
   let activeProfile: MockAuthProfile | null = null
   let nextProfile: MockAuthProfile = 'mia'
   let challengeSequence = 0
-  let lastCheckedUrl = 'https://example.test/mobile-publish'
   const pending = new Map<string, PendingChallenge>()
 
   await page.route('**/api/v1/auth/session', async (route) => {
@@ -163,92 +167,95 @@ export async function installMockAuth(page: Page) {
     })
   })
 
-  // The browser gate reaches the first publish form after URL verification.
-  // Keep that one response deterministic while leaving the production client
-  // and its contract validation in place.
-  await page.route('**/api/v1/submission-url-checks', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.continue()
-      return
-    }
-    const body = route.request().postDataJSON() as { raw_url?: unknown; category_hint?: unknown }
-    const rawUrl = typeof body.raw_url === 'string' ? body.raw_url : 'https://example.test/mobile-publish'
-    const canonicalUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
-    lastCheckedUrl = canonicalUrl
-    const categoryId = body.category_hint === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz'
-    await route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        check_id: mockCheckId,
-        category_id: categoryId,
-        category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
-        input_hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        canonical_url: canonicalUrl,
-        redirect_chain: [],
-        risk_result: 'allowed',
-        access_result: 'accessible',
-        category_result: 'matched',
-        duplicate_result: 'none',
-        duplicate_candidates: [],
-        risk_reasons: [],
-        can_create_draft: true,
-        checked_at: '2026-08-29T00:00:00.000Z',
-        expires_at: '2099-01-01T00:30:00.000Z',
-      }),
-    })
-  })
+  if (options.submission) {
+    let lastCheckedUrl = 'https://example.test/mobile-publish'
 
-  const draftProjection = (categoryId: 'ai_learning_quiz' | 'personal_site_portfolio') => ({
-    draft_id: mockDraftId,
-    submission_chain_id: mockSubmissionChainId,
-    category_id: categoryId,
-    category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
-    check_id: mockCheckId,
-    draft_revision: 1,
-    supersedes_draft_id: null,
-    base_submission_id: null,
-    payload_snapshot: {
-      project_core: { public_url: lastCheckedUrl },
+    // Submission routes are opt-in: only publish-flow gates install these
+    // deterministic DTO responses; public/auth-only cases remain untouched.
+    await page.route('**/api/v1/submission-url-checks', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      const body = route.request().postDataJSON() as { raw_url?: unknown; category_hint?: unknown }
+      const rawUrl = typeof body.raw_url === 'string' ? body.raw_url : 'https://example.test/mobile-publish'
+      const canonicalUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
+      lastCheckedUrl = canonicalUrl
+      const categoryId = body.category_hint === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz'
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          check_id: mockCheckId,
+          category_id: categoryId,
+          category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
+          input_hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          canonical_url: canonicalUrl,
+          redirect_chain: [],
+          risk_result: 'allowed',
+          access_result: 'accessible',
+          category_result: 'matched',
+          duplicate_result: 'none',
+          duplicate_candidates: [],
+          risk_reasons: [],
+          can_create_draft: true,
+          checked_at: '2026-08-29T00:00:00.000Z',
+          expires_at: '2099-01-01T00:30:00.000Z',
+        }),
+      })
+    })
+
+    const draftProjection = (categoryId: 'ai_learning_quiz' | 'personal_site_portfolio') => ({
+      draft_id: mockDraftId,
+      submission_chain_id: mockSubmissionChainId,
       category_id: categoryId,
       category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
-    },
-    media_reference_ids: [],
-    evidence_draft_ids: [],
-    asset_drafts: [],
-    status: 'editing',
-    version: 1,
-    created_at: mockDate,
-    updated_at: mockDate,
-    saved_at: mockDate,
-    expires_at: '2099-01-01T00:30:00.000Z',
-  })
-
-  await page.route('**/api/v1/submission-drafts', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.continue()
-      return
-    }
-    const body = route.request().postDataJSON() as { category_id?: unknown }
-    const categoryId = body.category_id === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz'
-    await route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify(draftProjection(categoryId)),
+      check_id: mockCheckId,
+      draft_revision: 1,
+      supersedes_draft_id: null,
+      base_submission_id: null,
+      payload_snapshot: {
+        project_core: { public_url: lastCheckedUrl },
+        category_id: categoryId,
+        category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
+      },
+      media_reference_ids: [],
+      evidence_draft_ids: [],
+      asset_drafts: [],
+      status: 'editing',
+      version: 1,
+      created_at: mockDate,
+      updated_at: mockDate,
+      saved_at: mockDate,
+      expires_at: '2099-01-01T00:30:00.000Z',
     })
-  })
 
-  await page.route('**/api/v1/submission-drafts/*', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.continue()
-      return
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(draftProjection('ai_learning_quiz')),
+    await page.route('**/api/v1/submission-drafts', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      const body = route.request().postDataJSON() as { category_id?: unknown }
+      const categoryId = body.category_id === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz'
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(draftProjection(categoryId)),
+      })
     })
-  })
+
+    await page.route('**/api/v1/submission-drafts/*', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(draftProjection('ai_learning_quiz')),
+      })
+    })
+  }
 
   async function completeLogin(profile: MockAuthProfile, returnPath: string) {
     nextProfile = profile

@@ -43,7 +43,7 @@ test.describe('T55 axe 核心页面审计', () => {
   })
 
   test('登录后的发布表单和身份材料页没有 WCAG A/AA 违规', async ({ page }) => {
-    const mockAuth = await installMockAuth(page)
+    const mockAuth = await installMockAuth(page, { submission: true })
     await mockAuth.loginAs('mia', '/submit')
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('https://example.test/accessible-tool')
     await page.getByRole('button', { name: '检查地址' }).click()
