@@ -6,7 +6,7 @@ import {
 import { routeCatalog } from './routeCatalog'
 import { AboutPage, ActivityPage, AdminAuthorVerificationPage, AdminDashboardPage, AdminDuplicatesPage, AdminProjectEditorPage, AdminProjectsPage, AdminReviewsPage, AdminStatusMonitorPage, AuthorVerificationPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, CreatorProfilePage, DiscoverPage, DiscoverResultPage, NotFoundPage, NotificationsPage, PersonalCenterPage, ProjectDetailPage, ProjectUpdatePage, ProjectsHomePage, RoutePlaceholderPage, SearchPage, StyleSandboxPage, SubmitEntryPage, SubmitFormPage } from '../pages'
 import { AdminLayout, FrontstageLayout } from '../components'
-import { AuthenticatedRoute, StaffRoute } from '../features'
+import { AuthGateProvider, AuthenticatedRoute, StaffRoute } from '../features'
 
 const frontstageRoutes = routeCatalog
   .filter((route) => route.area === 'frontstage')
@@ -27,7 +27,7 @@ const adminRoutes = routeCatalog
 
 export const appRoutes: RouteObject[] = [
   {
-    element: <FrontstageLayout />,
+    element: <AuthGateProvider><FrontstageLayout /></AuthGateProvider>,
     children: [
       {
         path: '/',

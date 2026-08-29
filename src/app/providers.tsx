@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { ErrorBoundary, ToastProvider } from '../components'
-import { AuthGateProvider, AuthSessionProvider } from '../features'
+import { AuthSessionProvider } from '../features'
 import { AppStateProvider } from '../state'
 
 export function AppProviders({ children }: PropsWithChildren) {
@@ -9,9 +9,7 @@ export function AppProviders({ children }: PropsWithChildren) {
       <AppStateProvider>
         <ToastProvider>
           <AuthSessionProvider>
-            <AuthGateProvider>
-              {children}
-            </AuthGateProvider>
+            {children}
           </AuthSessionProvider>
         </ToastProvider>
       </AppStateProvider>

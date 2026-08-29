@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from './providers'
 import { appRoutes } from './router'
@@ -29,6 +30,20 @@ describe('application route skeleton', () => {
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+  })
+
+  it('keeps the protected-action login dialog inside router context', async () => {
+    const user = userEvent.setup()
+    renderRoute('/project/project-pdfquizlab')
+
+    await user.click(await screen.findByRole('button', { name: '收藏' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '登录后继续刚才的操作' })
+    expect(within(dialog).getByRole('link', { name: '使用邮箱验证码登录' })).toHaveAttribute(
+      'href',
+      '/auth?return_to=%2Fproject%2Fproject-pdfquizlab',
+    )
+    expect(screen.queryByText('页面出现问题')).not.toBeInTheDocument()
   })
 
   it('shows a useful error for an unknown project id', async () => {

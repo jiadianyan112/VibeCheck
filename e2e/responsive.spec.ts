@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { installMockAuth } from './support/mock-auth'
 
 const viewports = [
   { width: 360, height: 800 },
@@ -31,12 +32,6 @@ async function expectNoPageOverflow(page: Page, context: string) {
       .map((element) => ({ tag: element.tagName, className: element.className, text: element.textContent?.trim().slice(0, 50) })),
   }))
   expect(layout.page, `${context}: ${JSON.stringify(layout.offenders)}`).toBeLessThanOrEqual(layout.viewport + 1)
-}
-
-async function loginAsMia(page: Page, returnPath: string) {
-  await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
-  await page.getByRole('button', { name: '使用米娅账号' }).click()
-  await expect(page).toHaveURL(new RegExp(`${returnPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
 async function bringAboveFixedBar(page: Page, target: ReturnType<Page['locator']>) {
@@ -99,7 +94,8 @@ test.describe('T54 响应式关键路径', () => {
 
   test('360px 可完成发布地址检查并进入发布步骤', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 })
-    await loginAsMia(page, '/submit')
+    const mockAuth = await installMockAuth(page)
+    await mockAuth.loginAs('mia', '/submit')
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('example.test/mobile-publish')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
@@ -111,6 +107,7 @@ test.describe('T54 响应式关键路径', () => {
 
   test('390px 弹层保持在视口内，后台显示窄屏提示并只在表格内滚动', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
+    const mockAuth = await installMockAuth(page)
     await page.goto('/project/project-pdfquizlab')
     await page.locator('.project-primary-actions').getByRole('button', { name: '收藏' }).click()
     const dialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
@@ -120,7 +117,9 @@ test.describe('T54 响应式关键路径', () => {
     expect(dialogBox!.x).toBeGreaterThanOrEqual(0)
     expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390)
     expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844)
-    await dialog.getByRole('button', { name: /米娅/ }).click()
+    await dialog.getByRole('link', { name: '使用邮箱验证码登录' }).click()
+    await expect(page).toHaveURL(/\/auth\?return_to=%2Fproject%2Fproject-pdfquizlab$/)
+    await mockAuth.loginCurrent('mia', '/project/project-pdfquizlab')
 
     const cancelCollection = page.locator('.project-primary-actions').getByRole('button', { name: '取消收藏' })
     await expect(cancelCollection).toHaveAttribute('aria-pressed', 'true')
@@ -130,9 +129,10 @@ test.describe('T54 响应式关键路径', () => {
     await cancelCollection.click()
     await expect(page.locator('.project-primary-actions').getByRole('button', { name: '收藏' })).toHaveAttribute('aria-pressed', 'false')
 
-    await page.goto('/auth?from=%2Fadmin%2Fprojects')
-    await page.getByRole('button', { name: '切换账号' }).click()
-    await page.getByRole('button', { name: '使用林舟账号' }).click()
+    await page.goto('/auth?return_to=%2Fadmin%2Fprojects')
+    await page.getByRole('button', { name: '退出登录' }).click()
+    await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
+    await mockAuth.loginCurrent('lin', '/admin/projects')
     await expect(page).toHaveURL(/\/admin\/projects$/)
     await expect(page.getByRole('note')).toContainText('后台按桌面工作台设计')
     await expect(page.locator('.admin-table-scroll')).toBeVisible()
