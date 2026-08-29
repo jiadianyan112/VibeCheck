@@ -23,7 +23,9 @@ export function ProjectMediaStage({
   aspect = 'landscape',
   className = '',
 }: ProjectMediaStageProps) {
-  const [failed, setFailed] = useState(false)
+  const [failedMediaKey, setFailedMediaKey] = useState<string | null>(null)
+  const mediaKey = media ? JSON.stringify([media.id, media.kind, media.url]) : 'missing'
+  const failed = failedMediaKey === mediaKey
   const rootClassName = ['project-media-stage', `project-media-stage--${aspect}`, className].filter(Boolean).join(' ')
   const fallbackLabel = `${title}视觉占位`
 
@@ -41,7 +43,7 @@ export function ProjectMediaStage({
           decoding="async"
           loading={priority ? 'eager' : 'lazy'}
           fetchPriority={priority ? 'high' : undefined}
-          onError={() => setFailed(true)}
+          onError={() => setFailedMediaKey(mediaKey)}
         />
       </div>
     )
@@ -56,7 +58,7 @@ export function ProjectMediaStage({
           aria-label={title}
           muted
           playsInline
-          onError={() => setFailed(true)}
+          onError={() => setFailedMediaKey(mediaKey)}
         />
       </div>
     )

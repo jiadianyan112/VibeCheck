@@ -121,12 +121,77 @@ describe('ProjectMediaStage', () => {
     expect(screen.queryByTitle('作品七')).not.toBeInTheDocument()
   })
 
-  it('defaults to landscape and supports an explicit aspect class and custom class', () => {
+  it('recovers a real image when the media source changes after an error', () => {
+    const { rerender } = render(
+      <ProjectMediaStage
+        media={{ id: 'cover-old', kind: 'image', url: '/broken.webp', alt: '旧图片' }}
+        projectId="project-8"
+        title="作品八"
+        tone="lime"
+      />,
+    )
+
+    fireEvent.error(screen.getByRole('img', { name: '旧图片' }))
+    expect(screen.getByRole('img', { name: '作品八视觉占位' })).toBeInTheDocument()
+
+    rerender(
+      <ProjectMediaStage
+        media={{ id: 'cover-new', kind: 'image', url: '/restored.webp', alt: '新图片' }}
+        projectId="project-8"
+        title="作品八"
+        tone="lime"
+      />,
+    )
+
+    expect(screen.getByRole('img', { name: '新图片' })).toHaveAttribute('src', '/restored.webp')
+    expect(screen.queryByRole('img', { name: '作品八视觉占位' })).not.toBeInTheDocument()
+  })
+
+  it('recovers a real video when the media source changes after an error', () => {
+    const { rerender } = render(
+      <ProjectMediaStage
+        media={{ id: 'trailer-old', kind: 'video', url: '/broken.mp4', alt: '旧视频' }}
+        projectId="project-9"
+        title="作品九"
+        tone="cyan"
+      />,
+    )
+
+    fireEvent.error(screen.getByTitle('作品九'))
+    expect(screen.getByRole('img', { name: '作品九视觉占位' })).toBeInTheDocument()
+
+    rerender(
+      <ProjectMediaStage
+        media={{ id: 'trailer-new', kind: 'video', url: '/restored.mp4', alt: '新视频' }}
+        projectId="project-9"
+        title="作品九"
+        tone="cyan"
+      />,
+    )
+
+    expect(screen.getByTitle('作品九')).toHaveAttribute('src', '/restored.mp4')
+    expect(screen.queryByRole('img', { name: '作品九视觉占位' })).not.toBeInTheDocument()
+  })
+
+  it('uses the landscape aspect class when aspect is omitted', () => {
     const { container } = render(
       <ProjectMediaStage
         media={{ id: 'cover', kind: 'image', url: '/cover.webp', alt: '作品首页' }}
-        projectId="project-8"
-        title="作品八"
+        projectId="project-10"
+        title="作品十"
+        tone="lime"
+      />,
+    )
+
+    expect(container.firstElementChild).toHaveClass('project-media-stage--landscape')
+  })
+
+  it('supports an explicit portrait aspect class and custom class', () => {
+    const { container } = render(
+      <ProjectMediaStage
+        media={{ id: 'cover', kind: 'image', url: '/cover.webp', alt: '作品首页' }}
+        projectId="project-11"
+        title="作品十一"
         tone="lime"
         aspect="portrait"
         className="project-media-stage--featured"
