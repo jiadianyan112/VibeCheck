@@ -80,32 +80,34 @@ class UploadStore extends FakeStore {
     this.completedInput = input
     return Object.freeze({
       projection: Object.freeze({ ...uploading, status: 'uploaded' as const, detected_mime: 'image/png', version: 2 }),
-      errorCode: null,
+      errorCode: input.rejectionReason,
     })
   }
 }
 
-const uploadStorage: MediaStorage = Object.freeze({
-  async issueUpload(input: Parameters<MediaStorage['issueUpload']>[0]) {
-    return Object.freeze({
-      uploadUrl: 'https://storage.example/upload',
-      uploadHeaders: Object.freeze({
-        'content-type': input.declaredMime, 'if-none-match': '*',
-        'x-amz-checksum-sha256': Buffer.from(input.checksumSha256, 'hex').toString('base64'),
-        'x-amz-server-side-encryption': 'AES256', 'x-amz-tagging': 'VibeCheckAccess=quarantined',
-      }),
-    })
-  },
-  async inspectUpload() {
-    return Object.freeze({ detectedMime: 'image/png', byteSize: 1024, checksumSha256: 'a'.repeat(64) })
-  },
-  async issueRead() { return Object.freeze({ readUrl: 'https://storage.example/read' }) },
-})
+function uploadStorage(providerChecksum: string | null = 'a'.repeat(64)): MediaStorage {
+  const storage = Object.freeze({
+    async issueUpload(input: Parameters<MediaStorage['issueUpload']>[0]) {
+      return Object.freeze({
+        uploadUrl: 'https://storage.example/upload',
+        uploadHeaders: Object.freeze({
+          'content-type': input.declaredMime, 'if-none-match': '*',
+          'x-amz-checksum-sha256': Buffer.from(input.checksumSha256, 'hex').toString('base64'),
+        }),
+      })
+    },
+    async inspectUpload() {
+      return Object.freeze({ detectedMime: 'image/png', byteSize: 1024, checksumSha256: providerChecksum })
+    },
+    async issueRead() { return Object.freeze({ readUrl: 'https://storage.example/read' }) },
+  })
+  return storage as unknown as MediaStorage
+}
 
 describe('MediaService', () => {
   it('prepares and completes a quarantined cover without exposing storage keys', async () => {
     const store = new UploadStore()
-    const service = new MediaService(store, uploadStorage, () => new Date('2026-08-13T12:00:00.000Z'))
+    const service = new MediaService(store, uploadStorage(), () => new Date('2026-08-13T12:00:00.000Z'))
     const prepared = await service.prepareResource({
       userId: '91000000-0000-4000-8000-000000000004', purpose: 'project_cover',
       declaredMime: 'image/png', byteSize: 1024, checksumSha256: 'A'.repeat(64),
@@ -114,6 +116,11 @@ describe('MediaService', () => {
     assert.equal(prepared.media.status, 'uploading')
     assert.equal('storage_key' in prepared.media, false)
     assert.match(store.preparedInput?.storageKey ?? '', /^quarantine\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/)
+    assert.deepEqual(prepared.upload_headers, {
+      'content-type': 'image/png',
+      'if-none-match': '*',
+      'x-amz-checksum-sha256': Buffer.from('a'.repeat(64), 'hex').toString('base64'),
+    })
 
     const completed = await service.completeResource({
       userId: '91000000-0000-4000-8000-000000000004',
@@ -132,7 +139,7 @@ describe('MediaService', () => {
   })
 
   it('rejects oversized or unsupported public cover inputs before storage', async () => {
-    const service = new MediaService(new UploadStore(), uploadStorage)
+    const service = new MediaService(new UploadStore(), uploadStorage())
     await assert.rejects(
       service.prepareResource({
         userId: '91000000-0000-4000-8000-000000000004', purpose: 'project_cover',
@@ -148,6 +155,41 @@ describe('MediaService', () => {
         idempotencyKey: 'media-upload-prepare-0003', requestId: 'media-request-upload-0004',
       }),
       (error: unknown) => error instanceof MediaError && error.code === 'MEDIA_SIZE_INVALID',
+    )
+  })
+
+  it('queues scanning when R2 omits provider checksum metadata after MIME/size preflight', async () => {
+    const store = new UploadStore()
+    const service = new MediaService(store, uploadStorage(null), () => new Date('2026-08-13T12:00:00.000Z'))
+
+    const completed = await service.completeResource({
+      userId: '91000000-0000-4000-8000-000000000004',
+      mediaResourceId: uploading.media_resource_id, checksumSha256: 'a'.repeat(64),
+      uploadReceipt: 'fixture-etag', operationId: 'media-upload-complete-missing-checksum',
+      requestId: 'media-request-upload-missing-checksum',
+    })
+
+    assert.equal(completed.scan_queued, true)
+    assert.equal(store.completedInput?.accepted, true)
+    assert.equal(store.completedInput?.detectedMime, 'image/png')
+    assert.equal(store.completedInput?.detectedByteSize, 1024)
+    assert.equal(store.completedInput?.detectedChecksumSha256, null)
+  })
+
+  it('rejects a present provider checksum that mismatches the database declaration', async () => {
+    const service = new MediaService(
+      new UploadStore(), uploadStorage('b'.repeat(64)),
+      () => new Date('2026-08-13T12:00:00.000Z'),
+    )
+
+    await assert.rejects(
+      service.completeResource({
+        userId: '91000000-0000-4000-8000-000000000004',
+        mediaResourceId: uploading.media_resource_id, checksumSha256: 'a'.repeat(64),
+        uploadReceipt: 'fixture-etag', operationId: 'media-upload-complete-mismatching-checksum',
+        requestId: 'media-request-upload-mismatching-checksum',
+      }),
+      (error: unknown) => error instanceof MediaError && error.code === 'MEDIA_CHECKSUM_MISMATCH',
     )
   })
   it('normalizes editable draft reference metadata and hashes the idempotent payload', async () => {

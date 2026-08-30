@@ -13,6 +13,13 @@ export type MediaResourceStatus =
   | 'created' | 'uploading' | 'uploaded' | 'scanning'
   | 'processing' | 'ready' | 'rejected' | 'deleted'
 export type MediaScanResult = 'not_scanned' | 'clean' | 'malicious' | 'unscannable'
+export type MediaValidationRejectionReason =
+  | 'BYTE_SIZE_MISMATCH'
+  | 'CHECKSUM_MISMATCH'
+  | 'MIME_MISMATCH'
+  | 'DIMENSIONS_INVALID'
+  | 'DECODE_FAILED'
+  | 'DECODE_UNSUPPORTED'
 export const publicMediaMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
 export type PublicMediaMime = (typeof publicMediaMimeTypes)[number]
 export type PublicMediaPurpose = 'project_cover'
@@ -123,7 +130,7 @@ export interface MediaStorage {
   }>): Promise<Readonly<{
     detectedMime: string
     byteSize: number
-    checksumSha256: string
+    checksumSha256: string | null
   }>>
   issueRead(input: Readonly<{
     storageKey: string
@@ -131,16 +138,14 @@ export interface MediaStorage {
   }>): Promise<Readonly<{ readUrl: string }>>
 }
 
-export type MediaProviderScanResult =
-  | 'pending' | 'clean' | 'malicious' | 'unscannable' | 'retryable_failure'
-
 export interface MediaScanStorage {
-  getScanResult(input: Readonly<{ storageKey: string }>): Promise<MediaProviderScanResult>
   sanitizeImage(input: Readonly<{
     storageKey: string
     mediaResourceId: string
     ownerUserId: string
     declaredMime: PublicMediaMime
+    byteSize: number
+    checksumSha256: string
   }>): Promise<Readonly<{
     finalStorageKey: string
     detectedMime: PublicMediaMime

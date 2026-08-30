@@ -37,6 +37,7 @@ import {
   loadServiceConfig,
   loadSubmissionConfig,
   loadWorkflowConfig,
+  type MediaConfig,
 } from '@vibecheck/config'
 import { checkDatabase, createDatabasePool } from '@vibecheck/database'
 import { EvidenceService, PostgresEvidenceStore } from '@vibecheck/evidence'
@@ -47,7 +48,7 @@ import {
   PostgresPendingActionStore,
   ResendEmailSender,
 } from '@vibecheck/identity'
-import { AwsS3MediaStorage, MediaService, PostgresMediaStore } from '@vibecheck/media'
+import { createMediaStorage, MediaService, PostgresMediaStore } from '@vibecheck/media'
 import {
   AwsS3PrivateMaterialStorage,
   PostgresPrivateMaterialStore,
@@ -71,6 +72,18 @@ import { fileURLToPath } from 'node:url'
 
 import { close, createApiServer, listen } from './server.js'
 import { PendingActionExecutor } from './pending-action-executor.js'
+
+function createConfiguredMediaStorage(mediaConfig: MediaConfig) {
+  if (!mediaConfig.enabled || mediaConfig.storageProvider !== 'r2' || mediaConfig.awsRegion !== 'auto') {
+    throw new Error('CONFIG_MEDIA_STORAGE_UNAVAILABLE')
+  }
+  return createMediaStorage({
+    endpoint: mediaConfig.s3Endpoint,
+    region: mediaConfig.awsRegion,
+    bucket: mediaConfig.bucket,
+    objectPrefix: mediaConfig.objectPrefix,
+  })
+}
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-api' })
 const identityConfig = loadIdentityConfig()
@@ -149,11 +162,7 @@ if (evidenceConfig.enabled && !submissionConfig.enabled) {
 const media = mediaConfig.enabled
   ? new MediaService(
       new PostgresMediaStore(pool),
-      new AwsS3MediaStorage({
-        region: mediaConfig.awsRegion,
-        bucket: mediaConfig.bucket,
-        objectPrefix: mediaConfig.objectPrefix,
-      }),
+      createConfiguredMediaStorage(mediaConfig),
     )
   : undefined
 const evidence = evidenceConfig.enabled

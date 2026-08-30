@@ -100,7 +100,9 @@ export interface WorkflowConfig {
 
 export interface MediaConfig {
   readonly enabled: boolean
-  readonly awsRegion: string
+  readonly storageProvider: 'r2' | ''
+  readonly s3Endpoint: string
+  readonly awsRegion: 'auto' | ''
   readonly bucket: string
   readonly objectPrefix: string
 }
@@ -531,12 +533,32 @@ export function loadWorkflowConfig(
 export function loadMediaConfig(env: NodeJS.ProcessEnv = process.env): MediaConfig {
   const enabled = parseBoolean('MEDIA_ENABLED', env.MEDIA_ENABLED, false)
   if (!enabled) return Object.freeze({
-    enabled: false, awsRegion: '', bucket: '', objectPrefix: 'public-media/',
+    enabled: false, storageProvider: '', s3Endpoint: '', awsRegion: '',
+    bucket: '', objectPrefix: 'public-media/',
   })
+  const storageProvider = env.MEDIA_STORAGE_PROVIDER?.trim() ?? ''
+  if (!storageProvider) throw new Error('CONFIG_MEDIA_STORAGE_PROVIDER_REQUIRED')
+  if (storageProvider !== 'r2') throw new Error('CONFIG_MEDIA_STORAGE_PROVIDER_INVALID')
+  const s3Endpoint = env.MEDIA_S3_ENDPOINT?.trim() ?? ''
+  if (!s3Endpoint) throw new Error('CONFIG_MEDIA_S3_ENDPOINT_REQUIRED')
+  let endpoint: URL
+  try {
+    endpoint = new URL(s3Endpoint)
+  } catch {
+    throw new Error('CONFIG_MEDIA_S3_ENDPOINT_INVALID')
+  }
+  if (
+    endpoint.protocol !== 'https:' || endpoint.username || endpoint.password ||
+    endpoint.pathname !== '/' || endpoint.search || endpoint.hash ||
+    !/^[a-z0-9-]+\.r2\.cloudflarestorage\.com$/i.test(endpoint.hostname)
+  ) {
+    throw new Error('CONFIG_MEDIA_S3_ENDPOINT_INVALID')
+  }
   const awsRegion = env.MEDIA_AWS_REGION?.trim() ?? ''
-  if (!/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/.test(awsRegion)) {
+  if (!awsRegion) {
     throw new Error('CONFIG_MEDIA_AWS_REGION_REQUIRED')
   }
+  if (awsRegion !== 'auto') throw new Error('CONFIG_MEDIA_AWS_REGION_INVALID')
   const bucket = env.MEDIA_S3_BUCKET?.trim() ?? ''
   if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
     throw new Error('CONFIG_MEDIA_S3_BUCKET_REQUIRED')
@@ -545,7 +567,7 @@ export function loadMediaConfig(env: NodeJS.ProcessEnv = process.env): MediaConf
   if (prefix.length < 1 || prefix.length > 256 || prefix.startsWith('/') || !prefix.endsWith('/')) {
     throw new Error('CONFIG_MEDIA_S3_PREFIX_INVALID')
   }
-  return Object.freeze({ enabled, awsRegion, bucket, objectPrefix: prefix })
+  return Object.freeze({ enabled, storageProvider: 'r2' as const, s3Endpoint, awsRegion: 'auto' as const, bucket, objectPrefix: prefix })
 }
 
 export function loadEvidenceConfig(env: NodeJS.ProcessEnv = process.env): EvidenceConfig {

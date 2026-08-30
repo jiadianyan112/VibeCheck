@@ -63,7 +63,7 @@ export interface MediaStore {
     readonly uploadReceiptHash: string
     readonly detectedMime: string
     readonly detectedByteSize: number
-    readonly detectedChecksumSha256: string
+    readonly detectedChecksumSha256: string | null
     readonly accepted: boolean
     readonly rejectionReason: 'MIME_MISMATCH' | 'CHECKSUM_MISMATCH' | null
     readonly processingDeadlineAt: Date

@@ -15,6 +15,19 @@ import {
   loadWorkflowConfig,
 } from './index.js'
 
+interface R2MediaConfigProjection {
+  readonly enabled: boolean
+  readonly storageProvider: string
+  readonly s3Endpoint: string
+  readonly awsRegion: string
+  readonly bucket: string
+  readonly objectPrefix: string
+}
+
+function r2MediaConfig(value: ReturnType<typeof loadMediaConfig>): R2MediaConfigProjection {
+  return value as unknown as R2MediaConfigProjection
+}
+
 describe('loadServiceConfig', () => {
   it('loads deterministic defaults for local services', () => {
     const config = loadServiceConfig(
@@ -228,15 +241,71 @@ describe('loadServiceConfig', () => {
   })
 
   it('keeps media and evidence control planes disabled until explicitly enabled', () => {
-    assert.equal(loadMediaConfig({}).enabled, false)
+    const disabledMedia = r2MediaConfig(loadMediaConfig({}))
+    assert.equal(disabledMedia.enabled, false)
+    assert.equal(disabledMedia.storageProvider, '')
+    assert.equal(disabledMedia.s3Endpoint, '')
+    assert.equal(disabledMedia.awsRegion, '')
+    assert.equal(disabledMedia.bucket, '')
+    assert.equal(disabledMedia.objectPrefix, 'public-media/')
     assert.equal(loadEvidenceConfig({}).enabled, false)
-    assert.equal(loadMediaConfig({
-      MEDIA_ENABLED: 'true', MEDIA_AWS_REGION: 'ap-southeast-1',
-      MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
-    }).enabled, true)
-    assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'true' }), /CONFIG_MEDIA_AWS_REGION_REQUIRED/)
     assert.equal(loadEvidenceConfig({ EVIDENCE_ENABLED: 'true' }).enabled, true)
     assert.throws(() => loadMediaConfig({ MEDIA_ENABLED: 'yes' }), /CONFIG_MEDIA_ENABLED_INVALID/)
+  })
+
+  it('loads enabled R2 media configuration with the exact auto region and endpoint', () => {
+    const config = r2MediaConfig(loadMediaConfig({
+      MEDIA_ENABLED: 'true',
+      MEDIA_STORAGE_PROVIDER: 'r2',
+      MEDIA_S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+      MEDIA_AWS_REGION: 'auto',
+      MEDIA_S3_BUCKET: 'vibecheck-media-test',
+      MEDIA_S3_PREFIX: 'public-media/',
+    }))
+
+    assert.equal(config.enabled, true)
+    assert.equal(config.storageProvider, 'r2')
+    assert.equal(config.s3Endpoint, 'https://account.r2.cloudflarestorage.com')
+    assert.equal(config.awsRegion, 'auto')
+    assert.equal(config.bucket, 'vibecheck-media-test')
+    assert.equal(config.objectPrefix, 'public-media/')
+  })
+
+  it('requires an HTTPS endpoint when enabled media uses R2', () => {
+    assert.throws(
+      () => loadMediaConfig({
+        MEDIA_ENABLED: 'true', MEDIA_STORAGE_PROVIDER: 'r2', MEDIA_AWS_REGION: 'auto',
+        MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
+      }),
+      /CONFIG_MEDIA_S3_ENDPOINT_REQUIRED/,
+    )
+    assert.throws(
+      () => loadMediaConfig({
+        MEDIA_ENABLED: 'true', MEDIA_STORAGE_PROVIDER: 'r2',
+        MEDIA_S3_ENDPOINT: 'http://account.r2.cloudflarestorage.com', MEDIA_AWS_REGION: 'auto',
+        MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
+      }),
+      /CONFIG_MEDIA_S3_ENDPOINT_INVALID/,
+    )
+  })
+
+  it('rejects a non-auto media region and unsupported storage provider', () => {
+    assert.throws(
+      () => loadMediaConfig({
+        MEDIA_ENABLED: 'true', MEDIA_STORAGE_PROVIDER: 'r2',
+        MEDIA_S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com', MEDIA_AWS_REGION: 'us-east-1',
+        MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
+      }),
+      /CONFIG_MEDIA_AWS_REGION_INVALID/,
+    )
+    assert.throws(
+      () => loadMediaConfig({
+        MEDIA_ENABLED: 'true', MEDIA_STORAGE_PROVIDER: 's3',
+        MEDIA_S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com', MEDIA_AWS_REGION: 'auto',
+        MEDIA_S3_BUCKET: 'vibecheck-media-test', MEDIA_S3_PREFIX: 'public-media/',
+      }),
+      /CONFIG_MEDIA_STORAGE_PROVIDER_INVALID/,
+    )
   })
 
   it('loads the private material AWS boundary only when fully configured', () => {

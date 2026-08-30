@@ -2,8 +2,12 @@ import { createHash, randomUUID } from 'node:crypto'
 
 import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
-import { mediaError } from './errors.js'
-import type { MediaScanStorage, PublicMediaMime } from './types.js'
+import { MediaError, mediaError } from './errors.js'
+import type {
+  MediaScanStorage,
+  MediaValidationRejectionReason,
+  PublicMediaMime,
+} from './types.js'
 
 const pendingSeconds = 15
 const leaseSeconds = 60
@@ -14,6 +18,8 @@ interface ScanRow extends QueryResultRow {
   readonly owner_user_id: string
   readonly storage_key: string
   readonly declared_mime: PublicMediaMime
+  readonly byte_size: number | string
+  readonly checksum_sha256: string
   readonly status: string
   readonly scan_result: string
   readonly scan_attempt_count: number
@@ -101,13 +107,11 @@ export class PostgresMediaScanStore {
 
   async finishRejected(
     mediaResourceId: string, expectedVersion: number,
-    result: 'malicious' | 'unscannable', now: Date,
+    reason: MediaValidationRejectionReason, now: Date,
   ): Promise<void> {
     await this.mutateClaim(mediaResourceId, expectedVersion, async (client, row) => {
-      await this.reject(
-        client, row, result === 'malicious' ? 'MALWARE_DETECTED' : 'SCAN_UNSCANNABLE', result, now,
-      )
-      await this.audit(client, row, `media_scan_${result}`, now)
+      await this.reject(client, row, reason, 'unscannable', now)
+      await this.audit(client, row, 'media_scan_rejected', now)
     })
   }
 
@@ -116,6 +120,8 @@ export class PostgresMediaScanStore {
     result: Awaited<ReturnType<MediaScanStorage['sanitizeImage']>>, now: Date,
   ): Promise<void> {
     await this.mutateClaim(mediaResourceId, expectedVersion, async (client, row) => {
+      // `clean` records strict server-side validation, decode, and re-encode success under R2;
+      // it is never a malware-scan verdict.
       const updated = await client.query(
         `UPDATE media.media_resources SET storage_key=$2,detected_mime=$3,width=$4,height=$5,
            status='ready',scan_result='clean',exif_removed=true,rejection_reason_code=NULL,
@@ -224,26 +230,39 @@ export class MediaScanProcessor {
     const now = this.dependencies.now?.() ?? new Date()
     const row = await this.dependencies.store.claim(mediaResourceId, now)
     if (!row) return
-    const result = await this.dependencies.storage.getScanResult({ storageKey: row.storage_key })
-    if (result === 'pending') {
-      await this.dependencies.store.deferPending(mediaResourceId, Number(row.version), now); return
-    }
-    if (result === 'retryable_failure') {
-      await this.dependencies.store.recordFailure(mediaResourceId, Number(row.version), now); return
-    }
-    if (result === 'malicious' || result === 'unscannable') {
-      await this.dependencies.store.finishRejected(mediaResourceId, Number(row.version), result, now); return
-    }
+    let processed: Awaited<ReturnType<MediaScanStorage['sanitizeImage']>>
     try {
-      const processed = await this.dependencies.storage.sanitizeImage({
+      processed = await this.dependencies.storage.sanitizeImage({
         storageKey: row.storage_key, mediaResourceId: row.media_resource_id,
         ownerUserId: row.owner_user_id, declaredMime: row.declared_mime,
+        byteSize: Number(row.byte_size), checksumSha256: row.checksum_sha256,
       })
+    } catch (error) {
+      const reason = validationRejectionReason(error)
+      if (reason) {
+        await this.dependencies.store.finishRejected(mediaResourceId, Number(row.version), reason, now)
+        return
+      }
+      await this.dependencies.store.recordFailure(mediaResourceId, Number(row.version), now)
+      return
+    }
+    try {
       await this.dependencies.store.finishReady(mediaResourceId, Number(row.version), processed, now)
     } catch {
       await this.dependencies.store.recordFailure(mediaResourceId, Number(row.version), now)
     }
   }
+}
+
+function validationRejectionReason(error: unknown): MediaValidationRejectionReason | null {
+  if (!(error instanceof MediaError)) return null
+  if (error.code === 'MEDIA_BYTE_SIZE_MISMATCH') return 'BYTE_SIZE_MISMATCH'
+  if (error.code === 'MEDIA_CHECKSUM_MISMATCH') return 'CHECKSUM_MISMATCH'
+  if (error.code === 'MEDIA_MIME_MISMATCH') return 'MIME_MISMATCH'
+  if (error.code === 'MEDIA_DIMENSIONS_INVALID') return 'DIMENSIONS_INVALID'
+  if (error.code === 'MEDIA_DECODE_FAILED') return 'DECODE_FAILED'
+  if (error.code === 'MEDIA_DECODE_UNSUPPORTED') return 'DECODE_UNSUPPORTED'
+  return null
 }
 
 function boundedNext(row: ScanRow, now: Date, seconds: number): Date {

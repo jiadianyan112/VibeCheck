@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { loadMediaConfig, loadPrivateMaterialConfig, loadServiceConfig } from '@vibecheck/config'
+import { loadMediaConfig, loadPrivateMaterialConfig, loadServiceConfig, type MediaConfig } from '@vibecheck/config'
 import {
   PostgresPublishedProjectIndexer,
   PostgresProjectUpdateApplier,
@@ -24,7 +24,7 @@ import {
   createPrivateMaterialStorageKeyResolver,
   PostgresPrivateMaterialAccessRevoker,
 } from '@vibecheck/private-material'
-import { AwsS3MediaStorage, MediaScanProcessor, PostgresMediaScanStore } from '@vibecheck/media'
+import { createMediaStorage, MediaScanProcessor, PostgresMediaScanStore } from '@vibecheck/media'
 
 import { runWorkerCycle, type OutboxHandler, type OutboxStore } from './runtime.js'
 import { createSubmissionPublicationHandler } from './submission-publication-handler.js'
@@ -34,6 +34,18 @@ import { createProjectUpdatedHandler } from './project-updated-handler.js'
 import { createPrivateMaterialScanHandler } from './private-material-scan-handler.js'
 import { createPrivateMaterialAccessRevokeHandler } from './private-material-access-revoke-handler.js'
 import { createMediaScanHandler } from './media-scan-handler.js'
+
+function createConfiguredMediaStorage(mediaConfig: MediaConfig) {
+  if (!mediaConfig.enabled || mediaConfig.storageProvider !== 'r2' || mediaConfig.awsRegion !== 'auto') {
+    throw new Error('CONFIG_MEDIA_STORAGE_UNAVAILABLE')
+  }
+  return createMediaStorage({
+    endpoint: mediaConfig.s3Endpoint,
+    region: mediaConfig.awsRegion,
+    bucket: mediaConfig.bucket,
+    objectPrefix: mediaConfig.objectPrefix,
+  })
+}
 
 const config = loadServiceConfig({ serviceName: 'vibecheck-worker' })
 const privateMaterialConfig = loadPrivateMaterialConfig()
@@ -90,9 +102,7 @@ if (privateMaterialStorage && privateMaterialScanStore) {
 }
 const mediaScanStore = mediaConfig.enabled ? new PostgresMediaScanStore(pool) : undefined
 if (mediaScanStore) {
-  const mediaStorage = new AwsS3MediaStorage({
-    region: mediaConfig.awsRegion, bucket: mediaConfig.bucket, objectPrefix: mediaConfig.objectPrefix,
-  })
+  const mediaStorage = createConfiguredMediaStorage(mediaConfig)
   handlers.set('media_scan_requested', createMediaScanHandler(new MediaScanProcessor({
     store: mediaScanStore, storage: mediaStorage,
   })))

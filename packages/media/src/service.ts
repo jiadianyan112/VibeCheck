@@ -106,10 +106,12 @@ export class MediaService {
       throw mediaError('MEDIA_CHECKSUM_INPUT_MISMATCH', 422)
     }
     const inspected = await storage.inspectUpload({ storageKey: row.storageKey, uploadReceipt })
-    const detectedChecksum = this.checksum(inspected.checksumSha256)
+    const detectedChecksum = inspected.checksumSha256 === null
+      ? null
+      : this.checksum(inspected.checksumSha256)
     const mimeMatches = inspected.detectedMime === row.projection.declared_mime
     const checksumMatches = inspected.byteSize === row.projection.byte_size &&
-      detectedChecksum === row.projection.checksum_sha256
+      (detectedChecksum === null || detectedChecksum === row.projection.checksum_sha256)
     const rejectionReason = !mimeMatches ? 'MIME_MISMATCH' : !checksumMatches ? 'CHECKSUM_MISMATCH' : null
     const result = await this.store.completeResource({
       userId, mediaResourceId, operationId, requestHash,
@@ -292,8 +294,6 @@ export class MediaService {
       'content-type': mime,
       'if-none-match': '*',
       'x-amz-checksum-sha256': Buffer.from(checksum, 'hex').toString('base64'),
-      'x-amz-server-side-encryption': 'AES256',
-      'x-amz-tagging': 'VibeCheckAccess=quarantined',
     })
     if (Object.keys(value).length !== Object.keys(expected).length ||
       Object.entries(expected).some(([key, expectedValue]) => value[key] !== expectedValue)) {

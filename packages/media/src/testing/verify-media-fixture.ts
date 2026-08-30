@@ -19,7 +19,6 @@ const uploadStorage: MediaStorage = Object.freeze({
       uploadHeaders: Object.freeze({
         'content-type': input.declaredMime, 'if-none-match': '*',
         'x-amz-checksum-sha256': Buffer.from(input.checksumSha256, 'hex').toString('base64'),
-        'x-amz-server-side-encryption': 'AES256', 'x-amz-tagging': 'VibeCheckAccess=quarantined',
       }),
     })
   },
@@ -29,7 +28,6 @@ const uploadStorage: MediaStorage = Object.freeze({
   async issueRead() { return Object.freeze({ readUrl: 'https://media-fixture.example/read' }) },
 })
 const scanStorage: MediaScanStorage = Object.freeze({
-  async getScanResult() { return 'clean' as const },
   async sanitizeImage(input: Parameters<MediaScanStorage['sanitizeImage']>[0]) {
     return Object.freeze({
       finalStorageKey: `ready/${input.ownerUserId}/${input.mediaResourceId}`,
