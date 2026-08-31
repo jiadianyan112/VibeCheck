@@ -39,6 +39,7 @@ describe('FrontstageLayout', () => {
       '/auth?return_to=%2Fsubmit',
     )
     expect(within(footer).getAllByRole('link')).toHaveLength(4)
+    expect(document.querySelector('.app-shell')).toHaveClass('app-shell--has-compare-bar')
   })
 
   it('uses the direct submit path for logged-in users', () => {
@@ -54,6 +55,7 @@ describe('FrontstageLayout', () => {
     const footer = screen.getByRole('contentinfo')
     expect(footer).toHaveClass('site-footer', 'site-footer--compact')
     expect(footer).toContainElement(screen.getByRole('link', { name: '了解收录规则' }))
+    expect(document.querySelector('.app-shell')).not.toHaveClass('app-shell--has-compare-bar')
   })
 
   it('preserves comparison, notification, and mobile navigation destinations', () => {

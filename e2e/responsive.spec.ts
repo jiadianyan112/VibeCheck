@@ -8,6 +8,12 @@ const viewports = [
   { width: 1440, height: 900 },
 ]
 
+const comparisonSummaryViewports = [
+  { width: 390, height: 844 },
+  { width: 768, height: 1024 },
+  { width: 1440, height: 900 },
+]
+
 const criticalRoutes = [
   '/projects',
   '/search?q=PDF',
@@ -44,6 +50,42 @@ async function bringAboveFixedBar(page: Page, target: ReturnType<Page['locator']
 }
 
 test.describe('T54 响应式关键路径', () => {
+  test('390、768 和 1440px 的比较摘要栏保持紧凑，Drawer 和页尾动作可达', async ({ page }) => {
+    for (const viewport of comparisonSummaryViewports) {
+      await page.setViewportSize(viewport)
+      await page.goto('/about')
+      await page.waitForLoadState('networkidle')
+
+      const compareBar = page.getByRole('complementary', { name: '当前比较栏' })
+      await expect(compareBar).toBeVisible()
+      const compareBarBox = await compareBar.boundingBox()
+      expect(compareBarBox, `${viewport.width}px 比较摘要栏应有几何信息`).not.toBeNull()
+      expect(compareBarBox!.height, `${viewport.width}px 比较摘要栏不得高于 64px`).toBeLessThanOrEqual(64)
+      expect(compareBarBox!.y + compareBarBox!.height, `${viewport.width}px 比较摘要栏应留在视口内`).toBeLessThanOrEqual(viewport.height)
+
+      const finalAction = page.getByRole('contentinfo').getByRole('link', { name: '了解收录规则' })
+      await finalAction.scrollIntoViewIfNeeded()
+      const finalActionGeometry = await page.evaluate(() => {
+        const action = document.querySelector<HTMLElement>('.site-footer a[href="/about"]')?.getBoundingClientRect()
+        const bar = document.querySelector('.compare-bar')?.getBoundingClientRect()
+        return action && bar ? { actionBottom: action.bottom, barTop: bar.top } : null
+      })
+      expect(finalActionGeometry, `${viewport.width}px 页尾动作与摘要栏均应存在`).not.toBeNull()
+      expect(finalActionGeometry!.actionBottom, `${viewport.width}px 页尾动作应滚动到摘要栏上方`).toBeLessThanOrEqual(finalActionGeometry!.barTop)
+
+      await compareBar.getByRole('button', { name: '查看作品' }).click()
+      const drawer = page.getByRole('dialog', { name: '已选作品' })
+      await expect(drawer).toBeVisible()
+      const drawerBox = await drawer.boundingBox()
+      expect(drawerBox, `${viewport.width}px Drawer 应有几何信息`).not.toBeNull()
+      expect(drawerBox!.x, `${viewport.width}px Drawer 不得越出左侧视口`).toBeGreaterThanOrEqual(0)
+      expect(drawerBox!.y, `${viewport.width}px Drawer 不得越出顶部视口`).toBeGreaterThanOrEqual(0)
+      expect(drawerBox!.x + drawerBox!.width, `${viewport.width}px Drawer 不得越出右侧视口`).toBeLessThanOrEqual(viewport.width)
+      expect(drawerBox!.y + drawerBox!.height, `${viewport.width}px Drawer 不得越出底部视口`).toBeLessThanOrEqual(viewport.height)
+      await expectNoPageOverflow(page, `${viewport.width}px 比较摘要 Drawer`)
+    }
+  })
+
   test('360、390、768 和桌面视口没有页面级横向滚动', async ({ page }) => {
     test.setTimeout(45_000)
     for (const viewport of viewports) {

@@ -44,9 +44,10 @@ function FrontstageContent() {
     || location.pathname === '/auth'
     || location.pathname.endsWith('/verify-author')
     || location.pathname.endsWith('/update')
+  const hasCompareBar = !isFocusedFlow && state.comparisonProjectIds.length > 0
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
       <RouteScrollManager />
       <header className="global-header">
         <div className="global-header__inner">
@@ -139,7 +140,7 @@ function FrontstageContent() {
         submitPath={restrictedPath('/submit', isLoggedIn, '/submit')}
         compact={isFocusedFlow}
       />
-      {isFocusedFlow ? null : <FloatingCompareBar />}
+      {hasCompareBar ? <FloatingCompareBar /> : null}
       {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
   )

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { Button, ToastProvider } from '../../components'
@@ -19,16 +19,36 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe('FloatingCompareBar', () => {
   beforeEach(() => localStorage.clear())
 
-  it('shows 2–5 selected works and rejects duplicates', async () => {
+  it('opens the selected works drawer and rejects duplicates', async () => {
     const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
     expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '开始比较' })).toHaveAttribute('href', '/compare/comparison-anonymous-pdf#structured-comparison-heading')
-    expect(screen.getByRole('button', { name: '查看作品' })).toHaveAttribute('aria-expanded', 'false')
     await user.click(screen.getByRole('button', { name: '查看作品' }))
-    expect(screen.getByRole('button', { name: '收起作品' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('dialog', { name: '已选作品' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /移出/ })).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: '添加重复作品' }))
     expect(screen.getByText('这个作品已经在比较栏中。')).toBeInTheDocument()
     expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()
+  })
+
+  it('removes individual works from the selected works drawer', async () => {
+    const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
+    await user.click(screen.getByRole('button', { name: '查看作品' }))
+    await user.click(screen.getAllByRole('button', { name: /移出/ })[0]!)
+    expect(screen.getByText('比较栏 · 1/5')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开始比较' })).toBeDisabled()
+  })
+
+  it('keeps selected works when clear is cancelled and clears them after confirmation', async () => {
+    const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
+    await user.click(screen.getByRole('button', { name: '查看作品' }))
+    await user.click(screen.getByRole('button', { name: '清空' }))
+    const confirmation = screen.getByRole('dialog', { name: '清空比较栏？' })
+    await user.click(within(confirmation).getByRole('button', { name: '取消' }))
+    expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '清空' }))
+    await user.click(within(screen.getByRole('dialog', { name: '清空比较栏？' })).getByRole('button', { name: '确认清空' }))
+    expect(screen.queryByLabelText('当前比较栏')).not.toBeInTheDocument()
   })
 
   it('stays hidden at zero and disables comparison at one', async () => {
