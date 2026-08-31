@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { Button, ErrorPanel, Input, LoadingState, PageFrame, Tag, useToast } from '../components'
 import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import {
+  buildPortfolioV1Snapshot,
   buildLearningV1Snapshot,
   submissionCompleteness,
   submissionFormStepLabels,
@@ -308,15 +309,12 @@ function DevelopmentStep({
   coverFile: File | null
   onCoverChange: (file: File | null) => void
 }) {
-  const isLearning = draft.fields.categoryId !== 'personal_site_portfolio'
   return (
     <div className="submission-step-fields stack">
       <CheckboxField legend="AI 编程工具" values={aiCodingTools} selected={draft.fields.aiCodingTools ?? []} labels={aiCodingToolLabels} optional onChange={(value) => update('aiCodingTools', value)} />
-      {isLearning ? <>
-        <label className="field" htmlFor="submission-cover"><span className="field__label">作品封面（必选）</span><input id="submission-cover" className="input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => onCoverChange(event.currentTarget.files?.[0] ?? null)} /><span className="field__hint">请选择一张 1–5 MiB 的 JPEG、PNG、WebP 或 AVIF 图片。</span></label>
-        {coverFile ? <p className="original-extraction" role="status">已选择封面：{coverFile.name}</p> : null}
-        <section className="submission-guidance"><strong>准备封面与公开地址证据</strong><p>提交前会先同步当前字段，再上传一张封面并为公开地址创建一条证据。</p></section>
-      </> : <section className="submission-guidance"><strong>资产与证据稍后补充</strong><p>个人主页与作品集的资产准备将在后续流程开放。</p></section>}
+      <label className="field" htmlFor="submission-cover"><span className="field__label">作品封面（必选）</span><input id="submission-cover" className="input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => onCoverChange(event.currentTarget.files?.[0] ?? null)} /><span className="field__hint">请选择一张不超过 5 MiB 的 JPEG、PNG、WebP 或 AVIF 图片。</span></label>
+      {coverFile ? <p className="original-extraction" role="status">已选择封面：{coverFile.name}</p> : null}
+      <section className="submission-guidance"><strong>准备封面与公开地址证据</strong><p>提交前会先同步当前字段，再上传一张封面并为公开地址创建一条证据。</p></section>
     </div>
   )
 }
@@ -438,16 +436,7 @@ export function SubmitFormPage() {
   }
   const index = submissionFormSteps.indexOf(step)
 
-  const preserveDeferredPortfolioDraft = () => {
-    setSaveError(null)
-    pushToast('个人主页与作品集的远端保存将在后续流程开放，当前输入已保留。', 'error')
-  }
-
   const prepareSubmissionMaterials = async () => {
-    if (draft.fields.categoryId === 'personal_site_portfolio') {
-      preserveDeferredPortfolioDraft()
-      return
-    }
     if (coverFile === null) {
       setMaterialsFeedback({ title: '还缺少封面', message: '请选择一张封面图片后再准备提交材料。', retryable: false })
       return
@@ -481,11 +470,18 @@ export function SubmitFormPage() {
     try {
       let currentDraft = draft
       if (progress.stage === 'patch') {
-        const snapshot = buildLearningV1Snapshot({
-          fields: currentDraft.fields,
-          coverMediaReferenceIds: [],
-          observedAt: progress.initialObservedAt,
-        })
+        const snapshot = currentDraft.fields.categoryId === 'personal_site_portfolio'
+          ? buildPortfolioV1Snapshot({
+              fields: currentDraft.fields,
+              coverMediaReferenceIds: [],
+              observedAt: progress.initialObservedAt,
+              payloadSnapshot: currentDraft.payloadSnapshot,
+            })
+          : buildLearningV1Snapshot({
+              fields: currentDraft.fields,
+              coverMediaReferenceIds: [],
+              observedAt: progress.initialObservedAt,
+            })
         const remote = await submissionApi.patch({
           draftId: initialDraftId,
           expectedVersion: initialDraftVersion,
@@ -549,11 +545,18 @@ export function SubmitFormPage() {
       if (progress.stage === 'cover_patch') {
         if (progress.coverReferenceId === undefined) throw new Error('封面快照同步缺少引用 ID。')
         if (currentDraft.version === undefined) throw new Error('封面快照同步缺少草稿版本。')
-        const snapshot = buildLearningV1Snapshot({
-          fields: currentDraft.fields,
-          coverMediaReferenceIds: [progress.coverReferenceId],
-          observedAt: progress.coverObservedAt,
-        })
+        const snapshot = currentDraft.fields.categoryId === 'personal_site_portfolio'
+          ? buildPortfolioV1Snapshot({
+              fields: currentDraft.fields,
+              coverMediaReferenceIds: [progress.coverReferenceId],
+              observedAt: progress.coverObservedAt,
+              payloadSnapshot: currentDraft.payloadSnapshot,
+            })
+          : buildLearningV1Snapshot({
+              fields: currentDraft.fields,
+              coverMediaReferenceIds: [progress.coverReferenceId],
+              observedAt: progress.coverObservedAt,
+            })
         const remote = await submissionApi.patch({
           draftId: currentDraft.draftId!,
           expectedVersion: currentDraft.version,
@@ -627,7 +630,7 @@ export function SubmitFormPage() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('.submission-form-panel [aria-invalid="true"]')?.focus())
       return
     }
-    if (index === submissionFormSteps.length - 1 && draft.fields.categoryId !== 'personal_site_portfolio') {
+    if (index === submissionFormSteps.length - 1) {
       void prepareSubmissionMaterials()
       return
     }
@@ -639,15 +642,13 @@ export function SubmitFormPage() {
       navigate(`/submit/new?${new URLSearchParams({ draft: nextDraft.id, step: next })}`)
       return
     }
-    preserveDeferredPortfolioDraft()
   }
 
   const retrySave = () => {
-    if (step === 'development' && draft.fields.categoryId !== 'personal_site_portfolio' && materialsFeedback !== null) {
+    if (step === 'development' && materialsFeedback !== null) {
       void prepareSubmissionMaterials()
       return
     }
-    preserveDeferredPortfolioDraft()
   }
   const goBack = () => {
     if (index === 0) { navigate(`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`); return }
@@ -662,10 +663,8 @@ export function SubmitFormPage() {
   else if (step === 'solution') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioStructureStep draft={draft} update={update} /> : <SolutionStep draft={draft} update={update} />
   else body = <DevelopmentStep draft={draft} update={update} coverFile={coverFile} onCoverChange={onCoverChange} />
 
-  const isLearningFinalStep = index === submissionFormSteps.length - 1 && draft.fields.categoryId !== 'personal_site_portfolio'
-  const finalActionLabel = isLearningFinalStep
-    ? materialsFeedback?.retryable ? '重试准备提交材料' : '准备提交材料'
-    : '保存草稿'
+  const isFinalStep = index === submissionFormSteps.length - 1
+  const finalActionLabel = isFinalStep && materialsFeedback?.retryable ? '重试准备提交材料' : '准备提交材料'
 
   return (
     <PageFrame title="发布新作品" description={draft.fields.categoryId === 'personal_site_portfolio' ? '确认作品名称、介绍、公开地址、创作者身份、建站目的和核心内容；其他信息可以发布后补充。' : '分步补充作品介绍、解决方案和开发信息，未完成的内容会自动保存。'}>

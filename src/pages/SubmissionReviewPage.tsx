@@ -39,8 +39,8 @@ function isRemoteDraft(draft: SubmissionDraft): boolean {
   return draft.draftId !== undefined || draft.remoteStatus !== undefined
 }
 
-function isRemoteLearningDraft(draft: SubmissionDraft): boolean {
-  return isRemoteDraft(draft) && draft.fields.categoryId === 'ai_learning_quiz'
+function isRemoteSubmissionDraft(draft: SubmissionDraft): boolean {
+  return isRemoteDraft(draft)
 }
 
 function previewMatchesDraft(draft: SubmissionDraft): draft is SubmissionDraft & { preview: SubmissionDraftPreview } {
@@ -210,13 +210,12 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const [material, setMaterial] = useState(draft.supplementalMaterial)
   const submissionKeyRef = useRef<string | null>(draft.submissionKey ?? null)
   const scenario = resolveServiceScenario(params, state.serviceScenario)
-  const remoteDraft = isRemoteDraft(draft)
-  const remoteLearning = isRemoteLearningDraft(draft)
-  const currentRemotePreview = remoteLearning && previewMatchesDraft(draft) ? draft.preview : null
+  const remoteSubmission = isRemoteSubmissionDraft(draft)
+  const currentRemotePreview = remoteSubmission && previewMatchesDraft(draft) ? draft.preview : null
   const isEditableSubmission = draft.status === 'draft' || draft.status === 'changes_requested'
 
   useEffect(() => {
-    if (!remoteLearning || remoteRefreshRequired) return
+    if (!remoteSubmission || remoteRefreshRequired) return
     const preview = draft.preview
     if (preview !== undefined && !previewMatchesDraft(draft)) {
       dispatch({ type: 'DRAFT_UPSERT', draft: withoutRemotePreview(draft) })
@@ -280,7 +279,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
       active = false
       controller.abort()
     }
-  }, [auth?.session, dispatch, draft, previewAttempt, remoteLearning, remoteRefreshRequired])
+  }, [auth?.session, dispatch, draft, previewAttempt, remoteSubmission, remoteRefreshRequired])
 
   async function refreshRemoteDraftAfterConflict(staleDraft: SubmissionDraft) {
     if (remoteRefreshing || !staleDraft.draftId) return
@@ -318,8 +317,8 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   }
 
   async function submitRemote() {
-    if (!isEditableSubmission || busy || !remoteLearning || !currentRemotePreview || !draft.draftId) {
-      if (remoteLearning && !currentRemotePreview && !previewLoading) {
+    if (!isEditableSubmission || busy || !remoteSubmission || !currentRemotePreview || !draft.draftId) {
+      if (remoteSubmission && !currentRemotePreview && !previewLoading) {
         setRemoteSubmitError(new SubmissionApiError({
           kind: 'protocol',
           code: 'PREVIEW_REQUIRED',
@@ -391,7 +390,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
 
   async function submit() {
     if (!isEditableSubmission || busy) return
-    if (remoteLearning) {
+    if (remoteSubmission) {
       await submitRemote()
       return
     }
@@ -428,7 +427,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   }
 
   if (draft.status === 'draft') {
-    if (remoteLearning) {
+    if (remoteSubmission) {
       const previewError = remotePreviewError ?? remoteSubmitError
       const previewReady = currentRemotePreview !== null
       const retryRemoteError = previewError?.retryable
@@ -451,17 +450,6 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         </PageFrame>
       )
     }
-    if (remoteDraft) {
-      return (
-        <PageFrame title="远端预览暂未开放" description="当前远端提交路径只支持 AI 学习与题库的 learning.v1 预览。">
-          <section className="feedback feedback--error" role="alert">
-            <strong>无法生成可提交的服务端预览</strong>
-            <p>请返回最终步骤继续编辑，当前输入已保留。</p>
-            <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link>
-          </section>
-        </PageFrame>
-      )
-    }
     return (
       <PageFrame title="发布预览" description="确认社区卡片、详情摘要与来源说明；只有点击确认提交后才会创建审核状态。">
         <div className="stack">
@@ -475,7 +463,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
     )
   }
 
-  if (remoteLearning) {
+  if (remoteSubmission) {
     const statusLabel = draft.reviewStatus === 'pending_review' ? '待审核' : submissionReviewStatusLabels[draft.status] ?? draft.status
     return (
       <PageFrame title={`审核状态：${statusLabel}`} description="这里显示服务端提交回执与审核工作项状态；暂无可靠的预计完成时间。">
@@ -492,20 +480,6 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           </section>
           <SubmittedVersion draft={draft} />
         </div>
-      </PageFrame>
-    )
-  }
-
-  if (remoteDraft) {
-    const statusLabel = submissionReviewStatusLabels[draft.status] ?? draft.status
-    return (
-      <PageFrame title={`审核状态：${statusLabel}`} description="这里显示服务端远端提交状态。">
-        <section className="submission-review-state stack stack--small" aria-live="polite">
-          <Tag tone="dashed">{statusLabel}</Tag>
-          <h2>远端提交状态已记录</h2>
-          <p>当前品类的服务端审核详情将在后续流程开放。</p>
-          <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link>
-        </section>
       </PageFrame>
     )
   }

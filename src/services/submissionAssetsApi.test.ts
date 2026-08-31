@@ -16,16 +16,16 @@ function runtimeAssetIds() {
   }
 }
 
-function mediaBase(mediaId: string) {
+function mediaBase(mediaId: string, byteSize = 1_048_576, checksumSha256 = '0a69c09f7c1eca87a0a6fb108e3aeb1929a2e4bb732a021612730325fd5875b2') {
   return {
   media_resource_id: mediaId,
   declared_mime: 'image/png',
   detected_mime: 'image/png',
-  byte_size: 1_048_576,
+  byte_size: byteSize,
   width: null,
   height: null,
   duration_ms: null,
-  checksum_sha256: '0a69c09f7c1eca87a0a6fb108e3aeb1929a2e4bb732a021612730325fd5875b2',
+  checksum_sha256: checksumSha256,
   source: 'upload' as const,
   scan_result: 'not_scanned' as const,
   rejection_reason_code: null,
@@ -157,18 +157,44 @@ function apiWithResponses(responses: Response[]) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('submissionAssetsApi production gateway', () => {
-  it('rejects unsupported MIME and size before hashing or fetching', async () => {
+  it('rejects zero-byte, unsupported MIME and oversized files before hashing or fetching', async () => {
     const { api, apiFetch, uploadFetch } = apiWithResponses([])
+    const digest = vi.spyOn(crypto.subtle, 'digest')
 
-    await expect(api.uploadCover({
-      draftId,
-      file: new File([new Uint8Array(1_048_576)], 'cover.gif', { type: 'image/gif' }),
-      session,
-    })).rejects.toThrow(TypeError)
-    await expect(api.uploadCover({ draftId, file: pngFile(1_048_575), session })).rejects.toThrow(TypeError)
+    for (const [name, type] of [['cover.gif', 'image/gif'], ['cover.svg', 'image/svg+xml'], ['cover.pdf', 'application/pdf']] as const) {
+      await expect(api.uploadCover({
+        draftId,
+        file: new File([new Uint8Array(1)], name, { type }),
+        session,
+      })).rejects.toThrow(TypeError)
+    }
+    await expect(api.uploadCover({ draftId, file: pngFile(0), session })).rejects.toThrow(TypeError)
     await expect(api.uploadCover({ draftId, file: pngFile(5_242_881), session })).rejects.toThrow(TypeError)
+    expect(digest).not.toHaveBeenCalled()
     expect(apiFetch).not.toHaveBeenCalled()
     expect(uploadFetch).not.toHaveBeenCalled()
+  })
+
+  it('allows a valid image smaller than 1 MiB to reach the upload flow', async () => {
+    const size = 1_048_575
+    const checksum = '00'.repeat(32)
+    vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(new ArrayBuffer(32))
+    const { mediaId } = runtimeAssetIds()
+    const base = mediaBase(mediaId, size, checksum)
+    const { api, apiFetch } = apiWithResponses([
+      jsonResponse({
+        media: { ...base, status: 'uploading' as const },
+        upload_url: 'https://uploads.example.test/object',
+        upload_headers: { 'content-type': 'image/png' },
+        upload_expires_at: '2026-08-26T10:30:00.000Z',
+      }, 201),
+      jsonResponse({ media: { ...base, status: 'processing' as const }, scan_queued: true as const }, 202),
+    ])
+
+    const result = await api.uploadCover({ draftId, file: pngFile(size), session })
+
+    expect(result.status).toBe('pending')
+    expect(apiFetch).toHaveBeenCalledTimes(2)
   })
 
   it('hashes, prepares, uploads with credentials omitted, then completes as pending', async () => {

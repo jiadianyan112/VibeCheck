@@ -1,6 +1,8 @@
 import {
   learningCategoryId,
   learningSchemaVersion,
+  portfolioCategoryId,
+  portfolioSchemaVersion,
   type SubmissionDraft,
   type SubmissionProjectFields,
 } from '../../types'
@@ -55,6 +57,76 @@ export interface LearningV1Snapshot {
     readonly secondary_features: readonly string[]
     readonly login_requirement: 'none' | 'partial' | 'required' | 'unknown'
     readonly sharing_capability: 'none' | 'link' | 'result' | 'question_bank' | 'collaboration' | 'unknown'
+  }>
+}
+
+type PortfolioSiteType = NonNullable<SubmissionProjectFields['siteType']>
+type PortfolioCreatorRole = NonNullable<SubmissionProjectFields['creatorRoles']>[number]
+type PortfolioPrimaryGoal = NonNullable<SubmissionProjectFields['primaryGoals']>[number]
+type PortfolioPageModel = NonNullable<SubmissionProjectFields['pageModel']>
+type PortfolioNavigationPattern = NonNullable<SubmissionProjectFields['navigationPattern']>
+type PortfolioCoreModule = NonNullable<SubmissionProjectFields['coreModules']>[number]
+type PortfolioProjectShowcaseFormat = NonNullable<SubmissionProjectFields['projectShowcaseFormat']>
+type PortfolioCaseStudyDepth = NonNullable<SubmissionProjectFields['caseStudyDepth']>
+type PortfolioVisualStyle = NonNullable<SubmissionProjectFields['visualStyles']>[number]
+type PortfolioLayoutPattern = NonNullable<SubmissionProjectFields['layoutPatterns']>[number]
+type PortfolioColorCharacter = NonNullable<SubmissionProjectFields['colorCharacter']>
+type PortfolioThemeMode = NonNullable<SubmissionProjectFields['themeMode']>
+type PortfolioInteractionLevel = NonNullable<SubmissionProjectFields['interactionLevel']>
+type PortfolioInteractionPattern = NonNullable<SubmissionProjectFields['interactionPatterns']>[number]
+type PortfolioResponsiveSupport = NonNullable<SubmissionProjectFields['responsiveSupport']>
+type PortfolioBlogSupport = NonNullable<SubmissionProjectFields['blogSupport']>
+
+export interface PortfolioV1SnapshotInput {
+  readonly fields: Partial<SubmissionProjectFields>
+  /** Media references are created and owned by the media service. */
+  readonly coverMediaReferenceIds: readonly string[]
+  readonly observedAt: string
+  /** The latest server payload is retained while form-owned values are overlaid. */
+  readonly payloadSnapshot?: Readonly<Record<string, unknown>>
+}
+
+export interface PortfolioV1Snapshot {
+  readonly project_core: Readonly<{
+    readonly current_name: string
+    readonly public_url: string
+    readonly repository_url: string | null
+    readonly original_platform: string | null
+    readonly cover_media_reference_ids: readonly string[]
+    readonly one_line_definition: string
+    readonly ai_coding_tools: LearningV1Snapshot['project_core']['ai_coding_tools']
+    readonly tech_stack: readonly string[]
+    readonly deployment_platform: string | null
+    readonly access_status: LearningV1Snapshot['project_core']['access_status']
+    readonly maintenance_signal: LearningV1Snapshot['project_core']['maintenance_signal']
+    readonly status_note: string | null
+  }>
+  readonly category_id: typeof portfolioCategoryId
+  readonly category_schema_version: typeof portfolioSchemaVersion
+  readonly category_data: Readonly<{
+    readonly site_type: PortfolioSiteType
+    readonly creator_roles: readonly PortfolioCreatorRole[]
+    readonly primary_goals: readonly PortfolioPrimaryGoal[]
+    readonly page_model: PortfolioPageModel
+    readonly navigation_pattern: PortfolioNavigationPattern | null
+    readonly homepage_sequence: readonly PortfolioCoreModule[]
+    readonly core_modules: readonly string[]
+    readonly project_showcase_format: PortfolioProjectShowcaseFormat
+    readonly case_study_depth: PortfolioCaseStudyDepth
+    readonly visual_styles: readonly PortfolioVisualStyle[]
+    readonly layout_patterns: readonly PortfolioLayoutPattern[]
+    readonly color_character: PortfolioColorCharacter
+    readonly theme_mode: PortfolioThemeMode
+    readonly interaction_level: PortfolioInteractionLevel
+    readonly interaction_patterns: readonly PortfolioInteractionPattern[]
+    readonly responsive_support: PortfolioResponsiveSupport
+    readonly blog_support: PortfolioBlogSupport
+    readonly cms_support?: 'none' | 'headless' | 'built_in' | 'unknown'
+    readonly cms_platform?: string | null
+    readonly multilingual_support?: 'none' | 'manual' | 'automatic' | 'unknown'
+    readonly contact_methods?: readonly string[]
+    readonly resume_download?: 'available' | 'not_available' | 'unknown'
+    readonly ai_features?: readonly string[]
   }>
 }
 
@@ -147,6 +219,204 @@ function canonicalAiCodingTools(
   return knownValues.length > 0
     ? { knowledge_state: 'known_values', values: knownValues, source_type: 'verified_author_statement', observed_at: observedAt }
     : { knowledge_state: 'unknown', values: [], source_type: 'system_inference', observed_at: observedAt }
+}
+
+const portfolioSiteTypeValues = ['personal_homepage', 'portfolio', 'online_resume', 'academic_homepage', 'hybrid'] as const
+const portfolioPageModelValues = ['single_page', 'multi_page', 'hybrid'] as const
+const portfolioNavigationPatternValues = ['top_nav', 'side_nav', 'section_anchor', 'minimal_overlay', 'no_persistent_nav', 'other'] as const
+const portfolioProjectShowcaseFormatValues = ['card_grid', 'gallery', 'timeline', 'case_study_list', 'repository_list', 'full_bleed', 'mixed', 'none'] as const
+const portfolioCaseStudyDepthValues = ['none', 'summary', 'overview', 'deep'] as const
+const portfolioColorCharacterValues = ['monochrome', 'neutral', 'brand_led', 'vivid', 'gradient_dominant', 'mixed'] as const
+const portfolioThemeModeValues = ['light_only', 'dark_only', 'switchable', 'system_adaptive'] as const
+const portfolioInteractionLevelValues = ['static', 'light', 'moderate', 'high'] as const
+const portfolioResponsiveSupportValues = ['confirmed', 'partial', 'not_supported', 'unknown'] as const
+const portfolioBlogSupportValues = ['none', 'static', 'content_managed', 'unknown'] as const
+const portfolioOptionalCategoryKeys = [
+  'cms_support', 'cms_platform', 'multilingual_support', 'contact_methods', 'resume_download', 'ai_features',
+] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function portfolioText(value: unknown, maximum: number): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+  const normalized = value.trim()
+  if (normalized.length > maximum) throw new TypeError(`Portfolio snapshot exceeds text limit of ${maximum}`)
+  return normalized
+}
+
+function portfolioRequiredText(current: unknown, server: unknown, field: string, maximum: number): string {
+  const value = current !== undefined ? current : server
+  const normalized = portfolioText(value, maximum)
+  if (normalized === null) throw new TypeError(`Portfolio snapshot requires ${field}`)
+  return normalized
+}
+
+function portfolioNullableText(current: unknown, server: unknown, maximum: number): string | null {
+  const value = current !== undefined ? current : server
+  if (value === null || value === undefined) return null
+  return portfolioText(value, maximum)
+}
+
+function portfolioEnum<T extends string>(
+  current: unknown,
+  server: unknown,
+  values: readonly T[],
+  fallback: T,
+  field: string,
+): T {
+  const value = current !== undefined ? current : server
+  if (typeof value === 'string' && values.includes(value as T)) return value as T
+  if (current !== undefined) throw new TypeError(`Portfolio snapshot requires ${field}`)
+  return fallback
+}
+
+function portfolioNullableEnum<T extends string>(
+  current: unknown,
+  server: unknown,
+  values: readonly T[],
+  field: string,
+): T | null {
+  const value = current !== undefined ? current : server
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && values.includes(value as T)) return value as T
+  if (current !== undefined) throw new TypeError(`Portfolio snapshot requires ${field}`)
+  return null
+}
+
+function portfolioList(
+  current: unknown,
+  server: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: readonly string[],
+  field: string,
+): readonly string[] {
+  const value = current !== undefined ? current : server
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => typeof item === 'string' ? item.trim() : '')
+    if (normalized.length >= minimum && normalized.length <= maximum &&
+        normalized.every((item) => item.length > 0 && item.length <= 64) &&
+        new Set(normalized).size === normalized.length) return normalized
+  }
+  if (current !== undefined) throw new TypeError(`Portfolio snapshot requires ${field}`)
+  return [...fallback]
+}
+
+function isPortfolioAiCodingTools(value: unknown): value is LearningV1Snapshot['project_core']['ai_coding_tools'] {
+  if (!isRecord(value) || !Array.isArray(value.values) ||
+      !value.values.every((item): item is string => typeof item === 'string' && item.trim().length > 0 && item.length <= 50) ||
+      typeof value.observed_at !== 'string' || Number.isNaN(Date.parse(value.observed_at))) return false
+  if (value.knowledge_state === 'unknown') return value.values.length === 0 &&
+    (value.source_type === 'platform_verified_fact' || value.source_type === 'verified_author_statement' || value.source_type === 'trusted_external_source' || value.source_type === 'system_inference')
+  return value.knowledge_state === 'known_values' && value.values.length > 0 && value.values.length <= 8 &&
+    (value.source_type === 'platform_verified_fact' || value.source_type === 'verified_author_statement' || value.source_type === 'trusted_external_source' || value.source_type === 'system_inference')
+}
+
+function portfolioAccessStatus(value: unknown): LearningV1Snapshot['project_core']['access_status'] {
+  return value === 'normal' || value === 'login_required' || value === 'partial_abnormal' || value === 'link_unavailable' || value === 'suspected_migration' || value === 'paused' || value === 'ended'
+    ? value
+    : 'unknown'
+}
+
+function portfolioMaintenanceSignal(value: unknown): LearningV1Snapshot['project_core']['maintenance_signal'] {
+  return value === 'repository_updated' || value === 'page_updated' || value === 'author_updated' || value === 'no_public_change'
+    ? value
+    : 'unknown'
+}
+
+/** Build the complete portfolio.v1 payload while retaining server-owned fields. */
+export function buildPortfolioV1Snapshot(input: PortfolioV1SnapshotInput): PortfolioV1Snapshot {
+  const { fields } = input
+  const payloadSnapshot = isRecord(input.payloadSnapshot) ? input.payloadSnapshot : {}
+  const serverProjectCore = isRecord(payloadSnapshot.project_core) ? payloadSnapshot.project_core : {}
+  const nestedCategoryData = isRecord(serverProjectCore.category_data) ? serverProjectCore.category_data : {}
+  const serverCategoryData = {
+    ...nestedCategoryData,
+    ...(isRecord(payloadSnapshot.category_data) ? payloadSnapshot.category_data : {}),
+  }
+
+  const currentName = portfolioRequiredText(fields.currentName, serverProjectCore.current_name ?? serverCategoryData.current_name, 'currentName', 80)
+  const publicUrl = portfolioRequiredText(fields.publicUrl, serverProjectCore.public_url, 'publicUrl', 2_048)
+  const oneLineDefinition = portfolioRequiredText(fields.oneLineDefinition, serverProjectCore.one_line_definition ?? serverCategoryData.one_line_definition, 'oneLineDefinition', 80)
+  const repositoryUrl = portfolioNullableText(fields.repositoryUrl, serverProjectCore.repository_url, 2_048)
+  const originalPlatform = portfolioNullableText(undefined, serverProjectCore.original_platform, 120)
+  const aiCodingTools = fields.aiCodingTools !== undefined
+    ? canonicalAiCodingTools(fields.aiCodingTools, input.observedAt)
+    : isPortfolioAiCodingTools(serverProjectCore.ai_coding_tools)
+      ? { ...serverProjectCore.ai_coding_tools, values: [...serverProjectCore.ai_coding_tools.values] }
+      : canonicalAiCodingTools(undefined, input.observedAt)
+  const techStack = portfolioList(undefined, serverProjectCore.tech_stack, 0, 30, [], 'techStack')
+  const deploymentPlatform = portfolioNullableText(undefined, serverProjectCore.deployment_platform, 120)
+  const accessStatus = portfolioAccessStatus(fields.accessStatus ?? serverProjectCore.access_status)
+  const maintenanceSignal = portfolioMaintenanceSignal(serverProjectCore.maintenance_signal)
+  const statusNote = portfolioNullableText(undefined, serverProjectCore.status_note, 500)
+
+  const siteType = portfolioEnum(fields.siteType, serverCategoryData.site_type, portfolioSiteTypeValues, 'portfolio', 'siteType')
+  const creatorRoles = portfolioList(fields.creatorRoles, serverCategoryData.creator_roles, 1, 8, ['other'], 'creatorRoles') as readonly PortfolioCreatorRole[]
+  const primaryGoals = portfolioList(fields.primaryGoals, serverCategoryData.primary_goals, 1, 8, ['other'], 'primaryGoals') as readonly PortfolioPrimaryGoal[]
+  const pageModel = portfolioEnum(fields.pageModel, serverCategoryData.page_model, portfolioPageModelValues, 'single_page', 'pageModel')
+  const navigationPattern = portfolioNullableEnum(fields.navigationPattern, serverCategoryData.navigation_pattern, portfolioNavigationPatternValues, 'navigationPattern')
+  const coreModules = portfolioList(fields.coreModules, serverCategoryData.core_modules, 2, 20, ['hero', 'projects'], 'coreModules') as readonly PortfolioCoreModule[]
+  const homepageSequence = portfolioList(undefined, serverCategoryData.homepage_sequence, 0, 30, [], 'homepageSequence')
+    .filter((module) => coreModules.includes(module as PortfolioCoreModule)) as readonly PortfolioCoreModule[]
+  const projectShowcaseFormat = portfolioEnum(fields.projectShowcaseFormat, serverCategoryData.project_showcase_format, portfolioProjectShowcaseFormatValues, 'none', 'projectShowcaseFormat')
+  const requestedCaseStudyDepth = portfolioEnum(fields.caseStudyDepth, serverCategoryData.case_study_depth, portfolioCaseStudyDepthValues, 'none', 'caseStudyDepth')
+  const caseStudyDepth = projectShowcaseFormat === 'none' ? 'none' : requestedCaseStudyDepth
+  const visualStyles = portfolioList(fields.visualStyles, serverCategoryData.visual_styles, 1, 8, ['minimal'], 'visualStyles') as readonly PortfolioVisualStyle[]
+  const layoutPatterns = portfolioList(fields.layoutPatterns, serverCategoryData.layout_patterns, 1, 8, ['editorial_grid'], 'layoutPatterns') as readonly PortfolioLayoutPattern[]
+  const colorCharacter = portfolioEnum(fields.colorCharacter, serverCategoryData.color_character, portfolioColorCharacterValues, 'neutral', 'colorCharacter')
+  const themeMode = portfolioEnum(fields.themeMode, serverCategoryData.theme_mode, portfolioThemeModeValues, 'light_only', 'themeMode')
+  const interactionLevel = portfolioEnum(fields.interactionLevel, serverCategoryData.interaction_level, portfolioInteractionLevelValues, 'static', 'interactionLevel')
+  const interactionPatterns = interactionLevel === 'static'
+    ? ['none'] as readonly PortfolioInteractionPattern[]
+    : portfolioList(fields.interactionPatterns, serverCategoryData.interaction_patterns, 1, 8, ['none'], 'interactionPatterns') as readonly PortfolioInteractionPattern[]
+  const responsiveSupport = portfolioEnum(fields.responsiveSupport, serverCategoryData.responsive_support, portfolioResponsiveSupportValues, 'unknown', 'responsiveSupport')
+  const blogSupport = portfolioEnum(fields.blogSupport, serverCategoryData.blog_support, portfolioBlogSupportValues, 'unknown', 'blogSupport')
+
+  const categoryData: Record<string, unknown> = {
+    site_type: siteType,
+    creator_roles: [...creatorRoles],
+    primary_goals: [...primaryGoals],
+    page_model: pageModel,
+    navigation_pattern: navigationPattern,
+    homepage_sequence: [...homepageSequence],
+    core_modules: [...coreModules],
+    project_showcase_format: projectShowcaseFormat,
+    case_study_depth: caseStudyDepth,
+    visual_styles: [...visualStyles],
+    layout_patterns: [...layoutPatterns],
+    color_character: colorCharacter,
+    theme_mode: themeMode,
+    interaction_level: interactionLevel,
+    interaction_patterns: [...interactionPatterns],
+    responsive_support: responsiveSupport,
+    blog_support: blogSupport,
+  }
+  for (const key of portfolioOptionalCategoryKeys) {
+    if (serverCategoryData[key] !== undefined) categoryData[key] = serverCategoryData[key]
+  }
+
+  return {
+    project_core: {
+      current_name: currentName,
+      public_url: publicUrl,
+      repository_url: repositoryUrl,
+      original_platform: originalPlatform,
+      cover_media_reference_ids: [...input.coverMediaReferenceIds],
+      one_line_definition: oneLineDefinition,
+      ai_coding_tools: aiCodingTools,
+      tech_stack: [...techStack],
+      deployment_platform: deploymentPlatform,
+      access_status: accessStatus,
+      maintenance_signal: maintenanceSignal,
+      status_note: statusNote,
+    },
+    category_id: portfolioCategoryId,
+    category_schema_version: portfolioSchemaVersion,
+    category_data: categoryData,
+  } as unknown as PortfolioV1Snapshot
 }
 
 /** Build the exact server-owned learning.v1 payload shape used by preview/submit. */

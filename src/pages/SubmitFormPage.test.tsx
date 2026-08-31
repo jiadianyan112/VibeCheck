@@ -85,8 +85,11 @@ function draftDto(
   }
 }
 
-function portfolioDraftDto(overrides: Partial<ContractSubmissionDraft> = {}): ContractSubmissionDraft {
-  return draftDto(overrides, portfolioWireFields, {}, 'personal_site_portfolio', 'portfolio.v1')
+function portfolioDraftDto(
+  overrides: Partial<ContractSubmissionDraft> = {},
+  assets: { readonly mediaReferenceIds?: readonly string[]; readonly evidenceDraftIds?: readonly string[] } = {},
+): ContractSubmissionDraft {
+  return draftDto(overrides, portfolioWireFields, assets, 'personal_site_portfolio', 'portfolio.v1')
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -143,6 +146,7 @@ function installTransport(options: TransportOptions = {}) {
 }
 
 type MaterialsTransportOptions = {
+  categoryId?: 'ai_learning_quiz' | 'personal_site_portfolio'
   mediaStatus?: 'processing' | 'ready' | 'rejected'
   mediaScanResult?: 'not_scanned' | 'clean' | 'malicious'
   mediaExifRemoved?: boolean
@@ -247,6 +251,15 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
   let submitFailureConsumed = false
   let referenceCreated = options.existingCoverReference ?? false
   let evidenceReady = false
+  let mediaChecksum = '0a69c09f7c1eca87a0a6fb108e3aeb1929a2e4bb732a021612730325fd5875b2'
+  let mediaByteSize = 1_048_576
+  const categoryId = options.categoryId ?? 'ai_learning_quiz'
+  const categorySchemaVersion = categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1'
+  const responseFields = categoryId === 'personal_site_portfolio' ? portfolioWireFields : initialWireFields
+  const responseDraft = (overrides: Partial<ContractSubmissionDraft> = {}, assets: { readonly mediaReferenceIds?: readonly string[]; readonly evidenceDraftIds?: readonly string[] } = {}) =>
+    categoryId === 'personal_site_portfolio'
+      ? portfolioDraftDto(overrides, assets)
+      : draftDto(overrides, responseFields, assets, categoryId, categorySchemaVersion)
   const mediaStatus = options.mediaStatus ?? 'ready'
   const mediaScanResult = options.mediaScanResult ?? 'clean'
   const mediaExifRemoved = options.mediaExifRemoved ?? true
@@ -270,7 +283,7 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       const finalGet = draftGetCount >= 3
       const version = finalGet ? 6 : draftGetCount === 2 ? 5 : 3
       serverVersion = Math.max(serverVersion, version)
-      return jsonResponse(draftDto({ version }, initialWireFields, {
+      return jsonResponse(responseDraft({ version }, {
         mediaReferenceIds: referenceCreated ? [ids.mediaReferenceId] : [],
         evidenceDraftIds: evidenceReady ? [ids.evidenceDraftId] : [],
       }))
@@ -282,21 +295,25 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
       const serializedBody = JSON.stringify(body)
       if (lostPatchReplay !== null && body?.operation_id === lostPatchReplay.operationId) {
         if (serializedBody !== lostPatchReplay.body) return errorResponse(409, { code: 'IDEMPOTENCY_BODY_MISMATCH' })
-        return jsonResponse(draftDto({ version: serverVersion }, initialWireFields))
+        return jsonResponse(responseDraft({ version: serverVersion }))
       }
       serverVersion += 1
       if (options.patchCommitThenLoseResponseOnce && lostPatchReplay === null) {
         lostPatchReplay = { operationId: body?.operation_id, body: serializedBody }
         throw new Error('patch response lost after commit')
       }
-      return jsonResponse(draftDto({ version: serverVersion }, initialWireFields, {
+      return jsonResponse(responseDraft({ version: serverVersion }, {
         mediaReferenceIds: referenceCreated ? [ids.mediaReferenceId] : [],
       }))
     }
     if (url.endsWith('/media-resources') && init?.method === 'POST') {
       if (options.failAt === 'media') throw new Error('media unavailable')
+      if (typeof body?.checksum_sha256 === 'string') mediaChecksum = body.checksum_sha256
+      if (typeof body?.byte_size === 'number') mediaByteSize = body.byte_size
       return jsonResponse({
         media: mediaProjection(ids.mediaResourceId, {
+          checksum_sha256: mediaChecksum,
+          byte_size: mediaByteSize,
           status: 'uploading',
           scan_result: 'not_scanned',
           exif_removed: false,
@@ -311,6 +328,8 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
     if (url.includes(`/media-resources/${ids.mediaResourceId}/complete`) && init?.method === 'POST') {
       return jsonResponse({
         media: mediaProjection(ids.mediaResourceId, {
+          checksum_sha256: mediaChecksum,
+          byte_size: mediaByteSize,
           status: mediaStatus === 'rejected' ? 'rejected' : 'processing',
           scan_result: 'not_scanned',
           exif_removed: false,
@@ -322,6 +341,8 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
     }
     if (url.endsWith(`/media-resources/${ids.mediaResourceId}`) && init?.method === 'GET') {
       return jsonResponse(mediaProjection(ids.mediaResourceId, {
+        checksum_sha256: mediaChecksum,
+        byte_size: mediaByteSize,
         status: mediaStatus,
         scan_result: mediaScanResult,
         exif_removed: mediaExifRemoved,
@@ -349,7 +370,7 @@ function installMaterialsTransport(options: MaterialsTransportOptions = {}) {
         draft_version: serverVersion,
         check_id: checkUuid,
         preview_hash: 'c'.repeat(64),
-        payload_snapshot: payloadSnapshot(initialWireFields, [ids.mediaReferenceId]),
+        payload_snapshot: payloadSnapshot(responseFields, [ids.mediaReferenceId], categoryId, categorySchemaVersion),
         media_reference_ids: [ids.mediaReferenceId],
         evidence_draft_ids: [ids.evidenceDraftId],
         validation: { valid: true, issue_count: 0 },
@@ -560,18 +581,83 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
   })
 
-  it('blocks the deferred Portfolio save without building or sending a Learning snapshot', async () => {
+  it('shows the shared cover uploader for Portfolio and prepares its remote materials', async () => {
     localStorage.clear()
     seedDraft('personal_site_portfolio')
-    const transport = installTransport({ get: () => jsonResponse(portfolioDraftDto()) })
+    const transport = installMaterialsTransport({ categoryId: 'personal_site_portfolio' })
     const user = userEvent.setup()
     const { router } = renderForm('development')
     await screen.findByRole('heading', { name: '开发与资产' })
-    await user.click(screen.getByRole('button', { name: '保存草稿' }))
+    const cover = screen.getByLabelText(/作品封面/)
+    expect(cover).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp,image/avif')
+    expect(screen.getByText(/不超过 5 MiB/)).toBeInTheDocument()
+    expect(screen.queryByText(/1.?5 MiB/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/资产与证据稍后补充/)).not.toBeInTheDocument()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('个人主页与作品集的远端保存将在后续流程开放')
+    await user.upload(cover, new File([new Uint8Array(200 * 1024)], 'portfolio-cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    expect(transport.requests.map(requestKind)).toContain('media-prepare')
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-reference')).toHaveLength(1)
+    expect(transport.requests.filter((request) => requestKind(request) === 'draft-preview')).toHaveLength(1)
+    const patchRequests = transport.requests.filter((request) => requestKind(request) === 'draft-patch')
+    expect((patchRequests[0]?.body?.patch as WireFields).category_id).toBe('personal_site_portfolio')
+    expect((patchRequests.at(-1)?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [transport.ids.mediaReferenceId] })
+  })
+
+  it('blocks Portfolio materials until a cover is selected', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const transport = installMaterialsTransport({ categoryId: 'personal_site_portfolio' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('请选择一张封面图片后再准备提交材料')
     expect(router.state.location.search).toContain('step=development')
-    expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
+    expect(transport.requests.some((request) => requestKind(request) === 'media-prepare')).toBe(false)
+    expect(transport.requests.some((request) => requestKind(request) === 'draft-preview')).toBe(false)
+  })
+
+  it('keeps a Portfolio cover in processing until retry and does not enter preview', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const transport = installMaterialsTransport({ categoryId: 'personal_site_portfolio', mediaStatus: 'processing' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(200 * 1024)], 'portfolio-cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    expect(await screen.findByText('媒体仍在安全处理中，请稍后点击“重试准备提交材料”。')).toBeInTheDocument()
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => requestKind(request) === 'draft-preview')).toBe(false)
+    const inspectCount = transport.requests.filter((request) => requestKind(request) === 'media-inspect').length
+    await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
+    await waitFor(() => expect(transport.requests.filter((request) => requestKind(request) === 'media-inspect')).toHaveLength(inspectCount + 1))
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => requestKind(request) === 'draft-preview')).toBe(false)
+  })
+
+  it('shows a stable terminal cover error for Portfolio without previewing', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const transport = installMaterialsTransport({ categoryId: 'personal_site_portfolio', mediaStatus: 'rejected' })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(200 * 1024)], 'portfolio-cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+
+    expect(await screen.findByText('媒体未通过检查，尚未准备完成，请更换后重试。')).toBeInTheDocument()
+    expect(router.state.location.search).toContain('step=development')
+    expect(transport.requests.some((request) => requestKind(request) === 'draft-preview')).toBe(false)
   })
 
   it('prepares one cover and one public URL evidence before navigating to preview', async () => {
@@ -752,6 +838,24 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(createIndex).toBeGreaterThan(deleteIndex)
     const deleteRequest = transport.requests.find((request) => requestKind(request) === 'media-reference-delete')
     expect(deleteRequest?.body).toMatchObject({ expected_version: 1, operation_id: expect.any(String) })
+  })
+
+  it('keeps one active cover when a Portfolio draft replaces its existing cover', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    const transport = installMaterialsTransport({ categoryId: 'personal_site_portfolio', existingCoverReference: true })
+    const user = userEvent.setup()
+    const { router } = renderForm('development')
+    await screen.findByRole('heading', { name: '开发与资产' })
+    await waitFor(() => expect(persistedDraft().mediaReferenceIds).toEqual([transport.ids.mediaReferenceId]))
+
+    await user.upload(screen.getByLabelText(/作品封面/), new File([new Uint8Array(200 * 1024)], 'portfolio-replacement.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: '准备提交材料' }))
+    await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
+
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-reference-delete')).toHaveLength(1)
+    expect(transport.requests.filter((request) => requestKind(request) === 'media-reference')).toHaveLength(1)
+    expect(persistedDraft().mediaReferenceIds).toEqual([transport.ids.mediaReferenceId])
   })
 
   it('requires a selected cover and keeps the final step without a field-only PATCH', async () => {

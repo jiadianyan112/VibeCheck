@@ -11,7 +11,7 @@ import {
   type SubmissionUrlCheckFieldErrorValue,
 } from '@vibecheck/contracts'
 import type { AuthSessionDto } from './authService'
-import type { LearningV1Snapshot } from '../features/submission/form'
+import type { LearningV1Snapshot, PortfolioV1Snapshot } from '../features/submission/form'
 import {
   projectId,
   submissionDraftId,
@@ -421,11 +421,23 @@ const learningSnapshotKeys = [
   'learning_records', 'differentiation', 'core_features', 'secondary_features',
   'login_requirement', 'sharing_capability',
 ] as const
+const portfolioSnapshotKeys = [
+  'site_type', 'creator_roles', 'primary_goals', 'page_model', 'navigation_pattern',
+  'homepage_sequence', 'core_modules', 'project_showcase_format', 'case_study_depth',
+  'visual_styles', 'layout_patterns', 'color_character', 'theme_mode',
+  'interaction_level', 'interaction_patterns', 'responsive_support', 'blog_support',
+  'cms_support', 'cms_platform', 'multilingual_support', 'contact_methods',
+  'resume_download', 'ai_features',
+] as const
 const canonicalUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const actual = Object.keys(value)
   return actual.length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key))
 }
 
 function isText(value: unknown): value is string {
@@ -484,14 +496,63 @@ function isCanonicalLearningSnapshot(value: unknown): value is LearningV1Snapsho
   return true
 }
 
-function requireCanonicalLearningSnapshot(value: unknown): LearningV1Snapshot {
-  if (!isCanonicalLearningSnapshot(value)) throw new TypeError('Invalid canonical learning.v1 snapshot')
-  return value
+function isCanonicalPortfolioSnapshot(value: unknown): value is PortfolioV1Snapshot {
+  if (!isRecord(value) || !hasExactKeys(value, canonicalSnapshotKeys) ||
+      value.category_id !== 'personal_site_portfolio' || value.category_schema_version !== 'portfolio.v1') return false
+  const projectCore = value.project_core
+  if (!isRecord(projectCore) || !hasExactKeys(projectCore, projectCoreSnapshotKeys) ||
+      !isText(projectCore.current_name) || !isText(projectCore.public_url) ||
+      !isNullableText(projectCore.repository_url) || !isNullableText(projectCore.original_platform) ||
+      !isStringList(projectCore.cover_media_reference_ids, 0, 20) ||
+      !projectCore.cover_media_reference_ids.every((id) => canonicalUuidPattern.test(id)) ||
+      !isText(projectCore.one_line_definition) || !isCanonicalAiCodingTools(projectCore.ai_coding_tools) ||
+      !isStringList(projectCore.tech_stack, 0, 30) || !isNullableText(projectCore.deployment_platform) ||
+      !['normal', 'login_required', 'partial_abnormal', 'link_unavailable', 'suspected_migration', 'paused', 'ended', 'unknown'].includes(projectCore.access_status as string) ||
+      !['repository_updated', 'page_updated', 'author_updated', 'no_public_change', 'unknown'].includes(projectCore.maintenance_signal as string) ||
+      !isNullableText(projectCore.status_note)) return false
+
+  const categoryData = value.category_data
+  const homepageSequence = isRecord(categoryData) ? categoryData.homepage_sequence : undefined
+  const coreModules = isRecord(categoryData) ? categoryData.core_modules : undefined
+  if (!isRecord(categoryData) || !hasOnlyKeys(categoryData, portfolioSnapshotKeys) ||
+      !['personal_homepage', 'portfolio', 'online_resume', 'academic_homepage', 'hybrid'].includes(categoryData.site_type as string) ||
+      !isStringList(categoryData.creator_roles, 1, 8) || !isStringList(categoryData.primary_goals, 1, 8) ||
+      !['single_page', 'multi_page', 'hybrid'].includes(categoryData.page_model as string) ||
+      !(categoryData.navigation_pattern === null || ['top_nav', 'side_nav', 'section_anchor', 'minimal_overlay', 'no_persistent_nav', 'other'].includes(categoryData.navigation_pattern as string)) ||
+      !isStringList(homepageSequence, 0, 30) || !isStringList(coreModules, 2, 20) ||
+      homepageSequence.some((module) => !coreModules.includes(module)) ||
+      !['card_grid', 'gallery', 'timeline', 'case_study_list', 'repository_list', 'full_bleed', 'mixed', 'none'].includes(categoryData.project_showcase_format as string) ||
+      !['none', 'summary', 'overview', 'deep'].includes(categoryData.case_study_depth as string) ||
+      (categoryData.project_showcase_format === 'none' && categoryData.case_study_depth !== 'none') ||
+      !isStringList(categoryData.visual_styles, 1, 8) || !isStringList(categoryData.layout_patterns, 1, 8) ||
+      !['monochrome', 'neutral', 'brand_led', 'vivid', 'gradient_dominant', 'mixed'].includes(categoryData.color_character as string) ||
+      !['light_only', 'dark_only', 'switchable', 'system_adaptive'].includes(categoryData.theme_mode as string) ||
+      !['static', 'light', 'moderate', 'high'].includes(categoryData.interaction_level as string) ||
+      !isStringList(categoryData.interaction_patterns, 1, 8) ||
+      (categoryData.interaction_level === 'static' && categoryData.interaction_patterns.some((pattern) => pattern !== 'none')) ||
+      !['confirmed', 'partial', 'not_supported', 'unknown'].includes(categoryData.responsive_support as string) ||
+      !['none', 'static', 'content_managed', 'unknown'].includes(categoryData.blog_support as string)) return false
+
+  if (categoryData.cms_support !== undefined && !['none', 'headless', 'built_in', 'unknown'].includes(categoryData.cms_support as string)) return false
+  if (categoryData.cms_platform !== undefined && !isNullableText(categoryData.cms_platform)) return false
+  if (categoryData.multilingual_support !== undefined && !['none', 'manual', 'automatic', 'unknown'].includes(categoryData.multilingual_support as string)) return false
+  if (categoryData.contact_methods !== undefined && !isStringList(categoryData.contact_methods, 0, 20)) return false
+  if (categoryData.resume_download !== undefined && !['available', 'not_available', 'unknown'].includes(categoryData.resume_download as string)) return false
+  if (categoryData.ai_features !== undefined && !isStringList(categoryData.ai_features, 0, 20)) return false
+  return true
+}
+
+export type SubmissionV1Snapshot = LearningV1Snapshot | PortfolioV1Snapshot
+
+function requireCanonicalSnapshot(value: unknown): SubmissionV1Snapshot {
+  if (isCanonicalLearningSnapshot(value) || isCanonicalPortfolioSnapshot(value)) return value
+  if (isRecord(value) && value.category_id === 'personal_site_portfolio') throw new TypeError('Invalid canonical portfolio.v1 snapshot')
+  throw new TypeError('Invalid canonical learning.v1 snapshot')
 }
 
 /** Validate and return the exact snapshot sent inside OP-DRAFT-PATCH. */
-export function editableFieldsToPatch(snapshot: LearningV1Snapshot): Readonly<Record<string, unknown>> {
-  return requireCanonicalLearningSnapshot(snapshot) as unknown as Readonly<Record<string, unknown>>
+export function editableFieldsToPatch(snapshot: SubmissionV1Snapshot): Readonly<Record<string, unknown>> {
+  return requireCanonicalSnapshot(snapshot) as unknown as Readonly<Record<string, unknown>>
 }
 
 export const submissionApi = {
@@ -524,7 +585,7 @@ export const submissionApi = {
     }
   },
 
-  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly snapshot: LearningV1Snapshot; readonly fields?: never } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
+  async patch(input: { readonly draftId: string; readonly expectedVersion: number; readonly snapshot: SubmissionV1Snapshot; readonly fields?: never } & SubmissionApiRequestOptions): Promise<RemoteSubmissionDraft> {
     if (input.snapshot === undefined) throw new TypeError('canonical learning.v1 snapshot required')
     const patch = editableFieldsToPatch(input.snapshot)
     const operationId = input.operationId ?? makeSubmissionClientRequestId()

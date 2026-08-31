@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubmissionDraft as ContractSubmissionDraft, SubmissionUrlCheck } from '@vibecheck/contracts'
-import type { LearningV1Snapshot } from '../features/submission/form'
+import type { LearningV1Snapshot, PortfolioV1Snapshot } from '../features/submission/form'
 import {
   editableFieldsToPatch,
   makeSubmissionClientRequestId,
@@ -114,6 +114,44 @@ const previewProjection = {
   validation: { valid: true, issue_count: 0 },
   generated_at: '2026-08-25T10:00:00.000Z',
 } as const
+
+const portfolioSnapshot: PortfolioV1Snapshot = {
+  project_core: {
+    current_name: '作品集名称',
+    public_url: 'https://example.test/portfolio',
+    repository_url: null,
+    original_platform: null,
+    cover_media_reference_ids: ['55555555-5555-4555-8555-555555555555'],
+    one_line_definition: '展示个人项目与能力的作品集站点',
+    ai_coding_tools: { knowledge_state: 'unknown', values: [], source_type: 'system_inference', observed_at: '2026-08-25T10:00:00.000Z' },
+    tech_stack: [],
+    deployment_platform: null,
+    access_status: 'unknown',
+    maintenance_signal: 'unknown',
+    status_note: null,
+  },
+  category_id: 'personal_site_portfolio',
+  category_schema_version: 'portfolio.v1',
+  category_data: {
+    site_type: 'portfolio',
+    creator_roles: ['developer'],
+    primary_goals: ['showcase_projects'],
+    page_model: 'single_page',
+    navigation_pattern: null,
+    homepage_sequence: [],
+    core_modules: ['hero', 'projects'],
+    project_showcase_format: 'none',
+    case_study_depth: 'none',
+    visual_styles: ['minimal'],
+    layout_patterns: ['editorial_grid'],
+    color_character: 'neutral',
+    theme_mode: 'light_only',
+    interaction_level: 'static',
+    interaction_patterns: ['none'],
+    responsive_support: 'unknown',
+    blog_support: 'unknown',
+  },
+}
 
 const submissionProjection = {
   submission_id: '77777777-7777-4777-8777-777777777777',
@@ -277,6 +315,14 @@ describe('submissionApi typed production gateway', () => {
 
   it('accepts only an exact canonical snapshot for the PATCH payload', () => {
     expect(editableFieldsToPatch(previewProjection.payload_snapshot)).toEqual(previewProjection.payload_snapshot)
+    expect(editableFieldsToPatch(portfolioSnapshot)).toEqual(portfolioSnapshot)
+  })
+
+  it('PATCH accepts a canonical portfolio.v1 snapshot', async () => {
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await submissionApi.patch({ draftId, expectedVersion: 3, snapshot: portfolioSnapshot, session: csrf, operationId: 'patch-portfolio-01' })
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, patch: portfolioSnapshot, operation_id: 'patch-portfolio-01' })
   })
 
   it('PATCH sends the exact canonical snapshot with the current expected version and operation id', async () => {
@@ -292,6 +338,16 @@ describe('submissionApi typed production gateway', () => {
     const fetchMock = installFetch(jsonResponse(draftProjection, 200))
     // @ts-expect-error fields-only PATCHes are intentionally excluded from the public client contract.
     await expect(submissionApi.patch({ draftId, expectedVersion: 3, fields: { currentName: '不完整快照' }, session: csrf, operationId: 'patch-legacy-01' })).rejects.toThrow('canonical learning.v1 snapshot required')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed portfolio.v1 snapshot before making a request', async () => {
+    const malformed = {
+      ...portfolioSnapshot,
+      category_data: { ...portfolioSnapshot.category_data, core_modules: ['hero'] },
+    }
+    const fetchMock = installFetch(jsonResponse(draftProjection, 200))
+    await expect(submissionApi.patch({ draftId, expectedVersion: 3, snapshot: malformed, session: csrf, operationId: 'patch-portfolio-invalid-01' })).rejects.toThrow('canonical portfolio.v1 snapshot')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

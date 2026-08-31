@@ -138,7 +138,7 @@ export class SubmissionAssetsApiError extends Error {
   }
 }
 
-const minimumFileSize = 1_048_576
+const minimumFileSize = 1
 const maximumFileSize = 5_242_880
 const supportedImageMimes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -186,7 +186,7 @@ function requireFile(file: Blob): { readonly mime: 'image/jpeg' | 'image/png' | 
   const mime = file.type.toLowerCase()
   if (!supportedImageMimes.has(mime)) throw new TypeError('file MIME must be JPEG, PNG, WebP or AVIF')
   if (!Number.isSafeInteger(file.size) || file.size < minimumFileSize || file.size > maximumFileSize) {
-    throw new TypeError('file size must be between 1 MiB and 5 MiB')
+    throw new TypeError('file size must be between 1 byte and 5 MiB')
   }
   return { mime: mime as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif', size: file.size }
 }
