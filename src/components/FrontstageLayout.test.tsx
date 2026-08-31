@@ -58,6 +58,14 @@ describe('FrontstageLayout', () => {
     expect(document.querySelector('.app-shell')).not.toHaveClass('app-shell--has-compare-bar')
   })
 
+  it('does not reserve comparison space outside focused flows when no works are selected', () => {
+    persistAppState(appReducer(createInitialAppState(), { type: 'COMPARISON_CLEAR' }))
+    renderFrontstage('/projects')
+
+    expect(document.querySelector('.app-shell')).not.toHaveClass('app-shell--has-compare-bar')
+    expect(screen.queryByRole('complementary', { name: '当前比较栏' })).not.toBeInTheDocument()
+  })
+
   it('preserves comparison, notification, and mobile navigation destinations', () => {
     renderFrontstage('/projects')
 

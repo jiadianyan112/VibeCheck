@@ -31,6 +31,14 @@ describe('FloatingCompareBar', () => {
     expect(screen.getByText('比较栏 · 2/5')).toBeInTheDocument()
   })
 
+  it('closes the selected works drawer with its close control', async () => {
+    const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
+    await user.click(screen.getByRole('button', { name: '查看作品' }))
+    const drawer = screen.getByRole('dialog', { name: '已选作品' })
+    await user.click(within(drawer).getByRole('button', { name: '关闭抽屉' }))
+    expect(screen.queryByRole('dialog', { name: '已选作品' })).not.toBeInTheDocument()
+  })
+
   it('removes individual works from the selected works drawer', async () => {
     const user = userEvent.setup(); render(<Harness />, { wrapper: Wrapper })
     await user.click(screen.getByRole('button', { name: '查看作品' }))
