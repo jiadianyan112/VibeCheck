@@ -88,6 +88,19 @@ describe('application route skeleton', () => {
     expect(await screen.findByRole('heading', { name: '编辑 题练工坊' })).toBeInTheDocument()
   })
 
+  it('redirects authorized staff from evidence management to the admin dashboard', async () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
+    renderRoute('/admin/evidence')
+    expect(await screen.findByRole('heading', { name: '后台首页／数据看板' })).toBeInTheDocument()
+  })
+
+  it('does not expose evidence management in the admin navigation', () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
+    renderRoute('/admin')
+    const adminNavigation = screen.getByRole('navigation', { name: '后台导航' })
+    expect(within(adminNavigation).queryByRole('link', { name: '证据管理' })).not.toBeInTheDocument()
+  })
+
   it('redirects a guest admin request to email OTP login', async () => {
     renderRoute('/admin/projects')
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()

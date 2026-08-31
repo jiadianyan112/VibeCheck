@@ -1928,20 +1928,6 @@ textarea {
   border-width: 2px;
 }
 
-.placeholder-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 0.8fr);
-  gap: var(--space-6);
-  margin-top: var(--space-10);
-}
-
-.placeholder-list {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding-left: 1.25rem;
-}
-
 .definition-list {
   display: grid;
   gap: var(--space-4);
@@ -2146,10 +2132,6 @@ textarea {
   .dialog-backdrop { align-items: end; padding: var(--space-2); }
   .dialog-panel { max-height: calc(100dvh - 2 * var(--space-2)); padding: var(--space-4); }
   .drawer-panel { width: 100%; padding: var(--space-4); }
-
-  .placeholder-layout {
-    grid-template-columns: 1fr;
-  }
 
   .global-header__inner {
     min-height: 3.75rem;
