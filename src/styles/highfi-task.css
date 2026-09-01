@@ -75,6 +75,107 @@
   gap: var(--space-6);
 }
 
+/* P10: address check is the first stage of the submission workspace. */
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-main {
+  display: grid;
+  min-width: 0;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-login {
+  min-width: 0;
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-login {
+  display: grid;
+  justify-items: start;
+  max-width: 40rem;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header h2,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside__note {
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header h2 {
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  line-height: 1.1;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__eyebrow {
+  color: var(--task-muted);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside__note {
+  color: var(--task-muted);
+  line-height: 1.55;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form .field {
+  gap: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form .field small {
+  max-width: 65ch;
+  color: var(--task-muted);
+  line-height: 1.5;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-actions {
+  gap: var(--space-3);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-feedback {
+  margin-top: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-list {
+  border-top: 1px solid var(--task-line);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-item {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-item p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .duplicate-summary dd {
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-duplicate {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside {
+  gap: var(--space-3);
+}
+
+@media (max-width: 24.375rem) {
+  .app-shell .highfi-scope.submit-entry-scope .submit-entry-actions {
+    width: 100%;
+  }
+
+  .app-shell .highfi-scope.submit-entry-scope .submit-entry-actions > * {
+    flex: 1 1 100%;
+  }
+}
+
 .app-shell .highfi-scope .task-step-rail {
   min-width: 0;
 }
