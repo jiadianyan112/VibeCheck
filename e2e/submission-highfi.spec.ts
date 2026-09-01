@@ -21,6 +21,9 @@ const fixedDate = '2026-08-29T00:00:00.000Z'
 const previewHash = 'b'.repeat(64)
 const coverFixture = Buffer.from('highfi-cover-fixture!')
 
+// Keep only this visual suite deterministic; production rendering still uses the viewer's local timezone.
+test.use({ timezoneId: 'Asia/Shanghai' })
+
 type SubmissionFlowState = {
   version: number
   payloadSnapshot: Record<string, unknown>
@@ -430,6 +433,25 @@ async function expectCurrentSubmissionStep(page: Page, label: string) {
   await expect(rail.locator('[aria-current="step"]')).toHaveText(label)
 }
 
+async function expectCurrentSubmissionStepVisibleInRail(page: Page) {
+  await expect.poll(() => page.evaluate(() => {
+    const current = document.querySelector<HTMLElement>('.task-step-rail__item[aria-current="step"]')
+    const rail = current?.closest('.task-step-rail')?.querySelector<HTMLElement>('.task-step-rail__list')
+    if (!current || !rail) return false
+    const currentRect = current.getBoundingClientRect()
+    const railRect = rail.getBoundingClientRect()
+    return currentRect.right > railRect.left && currentRect.left < railRect.right &&
+      currentRect.bottom > railRect.top && currentRect.top < railRect.bottom
+  }), { message: 'The current task step must intersect the visible step rail.' }).toBe(true)
+}
+
+async function expectSubmissionTimezone(page: Page) {
+  await expect.poll(
+    () => page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+    { message: 'The submission visual suite must run in its declared timezone.' },
+  ).toBe('Asia/Shanghai')
+}
+
 async function fillRequiredLearningFields(page: Page) {
   await page.getByRole('textbox', { name: '作品名称' }).fill('高保真提交工作区')
   await page.getByLabel('一句话定义').fill('将公开学习材料转成可复习的练习')
@@ -463,6 +485,7 @@ for (const viewport of submissionViewports) {
     test.skip(isMobile, 'Explicit submission baselines run only in desktop-chromium at fixed viewports')
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expectSubmissionTimezone(page)
     const mockAuth = await installMockAuth(page, { submission: true })
     await installSubmissionFlowMocks(page)
 
@@ -478,6 +501,7 @@ for (const viewport of submissionViewports) {
     await expect(page.getByText('地址检查通过')).toBeVisible()
     await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await expect(page.getByRole('heading', { name: '基础信息' })).toBeVisible()
+    if (viewport.width < 1100) await expectCurrentSubmissionStepVisibleInRail(page)
     await settle(page)
     await expectNoHorizontalOverflow(page, `${viewport.width}px editing`)
     await expectNoAxeViolations(page)
@@ -486,6 +510,7 @@ for (const viewport of submissionViewports) {
     await fillRequiredLearningFields(page)
     await expect(page.getByRole('heading', { name: '发布预览' })).toBeVisible()
     await expect(page.getByText('已准备好的提交内容')).toBeVisible()
+    if (viewport.width < 1100) await expectCurrentSubmissionStepVisibleInRail(page)
     await settle(page)
     await expectNoHorizontalOverflow(page, `${viewport.width}px preview`)
     await expectNoAxeViolations(page)
@@ -497,6 +522,7 @@ for (const viewport of submissionViewports) {
     await confirmation.getByRole('button', { name: '确认提交' }).click()
     await expect(page.getByRole('heading', { name: '审核状态：待审核' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '提交版本正在等待审核' })).toBeVisible()
+    if (viewport.width < 1100) await expectCurrentSubmissionStepVisibleInRail(page)
     await settle(page)
     await expectNoHorizontalOverflow(page, `${viewport.width}px pending receipt`)
     await expectNoAxeViolations(page)

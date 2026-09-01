@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 
 export type TaskStepState = 'complete' | 'current' | 'upcoming'
 
@@ -31,6 +31,20 @@ export function StepRail({
   className = '',
 }: StepRailProps) {
   const rootClassName = ['task-step-rail', className].filter(Boolean).join(' ')
+  const currentStepId = steps.find((step) => step.state === 'current')?.id
+  const currentStepRef = useRef<HTMLLIElement | null>(null)
+
+  useEffect(() => {
+    if (currentStepId === undefined || currentStepRef.current === null || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    if (!window.matchMedia('(max-width: 68.749rem)').matches) return
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    currentStepRef.current.scrollIntoView({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  }, [currentStepId])
 
   return (
     <nav className={rootClassName} aria-label={ariaLabel}>
@@ -46,6 +60,7 @@ export function StepRail({
             <li
               key={step.id}
               className={itemClassName}
+              ref={step.id === currentStepId ? currentStepRef : undefined}
               data-step-id={step.id}
               data-step-state={step.state}
               aria-current={step.state === 'current' ? 'step' : undefined}

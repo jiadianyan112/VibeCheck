@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -16,12 +16,19 @@ const steps: TaskStepItem[] = [
   { id: 'preview', label: '预览与提交', state: 'upcoming' },
 ]
 
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+
 describe('shared submission task workspace components', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
   })
 
   afterEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: originalScrollIntoView,
+    })
     vi.unstubAllGlobals()
   })
 
@@ -56,6 +63,55 @@ describe('shared submission task workspace components', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: '检查地址' }))
     expect(onStepSelect).toHaveBeenCalledWith(steps[0])
+  })
+
+  it('keeps the current step visible when the horizontal rail mounts or advances', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+    const firstSteps: TaskStepItem[] = [
+      { id: 'address', label: '检查地址', state: 'complete' },
+      { id: 'prefill', label: '基础信息', state: 'complete' },
+      { id: 'definition', label: '定位与用途', state: 'current' },
+      { id: 'solution', label: '核心内容', state: 'upcoming' },
+      { id: 'development', label: '开发与资产', state: 'upcoming' },
+      { id: 'preview', label: '预览与提交', state: 'upcoming' },
+    ]
+    const { rerender } = render(<StepRail steps={firstSteps} />)
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }))
+    scrollIntoView.mockClear()
+
+    rerender(<StepRail steps={firstSteps.map((step) => step.id === 'solution' ? { ...step, state: 'current' } : step.id === 'definition' ? { ...step, state: 'complete' } : step)} />)
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }))
+  })
+
+  it('uses instant nearest scrolling for the current step when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('max-width') || query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+
+    render(<StepRail steps={steps} />)
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest', inline: 'nearest' }))
   })
 
   it('renders live preview content without owning an input or draft state', () => {

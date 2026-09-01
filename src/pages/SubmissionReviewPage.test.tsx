@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, vi } from 'vitest'
 import type { Submission as ContractSubmission, SubmissionDraft as ContractSubmissionDraft, SubmissionPreview as ContractSubmissionPreview } from '@vibecheck/contracts'
 import { AppProviders } from '../app/providers'
@@ -8,7 +8,8 @@ import { appRoutes } from '../app/router'
 import { prototypeUsers } from '../mocks'
 import { configureServiceRuntime, submissionService } from '../services'
 import { APP_STORAGE_KEY, appReducer, createInitialAppState, persistAppState } from '../state'
-import { submissionDraftId, type SubmissionDraft } from '../types'
+import { submissionDraftId, submissionDraftPreviewFingerprint, type SubmissionDraft } from '../types'
+import { SubmissionReviewPage } from './SubmissionReviewPage'
 
 const draftId = submissionDraftId('draft-t39-review')
 const remoteDraftUuid = crypto.randomUUID()
@@ -44,6 +45,7 @@ type RemoteProjectionOptions = {
   currentName?: string
   mediaReferenceIds?: readonly string[]
   evidenceDraftIds?: readonly string[]
+  previewGeneratedAt?: string
 }
 
 function remoteDraftProjection(options: RemoteProjectionOptions = {}): ContractSubmissionDraft {
@@ -80,7 +82,7 @@ function remotePreviewProjection(options: RemoteProjectionOptions = {}): Contrac
     media_reference_ids: draft.media_reference_ids,
     evidence_draft_ids: draft.evidence_draft_ids,
     validation: { valid: true, issue_count: 0 },
-    generated_at: '2026-08-28T00:00:01Z',
+    generated_at: options.previewGeneratedAt ?? '2026-08-28T00:00:01Z',
   }
 }
 
@@ -199,7 +201,7 @@ function renderRemoteReview() {
   return { router, ...render(<AppProviders><RouterProvider router={router} /></AppProviders>) }
 }
 
-function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?: boolean; preview422Code?: string; previewErrorStatus?: number; submit409Once?: boolean; stalePendingGet?: boolean; freshEditingGet?: boolean } = {}) {
+function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?: boolean; preview422Code?: string; previewErrorStatus?: number; submit409Once?: boolean; stalePendingGet?: boolean; freshEditingGet?: boolean; previewGeneratedAt?: string } = {}) {
   const requests: Array<{ url: string; init?: RequestInit; body?: Record<string, unknown> }> = []
   let failedSubmit = false
   let submitConflictConsumed = false
@@ -212,7 +214,7 @@ function installRemoteTransport(options: { failSubmitOnce?: boolean; preview422?
     requests.push({ url, init, body })
     if (url.endsWith(`/submission-drafts/${remoteDraftUuid}/preview`) && init?.method === 'POST') {
       if (options.preview422 || options.preview422Code) return jsonResponse({ error: { code: options.preview422Code ?? 'SUBMISSION_COVER_MEDIA_REQUIRED', message_key: 'submission.not_ready', request_id: 'preview-error', retryable: false, retry_after_ms: null } }, options.previewErrorStatus ?? 422)
-      const preview = remotePreviewProjection({ version: serverVersion, currentName: serverCurrentName })
+      const preview = remotePreviewProjection({ version: serverVersion, currentName: serverCurrentName, previewGeneratedAt: options.previewGeneratedAt })
       return jsonResponse({ ...preview, preview_hash: serverPreviewHash })
     }
     if (url.endsWith('/submissions') && init?.method === 'POST') {
@@ -272,6 +274,44 @@ describe('submission preview and review status', () => {
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
     expect(scope.querySelector('.status-beacon[data-status="progress"]')).toBeInTheDocument()
     expect(scope.querySelector('.review-section--supplemental')).toBeInTheDocument()
+  })
+
+  it('renders a remote preview timestamp as localized time without exposing the raw ISO value', async () => {
+    localStorage.clear()
+    seedRemoteDraft()
+    installRemoteTransport()
+    renderRemoteReview()
+
+    const rawTimestamp = '2026-08-28T00:00:01Z'
+    const expectedLabel = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rawTimestamp))
+    const time = await screen.findByText(expectedLabel)
+    expect(time.tagName).toBe('TIME')
+    expect(time).toHaveAttribute('dateTime', rawTimestamp)
+    expect(screen.queryByText(rawTimestamp)).not.toBeInTheDocument()
+  })
+
+  it('uses a safe fallback when a remote preview timestamp is invalid', async () => {
+    localStorage.clear()
+    seedRemoteDraft()
+    const state = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!)
+    const draft = state.submissionDrafts.find((item: SubmissionDraft) => item.id === remoteDraftUuid) as SubmissionDraft
+    draft.preview = {
+      draftVersion: draft.version!,
+      checkId: draft.checkId!,
+      previewHash: remotePreviewHash,
+      frozenSnapshot: remotePayload(),
+      mediaReferenceIds: draft.mediaReferenceIds!,
+      evidenceDraftIds: draft.evidenceDraftIds!,
+      generatedAt: 'not-a-date',
+      inputFingerprint: submissionDraftPreviewFingerprint(draft),
+    }
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state))
+    render(<AppProviders><MemoryRouter initialEntries={[`/submit/new?draft=${remoteDraftUuid}&step=preview`]}><SubmissionReviewPage draft={draft} /></MemoryRouter></AppProviders>)
+
+    const time = await screen.findByText('时间暂不可用')
+    expect(time.tagName).toBe('TIME')
+    expect(time).not.toHaveAttribute('dateTime', 'not-a-date')
+    expect(screen.queryByText('not-a-date')).not.toBeInTheDocument()
   })
 
   it('keeps requested changes actionable inside the shared review workspace', async () => {

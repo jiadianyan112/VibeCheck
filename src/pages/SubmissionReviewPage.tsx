@@ -5,6 +5,7 @@ import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import {
   resumeSubmission,
   reviewFieldSteps,
+  submissionCopy,
   submissionReviewStatusLabels,
   withdrawSubmission,
 } from '../features'
@@ -33,6 +34,11 @@ const coreModuleLabels: Record<CoreModule, string> = { hero: '首屏', about: '�
 
 function list(values: readonly string[] | undefined, labels: Record<string, string>) {
   return values?.length ? values.map((value) => labels[value] ?? value).join('、') : '未填写'
+}
+
+function reviewFieldLabel(field: string, categoryId: SubmissionProjectFields['categoryId']): string {
+  if (field === 'oneLineDefinition') return submissionCopy(categoryId).oneLineLabel
+  return reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '需要修改'
 }
 
 function isRemoteDraft(draft: SubmissionDraft): boolean {
@@ -102,6 +108,15 @@ function remoteSubmitErrorMessage(error: SubmissionApiError): string {
   return error.message || '提交未完成，当前内容已保留，请重试。'
 }
 
+function formatPreviewGeneratedAt(value: string): { label: string; dateTime?: string } {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return { label: '时间暂不可用' }
+  return {
+    label: new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date),
+    dateTime: value,
+  }
+}
+
 function reviewTaskSteps(): readonly TaskStepItem[] {
   return [
     { id: 'address', label: '检查地址', state: 'complete' },
@@ -160,6 +175,7 @@ function ReviewWorkspace({
 }
 
 function RemotePreviewSummary({ preview }: { preview: SubmissionDraftPreview }) {
+  const generatedAt = formatPreviewGeneratedAt(preview.generatedAt)
   return (
     <section className="review-section review-section--remote-preview stack" aria-label="提交预览">
       <div className="stack stack--small">
@@ -169,7 +185,7 @@ function RemotePreviewSummary({ preview }: { preview: SubmissionDraftPreview }) 
       </div>
       <dl className="submission-summary-grid">
         <div><dt>草稿版本</dt><dd>{preview.draftVersion}</dd></div>
-        <div><dt>生成时间</dt><dd>{preview.generatedAt}</dd></div>
+        <div><dt>生成时间</dt><dd><time dateTime={generatedAt.dateTime}>{generatedAt.label}</time></dd></div>
       </dl>
     </section>
   )
@@ -179,13 +195,14 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
   const fields = draft.submittedFields
   if (!fields) return null
   const portfolio = fields.categoryId === 'personal_site_portfolio'
+  const copy = submissionCopy(fields.categoryId)
   return (
     <details className="review-section review-section--submitted-version submission-version">
       <summary>查看提交版本</summary>
       <p>这是你提交审核时的内容，之后继续编辑草稿不会改变这份记录。</p>
       <dl className="submission-summary-grid">
         <div><dt>作品名称</dt><dd>{fields.currentName ?? '未填写'}</dd></div>
-        <div><dt>一句话介绍</dt><dd>{fields.oneLineDefinition ?? '未填写'}</dd></div>
+        <div><dt>{copy.oneLinePreviewLabel}</dt><dd>{fields.oneLineDefinition ?? '未填写'}</dd></div>
         <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
         {portfolio ? <>
           <div><dt>创作者身份</dt><dd>{list(fields.creatorRoles, creatorRoleLabels)}</dd></div>
@@ -206,6 +223,7 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
 function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
   const fields = draft.fields
   const portfolio = fields.categoryId === 'personal_site_portfolio'
+  const copy = submissionCopy(fields.categoryId)
   return (
     <div className="submission-preview-grid">
       <LivePreview
@@ -218,7 +236,7 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
         <article className="submission-card-preview stack stack--small">
           <div className="cluster"><Tag>{fields.accessStatus ? accessStatusText[fields.accessStatus] : '状态未填写'}</Tag><Tag tone="dashed">{portfolio ? '个人主页与作品集' : 'AI 学习与题库'}</Tag></div>
           <h3>{fields.currentName ?? '未命名作品'}</h3>
-          <p>{fields.oneLineDefinition ?? '尚未填写一句话定义'}</p>
+          <p>{fields.oneLineDefinition ?? copy.emptyOneLinePreview}</p>
         </article>
       </LivePreview>
       <section className="review-section review-section--summary stack" aria-labelledby="submission-detail-summary">
@@ -561,7 +579,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           {!hasKnownReviewPresentation ? <><h2>审核状态待确认</h2><p>当前状态正在确认，暂时没有可执行的审核操作。</p></> : null}
         </section>
 
-        {draft.status === 'changes_requested' ? <section className="review-section review-section--changes stack"><h2>修改意见</h2><ul className="review-message-list">{Object.entries(draft.reviewMessages).map(([field, message]) => { const step = reviewFieldSteps[field as keyof SubmissionProjectFields]; return <li key={field}><div><strong>{reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '需要修改'}</strong><p>{message}</p></div>{step ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${step}`}>前往修改</Link> : null}</li> })}</ul><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>修改后重新提交</Button></section> : null}
+        {draft.status === 'changes_requested' ? <section className="review-section review-section--changes stack"><h2>修改意见</h2><ul className="review-message-list">{Object.entries(draft.reviewMessages).map(([field, message]) => { const step = reviewFieldSteps[field as keyof SubmissionProjectFields]; return <li key={field}><div><strong>{reviewFieldLabel(field, draft.fields.categoryId)}</strong><p>{message}</p></div>{step ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${step}`}>前往修改</Link> : null}</li> })}</ul><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>修改后重新提交</Button></section> : null}
 
         {(draft.status === 'pending_review' || draft.status === 'changes_requested') ? <section className="review-section review-section--supplemental stack"><h2>补充材料</h2><p>补充内容只提供给审核人员，不会修改已经提交的作品介绍。</p><label className="field"><span className="field__label">补充说明或公开材料地址</span><textarea className="input textarea" rows={4} value={material} onChange={(event) => setMaterial(event.target.value)} /></label><div className="cluster"><Button onClick={saveMaterial}>保存补充材料</Button><Button disabled={busy} onClick={refreshStatus}>刷新审核状态</Button><Button variant="danger" onClick={() => setWithdrawing(true)}>撤回审核</Button></div></section> : null}
 

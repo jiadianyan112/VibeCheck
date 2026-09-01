@@ -20,6 +20,7 @@ import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import {
   buildPortfolioV1Snapshot,
   buildLearningV1Snapshot,
+  submissionCopy,
   submissionFormSteps,
   updateDraftField,
   validateSubmissionStep,
@@ -111,10 +112,11 @@ function guidedTaskSteps(step: SubmissionFormStep): readonly TaskStepItem[] {
   ]
 }
 
-function getErrorSummaryItems(errors: Record<string, string>, step: SubmissionFormStep): ErrorSummaryItem[] {
+function getErrorSummaryItems(errors: Record<string, string>, step: SubmissionFormStep, categoryId: SubmissionProjectFields['categoryId']): ErrorSummaryItem[] {
   return Object.entries(errors).flatMap(([field, message]) => {
     const target = errorFieldTargets[field]
-    return target?.step === step ? [{ fieldId: target.fieldId, label: target.label, message: `需要处理：${message}` }] : []
+    const label = field === 'oneLineDefinition' ? submissionCopy(categoryId).oneLineLabel : target?.label
+    return target?.step === step && label ? [{ fieldId: target.fieldId, label, message: `需要处理：${message}` }] : []
   })
 }
 
@@ -239,6 +241,7 @@ function PortfolioStructureStep({ draft, update }: { draft: SubmissionDraft; upd
 function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => void }) {
   const fields = draft.fields
   const original = draft.originalExtraction
+  const copy = submissionCopy(fields.categoryId)
   return (
     <div className="submission-step-fields stack">
       <section className="submission-guidance"><strong>先核对页面信息</strong><p>我们从公开页面整理了部分内容，你可以直接修改或补充。</p></section>
@@ -247,9 +250,9 @@ function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K ext
         <OriginalValue label="名称" value={original.currentName} />
       </div>
       <div>
-        <label className="field" htmlFor="submission-definition"><span className="field__label">{fields.categoryId === 'personal_site_portfolio' ? '一句话简介' : '一句话定义'}</span><textarea id="submission-definition" className="input textarea" value={fields.oneLineDefinition ?? ''} aria-invalid={Boolean(draft.validationErrors.oneLineDefinition)} aria-describedby={draft.validationErrors.oneLineDefinition ? 'submission-definition-error' : undefined} onChange={(event) => update('oneLineDefinition', event.target.value)} /></label>
+        <label className="field" htmlFor="submission-definition"><span className="field__label">{copy.oneLineLabel}</span><textarea id="submission-definition" className="input textarea" value={fields.oneLineDefinition ?? ''} aria-invalid={Boolean(draft.validationErrors.oneLineDefinition)} aria-describedby={draft.validationErrors.oneLineDefinition ? 'submission-definition-error' : undefined} onChange={(event) => update('oneLineDefinition', event.target.value)} /></label>
         {draft.validationErrors.oneLineDefinition ? <p id="submission-definition-error" className="field-error" role="alert">{draft.validationErrors.oneLineDefinition}</p> : null}
-        <OriginalValue label="定义" value={original.oneLineDefinition} />
+        <OriginalValue label={copy.originalOneLineLabel} value={original.oneLineDefinition} />
       </div>
       <div>
         <Input id="submission-screenshot-url" label="截图地址（可跳过）" value={fields.screenshotUrl ?? ''} error={draft.validationErrors.screenshotUrl} onChange={(event) => update('screenshotUrl', event.target.value || null)} />
@@ -688,7 +691,7 @@ export function SubmitFormPage() {
     if (Object.keys(errors).length) {
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors: { ...draft.validationErrors, ...errors } } })
       pushToast('请先完成当前步骤的必填字段。', 'error')
-      const [firstError] = getErrorSummaryItems(errors, step)
+      const [firstError] = getErrorSummaryItems(errors, step, draft.fields.categoryId)
       requestAnimationFrame(() => document.getElementById(firstError?.fieldId ?? '')?.focus())
       return
     }
@@ -727,7 +730,7 @@ export function SubmitFormPage() {
 
   const isFinalStep = index === submissionFormSteps.length - 1
   const finalActionLabel = isFinalStep && materialsFeedback?.retryable ? '重试准备提交材料' : '准备提交材料'
-  const errorSummaryItems = getErrorSummaryItems(draft.validationErrors, step)
+  const errorSummaryItems = getErrorSummaryItems(draft.validationErrors, step, draft.fields.categoryId)
   const statusTone = saving ? 'progress' : saveError || materialsFeedback ? 'warning' : 'success'
   const statusLabel = saving
     ? '正在准备提交材料'
@@ -763,7 +766,7 @@ export function SubmitFormPage() {
     >
       <dl className="submit-form-preview-list">
         <div><dt>作品名称</dt><dd>{draft.fields.currentName?.trim() || '待填写'}</dd></div>
-        <div><dt>一句话介绍</dt><dd>{draft.fields.oneLineDefinition?.trim() || '待补充'}</dd></div>
+        <div><dt>{submissionCopy(draft.fields.categoryId).oneLinePreviewLabel}</dt><dd>{draft.fields.oneLineDefinition?.trim() || '待补充'}</dd></div>
         <div><dt>作品品类</dt><dd>{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</dd></div>
         <div><dt>当前阶段</dt><dd>{guidedStepLabels[step]}</dd></div>
       </dl>

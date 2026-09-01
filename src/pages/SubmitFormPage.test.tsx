@@ -565,6 +565,24 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(within(screen.getByLabelText('当前草稿预览')).getByText('实时更新的作品名称')).toBeInTheDocument()
   })
 
+  it('uses 一句话简介 consistently for the Portfolio field, validation, error summary, and live preview', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    installMaterialsTransport({ categoryId: 'personal_site_portfolio' })
+    const user = userEvent.setup()
+    renderForm()
+
+    const definition = await screen.findByRole('textbox', { name: '一句话简介' })
+    expect(within(screen.getByLabelText('当前草稿预览')).getByText('一句话简介')).toBeInTheDocument()
+    await user.clear(definition)
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    expect(await screen.findByText('请填写一句话简介。')).toBeInTheDocument()
+    const summary = screen.getByRole('alert', { name: '表单错误' })
+    expect(within(summary).getByRole('link', { name: '一句话简介' })).toBeInTheDocument()
+    expect(screen.queryByText('一句话定义')).not.toBeInTheDocument()
+  })
+
   it('navigates ErrorSummary links to stable focusable validation targets', async () => {
     const user = userEvent.setup()
     renderForm()
