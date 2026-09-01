@@ -186,12 +186,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function messageFor(status: number | null, code: string, kind: SubmissionApiErrorKind): string {
   if (kind === 'aborted') return '检查已取消，当前内容已保留。'
   if (status === 401 || status === 403) return '登录状态已失效，当前输入已保留，请重新登录后继续。'
-  if (status === 409) return '服务端版本发生冲突，未覆盖你的输入。请加载最新版本后合并。'
-  if (status === 410) return '远端草稿已过期，请重新检查公开地址。'
-  if (status === 422) return '服务端校验未通过，请检查标记的字段。'
+  if (status === 409) return '内容已在其他位置更新，未覆盖你的输入。请加载最新草稿后合并。'
+  if (status === 410) return '这份草稿已过期，请重新检查公开地址。'
+  if (status === 422) return '当前内容未通过校验，请检查标记的字段。'
   if (kind === 'transport') return '网络连接不可用，当前内容已保留。'
-  if (kind === 'protocol') return '服务端返回无法识别的结果，当前内容已保留。'
-  if (code === 'URL_CHECK_REJECTED') return '当前地址未通过服务端检查。'
+  if (kind === 'protocol') return '返回结果暂时无法处理，当前内容已保留。'
+  if (code === 'URL_CHECK_REJECTED') return '当前地址未通过检查。'
   return '请求未完成，当前内容已保留。'
 }
 

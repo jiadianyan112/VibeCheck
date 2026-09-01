@@ -246,9 +246,12 @@ describe('ProjectDetailPage trust variants', () => {
   })
 
   it('exposes supplement, report and evidence entry points', async () => {
+    const user = userEvent.setup()
     renderProject('project-quizforge')
     expect(await screen.findByRole('link', { name: '补充作品信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
-    expect(screen.getByText('状态说明')).toBeInTheDocument()
+    await user.click(screen.getByText('状态说明'))
+    expect(screen.getByText('这里仅说明当前状态，不会发起变更。需要补充或纠正信息时，请使用“补充作品信息”。')).toBeInTheDocument()
+    expect(screen.queryByText('提交后会进入人工核对，核对完成前不会更改当前状态。')).not.toBeInTheDocument()
     expect(screen.queryByText('报告状态问题')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /展开本作品证据/ })).toBeInTheDocument()
   })

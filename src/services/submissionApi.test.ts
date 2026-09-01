@@ -271,6 +271,23 @@ describe('submissionApi typed production gateway', () => {
     expect(thrown.details).toMatchObject({ preserved: 'do-not-drop' })
   })
 
+  it.each([
+    [409, 'DRAFT_VERSION_CONFLICT', '内容已在其他位置更新，未覆盖你的输入。请加载最新草稿后合并。'],
+    [410, 'DRAFT_EXPIRED', '这份草稿已过期，请重新检查公开地址。'],
+    [422, 'DRAFT_INVALID', '当前内容未通过校验，请检查标记的字段。'],
+    [400, 'URL_CHECK_REJECTED', '当前地址未通过检查。'],
+  ] as const)('maps user-facing copy for HTTP %s without changing the error envelope', async (status, code, message) => {
+    installFetch(jsonResponse(errorBody(code), status))
+    const thrown = await submissionApi.check({ rawUrl: 'https://example.test/learning', categoryId: 'ai_learning_quiz', session: csrf, clientRequestId: `copy-${status}-01` }).catch((error: unknown) => error as SubmissionApiError) as SubmissionApiError
+    expect(thrown).toMatchObject({ kind: 'http', status, code, message })
+  })
+
+  it('maps an unreadable API result to neutral user-facing copy', async () => {
+    installFetch(jsonResponse({}, 201))
+    const thrown = await submissionApi.check({ rawUrl: 'https://example.test/learning', categoryId: 'ai_learning_quiz', session: csrf, clientRequestId: 'copy-protocol-01' }).catch((error: unknown) => error as SubmissionApiError) as SubmissionApiError
+    expect(thrown).toMatchObject({ kind: 'protocol', code: 'PROTOCOL_INVALID_RESPONSE', message: '返回结果暂时无法处理，当前内容已保留。' })
+  })
+
   it('maps AbortSignal cancellation to a non-retryable cancellation without a second fetch', async () => {
     const controller = new AbortController()
     const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
