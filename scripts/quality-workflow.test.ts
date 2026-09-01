@@ -27,4 +27,20 @@ describe('quality workflow build environment', () => {
     expect(step).toMatch(/^        env:\s*$/m)
     expect(step).toMatch(/^          NODE_ENV:\s*production\s*$/m)
   })
+
+  it('runs the production copy gate after the build and before the frontend budget gate', () => {
+    const workflow = readFileSync(workflowPath, 'utf8')
+    const runSteps = workflow
+      .split(/\r?\n/)
+      .filter((line) => /^      - run: /.test(line))
+      .map((line) => line.replace(/^      - run: /, '').trim())
+
+    const buildIndex = runSteps.indexOf('npm run build')
+    const copyCheckIndex = runSteps.indexOf('npm run frontend:copy-check')
+    const budgetIndex = runSteps.indexOf('npm run frontend:budget')
+
+    expect(buildIndex).toBeGreaterThanOrEqual(0)
+    expect(copyCheckIndex).toBeGreaterThan(buildIndex)
+    expect(budgetIndex).toBeGreaterThan(copyCheckIndex)
+  })
 })

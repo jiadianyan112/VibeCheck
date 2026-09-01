@@ -52,6 +52,7 @@ jobs:
       - run: npm run build
         env:
           NODE_ENV: production
+      - run: npm run frontend:copy-check
       - run: npm run frontend:budget
       - name: Verify migrations are repeatable
         run: |
