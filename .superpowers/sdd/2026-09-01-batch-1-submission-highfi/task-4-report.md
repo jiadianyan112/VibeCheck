@@ -40,3 +40,23 @@ Submission preview and every review outcome now render in the shared six-stage t
 ## Concerns
 
 - No functional blockers. The production build continues to warn that its main JavaScript chunk exceeds Vite's advisory threshold; this change did not introduce a separate build failure.
+
+## Fix Round 1
+
+### Scope
+
+- Restored the server-authoritative boundary for remote receipts: remote pending review no longer renders local supplemental-material persistence, mock refresh, or local withdrawal controls. No new remote API was introduced.
+- Made `withdrawn` explicit in the status beacon mapping. `restricted` and any future unhandled status now render the neutral `审核状态待确认` fallback instead of a false withdrawn state.
+
+### RED
+
+- Added a remote-receipt regression that completes the real remote preview/submit path, then asserts that local-only controls are absent, `submissionService.submit` has not been called, and no local publication IDs were created.
+- Added a restricted-status regression that asserts the neutral fallback and verifies `审核已撤回` is absent.
+- Command: `npx vitest run src/pages/SubmissionReviewPage.test.tsx`
+- Output: 15 tests, 2 expected failures. The remote receipt still rendered `保存补充材料`; the restricted status still rendered the `审核已撤回` beacon.
+
+### GREEN / verification
+
+- Command: `npx vitest run src/pages/SubmissionReviewPage.test.tsx`
+- Output: 15 passed.
+- Also run: `npx eslint src/pages/SubmissionReviewPage.tsx src/pages/SubmissionReviewPage.test.tsx`, `npx tsc -b --pretty false`, and `git diff --check`; all passed.

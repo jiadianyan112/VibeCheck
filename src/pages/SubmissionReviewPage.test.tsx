@@ -287,6 +287,40 @@ describe('submission preview and review status', () => {
     expect(screen.getByRole('button', { name: '修改后重新提交' })).toBeInTheDocument()
   })
 
+  it('keeps a remote pending receipt server-authoritative without local review controls', async () => {
+    localStorage.clear()
+    seedRemoteDraft()
+    installRemoteTransport()
+    const localSubmit = vi.spyOn(submissionService, 'submit')
+    const user = userEvent.setup()
+    renderRemoteReview()
+
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remotePreviewHash))
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '保存补充材料' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '刷新审核状态' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '撤回审核' })).not.toBeInTheDocument()
+    expect(localSubmit).not.toHaveBeenCalled()
+    expect(persistedRemoteDraft().publishedProjectId).toBeNull()
+    expect(persistedRemoteDraft().publishedEventId).toBeNull()
+  })
+
+  it('does not present a restricted review state as withdrawn', async () => {
+    const state = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!)
+    state.submissionDrafts = state.submissionDrafts.map((draft: SubmissionDraft) => draft.id === draftId
+      ? { ...draft, status: 'restricted' }
+      : draft)
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state))
+
+    renderReview()
+
+    expect(await screen.findByRole('heading', { name: '审核状态：争议复核中' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '审核状态待确认' })).toBeInTheDocument()
+    expect(screen.queryByText('审核已撤回')).not.toBeInTheDocument()
+  })
+
   it('confirms once, shows pending without a fabricated ETA, saves material and withdraws', async () => {
     const user = userEvent.setup()
     renderReview()

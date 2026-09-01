@@ -123,7 +123,8 @@ function reviewBeacon(status: SubmissionDraft['status'], previewLoading = false)
   if (status === 'changes_requested') return { tone: 'warning', label: '需要修改', detail: '根据审核意见调整后可以重新提交。' }
   if (status === 'rejected') return { tone: 'error', label: '未通过审核', detail: '你可以查看原因并重新整理内容。' }
   if (status === 'approved') return { tone: 'success', label: '审核已通过', detail: '作品已发布到社区。' }
-  return { tone: 'idle', label: '审核已撤回', detail: '已提交版本仍会保留。' }
+  if (status === 'withdrawn') return { tone: 'idle', label: '审核已撤回', detail: '已提交版本仍会保留。' }
+  return { tone: 'idle', label: '审核状态待确认', detail: '当前状态正在确认，暂时没有可执行的审核操作。' }
 }
 
 function ReviewWorkspace({
@@ -529,7 +530,6 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         title={`审核状态：${statusLabel}`}
         description="这里显示提交回执与审核状态；暂无可靠的预计完成时间。"
         status="pending_review"
-        dialogs={<ConfirmDialog open={withdrawing} title="撤回当前审核？" description="审核会停止，已提交版本仍保留并可查看。" confirmLabel="确认撤回" danger onConfirm={withdraw} onCancel={() => setWithdrawing(false)} />}
       >
         <section className="review-section review-section--state review-section--pending_review stack stack--small" aria-live="polite">
           <div className="cluster cluster--between"><Tag tone="dashed">{statusLabel}</Tag></div>
@@ -537,19 +537,13 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           <p>提交已接受，审核人员会继续处理；此处不展示倒计时或承诺日期。</p>
           <p className="submission-receipt-note">提交回执与审核记录已生成。</p>
         </section>
-        <section className="review-section review-section--supplemental stack">
-          <h2>补充材料</h2>
-          <p>补充内容只提供给审核人员，不会修改已经提交的作品介绍。</p>
-          <label className="field"><span className="field__label">补充说明或公开材料地址</span><textarea className="input textarea" rows={4} value={material} onChange={(event) => setMaterial(event.target.value)} /></label>
-          <div className="cluster"><Button onClick={saveMaterial}>保存补充材料</Button><Button disabled={busy} onClick={refreshStatus}>刷新审核状态</Button><Button variant="danger" onClick={() => setWithdrawing(true)}>撤回审核</Button></div>
-        </section>
         <SubmittedVersion draft={draft} />
-        {error ? <ErrorPanel title="审核状态操作未完成" message={error.message} onRetry={error.retryable ? refreshStatus : undefined} /> : null}
       </ReviewWorkspace>
     )
   }
 
   const statusLabel = submissionReviewStatusLabels[draft.status] ?? draft.status
+  const hasKnownReviewPresentation = draft.status === 'pending_review' || draft.status === 'changes_requested' || draft.status === 'rejected' || draft.status === 'approved' || draft.status === 'withdrawn'
   return (
     <ReviewWorkspace
       title={`审核状态：${statusLabel}`}
@@ -564,6 +558,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           {draft.status === 'rejected' ? <><h2>当前提交未通过</h2><p>{draft.reviewMessages.submission ?? '审核方未提供拒绝原因。'}</p></> : null}
           {draft.status === 'approved' ? <><h2>作品已通过并发布</h2><p>作品已经进入社区，你可以查看详情或分享首次发布动态。</p><div className="cluster"><Link className="button button--primary" to={`/project/${draft.publishedProjectId}`}>进入作品详情</Link><Link className="button" to={`/activity#${draft.publishedEventId}`}>查看首次发布动态</Link></div></> : null}
           {draft.status === 'withdrawn' ? <><h2>审核已撤回</h2><p>提交历史没有删除；你可以继续修改后重新提交。</p><Button onClick={() => dispatch({ type: 'DRAFT_UPSERT', draft: resumeSubmission(draft) })}>恢复为可编辑草稿</Button></> : null}
+          {!hasKnownReviewPresentation ? <><h2>审核状态待确认</h2><p>当前状态正在确认，暂时没有可执行的审核操作。</p></> : null}
         </section>
 
         {draft.status === 'changes_requested' ? <section className="review-section review-section--changes stack"><h2>修改意见</h2><ul className="review-message-list">{Object.entries(draft.reviewMessages).map(([field, message]) => { const step = reviewFieldSteps[field as keyof SubmissionProjectFields]; return <li key={field}><div><strong>{reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '需要修改'}</strong><p>{message}</p></div>{step ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${step}`}>前往修改</Link> : null}</li> })}</ul><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>修改后重新提交</Button></section> : null}
