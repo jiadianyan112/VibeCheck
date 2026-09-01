@@ -49,7 +49,7 @@ test.describe('T55 axe 核心页面审计', () => {
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
     await page.getByRole('button', { name: '继续补充作品信息' }).click()
-    await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '发布步骤' }).locator('[aria-current="step"]')).toHaveText('基础信息')
     await page.waitForLoadState('networkidle')
     expect(await axeViolations(page)).toEqual([])
 

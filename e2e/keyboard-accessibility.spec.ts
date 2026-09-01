@@ -93,7 +93,8 @@ test.describe('T55 键盘与焦点', () => {
     const continueButton = page.getByRole('button', { name: '继续补充作品信息' })
     await continueButton.focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
+    const submissionRail = page.getByRole('navigation', { name: '发布步骤' })
+    await expect(submissionRail.locator('[aria-current="step"]')).toHaveText('基础信息')
     await expect(page.getByRole('button', { name: '保存并继续' })).toBeVisible()
 
     const name = page.getByRole('textbox', { name: '作品名称' })
@@ -104,10 +105,14 @@ test.describe('T55 键盘与焦点', () => {
     const next = page.getByRole('button', { name: '保存并继续' })
     await next.focus()
     await page.keyboard.press('Enter')
-    await expect(definition).toBeFocused()
     await expect(definition).toHaveAttribute('aria-invalid', 'true')
     await expect(definition).toHaveAttribute('aria-describedby', 'submission-definition-error')
     await expect(page.locator('#submission-definition-error')).toHaveAttribute('role', 'alert')
+    const errorSummaryLink = page.getByRole('link', { name: '一句话定义' })
+    await expect(errorSummaryLink).toBeVisible()
+    await errorSummaryLink.focus()
+    await page.keyboard.press('Enter')
+    await expect(definition).toBeFocused()
   })
 
   test('移动比较标签支持方向键和 roving tabindex', async ({ page, isMobile }) => {
