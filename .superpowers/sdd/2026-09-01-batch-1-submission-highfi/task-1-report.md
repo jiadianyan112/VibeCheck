@@ -67,3 +67,31 @@ Result: 1 file passed, 5 tests passed.
 ## Concerns
 
 No in-scope concerns. Page-level wiring and visual/E2E validation remain intentionally with Tasks 2–5; this task only delivers the shared foundation.
+
+## Fix Round 1 — reduced-motion error navigation
+
+Review finding: `ErrorSummary` always requested smooth scrolling, bypassing the reduced-motion preference.
+
+RED command:
+
+```text
+npx vitest run src/components/task/TaskWorkspace.test.tsx
+```
+
+Result: 1 expected failure (6 tests collected, 5 passed, 1 failed). The reduced-motion test expected `{ behavior: 'auto', block: 'center' }`, while the implementation sent `{ behavior: 'smooth', block: 'center' }`.
+
+GREEN command:
+
+```text
+npx vitest run src/components/task/TaskWorkspace.test.tsx
+```
+
+Result: 1 file passed, 6 tests passed.
+
+Additional verification:
+
+- `npx vitest run src/components` — 10 files, 52 tests passed.
+- `npx eslint src/components/task src/components/index.ts src/main.tsx` — passed with no findings.
+- `npx tsc -b --pretty false` — passed.
+
+Fix: `ErrorSummary` now reads the shared reduced-motion media query at navigation time and requests `auto` scrolling for reduced-motion users, retaining smooth scrolling otherwise.

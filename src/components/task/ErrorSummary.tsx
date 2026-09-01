@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react'
+import { REDUCED_MOTION_QUERY } from '../motion/useReducedMotion'
 
 export interface ErrorSummaryItem {
   fieldId: string
@@ -13,12 +14,20 @@ export interface ErrorSummaryProps {
   className?: string
 }
 
+function getScrollBehavior(): ScrollBehavior {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(REDUCED_MOTION_QUERY).matches) {
+    return 'auto'
+  }
+
+  return 'smooth'
+}
+
 function focusErrorField(fieldId: string) {
   const field = document.getElementById(fieldId)
   if (!field) return
 
   field.focus()
-  field.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  field.scrollIntoView?.({ behavior: getScrollBehavior(), block: 'center' })
 }
 
 function handleErrorClick(

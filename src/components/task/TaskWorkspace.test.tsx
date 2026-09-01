@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ErrorSummary,
   LivePreview,
@@ -19,6 +19,10 @@ const steps: TaskStepItem[] = [
 describe('shared submission task workspace components', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('renders the task shell with a semantic header, rail, main content, and optional aside', () => {
@@ -98,5 +102,25 @@ describe('shared submission task workspace components', () => {
     await user.click(screen.getByRole('link', { name: '作品名称' }))
     expect(focus).toHaveBeenCalledTimes(1)
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses instant scrolling when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    const field = document.createElement('input')
+    field.id = 'project-summary'
+    field.scrollIntoView = scrollIntoView
+    document.body.append(field)
+
+    render(
+      <ErrorSummary
+        errors={[{ fieldId: 'project-summary', label: '作品简介', message: '请填写作品简介。' }]}
+      />,
+    )
+
+    await user.click(screen.getByRole('link', { name: '作品简介' }))
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'center' })
   })
 })
