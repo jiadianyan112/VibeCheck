@@ -77,25 +77,25 @@ const guidedStepLabels: Record<SubmissionFormStep, string> = {
   development: '开发与资产',
 }
 
-const errorFieldTargets: Record<string, Pick<ErrorSummaryItem, 'fieldId' | 'label'>> = {
-  currentName: { fieldId: 'submission-current-name', label: '作品名称' },
-  oneLineDefinition: { fieldId: 'submission-definition', label: '一句话定义' },
-  screenshotUrl: { fieldId: 'submission-screenshot-url', label: '截图地址' },
-  repositoryUrl: { fieldId: 'submission-repository-url', label: '代码仓库' },
-  accessStatus: { fieldId: 'submission-access-status', label: '基础访问状态' },
-  targetUsers: { fieldId: 'submission-target-users', label: '目标用户' },
-  coreProblem: { fieldId: 'submission-core-problem', label: '核心问题' },
-  useScenarios: { fieldId: 'submission-use-scenarios', label: '使用场景' },
-  mainInputs: { fieldId: 'submission-main-inputs', label: '主要输入' },
-  mainOutputs: { fieldId: 'submission-main-outputs', label: '主要输出' },
-  coreFlow: { fieldId: 'submission-core-flow', label: '核心流程' },
-  practiceFormats: { fieldId: 'submission-practice-formats', label: '练习形式' },
-  feedbackMethods: { fieldId: 'submission-feedback-methods', label: '反馈方式' },
-  differentiation: { fieldId: 'submission-differentiation', label: '差异化说明' },
-  aiCodingTools: { fieldId: 'submission-ai-coding-tools', label: 'AI 编程工具' },
-  creatorRoles: { fieldId: 'submission-creator-roles', label: '作者身份' },
-  primaryGoals: { fieldId: 'submission-primary-goals', label: '建站目的' },
-  coreModules: { fieldId: 'submission-core-modules', label: '核心内容模块' },
+const errorFieldTargets: Record<string, Pick<ErrorSummaryItem, 'fieldId' | 'label'> & { step: SubmissionFormStep }> = {
+  currentName: { fieldId: 'submission-current-name', label: '作品名称', step: 'prefill' },
+  oneLineDefinition: { fieldId: 'submission-definition', label: '一句话定义', step: 'prefill' },
+  screenshotUrl: { fieldId: 'submission-screenshot-url', label: '截图地址', step: 'prefill' },
+  repositoryUrl: { fieldId: 'submission-repository-url', label: '代码仓库', step: 'prefill' },
+  accessStatus: { fieldId: 'submission-access-status', label: '基础访问状态', step: 'prefill' },
+  targetUsers: { fieldId: 'submission-target-users', label: '目标用户', step: 'definition' },
+  coreProblem: { fieldId: 'submission-core-problem', label: '核心问题', step: 'definition' },
+  useScenarios: { fieldId: 'submission-use-scenarios', label: '使用场景', step: 'definition' },
+  mainInputs: { fieldId: 'submission-main-inputs', label: '主要输入', step: 'solution' },
+  mainOutputs: { fieldId: 'submission-main-outputs', label: '主要输出', step: 'solution' },
+  coreFlow: { fieldId: 'submission-core-flow', label: '核心流程', step: 'solution' },
+  practiceFormats: { fieldId: 'submission-practice-formats', label: '练习形式', step: 'solution' },
+  feedbackMethods: { fieldId: 'submission-feedback-methods', label: '反馈方式', step: 'solution' },
+  differentiation: { fieldId: 'submission-differentiation', label: '差异化说明', step: 'solution' },
+  aiCodingTools: { fieldId: 'submission-ai-coding-tools', label: 'AI 编程工具', step: 'development' },
+  creatorRoles: { fieldId: 'submission-creator-roles', label: '作者身份', step: 'definition' },
+  primaryGoals: { fieldId: 'submission-primary-goals', label: '建站目的', step: 'definition' },
+  coreModules: { fieldId: 'submission-core-modules', label: '核心内容模块', step: 'solution' },
 }
 
 function guidedTaskSteps(step: SubmissionFormStep): readonly TaskStepItem[] {
@@ -111,10 +111,10 @@ function guidedTaskSteps(step: SubmissionFormStep): readonly TaskStepItem[] {
   ]
 }
 
-function getErrorSummaryItems(errors: Record<string, string>): ErrorSummaryItem[] {
+function getErrorSummaryItems(errors: Record<string, string>, step: SubmissionFormStep): ErrorSummaryItem[] {
   return Object.entries(errors).flatMap(([field, message]) => {
     const target = errorFieldTargets[field]
-    return target ? [{ ...target, message: `需要处理：${message}` }] : []
+    return target?.step === step ? [{ fieldId: target.fieldId, label: target.label, message: `需要处理：${message}` }] : []
   })
 }
 
@@ -688,7 +688,7 @@ export function SubmitFormPage() {
     if (Object.keys(errors).length) {
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors: { ...draft.validationErrors, ...errors } } })
       pushToast('请先完成当前步骤的必填字段。', 'error')
-      const [firstError] = getErrorSummaryItems(errors)
+      const [firstError] = getErrorSummaryItems(errors, step)
       requestAnimationFrame(() => document.getElementById(firstError?.fieldId ?? '')?.focus())
       return
     }
@@ -727,7 +727,7 @@ export function SubmitFormPage() {
 
   const isFinalStep = index === submissionFormSteps.length - 1
   const finalActionLabel = isFinalStep && materialsFeedback?.retryable ? '重试准备提交材料' : '准备提交材料'
-  const errorSummaryItems = getErrorSummaryItems(draft.validationErrors)
+  const errorSummaryItems = getErrorSummaryItems(draft.validationErrors, step)
   const statusTone = saving ? 'progress' : saveError || materialsFeedback ? 'warning' : 'success'
   const statusLabel = saving
     ? '正在准备提交材料'

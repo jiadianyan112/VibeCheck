@@ -579,6 +579,21 @@ describe('remote P11 draft GET/PATCH form', () => {
     expect(name).toHaveFocus()
   })
 
+  it('does not render stale later-step ErrorSummary links after rail navigation', async () => {
+    const user = userEvent.setup()
+    renderForm('solution')
+
+    const coreFlow = await screen.findByRole('textbox', { name: /核心流程/ })
+    await user.clear(coreFlow)
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+    expect(await screen.findByRole('link', { name: '核心流程' })).toBeInTheDocument()
+
+    const rail = screen.getByRole('navigation', { name: '发布步骤' })
+    await user.click(within(rail).getByRole('button', { name: '基础信息' }))
+    expect(await screen.findByRole('heading', { name: '基础信息' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '核心流程' })).not.toBeInTheDocument()
+  })
+
   it('renders the guided editor without a legacy prototype container', async () => {
     renderForm()
 
