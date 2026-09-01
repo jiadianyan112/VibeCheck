@@ -436,3 +436,83 @@
     flex: 1 1 100%;
   }
 }
+
+/* P11: guided form stages reuse the same workspace as address checking. */
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--task-line);
+  padding-bottom: var(--space-4);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__header h2,
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__eyebrow {
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__eyebrow {
+  color: var(--task-muted);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-step-fields {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-guidance,
+.app-shell .highfi-scope.submit-form-scope .submission-choice-field,
+.app-shell .highfi-scope.submit-form-scope .original-extraction {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-choice-field:focus {
+  outline: 3px solid var(--task-accent);
+  outline-offset: 3px;
+}
+
+.app-shell .highfi-scope.submit-form-scope .task-primary-actions {
+  position: static;
+  gap: var(--space-3);
+  border-top: 2px solid var(--task-line-strong);
+  background: transparent;
+  padding-top: var(--space-4);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list div {
+  display: grid;
+  gap: 0.15rem;
+  border-top: 1px solid var(--task-line);
+  padding-top: var(--space-3);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list dt {
+  color: var(--task-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
