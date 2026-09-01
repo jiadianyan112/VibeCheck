@@ -5,6 +5,7 @@ import './styles/global.css'
 import './styles/highfi-foundation.css'
 import './styles/highfi-components.css'
 import './styles/highfi-home.css'
+import './styles/highfi-task.css'
 
 const root = document.getElementById('root')
 
