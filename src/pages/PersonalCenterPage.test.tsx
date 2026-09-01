@@ -21,10 +21,10 @@ function loginAs(index: number) {
 describe('PersonalCenterPage', () => {
   beforeEach(() => localStorage.clear())
 
-  it('returns a guest to role simulation and keeps the original route', async () => {
+  it('returns a guest to email OTP login and keeps the original route', async () => {
     renderMe()
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
   })
 
   it('returns all registered-user history to shared source records', async () => {

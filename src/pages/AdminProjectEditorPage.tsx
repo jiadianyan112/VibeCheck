@@ -108,7 +108,7 @@ export function AdminProjectEditorPage() {
     }
   }, [baseProject?.id, project])
 
-  if (!project || !draft) return <div className="admin-page stack"><EmptyState title="后台未找到对应作品" description="该稳定 ID 不存在，或作品尚未进入当前原型数据集。" action={<Link className="button" to="/admin/projects">返回作品列表</Link>} /></div>
+  if (!project || !draft) return <div className="admin-page stack"><EmptyState title="后台未找到对应作品" description="该稳定 ID 不存在，或作品尚未进入当前作品库。" action={<Link className="button" to="/admin/projects">返回作品列表</Link>} /></div>
 
   const source = recordSourceLabels[project.recordSource]
   function update<K extends keyof AdminProjectDraft>(key: K, value: AdminProjectDraft[K]) {

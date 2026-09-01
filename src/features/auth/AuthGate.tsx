@@ -1,9 +1,17 @@
-import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren, type ReactNode } from 'react'
-import { prototypeUsers } from '../../mocks'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from 'react'
+import { Link } from 'react-router-dom'
+
+import { Button, Modal } from '../../components'
 import { useAppState, type PendingAction } from '../../state'
-import type { PrototypeUser } from '../../types'
-import { Button, Modal, useToast } from '../../components'
-import { createLoginAction, roleLabels } from './session'
 
 interface AuthGateContextValue {
   requireLogin: (action: PendingAction, onAuthorized?: () => void) => void
@@ -12,13 +20,34 @@ interface AuthGateContextValue {
 
 const AuthGateContext = createContext<AuthGateContextValue | null>(null)
 
-export function AuthModal({ open, onClose, onLogin, comparisonCount = 0 }: { open: boolean; onClose: () => void; onLogin: (user: PrototypeUser) => void; comparisonCount?: number }) {
+export function AuthModal({
+  open,
+  onClose,
+  comparisonCount = 0,
+  returnTo = '/projects',
+}: {
+  open: boolean
+  onClose: () => void
+  comparisonCount?: number
+  returnTo?: string
+}) {
   return (
     <Modal open={open} title="登录后继续刚才的操作" onClose={onClose}>
-      <p>登录后可以保存这次操作，并继续使用收藏、关注和发布功能。</p>
-      {comparisonCount ? <p className="boundary-note" role="note">登录后将保存当前 {comparisonCount} 个比较作品，不会自动合并账号中的历史比较。</p> : null}
-      <div className="auth-choice-list">
-        {prototypeUsers.map((user) => <Button key={user.id} onClick={() => onLogin(user)}>{user.displayName} · {roleLabels[user.role]}</Button>)}
+      <p>我们会向你的邮箱发送 6 位验证码。验证成功后返回原页面。</p>
+      {comparisonCount ? (
+        <p className="boundary-note" role="note">
+          当前 {comparisonCount} 个临时比较作品会保留；账号比较合并由后续数据接口工作包完成。
+        </p>
+      ) : null}
+      <div className="cluster">
+        <Link
+          className="button button--primary"
+          to={`/auth?return_to=${encodeURIComponent(returnTo)}`}
+          onClick={onClose}
+        >
+          使用邮箱验证码登录
+        </Link>
+        <Button variant="secondary" onClick={onClose}>暂不登录</Button>
       </div>
     </Modal>
   )
@@ -26,7 +55,6 @@ export function AuthModal({ open, onClose, onLogin, comparisonCount = 0 }: { ope
 
 export function AuthGateProvider({ children }: PropsWithChildren) {
   const { state, dispatch } = useAppState()
-  const { pushToast } = useToast()
   const [open, setOpen] = useState(false)
 
   const requireLogin = useCallback((action: PendingAction, onAuthorized?: () => void) => {
@@ -38,19 +66,20 @@ export function AuthGateProvider({ children }: PropsWithChildren) {
     setOpen(true)
   }, [dispatch, state.session.user])
 
-  const handleLogin = useCallback((user: PrototypeUser) => {
-    dispatch(createLoginAction(user))
-    dispatch({ type: 'PENDING_ACTION_REPLAY' })
-    setOpen(false)
-    pushToast('登录成功，已恢复刚才的操作。', 'success')
-  }, [dispatch, pushToast])
-
   const closeLogin = useCallback(() => setOpen(false), [])
+  useEffect(() => {
+    if (state.session.user) setOpen(false)
+  }, [state.session.user])
   const value = useMemo(() => ({ requireLogin, closeLogin }), [closeLogin, requireLogin])
   return (
     <AuthGateContext.Provider value={value}>
       {children}
-      <AuthModal open={open} onClose={closeLogin} onLogin={handleLogin} comparisonCount={state.comparisonProjectIds.length} />
+      <AuthModal
+        open={open}
+        onClose={closeLogin}
+        comparisonCount={state.comparisonProjectIds.length}
+        returnTo={state.pendingAction?.sourcePath ?? '/projects'}
+      />
     </AuthGateContext.Provider>
   )
 }
@@ -61,7 +90,15 @@ export function useAuthGate() {
   return context
 }
 
-export function LoginGate({ action, onAuthorized, children }: { action: PendingAction; onAuthorized: () => void; children: (run: () => void) => ReactNode }) {
+export function LoginGate({
+  action,
+  onAuthorized,
+  children,
+}: {
+  action: PendingAction
+  onAuthorized: () => void
+  children: (run: () => void) => ReactNode
+}) {
   const { requireLogin } = useAuthGate()
   return <>{children(() => requireLogin(action, onAuthorized))}</>
 }

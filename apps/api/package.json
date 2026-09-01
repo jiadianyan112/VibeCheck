@@ -1,0 +1,32 @@
+{
+  "name": "@vibecheck/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@vibecheck/analytics": "*",
+    "@vibecheck/catalog": "*",
+    "@vibecheck/config": "*",
+    "@vibecheck/comparison": "*",
+    "@vibecheck/community": "*",
+    "@vibecheck/contracts": "*",
+    "@vibecheck/database": "*",
+    "@vibecheck/evidence": "*",
+    "@vibecheck/identity": "*",
+    "@vibecheck/media": "*",
+    "@vibecheck/observability": "*",
+    "@vibecheck/private-material": "*",
+    "@vibecheck/search": "*",
+    "@vibecheck/submission": "*",
+    "@vibecheck/workflow": "*"
+  }
+}

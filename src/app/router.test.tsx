@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from './providers'
 import { appRoutes } from './router'
@@ -25,10 +26,24 @@ describe('application route skeleton', () => {
     ['/project/project-quizforge', '题练工坊'],
     ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/submit', '发布作品'],
-    ['/auth?from=%2Fsubmit', '登录／注册'],
+    ['/auth?return_to=%2Fsubmit', '登录／注册'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+  })
+
+  it('keeps the protected-action login dialog inside router context', async () => {
+    const user = userEvent.setup()
+    renderRoute('/project/project-pdfquizlab')
+
+    await user.click(await screen.findByRole('button', { name: '收藏' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '登录后继续刚才的操作' })
+    expect(within(dialog).getByRole('link', { name: '使用邮箱验证码登录' })).toHaveAttribute(
+      'href',
+      '/auth?return_to=%2Fproject%2Fproject-pdfquizlab',
+    )
+    expect(screen.queryByText('页面出现问题')).not.toBeInTheDocument()
   })
 
   it('shows a useful error for an unknown project id', async () => {
@@ -53,7 +68,7 @@ describe('application route skeleton', () => {
     expect(screen.getByRole('search')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '发布' })).toHaveAttribute(
       'href',
-      '/auth?from=%2Fsubmit',
+      '/auth?return_to=%2Fsubmit',
     )
   })
 
@@ -73,9 +88,22 @@ describe('application route skeleton', () => {
     expect(await screen.findByRole('heading', { name: '编辑 题练工坊' })).toBeInTheDocument()
   })
 
-  it('redirects a guest admin request to the identity simulator', async () => {
+  it('redirects authorized staff from evidence management to the admin dashboard', async () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
+    renderRoute('/admin/evidence')
+    expect(await screen.findByRole('heading', { name: '后台首页／数据看板' })).toBeInTheDocument()
+  })
+
+  it('does not expose evidence management in the admin navigation', () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[2]!)))
+    renderRoute('/admin')
+    const adminNavigation = screen.getByRole('navigation', { name: '后台导航' })
+    expect(within(adminNavigation).queryByRole('link', { name: '证据管理' })).not.toBeInTheDocument()
+  })
+
+  it('redirects a guest admin request to email OTP login', async () => {
     renderRoute('/admin/projects')
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
   })
 })

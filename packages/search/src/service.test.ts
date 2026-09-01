@@ -1,0 +1,285 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+
+import { SearchError } from './errors.js'
+import { SearchService } from './service.js'
+import type {
+  CreateStoredSearchInput,
+  ExistingStoredSearchInput,
+  QueryAccessResult,
+  SearchStore,
+  StoredQuerySnapshot,
+  StoredQueryProjection,
+  StoredSearchExecution,
+} from './store.js'
+import type { SearchCommand, SearchSubject } from './types.js'
+
+const now = new Date('2026-08-12T00:00:00.000Z')
+const owner: SearchSubject = Object.freeze({
+  kind: 'anonymous',
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+})
+
+function execution(input: CreateStoredSearchInput, nextOffset: number | null): StoredSearchExecution {
+  return Object.freeze({
+    queryId: input.queryId,
+    intentVersion: 1,
+    parserVersion: 'keyword.v1',
+    resultVersion: '91000000-0000-4000-8000-000000000001',
+    rankingVersion: 'search.keyword.v1',
+    categoryId: input.categoryId,
+    filters: input.filters,
+    sort: input.sort,
+    semanticDegraded: true,
+    exactCount: 1,
+    adjacentCount: nextOffset === null ? 0 : 1,
+    expiresAt: input.expiresAt,
+    items: Object.freeze([Object.freeze({
+      project_id: '10000000-0000-4000-8000-000000000002',
+      category_id: 'personal_site_portfolio',
+      result_item_id: '92000000-0000-4000-8000-000000000001',
+      group_id: 'exact',
+      group_position: 1,
+      global_position: 1,
+      channel: 'search_exact',
+      reason_json: Object.freeze({
+        matched_fields: Object.freeze(['project_core.current_name']),
+        unmatched_soft_fields: Object.freeze([]),
+        relaxed_fields: Object.freeze([]),
+        evidence_freshness: 'valid',
+        reason_template_key: 'search.match.exact',
+      }),
+    })]),
+    nextOffset,
+  })
+}
+
+class FakeStore implements SearchStore {
+  created: CreateStoredSearchInput | null = null
+  access: QueryAccessResult = Object.freeze({ kind: 'missing' })
+  rateAllowed = true
+
+  async consumeRawQueryRateLimit() {
+    return Object.freeze({ allowed: this.rateAllowed, retryAfterSeconds: 60 })
+  }
+
+  async createSearch(input: CreateStoredSearchInput): Promise<StoredSearchExecution> {
+    this.created = input
+    this.access = Object.freeze({
+      kind: 'active',
+      snapshot: Object.freeze({
+        query_id: input.queryId,
+        owner_subject_kind: input.subjectKind,
+        owner_subject_hash: input.subjectHash,
+        encrypted_data_key: input.encryptedQuery.encryptedDataKey,
+        data_key_iv: input.encryptedQuery.dataKeyIv,
+        data_key_auth_tag: input.encryptedQuery.dataKeyAuthTag,
+        raw_query_ciphertext: input.encryptedQuery.ciphertext,
+        raw_query_iv: input.encryptedQuery.iv,
+        raw_query_auth_tag: input.encryptedQuery.authTag,
+        encryption_key_version: input.encryptionKeyVersion,
+        mode: input.mode,
+        category_id: input.categoryId,
+        active_intent_version: 1,
+        status: 'active',
+        expires_at: input.expiresAt,
+        active_filter_snapshot: input.filters,
+      } satisfies StoredQuerySnapshot),
+    })
+    return execution(input, 1)
+  }
+
+  async getAuthorizedQuery(): Promise<QueryAccessResult> {
+    return this.access
+  }
+
+  async searchExisting(input: ExistingStoredSearchInput): Promise<StoredSearchExecution> {
+    assert.equal(input.rawQuery, 'Northstar Portfolio')
+    assert.equal(input.offset, 1)
+    assert.deepEqual(input.filters.category_fields, { site_type: ['portfolio'] })
+    return Object.freeze({ ...execution(this.created!, null), items: Object.freeze([]) })
+  }
+
+  async readQuerySnapshot(): Promise<StoredQueryProjection> {
+    const created = this.created!
+    return Object.freeze({
+      queryId: created.queryId,
+      mode: created.mode,
+      categoryId: created.categoryId,
+      intent: Object.freeze({ mode: 'search', hard_filters: created.filters }),
+      confidence: Object.freeze({ overall: 'not_applicable' }),
+      intentVersion: 1,
+      parserVersion: 'keyword.v1',
+      resultVersion: '91000000-0000-4000-8000-000000000001',
+      rankingVersion: 'search.keyword.v1',
+      filters: created.filters,
+      sort: created.sort,
+      semanticDegraded: true,
+      exactCount: 1,
+      adjacentCount: 0,
+      version: 1,
+      expiresAt: created.expiresAt,
+    })
+  }
+
+  async getIdentityLink() {
+    return Object.freeze({
+      identityLinkId: '93000000-0000-4000-8000-000000000001',
+      anonymousSubjectId: owner.id,
+      userId: '94000000-0000-4000-8000-000000000001',
+      purpose: 'query_continuation' as const,
+      status: 'active' as const,
+      expiresAt: new Date('2026-08-12T00:05:00.000Z'),
+    })
+  }
+
+  async linkQuery() {
+    return Object.freeze({
+      authorized: true as const,
+      version: 2,
+      expiresAt: this.created!.expiresAt,
+    })
+  }
+
+  async unlinkQuery() {}
+  async invalidateQuery() {}
+  async createNavigationContext(input:Parameters<SearchStore['createNavigationContext']>[0]){
+    return Object.freeze({
+      navigation_context_id:'95000000-0000-4000-8000-000000000001',
+      click_id:'96000000-0000-4000-8000-000000000001',project_id:input.token.projectId,
+      result_item_id:input.token.resultItemId,position:input.token.position,channel:input.token.channel,
+      group_id:input.token.groupId,ranking_version:input.token.rankingVersion,
+      expires_at:input.token.expiresAt.toISOString(),
+      navigation_url:`/project/${input.token.projectId}?navigation_context_id=95000000-0000-4000-8000-000000000001`,
+      deduplicated:false,
+    })
+  }
+  async consumeNavigationContext(){return null}
+}
+
+function service(store: SearchStore): SearchService {
+  return new SearchService({
+    store,
+    config: Object.freeze({
+      encryptionMasterKey: Buffer.alloc(32, 8).toString('base64'),
+      encryptionKeyVersion: 'test-v1',
+      subjectHashPepper: 'search-subject-hash-pepper-at-least-32-characters',
+      resultTokenSecret: 'search-result-token-secret-at-least-32-characters',
+      snapshotTtlSeconds: 86_400,
+      pageSize: 1,
+      maximumStoredResults: 10,
+      rawQueryLimit: 30,
+      rawQueryRateWindowSeconds: 900,
+    }),
+    now: () => now,
+    identityAttestor:{
+      attestSubject:()=>Object.freeze({
+        metricSubjectId:'97000000-0000-4000-8000-000000000001',
+        subjectRefHash:Buffer.alloc(32,7),bridgeVersion:1,
+      }),
+    },
+  })
+}
+
+function rawCommand(): SearchCommand {
+  return Object.freeze({
+    query: 'Northstar Portfolio',
+    queryId: null,
+    mode: 'search',
+    categoryId: 'personal_site_portfolio',
+    filters: { category_fields: { site_type: ['portfolio'] } },
+    sort: 'relevance',
+    cursor: null,
+    locale: 'zh-CN',
+    rateLimitKey: '127.0.0.1',
+  })
+}
+
+test('raw keyword search creates an encrypted owner-bound snapshot and omits plaintext from projection', async () => {
+  const store = new FakeStore()
+  const result = await service(store).search(rawCommand(), owner)
+  assert.equal(result.semantic_degraded, true)
+  assert.equal(result.groups[0]?.items[0]?.position, 1)
+  assert.ok(result.next_cursor)
+  assert.equal(JSON.stringify(result).includes('Northstar Portfolio'), false)
+  assert.equal(store.created?.rawQuery, 'Northstar Portfolio')
+  assert.equal(store.created?.encryptedQuery.ciphertext.includes(Buffer.from('Northstar Portfolio')), false)
+
+  const replay = await service(store).search(Object.freeze({
+    ...rawCommand(),
+    query: null,
+    queryId: result.query_id,
+    cursor: result.next_cursor,
+    filters: undefined,
+  }), owner)
+  assert.equal(replay.result_version, result.result_version)
+})
+
+test('creates an owner-bound navigation attempt only from the signed frozen result item',async()=>{
+  const store=new FakeStore()
+  const instance=service(store)
+  const result=await instance.search(rawCommand(),owner)
+  const item=result.groups[0]!.items[0]!
+  const navigation=await instance.createNavigationContext({
+    resultItemToken:item.result_item_token,sourcePage:'P05',
+    clickRequestId:'98000000-0000-4000-8000-000000000001',
+  },owner)
+  assert.equal(navigation.project_id,item.project_id)
+  assert.equal(navigation.position,item.position)
+  assert.equal(navigation.deduplicated,false)
+  await assert.rejects(
+    instance.createNavigationContext({
+      resultItemToken:item.result_item_token,sourcePage:'P05',clickRequestId:'invalid',
+    },owner),
+    (error:unknown)=>error instanceof SearchError&&error.code==='CLICK_REQUEST_ID_INVALID',
+  )
+})
+
+test('expired query snapshots and discover mode fail explicitly', async () => {
+  const store = new FakeStore()
+  store.access = Object.freeze({ kind: 'gone' })
+  await assert.rejects(
+    service(store).search(Object.freeze({
+      ...rawCommand(),
+      query: null,
+      queryId: '90000000-0000-4000-8000-000000000001',
+    }), owner),
+    (error: unknown) => error instanceof SearchError && error.code === 'QUERY_GONE',
+  )
+  await assert.rejects(
+    service(store).search(Object.freeze({ ...rawCommand(), mode: 'discover' }), owner),
+    (error: unknown) => error instanceof SearchError && error.code === 'SEARCH_DISCOVER_NOT_IMPLEMENTED',
+  )
+})
+
+test('raw query rate limiting fails before a QuerySnapshot is created', async () => {
+  const store = new FakeStore()
+  store.rateAllowed = false
+  await assert.rejects(
+    service(store).search(rawCommand(), owner),
+    (error: unknown) => error instanceof SearchError &&
+      error.code === 'SEARCH_RATE_LIMITED' && error.retryAfterSeconds === 60,
+  )
+  assert.equal(store.created, null)
+})
+
+test('query recovery returns only structured state and a logged-in user can link once', async () => {
+  const store = new FakeStore()
+  const search = service(store)
+  const created = await search.search(rawCommand(), owner)
+  const recovered = await search.getQuerySnapshot(created.query_id, owner, 'request_query_read')
+  assert.equal(recovered.input_state, 'not_restored')
+  assert.equal(recovered.notice_key, 'search.conditions_restored')
+  assert.equal(JSON.stringify(recovered).includes('Northstar Portfolio'), false)
+
+  const linked = await search.linkQuery(created.query_id, {
+    identityLinkId: '93000000-0000-4000-8000-000000000001',
+    expectedVersion: 1,
+    operationId: '95000000-0000-4000-8000-000000000001',
+  }, {
+    kind: 'user',
+    id: '94000000-0000-4000-8000-000000000001',
+  }, 'request_query_link')
+  assert.equal(linked.version, 2)
+  assert.equal(linked.expires_at, created.expires_at)
+})

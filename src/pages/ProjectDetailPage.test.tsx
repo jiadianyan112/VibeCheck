@@ -3,11 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from '../components'
 import { AuthGateProvider, ComparisonProvider } from '../features'
-import { AppStateProvider } from '../state'
+import { prototypeUsers } from '../mocks'
+import { AppStateProvider, useAppState } from '../state'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
+function SessionSyncProbe() {
+  const { dispatch } = useAppState()
+  return <button onClick={() => { dispatch({ type: 'SESSION_SYNCED', user: prototypeUsers[0]! }); dispatch({ type: 'PENDING_ACTION_REPLAY' }) }}>模拟服务端登录</button>
+}
+
 function renderProject(id: string) {
-  return render(<MemoryRouter initialEntries={[`/project/${id}`]}><AppStateProvider><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={[`/project/${id}`]}><AppStateProvider><SessionSyncProbe /><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
 }
 
 describe('ProjectDetailPage hero', () => {
@@ -16,6 +22,7 @@ describe('ProjectDetailPage hero', () => {
   it('shows current status, verification time and verified creator above the fold', async () => {
     renderProject('project-quizforge')
     expect(await screen.findByRole('heading', { name: '题练工坊' })).toBeInTheDocument()
+    expect(screen.getByLabelText('暂无公开图片')).toBeInTheDocument()
     expect(screen.getAllByText('正常可访问').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/核验于 2026年7月28日/).length).toBeGreaterThan(0)
     expect(screen.getByText('已关联验证作者')).toBeInTheDocument()
@@ -50,7 +57,7 @@ describe('ProjectDetailPage hero', () => {
   it('toggles collection directly without opening follow settings', async () => {
     const user = userEvent.setup(); renderProject('project-quizforge')
     await user.click(await screen.findByRole('button', { name: '收藏' }))
-    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    await user.click(screen.getByRole('button', { name: '模拟服务端登录' }))
     const cancel = await screen.findByRole('button', { name: '取消收藏' })
     expect(cancel).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByText('收藏设置')).not.toBeInTheDocument()
@@ -174,7 +181,7 @@ describe('ProjectDetailPage discussion interactions', () => {
     await user.click(screen.getByRole('button', { name: '发布评论' }))
     expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
     expect(screen.getByLabelText('评论内容')).toHaveValue('OCR 超时时是否会保留已经识别的段落？')
-    await user.click(screen.getByRole('button', { name: /米娅/ }))
+    await user.click(screen.getByRole('button', { name: '模拟服务端登录' }))
     const posted = await screen.findByText('OCR 超时时是否会保留已经识别的段落？')
     expect(within(posted.closest('.comment-card') as HTMLElement).getByText('开发问题')).toBeInTheDocument()
     expect(screen.getByLabelText('评论内容')).toHaveValue('')
@@ -239,9 +246,13 @@ describe('ProjectDetailPage trust variants', () => {
   })
 
   it('exposes supplement, report and evidence entry points', async () => {
+    const user = userEvent.setup()
     renderProject('project-quizforge')
     expect(await screen.findByRole('link', { name: '补充作品信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
-    expect(screen.getByText('报告状态问题')).toBeInTheDocument()
+    await user.click(screen.getByText('状态说明'))
+    expect(screen.getByText('这里仅说明当前状态，不会发起变更。需要补充或纠正信息时，请使用“补充作品信息”。')).toBeInTheDocument()
+    expect(screen.queryByText('提交后会进入人工核对，核对完成前不会更改当前状态。')).not.toBeInTheDocument()
+    expect(screen.queryByText('报告状态问题')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /展开本作品证据/ })).toBeInTheDocument()
   })
 })

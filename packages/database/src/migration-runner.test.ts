@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+import { describe, it } from 'node:test'
+import { discoverMigrations } from './migration-runner.js'
+
+describe('discoverMigrations', () => {
+  it('returns ordered migrations with stable sha256 checksums', async () => {
+    const migrations = await discoverMigrations(resolve('../../db/migrations'))
+    assert.deepEqual(
+      migrations.map((migration) => migration.name),
+      [
+        '000001_extensions_and_schemas.sql',
+        '000002_platform_foundation.sql',
+        '000003_identity_access.sql',
+        '000004_catalog_public_read.sql',
+        '000005_search_keyword.sql',
+        '000006_query_snapshot_lifecycle.sql',
+        '000007_admin_project_import.sql',
+        '000008_search_structured_fts.sql',
+        '000009_asset_resolution_security.sql',
+        '000010_comparison_core.sql',
+        '000011_comparison_merge_conflicts.sql',
+        '000012_pending_actions.sql',
+        '000013_community_interactions.sql',
+        '000014_community_comments.sql',
+        '000015_analytics_client_ingest.sql',
+        '000016_submission_entry_and_drafts.sql',
+        '000017_review_work_item_leases.sql',
+        '000018_media_and_evidence_drafts.sql',
+        '000019_submission_preview_and_submit.sql',
+        '000020_submission_withdrawal.sql',
+        '000021_submission_revision_drafts.sql',
+        '000022_admin_operation_security.sql',
+        '000023_review_decisions.sql',
+        '000024_submission_publication.sql',
+        '000025_notifications.sql',
+        '000026_submission_asset_security_gate.sql',
+        '000027_link_permission_profiles.sql',
+        '000028_creator_account_links.sql',
+        '000029_project_update_drafts.sql',
+        '000030_project_update_review_entry.sql',
+        '000031_project_update_review_decisions.sql',
+        '000032_project_update_application.sql',
+        '000033_verification_request_drafts.sql',
+        '000034_verification_material_control_plane.sql',
+        '000035_verification_material_scan_polling.sql',
+        '000036_author_verification_lifecycle.sql',
+        '000037_ownership_dispute_lifecycle.sql',
+        '000038_discovery_taxonomy_and_public_feed.sql',
+        '000039_search_navigation_attribution.sql',
+      '000040_retire_comparison_login_merge.sql',
+      '000041_public_media_upload_control_plane.sql',
+      ],
+    )
+    for (const migration of migrations) {
+      assert.match(migration.checksumSha256, /^[a-f0-9]{64}$/)
+      assert.ok(migration.sql.length > 100)
+    }
+  })
+})

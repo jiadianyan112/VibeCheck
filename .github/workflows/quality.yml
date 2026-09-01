@@ -1,0 +1,120 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: vibecheck
+          POSTGRES_USER: vibecheck
+          POSTGRES_PASSWORD: vibecheck_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibecheck -d vibecheck"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://vibecheck:vibecheck_ci_only@127.0.0.1:5432/vibecheck
+      DATABASE_SSL: "false"
+      WEB_ORIGINS: http://localhost:5173
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run contracts:check
+      - run: npm run deployment:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:foundation
+      - run: npm run build
+        env:
+          NODE_ENV: production
+      - run: npm run frontend:copy-check
+      - run: npm run frontend:budget
+      - name: Verify migrations are repeatable
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 41) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+      - name: Verify synthetic catalog fixture and PostgreSQL projections
+        run: |
+          npm run catalog:fixture:load
+          npm run catalog:fixture:load
+          npm run catalog:fixture:verify
+      - name: Verify versioned taxonomy, canonical topics and public cross-project event feed
+        run: npm run catalog:discovery:verify
+      - name: Verify immutable LinkPermissionProfile deployment baseline against PostgreSQL
+        run: npm run catalog:profile:verify
+      - name: Verify CreatorAccountLink constraints and author authorization chain
+        run: npm run catalog:authorization:verify
+      - name: Verify ProjectUpdate draft authorization and public-fact isolation
+        run: npm run catalog:project-update:verify
+      - name: Verify audited admin project importer does not publish catalog facts
+        run: npm run catalog:admin:import:verify
+      - name: Verify SSRF-safe asset resolution receipts against PostgreSQL
+        run: npm run catalog:asset:resolve:verify
+      - name: Verify versioned comparison invariants against PostgreSQL
+        run: npm run comparison:fixture:verify
+      - name: Verify session-bound analytics and trusted comparison completion against PostgreSQL
+        run: npm run analytics:fixture:verify
+      - name: Verify idempotent community interactions against PostgreSQL
+        run: npm run community:fixture:verify
+      - name: Verify encrypted pending-action login replay against PostgreSQL
+        run: npm run identity:pending:verify
+      - name: Verify owner-bound keyword search against PostgreSQL
+        run: npm run search:fixture:verify
+      - name: Verify URL-check and immutable submission-draft boundaries against PostgreSQL
+        run: npm run submission:fixture:verify
+      - name: Verify ready-resource reference guards and immutable unlink receipts against PostgreSQL
+        run: npm run media:fixture:verify
+      - name: Verify evidence draft binding, attachment isolation and deterministic completion against PostgreSQL
+        run: npm run evidence:fixture:verify
+      - name: Verify preview-bound submission freeze and review enqueue transaction against PostgreSQL
+        run: npm run submission:submit:fixture:verify
+      - name: Verify changes-requested revision cloning and immutable resubmission chain against PostgreSQL
+        run: npm run submission:revision:fixture:verify
+      - name: Verify review queue conflict filtering and lease recovery against PostgreSQL
+        run: npm run workflow:fixture:verify
+      - name: Verify admin preview, recent-auth challenge and one-time confirmation against PostgreSQL
+        run: npm run workflow:admin-security:fixture:verify
+      - name: Verify immutable Submission and ProjectUpdate review decisions with atomic security-token consumption
+        run: npm run workflow:review-decision:fixture:verify
+      - name: Verify owner-isolated VerificationRequest draft chains and idempotent autosave
+        run: npm run workflow:verification-request:fixture:verify
+      - name: Verify ownership dispute principal isolation, withdrawal history and atomic terminal decisions
+        run: npm run workflow:ownership-case:fixture:verify
+      - name: Verify encrypted private verification material control-plane transactions
+        run: npm run private-material:fixture:verify
+      - name: Verify scheduled GuardDuty polling, terminal scan results and expiry recovery
+        run: npm run private-material:scan:fixture:verify
+      - name: Verify idempotent approved-ProjectUpdate application and atomic catalog version advancement
+        run: npm run catalog:project-update:application:verify
+      - name: Verify idempotent ProjectUpdate search projection and recipient-isolated follower notifications
+        run: npm run worker:project-updated:fixture:verify
+      - name: Verify idempotent approved-Submission publication and atomic catalog promotion against PostgreSQL
+        run: npm run submission:publication:fixture:verify
+      - name: Verify recipient-isolated immutable in-app notifications against PostgreSQL
+        run: npm run community:notification:fixture:verify

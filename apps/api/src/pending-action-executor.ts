@@ -1,0 +1,76 @@
+import type {
+  CommentProjection,
+  CreateCommentCommand,
+  ProjectInteractionProjection,
+  SetProjectInteractionCommand,
+} from '@vibecheck/community'
+import { IdentityError, type PendingActionExecutionProjection } from '@vibecheck/identity'
+
+interface InteractionDomain {
+  setProjectInteraction(command: SetProjectInteractionCommand): Promise<ProjectInteractionProjection>
+  createComment(command: CreateCommentCommand): Promise<CommentProjection>
+}
+
+export interface PendingActionExecutorDependencies {
+  readonly community?: InteractionDomain
+}
+
+export type PendingActionExecutionResult =
+  | { readonly status: 'executed' }
+  | { readonly status: 'cancelled'; readonly reason: 'account_comparison_preserved' }
+
+export class PendingActionExecutor {
+  constructor(private readonly dependencies: PendingActionExecutorDependencies) {}
+
+  async execute(input: {
+    readonly action: PendingActionExecutionProjection
+    readonly userId: string
+    readonly identityLinkId: string
+    readonly requestId: string
+  }): Promise<PendingActionExecutionResult> {
+    const { action } = input
+    if (
+      action.payload.action_type === 'set_project_favorite' ||
+      action.payload.action_type === 'set_project_like' ||
+      action.payload.action_type === 'set_project_follow'
+    ) {
+      const community = this.requireCommunity()
+      await community.setProjectInteraction({
+        userId: input.userId,
+        projectId: action.payload.project_id,
+        targetType: 'project',
+        interactionType: action.payload.action_type.replace('set_project_', ''),
+        state: action.payload.state,
+        clientRequestId: action.client_request_id,
+      })
+      return Object.freeze({ status: 'executed' })
+    }
+    if (action.payload.action_type === 'create_comment') {
+      const community = this.requireCommunity()
+      await community.createComment({
+        userId: input.userId,
+        projectId: action.payload.project_id,
+        body: action.payload.body,
+        parentCommentId: action.payload.parent_comment_id,
+        clientRequestId: action.client_request_id,
+      })
+      return Object.freeze({ status: 'executed' })
+    }
+    if (action.payload.action_type === 'save_comparison') {
+      return Object.freeze({ status: 'cancelled', reason: 'account_comparison_preserved' })
+    }
+    if (action.payload.action_type === 'start_submission') {
+      // Login is the only protected effect. The trusted return_to opens P10/P11;
+      // URL checking and draft creation remain explicit authenticated operations.
+      return Object.freeze({ status: 'executed' })
+    }
+    throw new IdentityError('PENDING_ACTION_EXECUTION_NOT_IMPLEMENTED', 501, false)
+  }
+
+  private requireCommunity(): InteractionDomain {
+    if (!this.dependencies.community) {
+      throw new IdentityError('PENDING_ACTION_EXECUTION_UNAVAILABLE', 503, true)
+    }
+    return this.dependencies.community
+  }
+}

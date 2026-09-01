@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { installMockAuth } from './support/mock-auth'
 
 test.describe('T55 键盘与焦点', () => {
   test('Modal 和 Drawer 限制焦点并在关闭后恢复触发点', async ({ page, isMobile }) => {
@@ -65,9 +66,20 @@ test.describe('T55 键盘与焦点', () => {
 
   test('键盘进入发布表单，校验错误与控件建立关联', async ({ page, isMobile }) => {
     test.skip(isMobile, '响应式发布流程已在 T54 覆盖，这里验证键盘语义')
-    await page.goto('/auth?from=%2Fsubmit')
-    const login = page.getByRole('button', { name: '使用米娅账号' })
-    await login.focus()
+    await installMockAuth(page, { submission: true })
+    await page.goto('/auth?return_to=%2Fsubmit')
+    const email = page.getByRole('textbox', { name: '邮箱地址' })
+    await email.focus()
+    await page.keyboard.insertText('mia@example.test')
+    const sendCode = page.getByRole('button', { name: '发送验证码' })
+    await sendCode.focus()
+    await page.keyboard.press('Enter')
+    const otp = page.getByRole('textbox', { name: '6 位验证码' })
+    await expect(otp).toBeVisible()
+    await otp.focus()
+    await page.keyboard.insertText('123456')
+    const verify = page.getByRole('button', { name: '验证并登录' })
+    await verify.focus()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/submit$/)
 
@@ -84,6 +96,9 @@ test.describe('T55 键盘与焦点', () => {
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
     await expect(page.getByRole('button', { name: '保存并继续' })).toBeVisible()
 
+    const name = page.getByRole('textbox', { name: '作品名称' })
+    await name.focus()
+    await page.keyboard.insertText('键盘发布作品')
     const definition = page.getByLabel('一句话定义')
     await definition.fill('')
     const next = page.getByRole('button', { name: '保存并继续' })

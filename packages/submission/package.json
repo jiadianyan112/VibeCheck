@@ -1,0 +1,28 @@
+{
+  "name": "@vibecheck/submission",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "fixture:verify": "tsx src/testing/verify-submission-fixture.ts",
+    "fixture:submit:verify": "tsx src/testing/verify-submission-submit-fixture.ts",
+    "fixture:revision:verify": "tsx src/testing/verify-submission-revision-fixture.ts",
+    "fixture:publication:verify": "tsx src/testing/verify-submission-publication-fixture.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@vibecheck/catalog": "*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}

@@ -7,7 +7,6 @@ const adminNavigation = [
   { to: '/admin/duplicates', label: '重复与合并' },
   { to: '/admin/reviews', label: '发布审核' },
   { to: '/admin/author-verification', label: '作者身份审核' },
-  { to: '/admin/evidence', label: '证据管理' },
   { to: '/admin/status-monitor', label: '状态监测' },
 ]
 

@@ -1,10 +1,16 @@
-# VibeCheck 低保真原型
+# VibeCheck 低保真原型与正式 MVP 开发基线
 
-VibeCheck 是面向 Vibe Coding 创作者的作品发现、比较、发布与生命周期资产平台。本仓库是在既有 AI 学习与题库原型上扩展的多品类低保真 Web 原型：原品类完整保留，并新增公开可访问、由 AI 编程工具辅助开发的个人主页与作品集。
+VibeCheck 是面向 Vibe Coding 创作者的作品发现、比较、发布与生命周期资产平台。本仓库包含多品类低保真 Web 原型，以及正在按正式契约建设的 API、数据库和 Worker 基础。原型覆盖与正式 MVP 进度是两套口径：低保真页面可以先于真实服务完成，不能据此推断正式 MVP 已上线。
+
+## 当前交付口径
+
+- **低保真原型**：P01–P18 和主要后台路径已有可运行页面、固定场景与原型测试覆盖，主要用于确认信息架构、交互和视觉验收。
+- **正式 MVP**：第 0–4 步已取得绿色基线；第 5 步后端切片 5.1–5.5 已在 `0067aaa` 取得绿色 PostgreSQL 验收，GitHub Actions Run [#32691188138](https://github.com/jiadianyan112/VibeCheck/actions/runs/32691188138) 成功。该 Run 两次执行 41 个 append-only migrations，并通过 URL-check、Media、Evidence、Submission、Workflow、ProjectUpdate、首次发布和通知后端链路；5.6 真实前端 E2E 尚未开始，WP-05A 的 AWS Staging/production flag 也尚未验收。第 6 步目前只有后端基础，正式前端闭环尚未开始。
+- **完成判定**：原型验收不等于正式 MVP 验收；正式 MVP 只按对应 PostgreSQL fixture、API/Worker 契约、权限与真实前端 E2E 证据关闭。
 
 ## 环境要求
 
-- Node.js 22 或更高版本。
+- Node.js 24.14.1，或满足 `>=24.14.1 <25` 的版本（以 `package.json` 为准）。
 - npm 10 或更高版本。
 - Chromium、Chrome、Edge 等现代浏览器。
 
@@ -47,7 +53,7 @@ npm run test:e2e
 npm run build
 ```
 
-- 单元／组件测试：60 个文件、273 项测试。
+- 单元／组件测试数量随提交和依赖变化，不在 README 固定数字；以 `npm test` 与 `npm run test:foundation` 的当前输出为准。
 - Playwright：四条核心流程、U01–U06、响应式、固定场景、axe 和键盘回归。
 - E2E 启动 preview 前会自动生产构建；失败时在 `test-results/` 保留截图和 trace，并生成 `playwright-report/`。
 - 单独运行六个原型任务：`npx playwright test e2e/prototype-tasks.spec.ts --project=desktop-chromium`。
@@ -90,7 +96,7 @@ npm run build
 - 列表滚动位置保存在当前标签页的 `sessionStorage`。
 - “重置场景与原型数据”只清除上述原型状态，不访问远程服务。
 
-## 已实现范围
+## 低保真原型覆盖
 
 - 作品广场、分类、动态、搜索、查同类、详情、比较、行动记录。
 - 发布前地址检查、重复分流、四步结构化发布、审核状态和首次发布事件。
@@ -100,9 +106,11 @@ npm run build
 - 360、390、768 与桌面响应式；WCAG A/AA axe 核心审计与键盘主任务。
 - 固定成功、空、未知、过期、争议、异常、权限和服务失败状态。
 
-## 明确排除范围
+## 当前边界与未接入能力
 
-不实现真实后端、生产数据库、真实认证、网页抓取、模型调用、真实状态监测、消息推送、支付、私信、粉丝等级、排行榜、复杂推荐、商业成功判断或品牌视觉定稿。跨品类只共享 ProjectCore 和通用入口，不伪造品类专属关系。所有请求、审核与异常均由前端固定数据模拟。
+当前原型路由默认使用 `src/mocks/` 和浏览器本地状态；尚未接入正式 MVP 的页面不能被理解为已经连接真实后端、生产数据库、认证或 Worker。正式 MVP 的后端基础位于 `apps/**` 与 `packages/**`，仍须按开发计划逐切片接入和验收。
+
+网页抓取、模型调用、生产状态监测、站外消息推送、支付、私信、粉丝等级、排行榜、复杂推荐、商业成功判断和品牌视觉定稿不属于首期 P0；这些边界不改变已提交的正式后端开发计划。跨品类只共享 ProjectCore 和通用入口，不伪造品类专属关系。
 
 ## 已知限制
 

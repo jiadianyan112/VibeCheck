@@ -1,10 +1,17 @@
 import { expect, test, type Page } from '@playwright/test'
+import { installMockAuth } from './support/mock-auth'
 
 const viewports = [
   { width: 360, height: 800 },
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
-  { width: 1280, height: 900 },
+  { width: 1440, height: 900 },
+]
+
+const comparisonSummaryViewports = [
+  { width: 390, height: 844 },
+  { width: 768, height: 1024 },
+  { width: 1440, height: 900 },
 ]
 
 const criticalRoutes = [
@@ -33,12 +40,6 @@ async function expectNoPageOverflow(page: Page, context: string) {
   expect(layout.page, `${context}: ${JSON.stringify(layout.offenders)}`).toBeLessThanOrEqual(layout.viewport + 1)
 }
 
-async function loginAsMia(page: Page, returnPath: string) {
-  await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
-  await page.getByRole('button', { name: '使用米娅账号' }).click()
-  await expect(page).toHaveURL(new RegExp(`${returnPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
-}
-
 async function bringAboveFixedBar(page: Page, target: ReturnType<Page['locator']>) {
   await target.scrollIntoViewIfNeeded()
   const overlap = await page.evaluate(() => {
@@ -49,6 +50,42 @@ async function bringAboveFixedBar(page: Page, target: ReturnType<Page['locator']
 }
 
 test.describe('T54 响应式关键路径', () => {
+  test('390、768 和 1440px 的比较摘要栏保持紧凑，Drawer 和页尾动作可达', async ({ page }) => {
+    for (const viewport of comparisonSummaryViewports) {
+      await page.setViewportSize(viewport)
+      await page.goto('/about')
+      await page.waitForLoadState('networkidle')
+
+      const compareBar = page.getByRole('complementary', { name: '当前比较栏' })
+      await expect(compareBar).toBeVisible()
+      const compareBarBox = await compareBar.boundingBox()
+      expect(compareBarBox, `${viewport.width}px 比较摘要栏应有几何信息`).not.toBeNull()
+      expect(compareBarBox!.height, `${viewport.width}px 比较摘要栏不得高于 64px`).toBeLessThanOrEqual(64)
+      expect(compareBarBox!.y + compareBarBox!.height, `${viewport.width}px 比较摘要栏应留在视口内`).toBeLessThanOrEqual(viewport.height)
+
+      const finalAction = page.getByRole('contentinfo').getByRole('link', { name: '了解收录规则' })
+      await finalAction.scrollIntoViewIfNeeded()
+      const finalActionGeometry = await page.evaluate(() => {
+        const action = document.querySelector<HTMLElement>('.site-footer a[href="/about"]')?.getBoundingClientRect()
+        const bar = document.querySelector('.compare-bar')?.getBoundingClientRect()
+        return action && bar ? { actionBottom: action.bottom, barTop: bar.top } : null
+      })
+      expect(finalActionGeometry, `${viewport.width}px 页尾动作与摘要栏均应存在`).not.toBeNull()
+      expect(finalActionGeometry!.actionBottom, `${viewport.width}px 页尾动作应滚动到摘要栏上方`).toBeLessThanOrEqual(finalActionGeometry!.barTop)
+
+      await compareBar.getByRole('button', { name: '查看作品' }).click()
+      const drawer = page.getByRole('dialog', { name: '已选作品' })
+      await expect(drawer).toBeVisible()
+      const drawerBox = await drawer.boundingBox()
+      expect(drawerBox, `${viewport.width}px Drawer 应有几何信息`).not.toBeNull()
+      expect(drawerBox!.x, `${viewport.width}px Drawer 不得越出左侧视口`).toBeGreaterThanOrEqual(0)
+      expect(drawerBox!.y, `${viewport.width}px Drawer 不得越出顶部视口`).toBeGreaterThanOrEqual(0)
+      expect(drawerBox!.x + drawerBox!.width, `${viewport.width}px Drawer 不得越出右侧视口`).toBeLessThanOrEqual(viewport.width)
+      expect(drawerBox!.y + drawerBox!.height, `${viewport.width}px Drawer 不得越出底部视口`).toBeLessThanOrEqual(viewport.height)
+      await expectNoPageOverflow(page, `${viewport.width}px 比较摘要 Drawer`)
+    }
+  })
+
   test('360、390、768 和桌面视口没有页面级横向滚动', async ({ page }) => {
     test.setTimeout(45_000)
     for (const viewport of viewports) {
@@ -99,7 +136,8 @@ test.describe('T54 响应式关键路径', () => {
 
   test('360px 可完成发布地址检查并进入发布步骤', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 })
-    await loginAsMia(page, '/submit')
+    const mockAuth = await installMockAuth(page, { submission: true })
+    await mockAuth.loginAs('mia', '/submit')
     await page.getByRole('textbox', { name: /^作品地址/ }).fill('example.test/mobile-publish')
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
@@ -111,6 +149,7 @@ test.describe('T54 响应式关键路径', () => {
 
   test('390px 弹层保持在视口内，后台显示窄屏提示并只在表格内滚动', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
+    const mockAuth = await installMockAuth(page)
     await page.goto('/project/project-pdfquizlab')
     await page.locator('.project-primary-actions').getByRole('button', { name: '收藏' }).click()
     const dialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
@@ -120,7 +159,9 @@ test.describe('T54 响应式关键路径', () => {
     expect(dialogBox!.x).toBeGreaterThanOrEqual(0)
     expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390)
     expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844)
-    await dialog.getByRole('button', { name: /米娅/ }).click()
+    await dialog.getByRole('link', { name: '使用邮箱验证码登录' }).click()
+    await expect(page).toHaveURL(/\/auth\?return_to=%2Fproject%2Fproject-pdfquizlab$/)
+    await mockAuth.loginCurrent('mia', '/project/project-pdfquizlab')
 
     const cancelCollection = page.locator('.project-primary-actions').getByRole('button', { name: '取消收藏' })
     await expect(cancelCollection).toHaveAttribute('aria-pressed', 'true')
@@ -130,9 +171,10 @@ test.describe('T54 响应式关键路径', () => {
     await cancelCollection.click()
     await expect(page.locator('.project-primary-actions').getByRole('button', { name: '收藏' })).toHaveAttribute('aria-pressed', 'false')
 
-    await page.goto('/auth?from=%2Fadmin%2Fprojects')
-    await page.getByRole('button', { name: '切换账号' }).click()
-    await page.getByRole('button', { name: '使用林舟账号' }).click()
+    await page.goto('/auth?return_to=%2Fadmin%2Fprojects')
+    await page.getByRole('button', { name: '退出登录' }).click()
+    await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
+    await mockAuth.loginCurrent('lin', '/admin/projects')
     await expect(page).toHaveURL(/\/admin\/projects$/)
     await expect(page.getByRole('note')).toContainText('后台按桌面工作台设计')
     await expect(page.locator('.admin-table-scroll')).toBeVisible()

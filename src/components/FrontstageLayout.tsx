@@ -4,7 +4,9 @@ import { isStaffRole } from '../features/auth/session'
 import { useAppState } from '../state'
 import { RouteScrollManager } from './RouteScrollManager'
 import { ScenarioPanel } from './ScenarioPanel'
+import { SiteFooter } from './SiteFooter'
 import { UnifiedSearchForm } from './UnifiedSearchForm'
+import { BrandMark } from './brand'
 
 const primaryNavigation = [
   { to: '/projects', label: '作品广场' },
@@ -17,8 +19,8 @@ function navClassName({ isActive }: { isActive: boolean }) {
   return isActive ? 'nav-link nav-link--active' : 'nav-link'
 }
 
-function restrictedPath(path: string, isLoggedIn: boolean, from: string) {
-  return isLoggedIn ? path : `/auth?from=${encodeURIComponent(from)}`
+function restrictedPath(path: string, isLoggedIn: boolean, returnTo: string) {
+  return isLoggedIn ? path : `/auth?return_to=${encodeURIComponent(returnTo)}`
 }
 
 function FrontstageContent() {
@@ -42,14 +44,15 @@ function FrontstageContent() {
     || location.pathname === '/auth'
     || location.pathname.endsWith('/verify-author')
     || location.pathname.endsWith('/update')
+  const hasCompareBar = !isFocusedFlow && state.comparisonProjectIds.length > 0
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
       <RouteScrollManager />
       <header className="global-header">
         <div className="global-header__inner">
           <Link className="wordmark" to="/projects" aria-label="VibeCheck 作品广场">
-            VibeCheck
+            <BrandMark />
           </Link>
           <nav className="desktop-navigation" aria-label="主导航">
             {primaryNavigation.map((item) => (
@@ -133,7 +136,11 @@ function FrontstageContent() {
       <div className="app-shell__content">
         <Outlet />
       </div>
-      {isFocusedFlow ? null : <FloatingCompareBar />}
+      <SiteFooter
+        submitPath={restrictedPath('/submit', isLoggedIn, '/submit')}
+        compact={isFocusedFlow}
+      />
+      {hasCompareBar ? <FloatingCompareBar /> : null}
       {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>
   )
