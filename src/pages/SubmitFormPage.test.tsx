@@ -536,7 +536,8 @@ describe('remote P11 draft GET/PATCH form', () => {
     const name = await screen.findByRole('textbox', { name: '作品名称' })
     expect(name).toHaveValue('服务端作品名称')
     expect(screen.getByText(/页面中识别到的名称：/).closest('p')).toHaveTextContent('服务端作品名称')
-    expect(screen.getByText('已同步')).toBeInTheDocument()
+    expect(screen.getByText('已保存到本机')).toBeInTheDocument()
+    expect(screen.queryByText('已同步')).not.toBeInTheDocument()
     expect(screen.queryByText('远端草稿')).not.toBeInTheDocument()
     expect(screen.queryByText('Atlas')).not.toBeInTheDocument()
     expect(screen.queryByText('PDF 题库页面模板')).not.toBeInTheDocument()
@@ -555,6 +556,8 @@ describe('remote P11 draft GET/PATCH form', () => {
 
     await waitFor(() => expect(router.state.location.search).toContain('step=definition'))
     expect(transport.requests.some((request) => request.init?.method === 'PATCH')).toBe(false)
+    expect(screen.getByText('已保存到本机')).toBeInTheDocument()
+    expect(screen.queryByText('已同步')).not.toBeInTheDocument()
     await waitFor(() => expect(persistedDraft()).toMatchObject({ version: 3, step: 'definition', draftId: draftUuid, fields: { currentName: '本地修改后的名称' } }))
   })
 

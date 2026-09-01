@@ -98,15 +98,15 @@ describe('AuthPage', () => {
     expect(screen.getByRole('heading', { name: '作品广场' })).toBeInTheDocument()
   })
 
-  it('describes the signed-in account without exposing session terminology', async () => {
+  it('describes the signed-in account in natural language', async () => {
     persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[0]!)))
     renderAuth('/auth')
 
     expect(await screen.findByRole('heading', { name: '当前账号' })).toBeInTheDocument()
-    expect(screen.getByText('你的登录状态由当前账户管理。')).toBeInTheDocument()
-    expect(screen.getByText('账户状态变化、退出或角色版本变化后，受保护操作会要求重新登录。')).toBeInTheDocument()
+    expect(screen.getByText('你已登录此账户。账户或权限发生变化后，需要重新登录。')).toBeInTheDocument()
+    expect(screen.getByText('你可以继续返回刚才的页面，或安全退出此账户。')).toBeInTheDocument()
     expect(screen.queryByText(/Session/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/服务器 Session/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/角色版本|受保护操作/)).not.toBeInTheDocument()
   })
 
   it('rejects unsafe external return paths', () => {

@@ -674,10 +674,10 @@ export function SubmitFormPage() {
           <strong className="submission-percent">{completion?.percent ?? 0}%</strong>
           <progress value={completion?.completed ?? 0} max={completion?.total ?? 10}>{completion?.percent ?? 0}%</progress>
           <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '1 基础信息', definition: '2 定位与用途', solution: '3 核心内容', development: '4 开发与资产' } as const)[item] : submissionFormStepLabels[item]}</li>)}</ol>
-          <p>内容先缓存在本机，保存后显示已同步</p>
+          <p>内容会先保存到本机，准备提交材料时才会同步到账户</p>
         </aside>
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">
-          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">已同步</Tag></div></div>
+          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">已保存到本机</Tag></div></div>
           {loadError ? <ErrorPanel title="已同步草稿未加载" message={loadError} onRetry={() => setLoadNonce((value) => value + 1)} /> : null}
           {saveError ? <ErrorPanel title={saveError.status === 409 ? '最新草稿发生冲突' : '草稿未保存'} message={saveError.status === 409 ? '已有更新，未覆盖你的输入。请先加载最新草稿，再合并后保存。' : saveError.message} onRetry={saveError.status === 409 || saveError.status === 410 || saveError.status === 422 ? undefined : retrySave} /> : null}
           {saveError?.status === 409 ? <Button type="button" onClick={reloadServerVersion}>加载最新草稿</Button> : null}
