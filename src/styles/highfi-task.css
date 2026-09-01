@@ -516,3 +516,114 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* P12: preview and review outcomes complete the shared submission workspace. */
+.app-shell .highfi-scope.submission-review-scope .submission-review-workspace {
+  min-width: 0;
+  gap: var(--space-5);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-review-aside {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-review-aside__note,
+.app-shell .highfi-scope.submission-review-scope .submission-receipt-note {
+  margin: 0;
+  color: var(--task-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section h2,
+.app-shell .highfi-scope.submission-review-scope .review-section h3,
+.app-shell .highfi-scope.submission-review-scope .review-section p {
+  margin-block: 0;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--state {
+  border-width: 2px;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--changes,
+.app-shell .highfi-scope.submission-review-scope .review-section--rejected {
+  border-style: dashed;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--approved {
+  border-color: var(--color-ink);
+  background: var(--brand-lime);
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--guidance,
+.app-shell .highfi-scope.submission-review-scope .review-section--preview-progress {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-preview-grid {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-card-preview__media {
+  min-height: 10rem;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid div {
+  min-width: 0;
+  border-top: 1px solid var(--task-line);
+  padding-top: var(--space-3);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid dt {
+  color: var(--task-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-message-list li {
+  align-items: flex-start;
+  border-color: var(--task-line);
+}
+
+.app-shell .highfi-scope.submission-review-scope .task-primary-actions {
+  position: static;
+  gap: var(--space-3);
+  border-top: 2px solid var(--task-line-strong);
+  background: transparent;
+  padding-top: var(--space-4);
+}
+
+@media (min-width: 46rem) {
+  .app-shell .highfi-scope.submission-review-scope .submission-preview-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-shell .highfi-scope.submission-review-scope .submission-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

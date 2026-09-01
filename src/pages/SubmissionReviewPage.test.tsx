@@ -243,6 +243,50 @@ describe('submission preview and review status', () => {
   beforeEach(() => { localStorage.clear(); configureServiceRuntime({ defaultDelayMs: 0 }); seedDraft() })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+  it('maps the preview into the six-stage task workspace without legacy panels', async () => {
+    const { container } = renderReview()
+
+    await screen.findByRole('heading', { name: '发布预览' })
+    const scope = container.querySelector('.highfi-scope.submission-review-scope')
+    const steps = scope?.querySelectorAll('.task-step-rail__item')
+
+    expect(scope).toBeInTheDocument()
+    expect(scope?.querySelector('.task-shell')).toBeInTheDocument()
+    expect(steps).toHaveLength(6)
+    expect([...steps ?? []].slice(0, 5).every((step) => step.getAttribute('data-step-state') === 'complete')).toBe(true)
+    expect(steps?.[5]).toHaveAttribute('data-step-id', 'preview')
+    expect(steps?.[5]).toHaveAttribute('aria-current', 'step')
+    expect(scope?.querySelector('.wire-panel')).not.toBeInTheDocument()
+  })
+
+  it('uses the shared preview and progress presentations before and after submission', async () => {
+    const user = userEvent.setup()
+    const { container } = renderReview()
+
+    await screen.findByRole('heading', { name: '发布预览' })
+    const scope = container.querySelector('.submission-review-scope')!
+    expect(scope.querySelector('.live-preview')).toBeInTheDocument()
+    expect(scope.querySelector('.status-beacon')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    expect(scope.querySelector('.status-beacon[data-status="progress"]')).toBeInTheDocument()
+    expect(scope.querySelector('.review-section--supplemental')).toBeInTheDocument()
+  })
+
+  it('keeps requested changes actionable inside the shared review workspace', async () => {
+    const user = userEvent.setup()
+    const { container } = renderReview('review_changes_requested')
+
+    await user.click(await screen.findByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    expect(await screen.findByRole('heading', { name: '审核状态：需修改' })).toBeInTheDocument()
+    const scope = container.querySelector('.submission-review-scope')!
+    expect(scope.querySelector('.status-beacon[data-status="warning"]')).toBeInTheDocument()
+    expect(scope.querySelector('.review-section--changes')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '修改后重新提交' })).toBeInTheDocument()
+  })
+
   it('confirms once, shows pending without a fabricated ETA, saves material and withdraws', async () => {
     const user = userEvent.setup()
     renderReview()
@@ -284,9 +328,10 @@ describe('submission preview and review status', () => {
     renderReview()
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
     expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('个人主页与作品集')
-    expect(screen.getByText('创作者身份').closest('div')).toHaveTextContent('开发者')
-    expect(screen.getByText('建站目的').closest('div')).toHaveTextContent('展示项目')
-    expect(screen.getByText('核心内容').closest('div')).toHaveTextContent('首屏、项目')
+    const previewSummary = screen.getByRole('heading', { name: '作品预览' }).closest('.review-section')!
+    expect(previewSummary).toHaveTextContent('创作者身份开发者')
+    expect(previewSummary).toHaveTextContent('建站目的展示项目')
+    expect(previewSummary).toHaveTextContent('核心内容首屏、项目')
     expect(screen.queryByText('目标用户')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
@@ -349,10 +394,9 @@ describe('submission preview and review status', () => {
     const submitRequests = transport.requests.filter((request) => request.url.endsWith('/submissions'))
     expect(submitRequests).toHaveLength(2)
     expect(submitRequests[1]?.body?.submission_key).toBe(firstSubmit?.body?.submission_key)
-    expect(screen.getByText(remoteSubmissionUuid)).toBeInTheDocument()
-    expect(screen.getByText(remoteReviewWorkItemUuid)).toBeInTheDocument()
-    expect(screen.getByText('提交编号')).toBeInTheDocument()
-    expect(screen.getByText('审核编号')).toBeInTheDocument()
+    expect(screen.queryByText(remoteSubmissionUuid)).not.toBeInTheDocument()
+    expect(screen.queryByText(remoteReviewWorkItemUuid)).not.toBeInTheDocument()
+    expect(screen.getByText('提交回执与审核记录已生成。')).toBeInTheDocument()
     expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
     expect(persistedRemoteDraft()).toMatchObject({
       status: 'pending_review',
