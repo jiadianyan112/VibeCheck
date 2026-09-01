@@ -90,38 +90,30 @@ function isMaterialReadinessError(error: SubmissionApiError): boolean {
 }
 
 function remotePreviewErrorMessage(error: SubmissionApiError): string {
-  if (isMaterialReadinessError(error)) return '服务端尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。'
-  if (error.status === 422) return '服务端拒绝了当前作品字段，请返回表单修正内容后重新准备提交材料。'
-  if (error.status === 409) return '服务端版本发生变化，未生成旧版本预览。请返回最终步骤加载最新版本后重试。'
-  return error.message || '服务端预览未生成，当前输入已保留，请重试。'
+  if (isMaterialReadinessError(error)) return '尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。'
+  if (error.status === 422) return '当前作品信息未通过校验，请返回表单修正内容后重新准备提交材料。'
+  if (error.status === 409) return '最新草稿已更新，旧内容未生成预览。请返回最终步骤加载最新草稿后重试。'
+  return error.message || '提交预览未生成，当前输入已保留，请重试。'
 }
 
 function remoteSubmitErrorMessage(error: SubmissionApiError): string {
-  if (error.status === 422) return '服务端校验未通过，提交尚未创建，请返回“开发与资产”检查封面和公开地址证据。'
-  if (error.status === 409) return '服务端版本发生变化，提交尚未创建。请返回最终步骤加载最新版本后重试。'
+  if (error.status === 422) return '当前内容未通过校验，提交尚未创建，请返回“开发与资产”检查封面和公开地址证据。'
+  if (error.status === 409) return '最新草稿已更新，提交尚未创建。请返回最终步骤加载最新草稿后重试。'
   return error.message || '提交未完成，当前内容已保留，请重试。'
 }
 
 function RemotePreviewSummary({ preview }: { preview: SubmissionDraftPreview }) {
   return (
-    <section className="wire-panel stack" aria-label="服务端预览凭证">
+    <section className="wire-panel stack" aria-label="提交预览">
       <div className="stack stack--small">
-        <p className="eyebrow">服务端预览</p>
-        <h2>已冻结的提交快照</h2>
-        <p>以下内容由服务端根据当前版本生成，提交时只会使用这份预览凭证。</p>
+        <p className="eyebrow">提交预览</p>
+        <h2>已准备好的提交内容</h2>
+        <p>以下内容根据最新草稿生成，提交时会使用这份预览。</p>
       </div>
       <dl className="submission-summary-grid">
-        <div><dt>预览哈希</dt><dd><code>{preview.previewHash}</code></dd></div>
         <div><dt>草稿版本</dt><dd>{preview.draftVersion}</dd></div>
-        <div><dt>检查 ID</dt><dd><code>{preview.checkId}</code></dd></div>
-        <div><dt>媒体引用</dt><dd><code>{preview.mediaReferenceIds.join('、')}</code></dd></div>
-        <div><dt>证据草稿</dt><dd><code>{preview.evidenceDraftIds.join('、')}</code></dd></div>
         <div><dt>生成时间</dt><dd>{preview.generatedAt}</dd></div>
       </dl>
-      <details>
-        <summary>查看服务端冻结快照</summary>
-        <pre aria-label="服务端冻结快照">{JSON.stringify(preview.frozenSnapshot, null, 2)}</pre>
-      </details>
     </section>
   )
 }
@@ -160,7 +152,7 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
   return (
     <div className="submission-preview-grid">
       <article className="submission-card-preview stack stack--small" aria-label="社区卡片预览">
-        <div className="media-placeholder submission-card-preview__media">{fields.screenshotUrl ? '已提供截图地址' : '16:9 作品截图占位'}</div>
+        <div className="media-placeholder submission-card-preview__media">{fields.screenshotUrl ? '已提供截图地址' : '暂无作品截图'}</div>
         <div className="cluster"><Tag>{fields.accessStatus ? accessStatusText[fields.accessStatus] : '状态未填写'}</Tag><Tag tone="dashed">{portfolio ? '个人主页与作品集' : 'AI 学习与题库'}</Tag></div>
         <h2>{fields.currentName ?? '未命名作品'}</h2>
         <p>{fields.oneLineDefinition ?? '尚未填写一句话定义'}</p>
@@ -265,7 +257,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         : new SubmissionApiError({
             kind: 'transport',
             code: 'CLIENT_REQUEST_FAILED',
-            message: '服务端预览未生成，当前输入已保留，请重试。',
+            message: '提交预览未生成，当前输入已保留，请重试。',
             status: null,
             requestId: null,
             retryable: true,
@@ -303,7 +295,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         : new SubmissionApiError({
             kind: 'transport',
             code: 'CLIENT_REQUEST_FAILED',
-            message: '服务端草稿未刷新，当前输入已保留，请重试。',
+            message: '最新草稿未刷新，当前输入已保留，请重试。',
             status: null,
             requestId: null,
             retryable: true,
@@ -322,7 +314,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
         setRemoteSubmitError(new SubmissionApiError({
           kind: 'protocol',
           code: 'PREVIEW_REQUIRED',
-          message: '请先生成有效的服务端预览。',
+          message: '请先生成有效的提交预览。',
           status: null,
           requestId: null,
           retryable: false,
@@ -436,17 +428,17 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           : previewError === remoteSubmitError ? submitRemote : () => setPreviewAttempt((value) => value + 1)
         : undefined
       return (
-        <PageFrame title="发布预览" description="确认服务端生成的冻结快照、媒体和证据引用；只有有效预览才可以提交审核。">
+        <PageFrame title="发布预览" description="确认最新草稿、媒体和公开证据已准备就绪；只有有效预览才可以提交审核。">
           <div className="stack">
             <PreviewSummary draft={draft} />
-            {previewReady ? <RemotePreviewSummary preview={currentRemotePreview} /> : <section className="feedback" role="status"><strong>{previewLoading ? '正在生成服务端预览' : '等待服务端预览'}</strong><p>{previewLoading ? '正在使用最新草稿版本和检查结果生成冻结快照。' : '没有有效的服务端预览，暂时不能提交。'}</p></section>}
-            {previewError ? <ErrorPanel title={previewError === remoteSubmitError ? '提交未完成' : '服务端预览未生成'} message={previewError === remoteSubmitError ? remoteSubmitErrorMessage(previewError) : remotePreviewErrorMessage(previewError)} onRetry={retryRemoteError} /> : null}
+            {previewReady ? <RemotePreviewSummary preview={currentRemotePreview} /> : <section className="feedback" role="status"><strong>{previewLoading ? '正在生成提交预览' : '等待提交预览'}</strong><p>{previewLoading ? '正在使用最新草稿和检查结果生成预览。' : '没有有效的提交预览，暂时不能提交。'}</p></section>}
+            {previewError ? <ErrorPanel title={previewError === remoteSubmitError ? '提交未完成' : '提交预览未生成'} message={previewError === remoteSubmitError ? remoteSubmitErrorMessage(previewError) : remotePreviewErrorMessage(previewError)} onRetry={retryRemoteError} /> : null}
             {previewError && (previewError.status === 422 || isMaterialReadinessError(previewError)) ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${isMaterialReadinessError(previewError) ? 'development' : 'prefill'}`}>{isMaterialReadinessError(previewError) ? '返回开发与资产' : '返回修正作品信息'}</Link> : null}
             {!previewReady && !previewLoading && !previewError ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回开发与资产</Link> : null}
-            <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请核对服务端冻结的作品内容。封面和公开地址证据必须已经准备就绪，提交不会创建本地作品或动态。</p></aside>
-            <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy || previewLoading || !previewReady} onClick={() => setConfirming(true)}>{busy ? '提交中…' : previewReady ? '确认并提交审核' : '等待服务端预览'}</Button></div>
+            <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请核对最新草稿中的作品内容。封面和公开地址证据必须已经准备就绪，提交不会创建本地作品或动态。</p></aside>
+            <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy || previewLoading || !previewReady} onClick={() => setConfirming(true)}>{busy ? '提交中…' : previewReady ? '确认并提交审核' : '等待提交预览'}</Button></div>
           </div>
-          <ConfirmDialog open={confirming} title="提交当前内容？" description="提交后会进入服务端审核队列，你可以查看审核工作项编号。" confirmLabel="确认提交" onConfirm={submitRemote} onCancel={() => setConfirming(false)} />
+          <ConfirmDialog open={confirming} title="提交当前内容？" description="提交后会进入审核队列，你可以查看审核编号。" confirmLabel="确认提交" onConfirm={submitRemote} onCancel={() => setConfirming(false)} />
         </PageFrame>
       )
     }
@@ -466,16 +458,15 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   if (remoteSubmission) {
     const statusLabel = draft.reviewStatus === 'pending_review' ? '待审核' : submissionReviewStatusLabels[draft.status] ?? draft.status
     return (
-      <PageFrame title={`审核状态：${statusLabel}`} description="这里显示服务端提交回执与审核工作项状态；暂无可靠的预计完成时间。">
+      <PageFrame title={`审核状态：${statusLabel}`} description="这里显示提交回执与审核状态；暂无可靠的预计完成时间。">
         <div className="stack">
           <section className="submission-review-state submission-review-state--pending_review stack stack--small" aria-live="polite">
-            <div className="cluster cluster--between"><Tag tone="dashed">{statusLabel}</Tag><span>审核工作项：{draft.reviewWorkItemId ?? '服务端处理中'}</span></div>
+            <div className="cluster cluster--between"><Tag tone="dashed">{statusLabel}</Tag></div>
             <h2>提交版本正在等待审核</h2>
-            <p>服务端已接受这次提交，审核人员会在工作项中处理；此处不展示倒计时或承诺日期。</p>
+            <p>提交已接受，审核人员会继续处理；此处不展示倒计时或承诺日期。</p>
             <dl className="submission-summary-grid">
-              <div><dt>提交 ID</dt><dd><code>{draft.submissionId ?? '服务端处理中'}</code></dd></div>
-              <div><dt>审核工作项 ID</dt><dd><code>{draft.reviewWorkItemId ?? '服务端处理中'}</code></dd></div>
-              {draft.preview ? <div><dt>预览哈希</dt><dd><code>{draft.preview.previewHash}</code></dd></div> : null}
+              <div><dt>提交编号</dt><dd><code>{draft.submissionId ?? '处理中'}</code></dd></div>
+              <div><dt>审核编号</dt><dd><code>{draft.reviewWorkItemId ?? '处理中'}</code></dd></div>
             </dl>
           </section>
           <SubmittedVersion draft={draft} />
@@ -489,7 +480,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
     <PageFrame title={`审核状态：${statusLabel}`} description="在这里查看审核结果、修改意见和补充材料。预计完成时间无法确认时不会显示倒计时。">
       <div className="stack">
         <section className={`submission-review-state submission-review-state--${draft.status} stack stack--small`} aria-live="polite">
-          <div className="cluster cluster--between"><Tag tone={draft.status === 'approved' ? 'strong' : 'dashed'}>{statusLabel}</Tag><span>审核单：{draft.id}</span></div>
+          <div className="cluster cluster--between"><Tag tone={draft.status === 'approved' ? 'strong' : 'dashed'}>{statusLabel}</Tag></div>
           {draft.status === 'pending_review' ? <><h2>提交版本正在等待审核</h2><p>没有可靠的预计完成时间，因此此处不展示倒计时或承诺日期。</p></> : null}
           {draft.status === 'changes_requested' ? <><h2>请根据意见修改后重新提交</h2><p>只需修改审核中指出的内容，其他信息会继续保留。</p></> : null}
           {draft.status === 'rejected' ? <><h2>当前提交未通过</h2><p>{draft.reviewMessages.submission ?? '审核方未提供拒绝原因。'}</p></> : null}

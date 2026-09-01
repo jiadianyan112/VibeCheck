@@ -33,7 +33,7 @@ describe('ProjectCard', () => {
   it('renders a featured card through the centralized media stage', () => {
     renderCard(<ProjectCard project={project} variant="featured" />)
     expect(screen.getByRole('article')).toHaveClass('project-card--featured')
-    expect(screen.getByRole('img', { name: `${project.currentName.state === 'known' ? project.currentName.value : '名称未知的作品'}视觉占位` })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
   })
 
   it('uses the first cover item and falls back to the exact unknown title', () => {
@@ -48,7 +48,7 @@ describe('ProjectCard', () => {
 
     renderCard(<ProjectCard project={unnamedProject} variant="standard" />)
 
-    expect(screen.getByRole('img', { name: '名称未知的作品视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '第二张作品封面' })).not.toBeInTheDocument()
     expect(screen.getByRole('article')).toHaveClass('project-card--standard')
   })
@@ -67,7 +67,7 @@ describe('ProjectCard', () => {
     const shell = container.querySelector('.app-shell')!
     expect(shell.querySelector('.highfi-scope')).toBeNull()
 
-    const lens = screen.getByRole('img', { name: '题练工坊视觉占位' })
+    const lens = screen.getByRole('img', { name: '默认封面' })
     const lensStyle = getComputedStyle(lens)
     expect(lensStyle.display).toBe('inline-grid')
     expect(lensStyle.width).toBe('clamp(6rem, 16vw, 12rem)')

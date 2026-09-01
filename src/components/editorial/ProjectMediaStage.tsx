@@ -27,7 +27,7 @@ export function ProjectMediaStage({
   const mediaKey = media ? JSON.stringify([media.id, media.kind, media.url]) : 'missing'
   const failed = failedMediaKey === mediaKey
   const rootClassName = ['project-media-stage', `project-media-stage--${aspect}`, className].filter(Boolean).join(' ')
-  const fallbackLabel = `${title}视觉占位`
+  const fallbackLabel = '默认封面'
 
   const canRenderImage = media?.kind === 'image' && Boolean(media.url) && !failed
   const canRenderVideo = media?.kind === 'video' && Boolean(media.url) && !failed

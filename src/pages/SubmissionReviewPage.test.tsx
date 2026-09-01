@@ -248,6 +248,7 @@ describe('submission preview and review status', () => {
     renderReview()
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
     expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('审核状态演示')
+    expect(screen.getByText('暂无作品截图')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
@@ -320,8 +321,13 @@ describe('submission preview and review status', () => {
     renderRemoteReview()
 
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
-    expect(await screen.findByText(remotePreviewHash)).toBeInTheDocument()
-    expect(screen.getByLabelText('服务端冻结快照')).toHaveTextContent('preview-server-value')
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remotePreviewHash))
+    expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
+    expect(screen.queryByText(remoteCheckUuid)).not.toBeInTheDocument()
+    expect(screen.queryByText(remoteMediaReferenceUuid)).not.toBeInTheDocument()
+    expect(screen.queryByText(remoteEvidenceDraftUuid)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('服务端冻结快照')).not.toBeInTheDocument()
+    expect(screen.queryByText('preview-server-value')).not.toBeInTheDocument()
 
     const previewRequest = transport.requests.find((request) => request.url.endsWith(`/submission-drafts/${remoteDraftUuid}/preview`))
     expect(previewRequest?.body).toEqual({ expected_version: 8, check_id: remoteCheckUuid })
@@ -345,6 +351,9 @@ describe('submission preview and review status', () => {
     expect(submitRequests[1]?.body?.submission_key).toBe(firstSubmit?.body?.submission_key)
     expect(screen.getByText(remoteSubmissionUuid)).toBeInTheDocument()
     expect(screen.getByText(remoteReviewWorkItemUuid)).toBeInTheDocument()
+    expect(screen.getByText('提交编号')).toBeInTheDocument()
+    expect(screen.getByText('审核编号')).toBeInTheDocument()
+    expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
     expect(persistedRemoteDraft()).toMatchObject({
       status: 'pending_review',
       remoteStatus: 'submitted',
@@ -368,12 +377,14 @@ describe('submission preview and review status', () => {
     const user = userEvent.setup()
     renderRemoteReview()
 
-    expect(await screen.findByText(remotePreviewHash)).toBeInTheDocument()
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remotePreviewHash))
+    expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
 
     await waitFor(() => expect(transport.requests.filter((request) => request.url.endsWith(`/submission-drafts/${remoteDraftUuid}`) && request.init?.method === 'GET')).toHaveLength(2))
-    expect(await screen.findByText(remoteFreshPreviewHash)).toBeInTheDocument()
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remoteFreshPreviewHash))
+    expect(screen.queryByText(remoteFreshPreviewHash)).not.toBeInTheDocument()
     expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('服务端第九版名称')
     expect(screen.queryByText('服务端版本发生变化，提交尚未创建。请返回最终步骤加载最新版本后重试。')).not.toBeInTheDocument()
     expect(persistedRemoteDraft().preview?.previewHash).toBe(remoteFreshPreviewHash)
@@ -398,7 +409,8 @@ describe('submission preview and review status', () => {
     const user = userEvent.setup()
     const first = renderRemoteReview()
 
-    expect(await screen.findByText(remotePreviewHash)).toBeInTheDocument()
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remotePreviewHash))
+    expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
@@ -428,7 +440,8 @@ describe('submission preview and review status', () => {
     installRemoteTransport()
     const first = renderRemoteReview()
 
-    expect(await screen.findByText(remotePreviewHash)).toBeInTheDocument()
+    await waitFor(() => expect(persistedRemoteDraft().preview?.previewHash).toBe(remotePreviewHash))
+    expect(screen.queryByText(remotePreviewHash)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
@@ -453,7 +466,7 @@ describe('submission preview and review status', () => {
     const transport = installRemoteTransport({ preview422Code: 'SUBMISSION_COVER_MEDIA_MISMATCH', previewErrorStatus: 409 })
     renderRemoteReview()
 
-    expect(await screen.findByText('服务端尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。')).toBeInTheDocument()
+    expect(await screen.findByText('尚未确认封面或公开地址证据已准备就绪，请返回“开发与资产”完成材料后重试。')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回开发与资产' })).toHaveAttribute('href', expect.stringContaining('step=development'))
     expect(screen.queryByRole('button', { name: '确认并提交审核' })).not.toBeInTheDocument()
     expect(transport.requests.some((request) => request.url.endsWith('/submissions'))).toBe(false)
@@ -465,7 +478,7 @@ describe('submission preview and review status', () => {
     const transport = installRemoteTransport({ preview422Code: 'DRAFT_VALIDATION_FAILED' })
     renderRemoteReview()
 
-    expect(await screen.findByText('服务端拒绝了当前作品字段，请返回表单修正内容后重新准备提交材料。')).toBeInTheDocument()
+    expect(await screen.findByText('当前作品信息未通过校验，请返回表单修正内容后重新准备提交材料。')).toBeInTheDocument()
     expect(screen.queryByText(/尚未确认封面或公开地址证据/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回修正作品信息' })).toHaveAttribute('href', expect.stringContaining('step=prefill'))
     expect(transport.requests.some((request) => request.url.endsWith('/submissions'))).toBe(false)

@@ -565,7 +565,11 @@ describe('stateful same-origin submission golden path integration', () => {
     )
     await user.click(screen.getByRole('button', { name: '准备提交材料' }))
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
-    expect(await screen.findByText(previewHash)).toBeInTheDocument()
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!) as { submissionDrafts: LocalSubmissionDraft[] }
+      expect(persisted.submissionDrafts.find((draft) => draft.draftId === transport.ids.draftId)?.preview).toBeDefined()
+    })
+    expect(screen.queryByText(previewHash)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
@@ -645,6 +649,9 @@ describe('stateful same-origin submission golden path integration', () => {
 
     expect(await screen.findByText(transport.ids.submissionId!)).toBeInTheDocument()
     expect(screen.getByText(transport.ids.reviewWorkItemId!)).toBeInTheDocument()
+    expect(screen.getByText('提交编号')).toBeInTheDocument()
+    expect(screen.getByText('审核编号')).toBeInTheDocument()
+    expect(screen.queryByText(previewHash)).not.toBeInTheDocument()
     const persisted = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!) as { submissionDrafts: LocalSubmissionDraft[] }
     const receipt = persisted.submissionDrafts.find((draft) => draft.draftId === transport.ids.draftId)
     expect(receipt).toMatchObject({
@@ -656,6 +663,10 @@ describe('stateful same-origin submission golden path integration', () => {
       publishedProjectId: null,
       publishedEventId: null,
     })
+    expect(receipt?.preview?.previewHash).toBe(previewHash)
+    expect(receipt?.preview?.checkId).toBe(transport.ids.checkId)
+    expect(receipt?.preview?.mediaReferenceIds).toEqual([transport.ids.mediaReferenceId])
+    expect(receipt?.preview?.evidenceDraftIds).toEqual([transport.ids.evidenceDraftId])
   })
 
   it('blocks missing cover and evidence before the same stateful transport succeeds after readiness', async () => {
@@ -684,7 +695,11 @@ describe('stateful same-origin submission golden path integration', () => {
     await user.click(screen.getByRole('button', { name: '重试准备提交材料' }))
     await waitFor(() => expect(transport.invariantViolations).toEqual([]))
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
-    expect(await screen.findByText(previewHash)).toBeInTheDocument()
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!) as { submissionDrafts: LocalSubmissionDraft[] }
+      expect(persisted.submissionDrafts.find((draft) => draft.draftId === transport.ids.draftId)?.preview).toBeDefined()
+    })
+    expect(screen.queryByText(previewHash)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()

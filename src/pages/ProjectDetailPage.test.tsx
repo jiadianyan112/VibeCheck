@@ -22,6 +22,7 @@ describe('ProjectDetailPage hero', () => {
   it('shows current status, verification time and verified creator above the fold', async () => {
     renderProject('project-quizforge')
     expect(await screen.findByRole('heading', { name: '题练工坊' })).toBeInTheDocument()
+    expect(screen.getByLabelText('暂无公开图片')).toBeInTheDocument()
     expect(screen.getAllByText('正常可访问').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/核验于 2026年7月28日/).length).toBeGreaterThan(0)
     expect(screen.getByText('已关联验证作者')).toBeInTheDocument()
@@ -247,7 +248,8 @@ describe('ProjectDetailPage trust variants', () => {
   it('exposes supplement, report and evidence entry points', async () => {
     renderProject('project-quizforge')
     expect(await screen.findByRole('link', { name: '补充作品信息' })).toHaveAttribute('href', '/submit?mode=supplement&project=project-quizforge')
-    expect(screen.getByText('报告状态问题')).toBeInTheDocument()
+    expect(screen.getByText('状态说明')).toBeInTheDocument()
+    expect(screen.queryByText('报告状态问题')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /展开本作品证据/ })).toBeInTheDocument()
   })
 })

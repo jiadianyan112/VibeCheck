@@ -127,11 +127,11 @@ export function AuthPage() {
       }
     }
     return (
-      <PageFrame title="当前账号" description="你的登录状态由服务器 Session 管理。">
+      <PageFrame title="当前账号" description="你的登录状态由当前账户管理。">
         <section className="auth-page-panel stack">
           <div className="stack stack--small">
             <h2>{state.session.user.displayName} · {roleLabels[state.session.role]}</h2>
-            <p>Session 到期、退出或角色版本变化后，受保护操作会要求重新登录。</p>
+            <p>账户状态变化、退出或角色版本变化后，受保护操作会要求重新登录。</p>
           </div>
           {error ? <p className="field-error" role="alert">{error}</p> : null}
           <div className="cluster">

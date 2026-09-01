@@ -280,14 +280,14 @@ function makeMaterialsOperationIds(): MaterialsOperationIds {
 
 function materialErrorMessage(error: unknown): string {
   if (error instanceof SubmissionAssetsApiError) {
-    if (error.status === 409) return '服务端版本发生冲突，材料尚未准备完成，请重试。'
-    if (error.status === 422) return '服务端校验未通过，材料尚未准备完成，请检查后重试。'
+    if (error.status === 409) return '最新草稿发生冲突，材料尚未准备完成，请重试。'
+    if (error.status === 422) return '当前草稿校验未通过，材料尚未准备完成，请检查后重试。'
     if (error.kind === 'transport') return '网络连接不可用，当前输入已保留，请重试。'
     return error.message || '材料准备未完成，请重试。'
   }
   if (error instanceof SubmissionApiError) {
-    if (error.status === 409) return '服务端版本发生冲突，当前输入已保留，请重试。'
-    if (error.status === 422) return '服务端校验未通过，当前输入已保留，请检查后重试。'
+    if (error.status === 409) return '最新草稿发生冲突，当前输入已保留，请重试。'
+    if (error.status === 422) return '当前草稿校验未通过，当前输入已保留，请检查后重试。'
     return error.message || '草稿未保存，当前输入已保留，请重试。'
   }
   return readableApiError(error, '网络连接不可用，当前输入已保留，请重试。')
@@ -396,7 +396,7 @@ export function SubmitFormPage() {
         if (controller.signal.aborted) return
         if (error instanceof SubmissionApiError && error.kind === 'aborted') return
         if (error instanceof SubmissionApiError && error.status === 410) setExpired(true)
-        setLoadError(readableApiError(error, '远端草稿未加载，当前输入已保留。'))
+        setLoadError(readableApiError(error, '已同步草稿未加载，当前输入已保留。'))
       })
       .finally(() => { if (!controller.signal.aborted) setLoadingRemote(false) })
     return () => controller.abort()
@@ -409,11 +409,11 @@ export function SubmitFormPage() {
     const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
     return <PageFrame title="发布编辑"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?return_to=${returnPath}`}>登录并返回当前草稿</Link></section></PageFrame>
   }
-  if (previewRequested && remoteDraft && !previewReady && loadingRemote) return <PageFrame title="发布编辑"><LoadingState label="正在恢复远端草稿" /></PageFrame>
+  if (previewRequested && remoteDraft && !previewReady && loadingRemote) return <PageFrame title="发布编辑"><LoadingState label="正在恢复已同步草稿" /></PageFrame>
   if (previewRequested && draft && (previewReady || !remoteDraft)) return <SubmissionReviewPage draft={draft} />
-  if (loadingRemote && !draft) return <PageFrame title="发布编辑"><LoadingState label="正在恢复远端草稿" /></PageFrame>
+  if (loadingRemote && !draft) return <PageFrame title="发布编辑"><LoadingState label="正在恢复已同步草稿" /></PageFrame>
   if (!draft) return <PageFrame title="未找到发布草稿" description={loadError ?? '草稿可能不存在、属于其他身份或已经删除。'}><Link className="button" to="/submit">返回地址检查</Link></PageFrame>
-  if (expired) return <PageFrame title="草稿已过期" description="该远端草稿已停止编辑，请重新检查公开地址后创建新的草稿。"><Link className="button button--primary" to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></PageFrame>
+  if (expired) return <PageFrame title="草稿已过期" description="该已同步草稿已停止编辑，请重新检查公开地址后创建新的草稿。"><Link className="button button--primary" to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></PageFrame>
 
   const invalidateMaterials = () => {
     materialsProgressRef.current = null
@@ -444,7 +444,7 @@ export function SubmitFormPage() {
     const initialDraftId = draft.draftId
     const initialDraftVersion = draft.version
     if (!initialDraftId || initialDraftVersion === undefined) {
-      setMaterialsFeedback({ title: '草稿版本尚未加载', message: '远端草稿版本尚未加载，请稍后重试。', retryable: true })
+      setMaterialsFeedback({ title: '最新草稿尚未同步', message: '最新草稿尚未同步，请稍后重试。', retryable: true })
       return
     }
 
@@ -674,13 +674,13 @@ export function SubmitFormPage() {
           <strong className="submission-percent">{completion?.percent ?? 0}%</strong>
           <progress value={completion?.completed ?? 0} max={completion?.total ?? 10}>{completion?.percent ?? 0}%</progress>
           <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '1 基础信息', definition: '2 定位与用途', solution: '3 核心内容', development: '4 开发与资产' } as const)[item] : submissionFormStepLabels[item]}</li>)}</ol>
-          <p>内容先缓存在本机，保存时同步远端</p>
+          <p>内容先缓存在本机，保存后显示已同步</p>
         </aside>
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">
-          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">远端草稿</Tag></div></div>
-          {loadError ? <ErrorPanel title="远端草稿未加载" message={loadError} onRetry={() => setLoadNonce((value) => value + 1)} /> : null}
-          {saveError ? <ErrorPanel title={saveError.status === 409 ? '草稿版本冲突' : '草稿未保存'} message={saveError.status === 409 ? '服务端已有更新，未覆盖你的输入。请先加载服务端版本，再合并后保存。' : saveError.message} onRetry={saveError.status === 409 || saveError.status === 410 || saveError.status === 422 ? undefined : retrySave} /> : null}
-          {saveError?.status === 409 ? <Button type="button" onClick={reloadServerVersion}>加载服务端版本</Button> : null}
+          <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">已同步</Tag></div></div>
+          {loadError ? <ErrorPanel title="已同步草稿未加载" message={loadError} onRetry={() => setLoadNonce((value) => value + 1)} /> : null}
+          {saveError ? <ErrorPanel title={saveError.status === 409 ? '最新草稿发生冲突' : '草稿未保存'} message={saveError.status === 409 ? '已有更新，未覆盖你的输入。请先加载最新草稿，再合并后保存。' : saveError.message} onRetry={saveError.status === 409 || saveError.status === 410 || saveError.status === 422 ? undefined : retrySave} /> : null}
+          {saveError?.status === 409 ? <Button type="button" onClick={reloadServerVersion}>加载最新草稿</Button> : null}
           {materialsFeedback ? <ErrorPanel title={materialsFeedback.title} message={materialsFeedback.message} onRetry={materialsFeedback.retryable ? () => { void prepareSubmissionMaterials() } : undefined} /> : null}
           {body}
           <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" loading={saving} onClick={goNext}>{index === submissionFormSteps.length - 1 ? finalActionLabel : '保存并继续'}</Button></footer>

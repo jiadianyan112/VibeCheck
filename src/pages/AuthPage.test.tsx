@@ -4,9 +4,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ToastProvider } from '../components'
-import { AuthSessionProvider } from '../features'
+import { AuthSessionProvider, createLoginAction } from '../features'
+import { prototypeUsers } from '../mocks'
 import * as authService from '../services/authService'
-import { AppStateProvider, useAppState } from '../state'
+import { AppStateProvider, appReducer, createInitialAppState, persistAppState, useAppState } from '../state'
 import { AuthPage, safeReturnPath } from './AuthPage'
 
 vi.mock('../services/authService', async (importOriginal) => {
@@ -95,6 +96,17 @@ describe('AuthPage', () => {
     renderAuth('/auth?return_to=%2Fnotifications')
     await user.click(screen.getByRole('button', { name: '先以游客身份浏览' }))
     expect(screen.getByRole('heading', { name: '作品广场' })).toBeInTheDocument()
+  })
+
+  it('describes the signed-in account without exposing session terminology', async () => {
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[0]!)))
+    renderAuth('/auth')
+
+    expect(await screen.findByRole('heading', { name: '当前账号' })).toBeInTheDocument()
+    expect(screen.getByText('你的登录状态由当前账户管理。')).toBeInTheDocument()
+    expect(screen.getByText('账户状态变化、退出或角色版本变化后，受保护操作会要求重新登录。')).toBeInTheDocument()
+    expect(screen.queryByText(/Session/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/服务器 Session/)).not.toBeInTheDocument()
   })
 
   it('rejects unsafe external return paths', () => {

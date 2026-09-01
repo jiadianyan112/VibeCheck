@@ -65,7 +65,7 @@ describe('ProjectMediaStage', () => {
       />,
     )
 
-    expect(screen.getByRole('img', { name: '作品三视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
     expect(screen.queryByText('暂缺截图')).not.toBeInTheDocument()
   })
 
@@ -79,13 +79,13 @@ describe('ProjectMediaStage', () => {
       />,
     )
 
-    expect(screen.getByRole('img', { name: '作品四视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
   })
 
   it('uses the labelled Vibe Lens when media is missing', () => {
     render(<ProjectMediaStage projectId="project-5" title="作品五" tone="lime" />)
 
-    expect(screen.getByRole('img', { name: '作品五视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
   })
 
   it('falls back to the same labelled Vibe Lens when an image fails', () => {
@@ -100,7 +100,7 @@ describe('ProjectMediaStage', () => {
 
     fireEvent.error(screen.getByRole('img', { name: '损坏图片' }))
 
-    expect(screen.getByRole('img', { name: '作品六视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '损坏图片' })).not.toBeInTheDocument()
     expect(container.textContent).not.toContain('/broken.webp')
   })
@@ -117,7 +117,7 @@ describe('ProjectMediaStage', () => {
 
     fireEvent.error(screen.getByTitle('作品七'))
 
-    expect(screen.getByRole('img', { name: '作品七视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
     expect(screen.queryByTitle('作品七')).not.toBeInTheDocument()
   })
 
@@ -132,7 +132,7 @@ describe('ProjectMediaStage', () => {
     )
 
     fireEvent.error(screen.getByRole('img', { name: '旧图片' }))
-    expect(screen.getByRole('img', { name: '作品八视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
 
     rerender(
       <ProjectMediaStage
@@ -144,7 +144,7 @@ describe('ProjectMediaStage', () => {
     )
 
     expect(screen.getByRole('img', { name: '新图片' })).toHaveAttribute('src', '/restored.webp')
-    expect(screen.queryByRole('img', { name: '作品八视觉占位' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '默认封面' })).not.toBeInTheDocument()
   })
 
   it('recovers a real video when the media source changes after an error', () => {
@@ -158,7 +158,7 @@ describe('ProjectMediaStage', () => {
     )
 
     fireEvent.error(screen.getByTitle('作品九'))
-    expect(screen.getByRole('img', { name: '作品九视觉占位' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '默认封面' })).toBeInTheDocument()
 
     rerender(
       <ProjectMediaStage
@@ -170,7 +170,7 @@ describe('ProjectMediaStage', () => {
     )
 
     expect(screen.getByTitle('作品九')).toHaveAttribute('src', '/restored.mp4')
-    expect(screen.queryByRole('img', { name: '作品九视觉占位' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '默认封面' })).not.toBeInTheDocument()
   })
 
   it('uses the landscape aspect class when aspect is omitted', () => {
