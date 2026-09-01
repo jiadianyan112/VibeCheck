@@ -377,7 +377,23 @@ async function settle(page: Page) {
       }
     `,
   })
-  await page.waitForTimeout(25)
+  const closeToast = page.getByRole('button', { name: '关闭提示' })
+  while (await closeToast.count()) {
+    const button = closeToast.first()
+    if (!await button.isVisible()) break
+    await button.click()
+  }
+  await page.evaluate(async () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  })
+  await expect.poll(() => page.evaluate(() => window.scrollY), { message: 'Screenshots must start at the top of the document.' }).toBe(0)
+  await expect.poll(() => page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('.global-header')
+    if (!header) return false
+    const rect = header.getBoundingClientRect()
+    return Math.abs(rect.top) <= 1 && Math.abs(rect.width - document.documentElement.clientWidth) <= 1
+  }), { message: 'The global header must be stable before a screenshot.' }).toBe(true)
 }
 
 async function expectNoHorizontalOverflow(page: Page, context: string) {
