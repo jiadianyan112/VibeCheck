@@ -1,6 +1,6 @@
 import type { ExtractionResult, PortfolioV1Snapshot } from './form'
 import { submissionDraftId, userId, type SubmissionDraft } from '../../types'
-import { applyExtraction, buildLearningV1Snapshot, buildPortfolioV1Snapshot, submissionCompleteness, updateDraftField, validateSubmissionStep } from './form'
+import { applyExtraction, buildLearningV1Snapshot, buildPortfolioV1Snapshot, submissionCompleteness, submissionCopy, updateDraftField, validateSubmissionStep } from './form'
 
 const baseDraft: SubmissionDraft = {
   id: submissionDraftId('draft-form-test'),
@@ -36,6 +36,27 @@ const extraction: ExtractionResult = {
 }
 
 describe('multi-step submission helpers', () => {
+  it('keeps portfolio one-line copy natural across field and validation contexts', () => {
+    expect(submissionCopy('personal_site_portfolio')).toMatchObject({
+      oneLineLabel: '一句话简介',
+      oneLinePreviewLabel: '一句话简介',
+      originalOneLineLabel: '简介',
+      validationOneLineMessage: '请填写一句话简介。',
+    })
+    expect(submissionCopy('ai_learning_quiz')).toMatchObject({
+      oneLineLabel: '一句话定义',
+      oneLinePreviewLabel: '一句话介绍',
+      originalOneLineLabel: '定义',
+      validationOneLineMessage: '请填写一句话定义。',
+    })
+
+    const portfolioDraft: SubmissionDraft = {
+      ...baseDraft,
+      fields: { categoryId: 'personal_site_portfolio' },
+    }
+    expect(validateSubmissionStep(portfolioDraft, 'prefill').oneLineDefinition).toBe('请填写一句话简介。')
+  })
+
   it('builds the exact canonical learning.v1 snapshot with safe unknown defaults', () => {
     const snapshot = buildLearningV1Snapshot({
       fields: {

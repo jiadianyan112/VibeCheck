@@ -529,13 +529,13 @@ async function startAtDevelopment(transport: ReturnType<typeof installStatefulTr
   await user.selectOptions(screen.getByRole('combobox', { name: '基础访问状态（必填）' }), 'normal')
   await user.click(screen.getByRole('button', { name: '保存并继续' }))
 
-  expect(await screen.findByRole('heading', { name: '产品定义' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '定位与用途' })).toBeInTheDocument()
   await user.click(screen.getByRole('checkbox', { name: '大学生' }))
   await user.type(screen.getByRole('textbox', { name: '核心问题（必填）' }), '提交状态需要可验证。')
   await user.click(screen.getByRole('checkbox', { name: '日常刷题' }))
   await user.click(screen.getByRole('button', { name: '保存并继续' }))
 
-  expect(await screen.findByRole('heading', { name: '方案与功能' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '核心内容' })).toBeInTheDocument()
   await user.click(screen.getByRole('checkbox', { name: '纯文本' }))
   await user.click(screen.getByRole('checkbox', { name: '练习集' }))
   await user.type(screen.getByRole('textbox', { name: '核心流程（必填，每行一步）' }), '准备并提交材料')
@@ -647,10 +647,8 @@ describe('stateful same-origin submission golden path integration', () => {
       submission_key: expect.any(String),
     })
 
-    expect(await screen.findByText(transport.ids.submissionId!)).toBeInTheDocument()
-    expect(screen.getByText(transport.ids.reviewWorkItemId!)).toBeInTheDocument()
-    expect(screen.getByText('提交编号')).toBeInTheDocument()
-    expect(screen.getByText('审核编号')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '提交版本正在等待审核' })).toBeInTheDocument()
     expect(screen.queryByText(previewHash)).not.toBeInTheDocument()
     const persisted = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!) as { submissionDrafts: LocalSubmissionDraft[] }
     const receipt = persisted.submissionDrafts.find((draft) => draft.draftId === transport.ids.draftId)

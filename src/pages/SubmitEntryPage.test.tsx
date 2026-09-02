@@ -150,6 +150,31 @@ describe('submission entry and real URL-check/draft-create gateway', () => {
     vi.unstubAllGlobals()
   })
 
+  it('renders the address entry in the shared six-stage task workspace', () => {
+    loginInStorage()
+    renderRoute('/submit')
+
+    const scope = document.querySelector('.highfi-scope')
+    expect(scope).not.toBeNull()
+    expect(scope?.querySelector('.task-shell')).not.toBeNull()
+    expect(scope?.querySelector('.task-shell__aside')).not.toBeNull()
+    expect(scope?.querySelector('.status-beacon')).not.toBeNull()
+    expect(scope?.querySelector('.wire-panel')).toBeNull()
+
+    const steps = [...(scope?.querySelectorAll('[data-step-id]') ?? [])]
+    expect(steps).toHaveLength(6)
+    expect(steps.map((step) => step.textContent?.trim())).toEqual([
+      '检查地址',
+      '基础信息',
+      '定位与用途',
+      '核心内容',
+      '开发与资产',
+      '预览与提交',
+    ])
+    expect(scope?.querySelector('[data-step-id="address"]')).toHaveAttribute('aria-current', 'step')
+    expect(scope?.querySelector('[data-step-id="details"]')).toHaveAttribute('data-step-state', 'upcoming')
+  })
+
   it('routes a guest publish request to login while preserving its return target', () => {
     renderRoute('/submit?resumeUrl=https%3A%2F%2Fexample.test%2Ftool')
     expect(screen.getByRole('heading', { name: '先登录，再检查作品地址' })).toBeInTheDocument()
@@ -271,7 +296,17 @@ describe('submission entry and real URL-check/draft-create gateway', () => {
     await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), 'example.test/duplicate')
     await user.click(screen.getByRole('button', { name: '检查地址' }))
     expect(await screen.findByRole('heading', { name: '服务端重复候选', level: 3 })).toBeInTheDocument()
-    expect(screen.getByText(duplicateProjectId)).toBeInTheDocument()
+    expect(screen.queryByText(duplicateProjectId)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看已有作品详情' })).toHaveAttribute(
+      'href',
+      `/project/${duplicateProjectId}?from=submit&submissionUrl=https%3A%2F%2Fexample.test%2Fduplicate`,
+    )
+    await user.click(screen.getByRole('checkbox', { name: /我是该作品作者/ }))
+    expect(screen.getByRole('link', { name: '继续验证作者身份' })).toHaveAttribute(
+      'href',
+      `/project/${duplicateProjectId}/verify-author?from=submit&submissionUrl=https%3A%2F%2Fexample.test%2Fduplicate`,
+    )
+    expect(screen.getByRole('link', { name: '了解如何提交纠错' })).toHaveAttribute('href', '/about#corrections')
     expect(screen.queryByText('PDF 题库实验室')).not.toBeInTheDocument()
     expect(transport.requests.filter((request) => request.init?.method === 'POST' && request.url.endsWith('/submission-drafts'))).toHaveLength(0)
   })

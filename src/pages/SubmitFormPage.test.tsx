@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -528,6 +528,96 @@ describe('remote P11 draft GET/PATCH form', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('maps the editing form into the shared six-stage workspace', async () => {
+    renderForm('solution')
+
+    await screen.findByRole('heading', { name: '核心内容' })
+    const rail = screen.getByRole('navigation', { name: '发布步骤' })
+    expect(Array.from(rail.querySelectorAll('[data-step-id]')).map((item) => ({
+      id: item.getAttribute('data-step-id'),
+      state: item.getAttribute('data-step-state'),
+    }))).toEqual([
+      { id: 'address', state: 'complete' },
+      { id: 'prefill', state: 'complete' },
+      { id: 'definition', state: 'complete' },
+      { id: 'solution', state: 'current' },
+      { id: 'development', state: 'upcoming' },
+      { id: 'preview', state: 'upcoming' },
+    ])
+    expect(within(rail).getByText('检查地址')).toBeInTheDocument()
+    expect(within(rail).getByText('基础信息')).toBeInTheDocument()
+    expect(within(rail).getByText('定位与用途')).toBeInTheDocument()
+    expect(within(rail).getByText('核心内容')).toBeInTheDocument()
+    expect(within(rail).getByText('开发与资产')).toBeInTheDocument()
+    expect(within(rail).getByText('预览与提交')).toBeInTheDocument()
+  })
+
+  it('derives the live preview from the current draft field values', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    const name = await screen.findByRole('textbox', { name: '作品名称' })
+    await user.clear(name)
+    await user.type(name, '实时更新的作品名称')
+
+    expect(within(screen.getByLabelText('当前草稿预览')).getByText('实时更新的作品名称')).toBeInTheDocument()
+  })
+
+  it('uses 一句话简介 consistently for the Portfolio field, validation, error summary, and live preview', async () => {
+    localStorage.clear()
+    seedDraft('personal_site_portfolio')
+    installMaterialsTransport({ categoryId: 'personal_site_portfolio' })
+    const user = userEvent.setup()
+    renderForm()
+
+    const definition = await screen.findByRole('textbox', { name: '一句话简介' })
+    expect(within(screen.getByLabelText('当前草稿预览')).getByText('一句话简介')).toBeInTheDocument()
+    await user.clear(definition)
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    expect(await screen.findByText('请填写一句话简介。')).toBeInTheDocument()
+    const summary = screen.getByRole('alert', { name: '表单错误' })
+    expect(within(summary).getByRole('link', { name: '一句话简介' })).toBeInTheDocument()
+    expect(screen.queryByText('一句话定义')).not.toBeInTheDocument()
+  })
+
+  it('navigates ErrorSummary links to stable focusable validation targets', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    const name = await screen.findByRole('textbox', { name: '作品名称' })
+    await user.clear(name)
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+
+    const summary = await screen.findByRole('alert', { name: '表单错误' })
+    await user.click(within(summary).getByRole('link', { name: '作品名称' }))
+    expect(name).toHaveAttribute('id', 'submission-current-name')
+    expect(name).toHaveFocus()
+  })
+
+  it('does not render stale later-step ErrorSummary links after rail navigation', async () => {
+    const user = userEvent.setup()
+    renderForm('solution')
+
+    const coreFlow = await screen.findByRole('textbox', { name: /核心流程/ })
+    await user.clear(coreFlow)
+    await user.click(screen.getByRole('button', { name: '保存并继续' }))
+    expect(await screen.findByRole('link', { name: '核心流程' })).toBeInTheDocument()
+
+    const rail = screen.getByRole('navigation', { name: '发布步骤' })
+    await user.click(within(rail).getByRole('button', { name: '基础信息' }))
+    expect(await screen.findByRole('heading', { name: '基础信息' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '核心流程' })).not.toBeInTheDocument()
+  })
+
+  it('renders the guided editor without a legacy prototype container', async () => {
+    renderForm()
+
+    await screen.findByRole('heading', { name: '基础信息' })
+    expect(document.querySelector('.highfi-scope .task-shell')).toBeInTheDocument()
+    expect(document.querySelector('.wire-panel')).toBeNull()
   })
 
   it('restores server fields by GET and never runs local Mock extraction or assets', async () => {

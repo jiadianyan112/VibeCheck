@@ -1,0 +1,629 @@
+/* Shared high-fidelity task workspace. Every rule is scoped to the opt-in
+ * high-fidelity surface so the legacy task pages remain unchanged. */
+
+.app-shell .highfi-scope .task-shell {
+  --task-line: var(--color-line);
+  --task-line-strong: var(--color-line-strong);
+  --task-surface: var(--color-surface-raised);
+  --task-muted: var(--color-muted);
+  --task-accent: var(--brand-lime);
+  width: min(calc(100% - 2 * var(--page-gutter)), var(--page-max));
+  min-width: 0;
+  margin-inline: auto;
+  padding-block: clamp(2.5rem, 6vw, 5.5rem);
+}
+
+.app-shell .highfi-scope .task-shell__header {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  max-width: 58rem;
+  border-bottom: 2px solid var(--task-line-strong);
+  padding-bottom: clamp(1.5rem, 4vw, 3rem);
+}
+
+.app-shell .highfi-scope .task-shell__eyebrow,
+.app-shell .highfi-scope .live-preview__eyebrow {
+  width: fit-content;
+  margin: 0;
+  color: var(--task-muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope .task-shell__header h1 {
+  max-width: 15ch;
+  margin: 0;
+  font-size: clamp(2.75rem, 7vw, 5.5rem);
+  line-height: 0.95;
+  text-wrap: balance;
+}
+
+.app-shell .highfi-scope .task-shell__description {
+  max-width: 48rem;
+  color: var(--task-muted);
+  font-size: clamp(1rem, 1.5vw, 1.15rem);
+  line-height: 1.6;
+}
+
+.app-shell .highfi-scope .task-shell__layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1rem, 3vw, 2.5rem);
+  align-items: start;
+  margin-top: clamp(1.5rem, 4vw, 3rem);
+}
+
+.app-shell .highfi-scope .task-shell__rail,
+.app-shell .highfi-scope .task-shell__main,
+.app-shell .highfi-scope .task-shell__aside,
+.app-shell .highfi-scope .task-shell__main > * {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .task-shell__rail,
+.app-shell .highfi-scope .task-shell__aside {
+  background: transparent;
+}
+
+.app-shell .highfi-scope .task-shell__main {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* P10: address check is the first stage of the submission workspace. */
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-main {
+  display: grid;
+  min-width: 0;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-login {
+  min-width: 0;
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-login {
+  display: grid;
+  justify-items: start;
+  max-width: 40rem;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header h2,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside__note {
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header h2 {
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  line-height: 1.1;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__eyebrow {
+  color: var(--task-muted);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-panel__header p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside__note {
+  color: var(--task-muted);
+  line-height: 1.55;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form .field {
+  gap: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-form .field small {
+  max-width: 65ch;
+  color: var(--task-muted);
+  line-height: 1.5;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-actions {
+  gap: var(--space-3);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-feedback {
+  margin-top: var(--space-2);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-list {
+  border-top: 1px solid var(--task-line);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-item {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .url-check-item p,
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-checks .duplicate-summary dd {
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-duplicate {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submit-entry-scope .submit-entry-aside {
+  gap: var(--space-3);
+}
+
+@media (max-width: 24.375rem) {
+  .app-shell .highfi-scope.submit-entry-scope .submit-entry-actions {
+    width: 100%;
+  }
+
+  .app-shell .highfi-scope.submit-entry-scope .submit-entry-actions > * {
+    flex: 1 1 100%;
+  }
+}
+
+.app-shell .highfi-scope .task-step-rail {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .task-step-rail__list {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-shell .highfi-scope .task-step-rail__item {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  border-block: 1px solid var(--task-line);
+  padding: 0.7rem 0.8rem;
+  color: var(--task-muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.app-shell .highfi-scope .task-step-rail__item--complete {
+  color: var(--color-ink);
+}
+
+.app-shell .highfi-scope .task-step-rail__item--complete::after {
+  position: absolute;
+  right: 0.8rem;
+  color: var(--color-ink);
+  content: '✓';
+  font-weight: 900;
+}
+
+.app-shell .highfi-scope .task-step-rail__item[aria-current='step'] {
+  border-color: var(--task-line-strong);
+  background: var(--task-accent);
+  color: var(--color-ink);
+  font-weight: 850;
+}
+
+.app-shell .highfi-scope .task-step-rail__label,
+.app-shell .highfi-scope .task-step-rail__button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope .task-step-rail__button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.app-shell .highfi-scope .task-step-rail__button:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-shell .highfi-scope .task-step-rail__item[data-step-state='upcoming'] {
+  border-style: dashed;
+}
+
+.app-shell .highfi-scope .live-preview,
+.app-shell .highfi-scope .status-beacon,
+.app-shell .highfi-scope .error-summary {
+  min-width: 0;
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+}
+
+.app-shell .highfi-scope .live-preview {
+  display: grid;
+  gap: var(--space-4);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope .live-preview__header {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.app-shell .highfi-scope .live-preview__header h2,
+.app-shell .highfi-scope .error-summary__title {
+  margin: 0;
+}
+
+.app-shell .highfi-scope .live-preview__description {
+  color: var(--task-muted);
+}
+
+.app-shell .highfi-scope .live-preview__body {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.app-shell .highfi-scope .live-preview__media {
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid var(--task-line);
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope .live-preview__content {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope .status-beacon {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+}
+
+.app-shell .highfi-scope .status-beacon__indicator {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  margin-top: 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.app-shell .highfi-scope .status-beacon--idle {
+  color: var(--task-muted);
+}
+
+.app-shell .highfi-scope .status-beacon--progress {
+  color: #285a63;
+}
+
+.app-shell .highfi-scope .status-beacon--success {
+  color: #1f5c36;
+}
+
+.app-shell .highfi-scope .status-beacon--warning {
+  color: #795600;
+}
+
+.app-shell .highfi-scope .status-beacon--error {
+  border-width: 2px;
+  color: var(--brand-danger);
+}
+
+.app-shell .highfi-scope .status-beacon__copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.app-shell .highfi-scope .status-beacon__detail {
+  color: var(--task-muted);
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope .error-summary {
+  display: grid;
+  gap: var(--space-3);
+  border-width: 2px;
+  border-color: var(--brand-danger);
+  padding: var(--space-4);
+}
+
+.app-shell .highfi-scope .error-summary__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-shell .highfi-scope .error-summary__item {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  border-top: 1px solid var(--task-line);
+  padding-top: var(--space-3);
+}
+
+.app-shell .highfi-scope .error-summary__link {
+  width: fit-content;
+  color: inherit;
+  font-weight: 850;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-shell .highfi-scope .error-summary__message {
+  color: var(--task-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 68.75rem) {
+  .app-shell .highfi-scope .task-shell__layout {
+    grid-template-columns: 12rem minmax(0, 1fr) 18rem;
+  }
+
+  .app-shell .highfi-scope .task-shell__layout--without-aside {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+
+  .app-shell .highfi-scope .task-shell__rail,
+  .app-shell .highfi-scope .task-shell__aside {
+    position: sticky;
+    top: 6rem;
+  }
+}
+
+@media (max-width: 68.749rem) {
+  .app-shell .highfi-scope .task-shell__rail {
+    overflow: hidden;
+  }
+
+  .app-shell .highfi-scope .task-step-rail__list {
+    display: flex;
+    max-width: 100%;
+    overflow-x: auto;
+    gap: 0.5rem;
+    padding-bottom: 0.35rem;
+    overscroll-behavior-inline: contain;
+  }
+
+  .app-shell .highfi-scope .task-step-rail__item {
+    flex: 0 0 auto;
+    min-width: 9rem;
+    border-block: 0;
+    border-inline-start: 3px solid var(--task-line);
+  }
+
+  .app-shell .highfi-scope .task-step-rail__item[aria-current='step'] {
+    border-inline-start-color: var(--task-line-strong);
+  }
+
+  .app-shell .highfi-scope .task-step-rail__item[data-step-state='upcoming'] {
+    border-inline-start-style: dashed;
+  }
+}
+
+@media (max-width: 24.375rem) {
+  .app-shell .highfi-scope .task-shell__main .task-shell__actions,
+  .app-shell .highfi-scope .task-shell__main .task-primary-actions {
+    width: 100%;
+  }
+
+  .app-shell .highfi-scope .task-shell__main .task-shell__actions > *,
+  .app-shell .highfi-scope .task-shell__main .task-primary-actions > * {
+    flex: 1 1 100%;
+  }
+}
+
+/* P11: guided form stages reuse the same workspace as address checking. */
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--task-line);
+  padding-bottom: var(--space-4);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__header h2,
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__eyebrow {
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-panel__eyebrow {
+  color: var(--task-muted);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-step-fields {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-guidance,
+.app-shell .highfi-scope.submit-form-scope .submission-choice-field,
+.app-shell .highfi-scope.submit-form-scope .original-extraction {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submission-choice-field:focus {
+  outline: 3px solid var(--task-accent);
+  outline-offset: 3px;
+}
+
+.app-shell .highfi-scope.submit-form-scope .task-primary-actions {
+  position: static;
+  gap: var(--space-3);
+  border-top: 2px solid var(--task-line-strong);
+  background: transparent;
+  padding-top: var(--space-4);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list div {
+  display: grid;
+  gap: 0.15rem;
+  border-top: 1px solid var(--task-line);
+  padding-top: var(--space-3);
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list dt {
+  color: var(--task-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.app-shell .highfi-scope.submit-form-scope .submit-form-preview-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* P12: preview and review outcomes complete the shared submission workspace. */
+.app-shell .highfi-scope.submission-review-scope .submission-review-workspace {
+  min-width: 0;
+  gap: var(--space-5);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-review-aside {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-review-aside__note,
+.app-shell .highfi-scope.submission-review-scope .submission-receipt-note {
+  margin: 0;
+  color: var(--task-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  border: 1px solid var(--task-line-strong);
+  background: var(--task-surface);
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section h2,
+.app-shell .highfi-scope.submission-review-scope .review-section h3,
+.app-shell .highfi-scope.submission-review-scope .review-section p {
+  margin-block: 0;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--state {
+  border-width: 2px;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--changes,
+.app-shell .highfi-scope.submission-review-scope .review-section--rejected {
+  border-style: dashed;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--approved {
+  border-color: var(--color-ink);
+  background: var(--brand-lime);
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-section--guidance,
+.app-shell .highfi-scope.submission-review-scope .review-section--preview-progress {
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-preview-grid {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-card-preview__media {
+  min-height: 10rem;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid div {
+  min-width: 0;
+  border-top: 1px solid var(--task-line);
+  padding-top: var(--space-3);
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid dt {
+  color: var(--task-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.app-shell .highfi-scope.submission-review-scope .submission-summary-grid dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.app-shell .highfi-scope.submission-review-scope .review-message-list li {
+  align-items: flex-start;
+  border-color: var(--task-line);
+}
+
+.app-shell .highfi-scope.submission-review-scope .task-primary-actions {
+  position: static;
+  gap: var(--space-3);
+  border-top: 2px solid var(--task-line-strong);
+  background: transparent;
+  padding-top: var(--space-4);
+}
+
+@media (min-width: 46rem) {
+  .app-shell .highfi-scope.submission-review-scope .submission-preview-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-shell .highfi-scope.submission-review-scope .submission-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

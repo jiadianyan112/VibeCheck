@@ -133,6 +133,34 @@ export interface PortfolioV1Snapshot {
 export const submissionFormSteps = ['prefill', 'definition', 'solution', 'development'] as const
 export type SubmissionFormStep = (typeof submissionFormSteps)[number]
 
+export interface SubmissionCopy {
+  readonly oneLineLabel: string
+  readonly oneLinePreviewLabel: string
+  readonly originalOneLineLabel: string
+  readonly validationOneLineMessage: string
+  readonly emptyOneLinePreview: string
+}
+
+const learningSubmissionCopy: SubmissionCopy = {
+  oneLineLabel: '一句话定义',
+  oneLinePreviewLabel: '一句话介绍',
+  originalOneLineLabel: '定义',
+  validationOneLineMessage: '请填写一句话定义。',
+  emptyOneLinePreview: '尚未填写一句话定义',
+}
+
+const portfolioSubmissionCopy: SubmissionCopy = {
+  oneLineLabel: '一句话简介',
+  oneLinePreviewLabel: '一句话简介',
+  originalOneLineLabel: '简介',
+  validationOneLineMessage: '请填写一句话简介。',
+  emptyOneLinePreview: '尚未填写一句话简介',
+}
+
+export function submissionCopy(categoryId: SubmissionProjectFields['categoryId']): SubmissionCopy {
+  return categoryId === portfolioCategoryId ? portfolioSubmissionCopy : learningSubmissionCopy
+}
+
 export const submissionFormStepLabels: Record<SubmissionFormStep, string> = {
   prefill: '1 基础信息',
   definition: '2 产品定义',
@@ -486,7 +514,6 @@ const portfolioStepRequiredFields: Record<SubmissionFormStep, Array<keyof Submis
 
 const fieldErrorLabels: Partial<Record<keyof SubmissionProjectFields, string>> = {
   currentName: '请确认作品名称。',
-  oneLineDefinition: '请填写一句话定义。',
   accessStatus: '请确认基础访问状态。',
   targetUsers: '至少选择一个目标用户。',
   coreProblem: '请填写要解决的核心问题。',
@@ -502,7 +529,12 @@ export function validateSubmissionStep(draft: SubmissionDraft, step: SubmissionF
   return Object.fromEntries(
     required[step]
       .filter((field) => !hasValue(draft.fields[field]))
-      .map((field) => [field, fieldErrorLabels[field] ?? '请完成此字段。']),
+      .map((field) => [
+        field,
+        field === 'oneLineDefinition'
+          ? submissionCopy(draft.fields.categoryId).validationOneLineMessage
+          : fieldErrorLabels[field] ?? '请完成此字段。',
+      ]),
   )
 }
 

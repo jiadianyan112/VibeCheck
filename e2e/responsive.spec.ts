@@ -142,8 +142,10 @@ test.describe('T54 响应式关键路径', () => {
     await page.getByRole('button', { name: '检查地址' }).click()
     await expect(page.getByText('地址检查通过')).toBeVisible()
     await page.getByRole('button', { name: '继续补充作品信息' }).click()
-    await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
-    await expect(page.locator('.submission-progress')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '补充作品信息' })).toBeVisible()
+    const rail = page.getByRole('navigation', { name: '发布步骤' })
+    await expect(rail).toBeVisible()
+    await expect(rail.locator('[aria-current="step"]')).toHaveText('基础信息')
     await expectNoPageOverflow(page, '360px 发布流程')
   })
 
