@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, PageFrame, useToast } from '../components'
+import { Button, Input, useToast } from '../components'
+import { TaskShell, StatusBeacon } from '../components/task'
 import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
 import { canContinueAfterUrlCheck, urlCheckLabels } from '../features/submission/urlCheck'
 import {
@@ -194,9 +195,10 @@ export function SubmitEntryPage() {
   if (!state.session.user) {
     const returnPath = encodeURIComponent(`${location.pathname}${location.search}`)
     return (
-      <PageFrame
+      <TaskShell
         title="发布作品"
         description="登录后可以保存草稿，并在提交后查看审核进度。"
+        status={<StatusBeacon state="idle" label="登录后开始" />}
       >
         <section className="submit-login-callout stack stack--small">
           <h2>先登录，再检查作品地址</h2>
@@ -205,58 +207,20 @@ export function SubmitEntryPage() {
             登录后发布
           </Link>
         </section>
-      </PageFrame>
+      </TaskShell>
     )
   }
 
   return (
-    <PageFrame
+    <TaskShell
       title="先检查作品地址"
       description="输入作品的公开访问地址，我们会先检查链接是否可用，以及社区里是否已有档案。"
-    >
-      <div className="submission-entry-layout">
-        <form className="submission-url-panel stack" onSubmit={checkUrl} noValidate>
-          <div className="stack stack--small">
-            <h2>公开访问 URL</h2>
-          </div>
-          <label className="field"><span className="field__label">作品品类</span><select className="input" value={categoryId} onChange={(event) => { const nextCategoryId = event.target.value as ProjectCategoryId; setCategoryId(nextCategoryId); dispatch({ type: 'SUBMISSION_ENTRY_CATEGORY_SET', categoryId: nextCategoryId }); setResult(null); setSavedDraftId(null) }}><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option></select><small>{categoryId === 'personal_site_portfolio' ? '需为无需登录即可查看主要内容、围绕明确个人身份且有 AI 辅助开发证据的独立 Web 作品。' : '保留原有材料、练习、反馈与学习记录字段。'}</small></label>
-          <Input
-            label="作品地址"
-            hint={categoryId === 'personal_site_portfolio' ? '可省略 https://；例如 example.test/my-portfolio' : '可省略 https://；例如 example.test/my-learning-tool'}
-            error={validationError}
-            value={url}
-            inputMode="url"
-            autoComplete="url"
-            onChange={(event) => {
-              setUrl(event.target.value)
-              dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: event.target.value })
-              setTouched(true)
-              setResult(null)
-              setSavedDraft(null)
-              setSavedDraftId(null)
-              checkRequestIdRef.current = ''
-              createRequestIdRef.current = ''
-            }}
-            onBlur={() => {
-              setTouched(true)
-              if (!validateUrl(url)) {
-                const normalized = normalizeSubmissionUrl(url.trim())
-                setUrl(normalized)
-                dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: normalized })
-              }
-            }}
-          />
-          <div className="cluster">
-            <Button variant="primary" type="submit" loading={checking} disabled={Boolean(validationError)}>
-              检查地址
-            </Button>
-            {checking ? <Button type="button" onClick={cancelCheck}>取消检查</Button> : null}
-          </div>
-          {requestError ? <section className="feedback feedback--error" role="alert"><strong>检查未完成</strong><p>{requestError.message}</p>{requestError.retryable ? <Button type="button" onClick={() => void checkUrl()}>重试</Button> : null}</section> : null}
-          {cancelled ? <div className="feedback" role="status"><strong>检查已取消</strong><p>没有创建草稿，也没有发出重复检查。</p></div> : null}
-        </form>
+      status={<StatusBeacon
+        state={checking || creating ? 'busy' : requestError ? 'error' : duplicateCandidate ? 'warning' : allPassed ? 'success' : 'idle'}
+        label={checking ? '正在检查地址' : creating ? '正在保存草稿' : requestError ? '检查未完成' : cancelled ? '检查已取消' : duplicateCandidate ? '发现已有作品' : savedDraftId ? '地址草稿已同步' : allPassed ? '可以继续填写' : '从公开地址开始'}
+      />}
 
-        <section className="url-check-panel stack" aria-labelledby="url-check-heading" aria-busy={checking || undefined}>
+      aside={<section className="url-check-panel stack" aria-labelledby="url-check-heading" aria-busy={checking || undefined}>
           <div className="stack stack--small">
             <h2 id="url-check-heading">检查进度</h2>
             <p>完成这些检查后，你就可以继续补充作品信息。</p>
@@ -285,7 +249,6 @@ export function SubmitEntryPage() {
                 <p>社区里已经有这个作品，请先确认是否是同一个。</p>
               </div>
               <dl className="duplicate-summary">
-                <div><dt>候选项目 ID</dt><dd>{duplicateCandidate.projectId}</dd></div>
                 <div><dt>匹配地址</dt><dd>{result.normalizedUrl}</dd></div>
               </dl>
               <Link
@@ -328,8 +291,52 @@ export function SubmitEntryPage() {
               {allPassed ? <p>下一步将补充作品介绍、开发工具和可复用内容。</p> : null}
             </div>
           ) : null}
-        </section>
+        </section>}
+    >
+      <div className="submission-entry-layout">
+        <form className="submission-url-panel stack" onSubmit={checkUrl} noValidate>
+          <div className="stack stack--small">
+            <h2>公开访问 URL</h2>
+          </div>
+          <label className="field"><span className="field__label">作品品类</span><select className="input" value={categoryId} onChange={(event) => { const nextCategoryId = event.target.value as ProjectCategoryId; setCategoryId(nextCategoryId); dispatch({ type: 'SUBMISSION_ENTRY_CATEGORY_SET', categoryId: nextCategoryId }); setResult(null); setSavedDraftId(null) }}><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option></select><small>{categoryId === 'personal_site_portfolio' ? '需为无需登录即可查看主要内容、围绕明确个人身份且有 AI 辅助开发证据的独立 Web 作品。' : '保留原有材料、练习、反馈与学习记录字段。'}</small></label>
+          <Input
+            label="作品地址"
+            hint={categoryId === 'personal_site_portfolio' ? '可省略 https://；例如 example.test/my-portfolio' : '可省略 https://；例如 example.test/my-learning-tool'}
+            error={validationError}
+            value={url}
+            inputMode="url"
+            autoComplete="url"
+            onChange={(event) => {
+              setUrl(event.target.value)
+              dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: event.target.value })
+              setTouched(true)
+              setResult(null)
+              setSavedDraft(null)
+              setSavedDraftId(null)
+              checkRequestIdRef.current = ''
+              createRequestIdRef.current = ''
+            }}
+            onBlur={() => {
+              setTouched(true)
+              if (!validateUrl(url)) {
+                const normalized = normalizeSubmissionUrl(url.trim())
+                setUrl(normalized)
+                dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: normalized })
+              }
+            }}
+          />
+          <div className="cluster">
+            <Button variant="primary" type="submit" loading={checking} disabled={Boolean(validationError)}>
+              检查地址
+            </Button>
+            {checking ? <Button type="button" onClick={cancelCheck}>取消检查</Button> : null}
+          </div>
+          {requestError ? <section className="feedback feedback--error" role="alert"><strong>检查未完成</strong><p>{requestError.message}</p>{requestError.retryable ? <Button type="button" onClick={() => void checkUrl()}>重试</Button> : null}</section> : null}
+            {cancelled ? <div className="feedback"><p>没有创建草稿，也没有发出重复检查。</p></div> : null}
+        </form>
+
+
       </div>
-    </PageFrame>
+    </TaskShell>
   )
 }

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, vi } from 'vitest'
@@ -243,12 +243,24 @@ describe('submission preview and review status', () => {
   beforeEach(() => { localStorage.clear(); configureServiceRuntime({ defaultDelayMs: 0 }); seedDraft() })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+  it.each(['ai_learning_quiz', 'personal_site_portfolio'] as const)('keeps core facts readable outside the collapsed preview for %s', async (category) => {
+    seedDraft(category)
+    renderReview()
+    await screen.findByRole('heading', { name: '发布预览' })
+    const summary = screen.getByRole('region', { name: '作品预览' })
+    const fields = persistedDraft().fields
+    expect(within(summary).getByText('作品名称').nextElementSibling).toHaveTextContent(fields.currentName!)
+    expect(within(summary).getByText('一句话介绍').nextElementSibling).toHaveTextContent(fields.oneLineDefinition!)
+    expect(within(summary).getByText('公开地址').nextElementSibling).toHaveTextContent(fields.publicUrl!)
+    expect(within(summary).getByText('访问状态').nextElementSibling).not.toBeEmptyDOMElement()
+  })
+
   it('confirms once, shows pending without a fabricated ETA, saves material and withdraws', async () => {
     const user = userEvent.setup()
     renderReview()
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
     expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('审核状态演示')
-    expect(screen.getByText('暂无作品截图')).toBeInTheDocument()
+    expect(screen.getByText('默认封面')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：待审核' })).toBeInTheDocument()
@@ -268,6 +280,7 @@ describe('submission preview and review status', () => {
     await user.click(await screen.findByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))
     expect(await screen.findByRole('heading', { name: '审核状态：已通过' })).toBeInTheDocument()
+    expect(document.querySelector('.status-beacon--success')).toHaveTextContent('已通过')
     const approved = persistedDraft()
     expect(approved.publishedProjectId).toMatch(/^project-submission-/)
     expect(approved.publishedEventId).toMatch(/^event-submission-/)
@@ -286,7 +299,7 @@ describe('submission preview and review status', () => {
     expect(screen.getByLabelText('社区卡片预览')).toHaveTextContent('个人主页与作品集')
     expect(screen.getByText('创作者身份').closest('div')).toHaveTextContent('开发者')
     expect(screen.getByText('建站目的').closest('div')).toHaveTextContent('展示项目')
-    expect(screen.getByText('核心内容').closest('div')).toHaveTextContent('首屏、项目')
+    expect(screen.getByText('核心内容', { selector: 'dt' }).closest('div')).toHaveTextContent('首屏、项目')
     expect(screen.queryByText('目标用户')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认并提交审核' }))
     await user.click(screen.getByRole('button', { name: '确认提交' }))

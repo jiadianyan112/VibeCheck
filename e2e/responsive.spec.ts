@@ -143,7 +143,9 @@ test.describe('T54 响应式关键路径', () => {
     await expect(page.getByText('地址检查通过')).toBeVisible()
     await page.getByRole('button', { name: '继续补充作品信息' }).click()
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
-    await expect(page.locator('.submission-progress')).toBeVisible()
+    await expect(page.getByRole('list', { name: '发布步骤' })).toBeVisible()
+    await expect(page.locator('.step-rail [data-step-id]')).toHaveCount(6)
+    await expect(page.locator('.step-rail [aria-current="step"]')).toHaveText('基础信息')
     await expectNoPageOverflow(page, '360px 发布流程')
   })
 
