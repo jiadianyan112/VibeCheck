@@ -45,11 +45,12 @@ function FrontstageContent() {
     || location.pathname.endsWith('/verify-author')
     || location.pathname.endsWith('/update')
   const hasCompareBar = !isFocusedFlow && state.comparisonProjectIds.length > 0
+  const isAuthPage = location.pathname === '/auth'
 
   return (
     <div className={`app-shell${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
       <RouteScrollManager />
-      <header className="global-header">
+      {!isAuthPage ? <header className="global-header">
         <div className="global-header__inner">
           <Link className="wordmark" to="/projects" aria-label="VibeCheck 作品广场">
             <BrandMark />
@@ -132,14 +133,14 @@ function FrontstageContent() {
             </nav>
           </details>
         </div>
-      </header>
+      </header> : null}
       <div className="app-shell__content">
         <Outlet />
       </div>
-      <SiteFooter
+      {!isAuthPage ? <SiteFooter
         submitPath={restrictedPath('/submit', isLoggedIn, '/submit')}
         compact={isFocusedFlow}
-      />
+      /> : null}
       {hasCompareBar ? <FloatingCompareBar /> : null}
       {import.meta.env.DEV ? <ScenarioPanel /> : null}
     </div>

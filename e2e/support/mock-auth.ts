@@ -264,7 +264,7 @@ export async function installMockAuth(page: Page, options: MockAuthOptions = {})
     await page.getByRole('button', { name: '发送验证码' }).click()
     await expect(page.getByRole('textbox', { name: '6 位验证码' })).toBeVisible()
     await page.getByRole('textbox', { name: '6 位验证码' }).fill(mockOtp)
-    await page.getByRole('button', { name: '验证并登录' }).click()
+    await page.getByRole('button', { name: '登录', exact: true }).click()
     await expect(page).toHaveURL(escapedUrl(returnPath))
   }
 

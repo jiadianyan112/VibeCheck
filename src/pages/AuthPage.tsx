@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
-import { Button, Input, PageFrame, useToast } from '../components'
+import { Button, Input, useToast } from '../components'
+import { BrandMark } from '../components/brand'
 import { roleLabels, useAuthSession } from '../features'
 import {
   AuthApiError,
@@ -53,6 +54,13 @@ export function AuthPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [clock, setClock] = useState(() => Date.now())
+  const emailInput = useRef<HTMLInputElement>(null)
+  const otpInput = useRef<HTMLInputElement>(null)
+  const [errorField, setErrorField] = useState<'email' | 'otp' | null>(null)
+
+  useEffect(() => {
+    if (challenge) otpInput.current?.focus()
+  }, [challenge])
 
   useEffect(() => {
     if (!challenge) return
@@ -67,11 +75,19 @@ export function AuthPage() {
 
   const requestChallenge = async (event?: FormEvent) => {
     event?.preventDefault()
+    if (submitting || resendSeconds > 0) return
+    if (!emailInput.current?.validity.valid) {
+      setError('请输入有效的邮箱地址。')
+      setErrorField('email')
+      emailInput.current?.focus()
+      return
+    }
     setSubmitting(true)
     setError(null)
+    setErrorField(null)
     try {
       const accepted = await startEmailChallenge({
-        email,
+        email: email.trim(),
         returnTo: returnPath,
         clientRequestId: createAuthRequestId(),
       })
@@ -87,13 +103,16 @@ export function AuthPage() {
 
   const verify = async (event: FormEvent) => {
     event.preventDefault()
-    if (!challenge) return
+    if (!challenge || submitting) return
     if (!/^\d{6}$/.test(otp)) {
       setError('请输入邮件中的 6 位数字验证码。')
+      setErrorField('otp')
+      otpInput.current?.focus()
       return
     }
     setSubmitting(true)
     setError(null)
+    setErrorField(null)
     try {
       const result = await verifyEmailChallenge({
         challengeId: challenge.challenge_id,
@@ -127,105 +146,91 @@ export function AuthPage() {
       }
     }
     return (
-      <PageFrame title="当前账号" description="你已登录此账户。账户或权限发生变化后，需要重新登录。">
-        <section className="auth-page-panel stack">
-          <div className="stack stack--small">
-            <h2>{state.session.user.displayName} · {roleLabels[state.session.role]}</h2>
-            <p>你可以继续返回刚才的页面，或安全退出此账户。</p>
-          </div>
+      <main className="auth-page highfi-scope">
+        <Link className="auth-page__back" to="/projects">← 返回作品广场</Link>
+        <section className="auth-page__content auth-page__account">
+          <BrandMark />
+          <h1>当前账号</h1>
+          <p>{state.session.user.displayName} · {roleLabels[state.session.role]}</p>
           {error ? <p className="field-error" role="alert">{error}</p> : null}
-          <div className="cluster">
-            <Link className="button button--primary" to={returnPath}>继续返回原页面</Link>
-            <Button variant="secondary" loading={submitting} onClick={() => void logout()}>
-              退出登录
-            </Button>
-          </div>
+          <Link className="button button--primary auth-page__submit" to={returnPath}>继续</Link>
+          <Button variant="quiet" loading={submitting} onClick={() => void logout()}>退出登录</Button>
         </section>
-      </PageFrame>
+      </main>
     )
   }
 
   return (
-    <PageFrame
-      title="登录／注册"
-      description="无需密码。输入邮箱并使用一次性验证码登录；新邮箱验证后会自动创建账号。"
-    >
-      <section className="auth-page-panel stack" aria-labelledby="email-auth-heading">
-        <div className="stack stack--small">
+    <main className="auth-page highfi-scope">
+      <Link className="auth-page__back" to="/projects">← 返回作品广场</Link>
+      <section className="auth-page__content" aria-labelledby="email-auth-heading">
+        <header className="auth-page__heading">
+          <BrandMark />
+          <h1 className="sr-only">登录／注册</h1>
           <h2 id="email-auth-heading">邮箱验证码登录</h2>
-          <p>验证码 10 分钟内有效，最多可尝试 5 次；60 秒后可重新发送。</p>
-          {state.comparisonProjectIds.length ? (
-            <p className="boundary-note" role="note">
-              当前 {state.comparisonProjectIds.length} 个临时比较作品会在本设备保留。
-            </p>
-          ) : null}
-        </div>
-
-        {!challenge ? (
-          <form className="stack" onSubmit={(event) => void requestChallenge(event)} noValidate>
+        </header>
+        <form className="auth-page__form" onSubmit={(event) => void (challenge ? verify(event) : requestChallenge(event))} noValidate>
+          <div className={`auth-page__input-row${challenge ? ' auth-page__input-row--locked' : ''}`}>
             <Input
+              ref={emailInput}
               label="邮箱地址"
               type="email"
+              placeholder="请输入邮箱地址"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => { setEmail(event.target.value); setError(null); setErrorField(null) }}
               autoComplete="email"
               inputMode="email"
               maxLength={254}
               required
-              hint="我们只会发送本次登录验证码，不会公开你的邮箱。"
+              readOnly={Boolean(challenge)}
+              disabled={submitting}
+              aria-invalid={errorField === 'email'}
+              aria-describedby={error ? 'auth-feedback-error' : undefined}
             />
-            {error ? <p className="field-error" role="alert">{error}</p> : null}
-            <Button type="submit" variant="primary" loading={submitting}>发送验证码</Button>
-          </form>
-        ) : (
-          <form className="stack" onSubmit={(event) => void verify(event)} noValidate>
-            <p role="status">验证码已发送至 {challenge.masked_email}</p>
+            {challenge ? <button className="auth-page__inline-action" type="button" disabled={submitting} onClick={() => {
+              setChallenge(null)
+              setOtp('')
+              setError(null)
+              setErrorField(null)
+              emailInput.current?.focus()
+            }}>更换邮箱</button> : null}
+          </div>
+          <div className="auth-page__input-row auth-page__input-row--code">
             <Input
+              ref={otpInput}
               label="6 位验证码"
+              placeholder="请输入验证码"
               value={otp}
-              onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(event) => { setOtp(event.target.value.replace(/\D/g, '').slice(0, 6)); setError(null); setErrorField(null) }}
               autoComplete="one-time-code"
               inputMode="numeric"
               pattern="[0-9]{6}"
               minLength={6}
               maxLength={6}
               required
+              disabled={!challenge || submitting}
+              aria-invalid={errorField === 'otp'}
+              aria-describedby={error ? 'auth-feedback-error' : undefined}
             />
-            {error ? <p className="field-error" role="alert">{error}</p> : null}
-            <div className="cluster">
-              <Button type="submit" variant="primary" loading={submitting}>验证并登录</Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={submitting || resendSeconds > 0}
-                onClick={() => void requestChallenge()}
-              >
-                {resendSeconds > 0 ? `${resendSeconds} 秒后重新发送` : '重新发送验证码'}
-              </Button>
-              <Button
-                type="button"
-                variant="quiet"
-                disabled={submitting}
-                onClick={() => {
-                  setChallenge(null)
-                  setOtp('')
-                  setError(null)
-                }}
-              >
-                更换邮箱
-              </Button>
-            </div>
-          </form>
-        )}
-
-        <div className="wire-panel stack stack--small">
-          <strong>暂不登录</strong>
-          <p>游客仍可浏览、搜索和临时比较；收藏、关注、评论和发布需要登录。</p>
-          <Button variant="secondary" onClick={() => navigate('/projects', { replace: true })}>
-            先以游客身份浏览
-          </Button>
-        </div>
+            <button
+              className="auth-page__inline-action"
+              type="button"
+              disabled={submitting || resendSeconds > 0}
+              aria-label={resendSeconds > 0 ? `${resendSeconds} 秒后重新发送` : challenge ? '重新发送验证码' : '发送验证码'}
+              onClick={() => void requestChallenge()}
+            >
+              {submitting ? '处理中…' : resendSeconds > 0 ? `${resendSeconds}s 后重发` : challenge ? '重新发送' : '发送验证码'}
+            </button>
+          </div>
+          <div className="auth-page__feedback">
+            {error ? <p id="auth-feedback-error" className="field-error" role="alert">{error}</p> : null}
+            <p role="status">{!error && challenge ? `验证码已发送至 ${challenge.masked_email}` : ''}</p>
+          </div>
+          <Button className="auth-page__submit" type="submit" variant="primary" loading={submitting} disabled={!challenge}>登录</Button>
+          <p className="auth-page__note">新邮箱验证后自动注册</p>
+        </form>
+        <Link className="auth-page__guest" to="/projects" replace>先逛逛</Link>
       </section>
-    </PageFrame>
+    </main>
   )
 }

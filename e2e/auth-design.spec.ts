@@ -1,0 +1,40 @@
+import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+import { installMockAuth } from './support/mock-auth'
+
+for (const width of [390, 768, 1440]) {
+  test(`compact auth at ${width}px: keyboard, errors, recovery and return`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await installMockAuth(page)
+    await page.goto('/auth?return_to=%2Fabout')
+    const email = page.getByRole('textbox', { name: '邮箱地址' })
+    const otp = page.getByRole('textbox', { name: '6 位验证码' })
+    const login = page.getByRole('button', { name: '登录', exact: true })
+    await expect(login).toBeDisabled()
+    await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
+    await page.screenshot({ path: `outputs/auth-review/login-${width}.png`, fullPage: true })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    const accessibility = await new AxeBuilder({ page }).include('main').analyze()
+    expect(accessibility.violations).toEqual([])
+    await email.fill('invalid')
+    await page.getByRole('button', { name: '发送验证码' }).click()
+    await expect(page.getByRole('alert')).toHaveText('请输入有效的邮箱地址。')
+    await expect(email).toBeFocused()
+    await email.fill('mia@example.test')
+    await page.getByRole('button', { name: '发送验证码' }).click()
+    await expect(otp).toBeFocused()
+    await expect(email).toHaveAttribute('readonly', '')
+    await otp.fill('000000')
+    await login.click()
+    await expect(page.getByRole('alert')).toHaveText('验证码不正确，请检查后重试。')
+    await expect(otp).toHaveValue('000000')
+    await page.screenshot({ path: `outputs/auth-review/error-${width}.png`, fullPage: true })
+    await page.getByRole('button', { name: '更换邮箱' }).click()
+    await expect(email).toBeFocused()
+    await expect(otp).toHaveValue('')
+    await page.getByRole('button', { name: '发送验证码' }).click()
+    await otp.fill('123456')
+    await otp.press('Enter')
+    await expect(page).toHaveURL(/\/about$/)
+  })
+}

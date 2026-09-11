@@ -78,7 +78,7 @@ test.describe('T55 键盘与焦点', () => {
     await expect(otp).toBeVisible()
     await otp.focus()
     await page.keyboard.insertText('123456')
-    const verify = page.getByRole('button', { name: '验证并登录' })
+    const verify = page.getByRole('button', { name: '登录', exact: true })
     await verify.focus()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/submit$/)

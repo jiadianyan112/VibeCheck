@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from '../app/providers'
@@ -62,8 +62,17 @@ describe('CompareSessionPage management', () => {
     expect(screen.getByText('2/5 个作品')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '登录并保存比较' }))
     expect(await screen.findByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
-    expect(screen.getByText(/当前 2 个临时比较作品会在本设备保留/)).toBeInTheDocument()
     expect(router.state.location.search).toContain('return_to=')
+
+    await act(async () => {
+      await router.navigate('/compare/comparison-anonymous-pdf')
+    })
+    expect(await screen.findByText('2/5 个作品')).toBeInTheDocument()
+    const returnedList = screen.getByRole('list', { name: '已选比较作品' })
+    expect(within(returnedList).getAllByRole('listitem').map((item) => within(item).getByRole('link').getAttribute('href'))).toEqual([
+      '/project/project-quizforge',
+      '/project/project-speakmirror',
+    ])
   })
 
   it('offers a recovery path for an unknown session', async () => {
