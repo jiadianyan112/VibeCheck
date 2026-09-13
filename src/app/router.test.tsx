@@ -20,7 +20,7 @@ describe('application route skeleton', () => {
   beforeEach(() => localStorage.clear())
 
   it.each([
-    ['/projects', '先看看别人怎么做，再决定自己怎么做。'],
+    ['/projects', '发现好作品'],
     ['/discover', '搜索作品、功能或完整想法'],
     ['/discover/result', '找到相似作品'],
     ['/project/project-quizforge', '题练工坊'],

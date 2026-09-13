@@ -15,6 +15,19 @@ const primaryNavigation = [
   { to: '/about', label: '关于' },
 ]
 
+function NavigationIcon({ name }: { name: string }) {
+  const paths: Record<string, string> = {
+    '作品广场': 'M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z',
+    '分类': 'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
+    '最新动态': 'M3 12h4l3-8 4 16 3-8h4',
+    '关于': 'M12 11v6M12 7v.1M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
+    '比较': 'M4 5h6v14H4ZM14 5h6v14h-6Z',
+    '发布': 'M12 5v14M5 12h14',
+    '通知': 'M6 9a6 6 0 0 1 12 0v7l2 2H4l2-2ZM10 21h4',
+  }
+  return <svg className="navigation-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] ?? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0'} /></svg>
+}
+
 function navClassName({ isActive }: { isActive: boolean }) {
   return isActive ? 'nav-link nav-link--active' : 'nav-link'
 }
@@ -48,7 +61,7 @@ function FrontstageContent() {
   const isAuthPage = location.pathname === '/auth'
 
   return (
-    <div className={`app-shell${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
+    <div className={`app-shell${!isFocusedFlow ? ' app-shell--browse' : ''}${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
       <RouteScrollManager />
       {!isAuthPage ? <header className="global-header">
         <div className="global-header__inner">
@@ -58,7 +71,7 @@ function FrontstageContent() {
           <nav className="desktop-navigation" aria-label="主导航">
             {primaryNavigation.map((item) => (
               <NavLink key={item.to} className={navClassName} to={item.to}>
-                {item.label}
+                <NavigationIcon name={item.label} /><span>{item.label}</span>
               </NavLink>
             ))}
           </nav>
@@ -78,19 +91,19 @@ function FrontstageContent() {
               <Link className="header-action" to="/admin">管理后台</Link>
             ) : null}
             <Link className="header-action" to={comparisonPath}>
-              比较 <span aria-label={`${state.comparisonProjectIds.length} 个作品`}>{state.comparisonProjectIds.length}</span>
+              <NavigationIcon name="比较" />比较 <span className="navigation-count" aria-label={`${state.comparisonProjectIds.length} 个作品`}>{state.comparisonProjectIds.length}</span>
             </Link>
             <Link
               className="header-action header-action--strong"
               to={restrictedPath('/submit', isLoggedIn, '/submit')}
             >
-              发布
+              <NavigationIcon name="发布" />发布
             </Link>
             <Link
               className="header-action"
               to={restrictedPath('/notifications', isLoggedIn, '/notifications')}
             >
-              通知{unreadCount > 0 ? ` ${unreadCount}` : ''}
+              <NavigationIcon name="通知" />通知{unreadCount > 0 ? ` ${unreadCount}` : ''}
             </Link>
             <Link
               className="avatar-link"

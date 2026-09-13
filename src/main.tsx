@@ -7,6 +7,8 @@ import './styles/highfi-components.css'
 import './styles/highfi-home.css'
 import './styles/highfi-task.css'
 import './styles/highfi-auth.css'
+import './styles/feed-card.css'
+import './styles/explore-feed.css'
 
 const root = document.getElementById('root')
 
