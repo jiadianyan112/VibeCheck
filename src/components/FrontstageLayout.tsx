@@ -61,7 +61,7 @@ function FrontstageContent() {
   const isAuthPage = location.pathname === '/auth'
 
   return (
-    <div className={`app-shell${!isFocusedFlow ? ' app-shell--browse' : ''}${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
+    <div className={`app-shell${!isAuthPage ? ' app-shell--browse' : ''}${hasCompareBar ? ' app-shell--has-compare-bar' : ''}`}>
       <RouteScrollManager />
       {!isAuthPage ? <header className="global-header">
         <div className="global-header__inner">
@@ -147,7 +147,7 @@ function FrontstageContent() {
           </details>
         </div>
       </header> : null}
-      <div className="app-shell__content">
+      <div className={`app-shell__content${location.pathname !== '/projects' ? ' ui-root' : ''}`}>
         <Outlet />
       </div>
       {!isAuthPage ? <SiteFooter

@@ -1,0 +1,808 @@
+/* Shared browsing vocabulary for categories, search, activity, and idea matching.
+ * Projects owns the feed layout. These routes use the same canvas, compact type,
+ * quiet lines, rounded controls, and lime action treatment without duplicating it. */
+
+.app-shell .highfi-scope.discovery-page {
+  --discovery-canvas: var(--brand-canvas);
+  --discovery-surface: #eeeee8;
+  --discovery-raised: #fbfbf7;
+  --discovery-ink: var(--brand-ink);
+  --discovery-muted: #65655e;
+  --discovery-subtle: #72726a;
+  --discovery-line: #deded5;
+  min-height: calc(100svh - var(--browse-header, 88px));
+  padding: 0 32px 56px;
+  color: var(--discovery-ink);
+  background: var(--discovery-canvas);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 32.5rem);
+  gap: 24px;
+  align-items: end;
+  padding: 14px 0 24px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__heading,
+.app-shell .highfi-scope.discovery-page .discovery-shell__query,
+.app-shell .highfi-scope.discovery-page .discovery-shell__content,
+.app-shell .highfi-scope.discovery-page .discovery-filters__body,
+.app-shell .highfi-scope.discovery-page .discovery-reasons {
+  display: grid;
+  gap: 12px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__heading {
+  align-content: end;
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__heading h1 {
+  max-width: none;
+  margin: 0;
+  font: 750 1.5rem/1.35 var(--font-body);
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__description,
+.app-shell .highfi-scope.discovery-page .discovery-shell__description p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__query {
+  width: min(100%, 32.5rem);
+  justify-self: end;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__query .hero-search {
+  width: 100%;
+  max-width: none;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__layout {
+  display: grid;
+  grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  margin-top: 28px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__filters,
+.app-shell .highfi-scope.discovery-page .discovery-shell__content {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__content {
+  gap: 28px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__content > nav {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-shell__content > nav a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+/* Filters stay available beside a result stream on desktop and become a quiet
+ * drawer trigger on small screens. */
+.app-shell .highfi-scope.discovery-page .discovery-filters__desktop {
+  position: sticky;
+  top: calc(var(--browse-header, 88px) + 20px);
+  align-self: start;
+  border: 0;
+  border-top: 1px solid var(--discovery-line);
+  background: transparent;
+  padding: 12px 0 0;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body {
+  gap: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body > .cluster:first-child {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body h2 {
+  font-size: 1rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body .field {
+  gap: 6px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body .field__label {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body .input {
+  min-height: 42px;
+  border-color: var(--discovery-line);
+  border-radius: 12px;
+  background: var(--discovery-surface);
+  color: var(--discovery-ink);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__body .check-row {
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__mobile {
+  display: grid;
+  gap: 12px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__trigger {
+  width: 100%;
+  justify-content: space-between;
+  min-height: 42px;
+  border-color: transparent;
+  border-radius: 24px;
+  background: var(--brand-ink);
+  color: var(--brand-canvas);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-filters__mobile .drawer-panel {
+  background: var(--discovery-canvas);
+}
+
+/* Shared section rhythm. Sections use one quiet rule or a tinted surface,
+ * never a stack of heavy framed panels. */
+.app-shell .highfi-scope.discovery-page .section-heading {
+  gap: 4px;
+}
+
+.app-shell .highfi-scope.discovery-page .section-heading h2,
+.app-shell .highfi-scope.discovery-page .discovery-shell__content > section > .cluster h2,
+.app-shell .highfi-scope.discovery-page .discovery-shell__content > section > .stack > .cluster h2 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.app-shell .highfi-scope.discovery-page .section-heading p,
+.app-shell .highfi-scope.discovery-page .page-description {
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-toolbar__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-toolbar__lead strong {
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-editorial-grid,
+.app-shell .highfi-scope.discovery-page .analysis-group-grid,
+.app-shell .highfi-scope.discovery-page .distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category {
+  min-width: 0;
+  gap: 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--discovery-surface);
+  padding: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__header h2 {
+  font-size: 1.125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-count {
+  flex: 0 0 auto;
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__copy {
+  display: grid;
+  gap: 6px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__copy strong {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__copy p,
+.app-shell .highfi-scope.discovery-page .discovery-category > p,
+.app-shell .highfi-scope.discovery-page .discovery-category small,
+.app-shell .highfi-scope.discovery-page .discovery-category span {
+  color: var(--discovery-muted);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__copy p,
+.app-shell .highfi-scope.discovery-page .discovery-category__representative,
+.app-shell .highfi-scope.discovery-page .discovery-category__paths,
+.app-shell .highfi-scope.discovery-page .discovery-category__tools,
+.app-shell .highfi-scope.discovery-page .category-card__event {
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__representative {
+  margin: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__paths {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__paths .plain-list {
+  color: var(--discovery-ink);
+}
+
+.app-shell .highfi-scope.discovery-page .category-card__event {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .category-card__event span,
+.app-shell .highfi-scope.discovery-page .category-card__event time {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__action {
+  width: 100%;
+  min-height: 42px;
+  border-color: var(--discovery-line);
+  border-radius: 24px;
+  background: var(--discovery-raised);
+  color: var(--brand-ink);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-category__action:hover:not(:disabled) {
+  background: var(--brand-yellow);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-paths,
+.app-shell .highfi-scope.discovery-page .discovery-results,
+.app-shell .highfi-scope.discovery-page .analysis-works {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .solution-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-shell .highfi-scope.discovery-page .solution-paths > div {
+  display: grid;
+  gap: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--discovery-surface);
+  padding: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .solution-paths span,
+.app-shell .highfi-scope.discovery-page .solution-paths small {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-feed {
+  columns: 3;
+  column-gap: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-feed > article {
+  break-inside: avoid;
+  margin: 0 0 26px;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-featured {
+  max-width: 25rem;
+}
+
+.app-shell .highfi-scope.discovery-page .event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.app-shell .highfi-scope.discovery-page .event-list a,
+.app-shell .highfi-scope.discovery-page .discovery-event-link {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--discovery-surface);
+  padding: 14px 16px;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope.discovery-page .event-list time,
+.app-shell .highfi-scope.discovery-page .event-list span,
+.app-shell .highfi-scope.discovery-page .discovery-event-link time,
+.app-shell .highfi-scope.discovery-page .discovery-event-link span {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+/* Activity keeps the event rail, while the project card itself becomes a soft
+ * row in the same browsing surface. */
+.app-shell .highfi-scope.discovery-page .activity-filters { grid-template-columns: repeat(2, minmax(14rem, 20rem)) auto; border-block: 1px solid var(--color-line-strong); padding-block: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .activity-filters .field {
+  width: min(16rem, 100%);
+}
+
+.app-shell .highfi-scope.discovery-page .activity-filters > strong {
+  margin-left: auto;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .activity-stream {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-shell .highfi-scope.discovery-page .activity-item {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 24px;
+  padding-block: 20px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .activity-item__rail {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  padding-top: 6px;
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .activity-item__content {
+  min-width: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .activity-item .project-card--event {
+  gap: 10px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--discovery-surface);
+  padding: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .event-anchor-link {
+  width: fit-content;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* Search results show the explanation as a quiet metadata rail beside the
+ * same feed card used elsewhere. */
+.app-shell .highfi-scope.discovery-page .search-results {
+  display: grid;
+  gap: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .search-hit {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.32fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-reasons {
+  align-content: start;
+  border: 0;
+  background: transparent;
+  padding: 6px 0 0;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-reasons h2 {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.app-shell .highfi-scope.discovery-page .discovery-reasons .tag {
+  border: 0;
+  border-radius: 999px;
+  background: var(--discovery-surface);
+  color: var(--discovery-ink);
+}
+
+.app-shell .highfi-scope.discovery-page .mode-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px dashed var(--discovery-line);
+  border-radius: 12px;
+  background: var(--discovery-surface);
+  padding: 12px 14px;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+/* Idea parsing and analysis use one soft work surface, with tags and controls
+ * carrying the hierarchy instead of oversized hero blocks. */
+.app-shell .highfi-scope.discovery-page .idea-query-summary,
+.app-shell .highfi-scope.discovery-page .idea-input-panel,
+.app-shell .highfi-scope.discovery-page .intent-editor,
+.app-shell .highfi-scope.discovery-page .fallback-panel,
+.app-shell .highfi-scope.discovery-page .analysis-hero,
+.app-shell .highfi-scope.discovery-page .result-tier {
+  border: 0;
+  border-radius: 16px;
+  background: var(--discovery-surface);
+  padding: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .idea-query-summary p {
+  max-width: 70ch;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible {
+  padding: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible > summary::after {
+  color: var(--discovery-muted);
+  content: '展开';
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible[open] > summary {
+  border-bottom: 1px solid var(--discovery-line);
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible[open] > summary::after {
+  content: '收起';
+}
+
+.app-shell .highfi-scope.discovery-page .idea-input-panel--collapsible > div {
+  padding: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .parse-notice {
+  border: 0;
+  border-radius: 12px;
+  background: var(--discovery-raised);
+  padding: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .parse-notice--partial,
+.app-shell .highfi-scope.discovery-page .parse-notice--failed {
+  border: 1px dashed var(--discovery-line);
+  background: var(--discovery-raised);
+}
+
+.app-shell .highfi-scope.discovery-page .boundary-note {
+  border: 1px dashed var(--discovery-line);
+  border-radius: 12px;
+  background: var(--discovery-raised);
+  padding: 14px 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .boundary-note p {
+  margin-top: 6px;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .intent-editor { border: 1px solid var(--color-line-strong); padding: var(--space-4);
+  gap: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .intent-original blockquote {
+  margin: 6px 0 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--discovery-raised);
+  padding: 14px 16px;
+  color: var(--discovery-muted);
+}
+
+.app-shell .highfi-scope.discovery-page .intent-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.app-shell .highfi-scope.discovery-page .intent-field {
+  align-content: start;
+  gap: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--discovery-raised);
+  padding: 14px;
+}
+
+.app-shell .highfi-scope.discovery-page .intent-field .field__label {
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .intent-field .input {
+  min-height: 40px;
+  border-color: var(--discovery-line);
+  border-radius: 10px;
+  background: var(--discovery-surface);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .editable-tag {
+  max-width: 100%;
+}
+
+.app-shell .highfi-scope.discovery-page .analysis-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  gap: 20px;
+}
+
+.app-shell .highfi-scope.discovery-page .analysis-hero > .cluster {
+  align-content: start;
+}
+
+.app-shell .highfi-scope.discovery-page .analysis-hero .boundary-note {
+  align-self: start;
+}
+
+.app-shell .highfi-scope.discovery-page .tabs {
+  gap: 4px;
+  border: 0;
+  padding: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .tabs__tab {
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .result-tier--exact {
+  background: transparent;
+  padding: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .result-tier--relaxed,
+.app-shell .highfi-scope.discovery-page .result-tier--adjacent {
+  background: var(--discovery-surface);
+}
+
+.app-shell .highfi-scope.discovery-page .compact-list {
+  display: grid;
+  gap: 0;
+}
+
+.app-shell .highfi-scope.discovery-page .compact-list > .project-card--compact,
+.app-shell .highfi-scope.discovery-page .relaxed-hit > .project-card--compact {
+  border: 0;
+  border-bottom: 1px solid var(--discovery-line);
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 0;
+}
+
+.app-shell .highfi-scope.discovery-page .result-tier--relaxed .compact-list > .project-card--compact,
+.app-shell .highfi-scope.discovery-page .result-tier--adjacent .compact-list > .project-card--compact {
+  background: var(--discovery-raised);
+  padding-inline: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .relaxed-hit {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--discovery-line);
+  padding-top: 16px;
+}
+
+.app-shell .highfi-scope.discovery-page .relaxed-hit > p {
+  margin: 0;
+  color: var(--discovery-muted);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .analysis-group-grid .discovery-category {
+  background: var(--discovery-raised);
+}
+
+.app-shell .highfi-scope.discovery-page .stat-trace {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--discovery-line);
+  padding: 12px 0;
+}
+
+.app-shell .highfi-scope.discovery-page .stat-trace .button {
+  justify-content: flex-start;
+  width: fit-content;
+  min-height: 36px;
+  padding: 6px 0;
+  color: var(--discovery-ink);
+  font-size: 0.8125rem;
+}
+
+.app-shell .highfi-scope.discovery-page .stat-trace details {
+  color: var(--discovery-muted);
+  font-size: 0.75rem;
+}
+
+.app-shell .highfi-scope.discovery-page .stat-trace ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope.discovery-page .solution-paths { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope.discovery-page .activity-filters { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope.discovery-page .activity-item { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope.discovery-page .search-hit { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope.discovery-page .intent-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (min-width: 1680px) {
+  .app-shell .highfi-scope.discovery-page .discovery-feed { columns: 4; }
+}
+
+@media (max-width: 1279px) {
+  .app-shell .highfi-scope.discovery-page { padding-inline: 24px; }
+  .app-shell .highfi-scope.discovery-page .discovery-feed { columns: 2; }
+}
+
+@media (max-width: 959px) {
+  .app-shell .highfi-scope.discovery-page {
+    --browse-header: 116px;
+    padding-bottom: 40px;
+  }
+
+  .app-shell .highfi-scope.discovery-page .discovery-shell__header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    padding-top: 10px;
+  }
+
+  .app-shell .highfi-scope.discovery-page .discovery-shell__query {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .app-shell .highfi-scope.discovery-page .discovery-shell__layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    margin-top: 20px;
+  }
+
+  .app-shell .highfi-scope.discovery-page .discovery-filters__desktop { display: none; }
+
+  .app-shell .highfi-scope.discovery-page .discovery-editorial-grid,
+  .app-shell .highfi-scope.discovery-page .analysis-group-grid,
+  .app-shell .highfi-scope.discovery-page .distribution-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .highfi-scope.discovery-page .activity-filters > strong { margin-left: 0; }
+
+  .app-shell .highfi-scope.discovery-page .analysis-hero { grid-template-columns: minmax(0, 1fr); }
+
+  .app-shell .highfi-scope.discovery-page .intent-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 599px) {
+  .app-shell .highfi-scope.discovery-page { padding-inline: 16px; }
+  .app-shell .highfi-scope.discovery-page .discovery-shell__heading h1 { font-size: 1.25rem; }
+  .app-shell .highfi-scope.discovery-page .discovery-feed { columns: 2; column-gap: 14px; }
+  .app-shell .highfi-scope.discovery-page .discovery-feed > article { margin-bottom: 20px; }
+  .app-shell .highfi-scope.discovery-page .solution-paths { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .highfi-scope.discovery-page .event-list a,
+  .app-shell .highfi-scope.discovery-page .discovery-event-link { grid-template-columns: 1fr; gap: 4px; }
+  .app-shell .highfi-scope.discovery-page .activity-filters .field { width: 100%; }
+  .app-shell .highfi-scope.discovery-page .activity-item,
+  .app-shell .highfi-scope.discovery-page .search-hit { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .app-shell .highfi-scope.discovery-page .activity-item__rail { grid-template-columns: auto auto; align-items: center; }
+  .app-shell .highfi-scope.discovery-page .intent-fields { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .highfi-scope.discovery-page .idea-query-summary,
+  .app-shell .highfi-scope.discovery-page .idea-input-panel,
+  .app-shell .highfi-scope.discovery-page .intent-editor,
+  .app-shell .highfi-scope.discovery-page .fallback-panel,
+  .app-shell .highfi-scope.discovery-page .analysis-hero,
+  .app-shell .highfi-scope.discovery-page .result-tier { padding: 16px; }
+}

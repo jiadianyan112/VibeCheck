@@ -5,7 +5,7 @@ import { AboutPage } from './AboutPage'
 describe('AboutPage', () => {
   it('explains scope, exclusions and non-commercial status boundaries', () => {
     render(<MemoryRouter><AboutPage /></MemoryRouter>)
-    expect(screen.getByRole('heading', { name: '发现作品，也看懂它是怎么做的。' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '发现作品，了解如何实现' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '收录范围' })).toBeInTheDocument()
     expect(screen.getByText(/数量多不等于竞争激烈/)).toBeInTheDocument()
     expect(screen.getByText(/不代表收入、活跃度、质量或商业结果/)).toBeInTheDocument()

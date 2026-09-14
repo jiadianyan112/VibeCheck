@@ -85,39 +85,6 @@
   border-top-color: var(--home-line);
 }
 
-.app-shell .highfi-scope .problem-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.app-shell .highfi-scope .problem-grid a {
-  min-height: 12rem;
-  border-color: var(--home-line);
-  border-radius: var(--home-radius);
-  background: var(--home-card-raised);
-  color: var(--home-ink);
-  padding: clamp(1rem, 2vw, 1.35rem);
-  text-decoration: none;
-}
-
-.app-shell .highfi-scope .problem-grid a:first-child {
-  grid-column: span 2;
-  background: var(--home-violet);
-}
-
-.app-shell .highfi-scope .problem-grid a:hover,
-.app-shell .highfi-scope .problem-grid a:focus-within {
-  border-color: var(--home-ink);
-  transform: translateY(-3px);
-}
-
-.app-shell .highfi-scope .problem-grid a span:last-child {
-  margin-top: auto;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
-
 .app-shell .highfi-scope .project-card a,
 .app-shell .highfi-scope .project-card button {
   transition: transform var(--motion-fast) ease, opacity var(--motion-fast) ease;
@@ -133,25 +100,12 @@
   .app-shell .highfi-scope .project-card--featured {
     grid-column: 1 / -1;
   }
-
-  .app-shell .highfi-scope .problem-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .app-shell .highfi-scope .problem-grid a:first-child {
-    grid-column: span 2;
-  }
 }
 
 @media (max-width: 47.999rem) {
 
-  .app-shell .highfi-scope .compact-list,
-  .app-shell .highfi-scope .problem-grid {
+  .app-shell .highfi-scope .compact-list {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .app-shell .highfi-scope .problem-grid a:first-child {
-    grid-column: auto;
   }
 }
 

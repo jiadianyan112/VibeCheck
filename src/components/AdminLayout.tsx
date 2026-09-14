@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { ScenarioPanel } from './ScenarioPanel'
+import { BrandMark } from './brand'
 
 const adminNavigation = [
   { to: '/admin', label: '后台首页', end: true },
@@ -12,11 +13,11 @@ const adminNavigation = [
 
 export function AdminLayout() {
   return (
-    <div className="admin-shell">
+    <div className="admin-shell ui-root">
       <aside className="admin-sidebar">
         <div className="stack stack--small">
           <Link className="wordmark" to="/admin">
-            VibeCheck 管理
+            <BrandMark /><span className="admin-brand-label">管理</span>
           </Link>
           <Link className="admin-back-link" to="/projects">
             ← 返回前台

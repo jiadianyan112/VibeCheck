@@ -1,0 +1,202 @@
+/* Shared product vocabulary for every surface beyond the discovery feed. */
+.ui-root,
+.ui-root .highfi-scope {
+  --color-canvas: #f7f7f2;
+  --color-surface: #eeeee8;
+  --color-surface-raised: #fbfbf7;
+  --color-ink: #111111;
+  --color-muted: #65655e;
+  --color-subtle: #72726a;
+  --color-line: #deded5;
+  --color-line-strong: #c7c7bd;
+  --color-inverse: #f7f7f2;
+  --font-sans: var(--font-body);
+  --radius-small: 12px;
+  --radius-medium: 16px;
+  --page-gutter: 32px;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font: 400 .875rem/1.6 var(--font-body);
+}
+.ui-root .page-container { padding-block: 24px 48px; }
+.ui-root .page-container.page-with-bottom-space { padding-bottom: 96px; }
+.ui-root :is(h1, h2, h3),
+.app-shell .ui-root .highfi-scope :is(h1, h2, h3) {
+  max-width: none;
+  font-family: var(--font-body);
+  letter-spacing: -.025em;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ui-root h1, .app-shell .ui-root .highfi-scope h1 { font-size: 1.5rem; font-weight: 750; }
+.ui-root h2, .app-shell .ui-root .highfi-scope h2 { font-size: 1.25rem; font-weight: 700; }
+.ui-root h3, .app-shell .ui-root .highfi-scope h3 { font-size: 1rem; font-weight: 650; }
+.ui-root .eyebrow { letter-spacing: 0; text-transform: none; font-weight: 500; }
+.ui-root a { text-underline-offset: 3px; }
+.ui-root :is(.button, .input, .tabs__tab) { font-size: .875rem; }
+.ui-root .button { border-radius: 24px; font-weight: 550; text-decoration: none; padding-inline: 18px; }
+.ui-root .button--primary, .ui-root .button--accent { background: var(--brand-lime); border-color: transparent; color: var(--brand-ink); }
+.ui-root .button--secondary { background: transparent; border-color: var(--color-line); }
+.ui-root .button--quiet { background: transparent; }
+.ui-root .button--danger { color: #a12a22; border-color: #dfbbb3; background: #faf0ec; }
+.ui-root .button:hover:not(:disabled) { filter: brightness(.97); }
+.ui-root .input { border-color: var(--color-line); background: var(--color-surface); border-radius: 12px; padding-inline: 14px; }
+.ui-root textarea.input { resize: vertical; min-height: 100px; }
+.ui-root .input:focus { border-color: #72726a; }
+.ui-root :is(.field__label, .field__hint, .field__error) { font-size: .8125rem; }
+.ui-root .field__label { font-weight: 600; }
+.ui-root .input--error, .ui-root .input[aria-invalid='true'] { border-color: #a12a22; }
+.ui-root .field__error { color: #a12a22; }
+.ui-root :is(.wire-panel, .wire-card, .empty-state, .feedback, .dialog-panel, .choice-card) { border-width: 1px; border-color: var(--color-line); border-radius: 16px; }
+.ui-root :is(.wire-panel, .wire-card) { background: var(--color-surface-raised); }
+.ui-root .wire-panel :is(.wire-card, .wire-panel) { background: transparent; border: 0; border-radius: 0; }
+.ui-root .empty-state { padding: 32px 24px; background: transparent; border-style: dashed; }
+.ui-root .feedback { background: var(--color-surface); }
+.ui-root .feedback--error { color: #872920; background: #faf0ec; border-color: #dfbbb3; }
+.ui-root .tabs { gap: 6px; border: 0; padding-block: 4px; }
+.ui-root .tabs__tab { border: 0; border-radius: 24px; min-height: 42px; padding: 8px 18px; color: var(--color-muted); }
+.ui-root .tabs__tab[aria-selected='true'] { color: var(--color-inverse); background: var(--color-ink); font-weight: 600; }
+.ui-root :is(.project-card--standard, .project-card--compact, .project-card--featured) { border: 1px solid var(--color-line); border-radius: 16px; background: var(--color-surface-raised); }
+.ui-root .table-scroll { border: 1px solid var(--color-line); border-radius: 12px; }
+.ui-root .wire-table :is(th, td) { border: 0; border-bottom: 1px solid var(--color-line); }
+.ui-root .tag { font-weight: 500; }
+.ui-root .tag--strong { border-color: #b6b6ac; }
+.ui-root :is(section, [id]) { scroll-margin-top: calc(var(--browse-header, 88px) + 20px); }
+.ui-root input[type='checkbox'], .ui-root input[type='radio'] { accent-color: var(--color-ink); }
+.ui-root .dialog-panel { max-height: calc(100svh - 32px); overflow-y: auto; }
+
+/* The admin workspace uses the same quiet sidebar and controls, with denser data. */
+.admin-shell.ui-root { grid-template-columns: 208px minmax(0, 1fr); }
+.admin-shell .admin-sidebar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  height: 100vh;
+  align-content: start;
+  border-right: 1px solid var(--color-line-strong); gap: 32px; border: 0; background: var(--color-canvas); padding: 28px 16px; overflow-y: auto; }
+.admin-shell .wordmark { display: flex; align-items: center; gap: 8px; }
+.admin-shell .brand-mark { display: inline-flex; gap: 8px; align-items: center; }
+.admin-shell .brand-mark__glyph { width: 26px; height: 26px; }
+.admin-shell .brand-mark__ring { fill: var(--brand-lime); stroke: var(--brand-ink); stroke-width: 2px; }
+.admin-shell .brand-mark__ellipse, .admin-shell .brand-mark__check { fill: none; stroke: var(--brand-ink); stroke-width: 2px; }
+.admin-shell .brand-mark__name { font-size: 1rem; font-weight: 750; }
+.admin-brand-label { font-size: .6875rem; color: var(--color-muted); }
+.admin-shell .admin-back-link {
+  color: var(--color-ink);
+  text-decoration: none; padding: 6px 8px; font-size: .75rem; }
+.admin-shell .admin-navigation {
+  display: grid; gap: 6px; }
+.admin-shell .admin-nav-link {
+  color: var(--color-ink);
+  text-decoration: none; min-height: 44px; display: flex; align-items: center; border-radius: 24px; padding: 10px 16px; }
+.admin-shell .admin-nav-link--active { background: #eaeae3; color: var(--color-ink); font-weight: 700; }
+.admin-shell .admin-nav-link:hover { background: var(--color-surface); }
+.admin-shell .admin-main { min-width: 0; padding: 24px 32px 48px; }
+.admin-shell .admin-main .page-container { width: 100%; padding-block: 0; }
+.admin-shell :is(.admin-page-header, .admin-editor-summary) { padding-bottom: 20px; border-color: var(--color-line); }
+.admin-shell :is(.admin-metric-grid article, .admin-todo-panel, .admin-filter-panel, .admin-editor-section, .admin-workflow-card, .admin-status-card, .admin-evidence-card, .admin-protected-grid article, .admin-conflict-grid article) { border: 1px solid var(--color-line); border-radius: 16px; background: var(--color-surface-raised); padding: 20px; }
+.admin-shell .admin-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--color-line-strong);
+  border-left: 1px solid var(--color-line-strong); gap: 16px; border: 0; }
+.admin-shell .admin-metric-grid article {
+  display: grid;
+  gap: var(--space-2);
+  align-content: space-between;
+  border-right: 1px solid var(--color-line-strong);
+  border-bottom: 1px solid var(--color-line-strong);
+  padding: var(--space-4);
+  background: var(--color-surface-raised); min-height: 112px; }
+.admin-shell .admin-metric-grid strong { font-size: 1.75rem; line-height: 1.3; }
+.admin-shell .admin-field {
+  display: grid;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-4); border: 0; border-bottom: 1px solid var(--color-line); padding: 16px 0; }
+.admin-shell :is(.admin-field--error, .admin-workflow-card--selected, .admin-status-card--selected, .admin-evidence-card--selected) { background: #eef3e5; }
+.admin-shell .admin-editor-layout {
+  display: grid;
+  align-items: start; grid-template-columns: 152px minmax(0, 1fr); gap: 24px; }
+.admin-shell .admin-module-nav {
+  position: sticky;
+  display: grid; border: 0; background: transparent; top: 20px; }
+.admin-shell .admin-module-nav a {
+  border-bottom: 1px solid var(--color-line);
+  text-decoration: none; border-radius: 20px; padding: 8px 12px; font-size: .8125rem; }
+.admin-shell .admin-table-scroll {
+  max-width: 100%;
+  overflow-x: auto; border: 1px solid var(--color-line); border-radius: 12px; }
+.admin-shell .admin-project-table :is(th, td) { border-color: var(--color-line); padding: 14px; }
+.admin-shell .admin-editor-actions {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  border-top: 2px solid var(--color-ink);
+  padding-block: var(--space-4); border-color: var(--color-line); background: var(--color-canvas); border-radius: 12px; }
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-line-strong);
+  }
+}
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-navigation {
+    display: flex;
+    overflow-x: auto;
+  }
+}
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-nav-link {
+    flex: 0 0 auto;
+  }
+}
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-editor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 48rem) {
+
+  .admin-shell .admin-module-nav {
+    position: static;
+  }
+}
+@media (max-width: 1279px) {
+  .ui-root, .ui-root .highfi-scope { --page-gutter: 24px; }
+  .admin-shell.ui-root { grid-template-columns: 184px minmax(0, 1fr); }
+  .admin-shell .admin-main { padding-inline: 24px; }
+}
+@media (max-width: 959px) {
+  .admin-shell.ui-root { display: block; }
+  .admin-shell .admin-sidebar { position: static; height: auto; gap: 16px; padding: 20px 24px 8px; }
+  .admin-shell .admin-sidebar > .stack { display: flex; justify-content: space-between; align-items: center; }
+  .admin-shell .admin-navigation { display: flex; overflow-x: auto; white-space: nowrap; }
+  .admin-shell .admin-nav-link { flex-shrink: 0; }
+  .admin-shell .admin-editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .admin-shell .admin-module-nav { position: static; display: flex; flex-wrap: wrap; }
+}
+@media (max-width: 599px) {
+  .ui-root, .ui-root .highfi-scope { --page-gutter: 16px; }
+  .ui-root h1, .app-shell .ui-root .highfi-scope h1 { font-size: 1.25rem; }
+  .ui-root .page-container { padding-top: 20px; }
+  .ui-root .button { padding-inline: 14px; }
+  .admin-shell .admin-main, .admin-shell .admin-sidebar { padding-inline: 16px; }
+  .admin-shell :is(.admin-metric-grid, .admin-filter-grid, .admin-duplicate-grid, .admin-status-grid, .admin-choice-grid, .admin-protected-grid, .admin-conflict-grid) { grid-template-columns: minmax(0, 1fr); }
+}

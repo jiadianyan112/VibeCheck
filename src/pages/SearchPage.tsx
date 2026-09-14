@@ -1,6 +1,8 @@
+import { DiscoveryShell, DiscoveryFilters, MatchExplanation } from '../components/discovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, ResponsiveFilterPanel, Tag, UnifiedSearchForm } from '../components'
+import { Button, EmptyState, ErrorPanel, LoadingState, UnifiedSearchForm } from '../components'
+import { FeedProjectCard } from '../components/domain/FeedProjectCard'
 import { isCompleteIdeaQuery, unifiedSearchPath, useAuthGate, useComparison } from '../features'
 import { creatorsForProject, resolveServiceScenario } from '../mocks'
 import { searchService, type SearchHit, type ServiceError } from '../services'
@@ -57,26 +59,28 @@ export function SearchPage() {
   if (shouldAnalyzeIdea) return <Navigate to={unifiedSearchPath(query)} replace />
 
   return (
-    <main className="page-container page-with-bottom-space stack">
-      <header className="search-header stack"><h1>{query ? `“${query}”的搜索结果` : '搜索作品、功能或完整想法'}</h1>
-        {!query ? <p>搜作品或功能，也可以直接说说你想做什么。</p> : null}
+    <DiscoveryShell title={query ? `“${query}”的搜索结果` : '搜索作品、功能或完整想法'} description={!query ? '搜作品或功能，也可以直接说说你想做什么。' : undefined} query={<>
         <UnifiedSearchForm key={query} id="result-query" className="hero-search" inputClassName="input" submitClassName="button button--primary" defaultValue={query} submitLabel="重新搜索" />
         {forceKeywordSearch && isCompleteIdeaQuery(query) ? <div className="mode-notice"><strong>暂时按关键词搜索</strong><span>我们没有完整识别这段想法，你也可以返回修改。</span><Link to={`/discover?idea=${encodeURIComponent(query)}`}>重新整理想法 →</Link></div> : null}
-      </header>
 
-      <section className="search-layout">
-        <ResponsiveFilterPanel label="搜索筛选"><div className="cluster cluster--between"><h2>筛选</h2><Button variant="quiet" onClick={resetFilters}>重置</Button></div>
+      </>} filters={
+        <DiscoveryFilters label="搜索筛选"><div className="cluster cluster--between"><h2>筛选</h2><Button variant="quiet" onClick={resetFilters}>重置</Button></div>
           <label className="field"><span className="field__label">作品品类</span><select className="input" value={params.get('category') ?? ''} onChange={(e) => setParam('category', e.target.value)}><option value="">全部品类</option><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人主页与作品集</option></select></label>
           {params.get('category') !== 'personal_site_portfolio' ? <><label className="field"><span className="field__label">目标用户</span><select className="input" value={params.get('target') ?? ''} onChange={(e) => setParam('target', e.target.value)}><option value="">全部</option>{targetUsers.map((item) => <option key={item} value={item}>{targetUserLabels[item]}</option>)}</select></label><label className="field"><span className="field__label">材料输入</span><select className="input" value={params.get('input') ?? ''} onChange={(e) => setParam('input', e.target.value)}><option value="">全部</option>{inputTypes.map((item) => <option key={item} value={item}>{inputTypeLabels[item]}</option>)}</select></label></> : <p className="page-description">个人主页与作品集结果会根据作者身份、网站结构、视觉方向、实现方式和复用资产解释匹配。</p>}
           <label className="field"><span className="field__label">当前状态</span><select className="input" value={params.get('status') ?? ''} onChange={(e) => setParam('status', e.target.value)}><option value="">全部</option>{accessStatuses.map((item) => <option key={item} value={item}>{accessStatusText[item]}</option>)}</select></label>
           <label className="field"><span className="field__label">复用资产</span><select className="input" value={params.get('asset') ?? ''} onChange={(e) => setParam('asset', e.target.value)}><option value="">全部</option>{assetTypes.map((item) => <option key={item} value={item}>{assetLabels[item]}</option>)}</select></label>
           <label className="field"><span className="field__label">排序</span><select className="input" value={params.get('sort') ?? 'relevance'} onChange={(e) => setParam('sort', e.target.value)}><option value="relevance">匹配程度</option><option value="recent">最近核验</option><option value="name">名称</option></select></label>
-        </ResponsiveFilterPanel>
+        </DiscoveryFilters>
+      }>
+
+
+      <section className="discovery-results">
+
 
         <div className="stack"><div className="cluster cluster--between"><h2>{loading ? '正在检索' : `${sorted.length} 个结果`}</h2></div>
-          {loading ? <LoadingState label="正在搜索作品" /> : error ? <ErrorPanel message={error.message} /> : sorted.length ? <div className="search-results">{sorted.map((hit) => <div key={hit.project.id} className="search-hit"><div className="match-reason"><strong>为什么匹配</strong>{hit.matchedFields.map((field) => <Tag key={field}>{field}</Tag>)}</div><ProjectCard project={hit.project} creators={creatorsForProject(hit.project)} variant="compact" favorited={state.favoriteProjectIds.includes(hit.project.id)} selectedForCompare={state.comparisonProjectIds.includes(hit.project.id)} onToggleFavorite={toggleFavorite} onToggleCompare={(project) => state.comparisonProjectIds.includes(project.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: project.id }) : addProject(project.id)} /></div>)}</div> : <EmptyState title="没有找到匹配的公开作品" description={query ? `暂时没有找到与“${query}”匹配的作品，可以换个说法试试。` : '搜作品或功能，也可以直接说说你想做什么。'} action={<div className="cluster"><Button onClick={() => setParams({}, { replace: true })}>清空条件</Button><Link className="button button--primary" to="/submit">发布作品</Link></div>} />}
+          {loading ? <LoadingState label="正在搜索作品" /> : error ? <ErrorPanel message={error.message} /> : sorted.length ? <div className="search-results">{sorted.map((hit) => <article key={hit.project.id} className="search-hit"><MatchExplanation reasons={hit.matchedFields} /><FeedProjectCard project={hit.project} creators={creatorsForProject(hit.project)} favorited={state.favoriteProjectIds.includes(hit.project.id)} selectedForCompare={state.comparisonProjectIds.includes(hit.project.id)} onToggleFavorite={toggleFavorite} onToggleCompare={(project) => state.comparisonProjectIds.includes(project.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: project.id }) : addProject(project.id)} /></article>)}</div> : <EmptyState title="没有找到匹配的公开作品" description={query ? `暂时没有找到与“${query}”匹配的作品，可以换个说法试试。` : '搜作品或功能，也可以直接说说你想做什么。'} action={<div className="cluster"><Button onClick={() => setParams({}, { replace: true })}>清空条件</Button><Link className="button button--primary" to="/submit">发布作品</Link></div>} />}
         </div>
       </section>
-    </main>
+    </DiscoveryShell>
   )
 }

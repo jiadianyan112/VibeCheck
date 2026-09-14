@@ -59,8 +59,8 @@
   min-height: 3.25rem;
   padding: 0.875rem 1.25rem;
   border: 1px solid var(--color-line);
-  border-radius: 0.75rem;
-  background: var(--brand-canvas);
+  border-radius: 1.75rem;
+  background: #eeeee8;
   color: var(--brand-ink);
   font-size: 0.9375rem;
   box-shadow: none;
@@ -100,15 +100,15 @@
   width: 100%;
   min-height: 3rem;
   justify-content: center;
-  border: 1px solid var(--brand-ink);
-  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 1.75rem;
   background: var(--brand-lime);
   color: var(--brand-ink);
   font-size: 0.9375rem;
   box-shadow: none;
 }
 .app-shell .auth-page .auth-page__submit:disabled { opacity: 0.55; }
-.app-shell .auth-page .auth-page__submit:hover:not(:disabled) { background: var(--brand-yellow); }
+.app-shell .auth-page .auth-page__submit:hover:not(:disabled) { background: #acee36; }
 .auth-page__note { margin: 0; text-align: center; color: var(--color-muted); font-size: 0.75rem; }
 .auth-page__guest {
   display: flex;

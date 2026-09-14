@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
+import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, ProjectMediaStage, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
@@ -160,8 +160,8 @@ export function ProjectDetailPage() {
     setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
   }, [commentCategory, commentDraft, dispatch, pendingCommentId, replyTo, resolvedId, state.lastReplayedActionId, state.session.user])
 
-  if (loading) return <main className="page-container"><LoadingState label="作品档案加载中" /></main>
-  if (error || !bundle) return <main className="page-container stack"><ErrorPanel message={error?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
+  if (loading) return <main className="page-container highfi-scope community-page community-page--detail"><LoadingState label="作品档案加载中" /></main>
+  if (error || !bundle) return <main className="page-container stack highfi-scope community-page community-page--detail"><ErrorPanel message={error?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
 
   const { project, creators } = bundle
   const name = factText(project.currentName, '名称未知的作品')
@@ -176,6 +176,8 @@ export function ProjectDetailPage() {
     : null
   const submissionScenario = searchParams.get('submissionScenario')
   const orderedFlow = project.coreFlow.state === 'known' ? [...project.coreFlow.value].sort((a, b) => a.order - b.order) : []
+  const heroMedia = project.coverMedia[0]
+  const hasPublicHeroMedia = Boolean(heroMedia && (heroMedia.kind === 'image' || heroMedia.kind === 'video') && heroMedia.url)
   const ownVerification = latestVerificationFor(state.verificationRequests, project.id, state.session.user?.id)
   const management = authorManagementState(ownVerification)
   const effectiveAuthorLinkStatus = management.linked ? 'linked' : management.highRiskEditingFrozen ? 'disputed' : ownVerification ? 'pending' : project.authorLinkStatus
@@ -211,7 +213,7 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <main className="page-container page-with-bottom-space project-detail-page stack">
+    <main className="page-container page-with-bottom-space project-detail-page highfi-scope community-page community-page--detail stack">
       {id && resolvedId !== id ? <aside className="feedback" role="status"><strong>作品页面已合并</strong><p>你访问的是旧链接，现已自动跳转到合并后的作品页面。</p></aside> : null}
       {project.reviewStatus === 'restricted' ? <aside className="feedback feedback--error" role="alert"><strong>此作品暂不公开展示</strong><p>公开体验入口暂不可用，已有更新记录仍会保留。</p></aside> : null}
       {submissionUrl ? (
@@ -230,8 +232,10 @@ export function ProjectDetailPage() {
         </aside>
       ) : null}
       <nav aria-label="面包屑"><Link to="/projects">作品广场</Link> / {name}</nav>
-      <section className="project-hero">
-        <div className="media-placeholder project-hero__media" aria-label="暂无公开图片">暂无公开图片</div>
+      <section className="project-hero community-detail-hero">
+        <div className="project-hero__media community-detail-hero__media" aria-label={hasPublicHeroMedia ? '作品封面' : '暂无公开图片'}>
+          <ProjectMediaStage media={heroMedia} projectId={project.id} title={name} tone={portfolio ? 'violet' : 'lime'} aspect="landscape" priority />
+        </div>
         <div className="project-hero__content stack">
           <div className="cluster"><AccessStatusBadge status={status} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /><CompletenessLabel level={project.completenessLevel} /></div>
           <div className="stack stack--small"><div className="cluster"><Tag tone="dashed">{project.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag>{project.categoryGroup ? <Tag>{project.categoryGroup}</Tag> : null}</div><h1>{name}</h1>{project.summary.state === 'known' ? <p className="project-hero__definition">{project.summary.value}</p> : <UnknownFact reason={project.summary.reason} />}</div>

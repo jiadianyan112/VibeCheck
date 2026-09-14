@@ -19,7 +19,7 @@ export function AdminDashboardPage() {
     <div className="admin-page stack">
       <header className="admin-page-header">
         <div>
-          <p className="eyebrow">A01 · Prototype operations</p>
+
           <h1>后台首页／数据看板</h1>
           <p>这里显示固定模拟数据的队列数量和当前待办，不代表真实流量、市场规模或业务结论。</p>
         </div>
@@ -34,7 +34,7 @@ export function AdminDashboardPage() {
       </section>
 
       <section className="admin-todo-panel stack">
-        <div className="cluster cluster--between"><div><p className="eyebrow">Work queue</p><h2>运营待办</h2></div><span>仅展示模拟数量</span></div>
+        <div className="cluster cluster--between"><div><h2>运营待办</h2></div><span>仅展示模拟数量</span></div>
         <ul className="admin-todo-list">
           <li><div><strong>审核待处理作品更新</strong><p>进入发布审核执行通过、退回、拒绝或争议操作，所有动作必须填写原因。</p></div><Link className="button" to="/admin/reviews">进入发布审核</Link></li>
           <li><div><strong>复核访问状态异常</strong><p>异常信号来自作品当前访问状态，不自动得出作品结束结论。</p></div><Link className="button" to="/admin/projects?exception=1">查看 {summary.activeExceptions} 项</Link></li>
@@ -43,7 +43,7 @@ export function AdminDashboardPage() {
       </section>
 
       <section className="wire-panel stack" aria-labelledby="consistency-heading">
-        <div className="cluster cluster--between"><div><p className="eyebrow">Consistency gate</p><h2 id="consistency-heading">前后台一致性检查</h2></div><Tag tone={consistency.ok ? 'strong' : 'dashed'}>{consistency.ok ? '通过' : `${consistency.issues.length} 项异常`}</Tag></div>
+        <div className="cluster cluster--between"><div><h2 id="consistency-heading">前后台一致性检查</h2></div><Tag tone={consistency.ok ? 'strong' : 'dashed'}>{consistency.ok ? '通过' : `${consistency.issues.length} 项异常`}</Tag></div>
         <p>已核对 {consistency.checkedProjects} 个作品、{consistency.checkedEvents} 条本地追加事件和 {consistency.checkedNotifications} 条通知。</p>
         {consistency.issues.length ? <ol className="admin-audit-list">{consistency.issues.map((issue) => <li key={`${issue.code}-${issue.targetId}`}><strong>{issue.code}</strong><p>{issue.targetId}：{issue.message}</p></li>)}</ol> : <p>当前状态、事件、通知、身份关联和稳定 ID 映射未发现不一致。</p>}
       </section>

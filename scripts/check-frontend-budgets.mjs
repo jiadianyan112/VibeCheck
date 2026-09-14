@@ -1,7 +1,9 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { gzipSync } from 'node:zlib'
 
-const limits = Object.freeze({ js: 251_435, css: 17_749 })
+// The 26-route visual unification measures ~20 KB gzip after consolidating
+// legacy rules. Keep a 21 KiB stylesheet ceiling; the JavaScript budget is unchanged.
+const limits = Object.freeze({ js: 251_435, css: 21 * 1024 })
 const assetDir = new URL('../dist/assets/', import.meta.url)
 const files = await readdir(assetDir)
 
