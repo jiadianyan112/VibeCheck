@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubmissionDraft as ContractSubmissionDraft, SubmissionUrlCheck } from '@vibecheck/contracts'
 import { AppProviders } from '../app/providers'
-import { appRoutes } from '../app/router'
+import { legacySubmissionRoutes as appRoutes } from '../test/legacySubmissionRoutes'
 import { prototypeUsers } from '../mocks'
 import { APP_STORAGE_KEY, appReducer, createInitialAppState, persistAppState } from '../state'
 

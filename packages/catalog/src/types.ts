@@ -102,20 +102,20 @@ export interface LearningSchemaV1 {
 }
 
 export interface PortfolioSchemaV1 {
-  readonly site_type: 'personal_homepage' | 'portfolio' | 'online_resume' | 'academic_homepage' | 'hybrid'
+  readonly site_type: 'personal_homepage' | 'portfolio' | 'online_resume' | 'academic_homepage' | 'hybrid' | 'unknown'
   readonly creator_roles: readonly string[]
   readonly primary_goals: readonly string[]
-  readonly page_model: 'single_page' | 'multi_page' | 'hybrid'
+  readonly page_model: 'single_page' | 'multi_page' | 'hybrid' | 'unknown'
   readonly navigation_pattern: 'top_nav' | 'side_nav' | 'section_anchor' | 'minimal_overlay' | 'no_persistent_nav' | 'other' | null
   readonly homepage_sequence: readonly string[]
   readonly core_modules: readonly string[]
-  readonly project_showcase_format: 'card_grid' | 'gallery' | 'timeline' | 'case_study_list' | 'repository_list' | 'full_bleed' | 'mixed' | 'none'
-  readonly case_study_depth: 'none' | 'summary' | 'overview' | 'deep'
+  readonly project_showcase_format: 'card_grid' | 'gallery' | 'timeline' | 'case_study_list' | 'repository_list' | 'full_bleed' | 'mixed' | 'none' | 'unknown'
+  readonly case_study_depth: 'none' | 'summary' | 'overview' | 'deep' | 'unknown'
   readonly visual_styles: readonly string[]
   readonly layout_patterns: readonly string[]
-  readonly color_character: 'monochrome' | 'neutral' | 'brand_led' | 'vivid' | 'gradient_dominant' | 'mixed'
-  readonly theme_mode: 'light_only' | 'dark_only' | 'switchable' | 'system_adaptive'
-  readonly interaction_level: 'static' | 'light' | 'moderate' | 'high'
+  readonly color_character: 'monochrome' | 'neutral' | 'brand_led' | 'vivid' | 'gradient_dominant' | 'mixed' | 'unknown'
+  readonly theme_mode: 'light_only' | 'dark_only' | 'switchable' | 'system_adaptive' | 'unknown'
+  readonly interaction_level: 'static' | 'light' | 'moderate' | 'high' | 'unknown'
   readonly interaction_patterns: readonly string[]
   readonly responsive_support: 'confirmed' | 'partial' | 'not_supported' | 'unknown'
   readonly blog_support: 'none' | 'static' | 'content_managed' | 'unknown'

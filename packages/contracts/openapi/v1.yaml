@@ -4263,7 +4263,7 @@ components:
           maxLength: 120
         cover_media_reference_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
           uniqueItems: true
           items:
@@ -4318,32 +4318,32 @@ components:
       properties:
         target_users:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 3
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
-        core_problem: { type: string, minLength: 1, maxLength: 500 }
+        core_problem: { type: string, minLength: 0, maxLength: 500 }
         use_scenarios:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 5
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         main_inputs:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 5
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         main_outputs:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 5
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         core_flow:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 10
           items:
             type: object
@@ -4413,22 +4413,22 @@ components:
       properties:
         site_type:
           type: string
-          enum: [personal_homepage, portfolio, online_resume, academic_homepage, hybrid]
+          enum: [personal_homepage, portfolio, online_resume, academic_homepage, hybrid, unknown]
         creator_roles:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         primary_goals:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         page_model:
           type: string
-          enum: [single_page, multi_page, hybrid]
+          enum: [single_page, multi_page, hybrid, unknown]
         navigation_pattern:
           type: [string, 'null']
           enum: [top_nav, side_nav, section_anchor, minimal_overlay, no_persistent_nav, other, null]
@@ -4439,40 +4439,40 @@ components:
           items: { type: string, minLength: 1, maxLength: 64 }
         core_modules:
           type: array
-          minItems: 2
+          minItems: 0
           maxItems: 20
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         project_showcase_format:
           type: string
-          enum: [card_grid, gallery, timeline, case_study_list, repository_list, full_bleed, mixed, none]
+          enum: [card_grid, gallery, timeline, case_study_list, repository_list, full_bleed, mixed, none, unknown]
         case_study_depth:
           type: string
-          enum: [none, summary, overview, deep]
+          enum: [none, summary, overview, deep, unknown]
         visual_styles:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         layout_patterns:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
         color_character:
           type: string
-          enum: [monochrome, neutral, brand_led, vivid, gradient_dominant, mixed]
+          enum: [monochrome, neutral, brand_led, vivid, gradient_dominant, mixed, unknown]
         theme_mode:
           type: string
-          enum: [light_only, dark_only, switchable, system_adaptive]
+          enum: [light_only, dark_only, switchable, system_adaptive, unknown]
         interaction_level:
           type: string
-          enum: [static, light, moderate, high]
+          enum: [static, light, moderate, high, unknown]
         interaction_patterns:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 8
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
@@ -4561,7 +4561,7 @@ components:
         one_line_definition: { type: string, minLength: 1, maxLength: 80 }
         cover_media_reference_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 64 }
@@ -5438,13 +5438,13 @@ components:
         payload_snapshot: { type: object }
         media_reference_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
           uniqueItems: true
           items: { type: string, format: uuid }
         evidence_draft_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 50
           uniqueItems: true
           items: { type: string, format: uuid }
@@ -5479,13 +5479,13 @@ components:
         review_work_item_id: { type: string, format: uuid }
         media_reference_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 20
           uniqueItems: true
           items: { type: string, format: uuid }
         evidence_draft_ids:
           type: array
-          minItems: 1
+          minItems: 0
           maxItems: 50
           uniqueItems: true
           items: { type: string, format: uuid }

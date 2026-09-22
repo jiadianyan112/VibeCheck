@@ -12,6 +12,7 @@ import './styles/highfi-auth.css'
 import './styles/community-pages.css'
 import './styles/feed-card.css'
 import './styles/explore-feed.css'
+import './styles/publish.css'
 
 const root = document.getElementById('root')
 

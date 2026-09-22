@@ -44,6 +44,7 @@ export interface UrlCheckDuplicateCandidate {
 }
 
 export interface UrlCheckResult {
+  readonly duplicateResult?: 'none' | 'exact' | 'candidate'
   readonly normalizedUrl: string
   readonly checks: readonly UrlCheckItem[]
   readonly duplicateProjectId: ReturnType<typeof projectId> | null
@@ -282,6 +283,7 @@ function mapUrlCheck(source: ContractUrlCheck, rawUrl: string): UrlCheckResult {
   ]
   return {
     normalizedUrl,
+    duplicateResult: source.duplicate_result,
     checks,
     duplicateProjectId: duplicate ? projectId(duplicate.project_id) : null,
     ...(duplicate ? { duplicateCandidate: { projectId: projectId(duplicate.project_id), currentName: duplicate.current_name, categoryId: duplicate.category_id } } : {}),
@@ -542,10 +544,38 @@ function isCanonicalPortfolioSnapshot(value: unknown): value is PortfolioV1Snaps
   return true
 }
 
-export type SubmissionV1Snapshot = LearningV1Snapshot | PortfolioV1Snapshot
+export interface CompactSubmissionSnapshot {
+  readonly category_id: ProjectCategoryId
+  readonly category_schema_version: CategorySchemaVersion
+  readonly project_core: {
+    readonly current_name: string
+    readonly public_url: string
+    readonly one_line_definition: string
+    readonly repository_url?: string | null
+    readonly tech_stack?: readonly string[]
+    readonly cover_media_reference_ids?: readonly string[]
+  }
+  readonly category_data: Readonly<Record<string, unknown>>
+}
+
+export type SubmissionV1Snapshot = LearningV1Snapshot | PortfolioV1Snapshot | CompactSubmissionSnapshot
+
+function isCompactSnapshot(value: unknown): value is CompactSubmissionSnapshot {
+  if (!isRecord(value) || !hasExactKeys(value, canonicalSnapshotKeys)) return false
+  if (!((value.category_id === 'ai_learning_quiz' && value.category_schema_version === 'learning.v1') ||
+    (value.category_id === 'personal_site_portfolio' && value.category_schema_version === 'portfolio.v1'))) return false
+  const core = value.project_core
+  return isRecord(core) && hasOnlyKeys(core, ['current_name', 'public_url', 'one_line_definition', 'repository_url', 'tech_stack', 'cover_media_reference_ids']) &&
+    typeof core.current_name === 'string' && typeof core.public_url === 'string' && typeof core.one_line_definition === 'string' &&
+    (core.repository_url === undefined || isNullableText(core.repository_url)) &&
+    (core.tech_stack === undefined || isStringList(core.tech_stack, 0, 30)) &&
+    (core.cover_media_reference_ids === undefined || (isStringList(core.cover_media_reference_ids, 0, 20) && core.cover_media_reference_ids.every(id => canonicalUuidPattern.test(id)))) &&
+    isRecord(value.category_data) && hasOnlyKeys(value.category_data, value.category_id === 'ai_learning_quiz' ? ['core_problem'] : []) &&
+    (value.category_data.core_problem === undefined || typeof value.category_data.core_problem === 'string')
+}
 
 function requireCanonicalSnapshot(value: unknown): SubmissionV1Snapshot {
-  if (isCanonicalLearningSnapshot(value) || isCanonicalPortfolioSnapshot(value)) return value
+  if (isCanonicalLearningSnapshot(value) || isCanonicalPortfolioSnapshot(value) || isCompactSnapshot(value)) return value
   if (isRecord(value) && value.category_id === 'personal_site_portfolio') throw new TypeError('Invalid canonical portfolio.v1 snapshot')
   throw new TypeError('Invalid canonical learning.v1 snapshot')
 }

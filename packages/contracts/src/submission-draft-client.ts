@@ -429,8 +429,8 @@ function validPreviewProjection(value: unknown): value is SubmissionPreview {
   if (!isUuid(value.draft_id) || !isPositiveInteger(value.draft_version) ||
       !isUuid(value.check_id) || typeof value.preview_hash !== 'string' ||
       !previewHashPattern.test(value.preview_hash) || !isJsonObject(value.payload_snapshot)) return false
-  if (!isUniqueUuidArray(value.media_reference_ids, 20, 1) ||
-      !isUniqueUuidArray(value.evidence_draft_ids, 50, 1)) return false
+  if (!isUniqueUuidArray(value.media_reference_ids, 20) ||
+      !isUniqueUuidArray(value.evidence_draft_ids, 50)) return false
   if (!isRecord(value.validation) || !hasExactKeys(value.validation, ['valid', 'issue_count']) ||
       value.validation.valid !== true || value.validation.issue_count !== 0) return false
   return isDateTime(value.generated_at)
@@ -441,8 +441,8 @@ function validSubmissionProjection(value: unknown): value is Submission {
   if (!isUuid(value.submission_id) || !isUuid(value.submission_chain_id) ||
       !isUuid(value.draft_id) || !isPositiveInteger(value.snapshot_version) ||
       value.review_status !== 'pending_review' || !isUuid(value.review_work_item_id) ||
-      !isUniqueUuidArray(value.media_reference_ids, 20, 1) ||
-      !isUniqueUuidArray(value.evidence_draft_ids, 50, 1) ||
+      !isUniqueUuidArray(value.media_reference_ids, 20) ||
+      !isUniqueUuidArray(value.evidence_draft_ids, 50) ||
       typeof value.preview_hash !== 'string' || !previewHashPattern.test(value.preview_hash) ||
       !isPositiveInteger(value.version)) return false
   return isDateTime(value.created_at) && isDateTime(value.updated_at)

@@ -26,10 +26,20 @@ describe('application route skeleton', () => {
     ['/project/project-quizforge', '题练工坊'],
     ['/compare/comparison-anonymous-pdf', '比较会话'],
     ['/submit', '发布作品'],
+    ['/submit/new', '发布作品'],
     ['/auth?return_to=%2Fsubmit', '登录／注册'],
   ])('renders %s', async (path, heading) => {
     renderRoute(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+  })
+
+  it.each(['/submit', '/submit/new'])('uses the single page publish composer at %s', async (path) => {
+    renderRoute(path)
+    expect(await screen.findByLabelText('作品名称 *')).toBeInTheDocument()
+    expect(screen.getByLabelText('一句话介绍 *')).toBeInTheDocument()
+    expect(screen.getByLabelText('作品链接 *')).toBeInTheDocument()
+    expect(screen.getByLabelText('作品分类 *')).toBeInTheDocument()
+    expect(screen.queryByText('检查地址')).not.toBeInTheDocument()
   })
 
   it('keeps the protected-action login dialog inside router context', async () => {
@@ -68,7 +78,7 @@ describe('application route skeleton', () => {
     expect(screen.getByRole('search')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '发布' })).toHaveAttribute(
       'href',
-      '/auth?return_to=%2Fsubmit',
+      '/submit',
     )
   })
 

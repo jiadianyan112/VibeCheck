@@ -95,7 +95,7 @@ function FrontstageContent() {
             </Link>
             <Link
               className="header-action header-action--strong"
-              to={restrictedPath('/submit', isLoggedIn, '/submit')}
+              to={'/submit'}
             >
               <NavigationIcon name="发布" />发布
             </Link>
@@ -127,7 +127,7 @@ function FrontstageContent() {
               </Link>
               <Link
                 className="nav-link"
-                to={restrictedPath('/submit', isLoggedIn, '/submit')}
+                to={'/submit'}
               >
                 发布作品
               </Link>
@@ -151,7 +151,7 @@ function FrontstageContent() {
         <Outlet />
       </div>
       {!isAuthPage ? <SiteFooter
-        submitPath={restrictedPath('/submit', isLoggedIn, '/submit')}
+        submitPath={'/submit'}
         compact={isFocusedFlow}
       /> : null}
       {hasCompareBar ? <FloatingCompareBar /> : null}

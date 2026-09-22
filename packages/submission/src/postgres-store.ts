@@ -1225,7 +1225,7 @@ export class PostgresSubmissionStore implements SubmissionStore {
     if (check.expires_at.getTime() <= input.now.getTime()) throw submissionError('SUBMISSION_URL_CHECK_EXPIRED', 410)
     if (
       check.category_id !== draft.category_id || check.category_schema_version !== draft.category_schema_version ||
-      check.risk_result !== 'allowed' || check.access_result !== 'accessible' ||
+      check.risk_result !== 'allowed' || !['accessible', 'uncertain'].includes(check.access_result) ||
       check.duplicate_result !== 'none' || check.canonical_url === null
     ) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
     const duplicate = await client.query<{ readonly project_id: string } & QueryResultRow>(
@@ -1319,6 +1319,8 @@ export class PostgresSubmissionStore implements SubmissionStore {
       draftVersion: input.expectedVersion,
       checkId: input.checkId,
       checkInputHash: check.input_hash,
+      checkedAt: check.checked_at.toISOString(),
+      accessResult: check.access_result as 'accessible' | 'uncertain',
     })
   }
 

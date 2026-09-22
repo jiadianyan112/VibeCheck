@@ -309,9 +309,6 @@ export class PostgresSubmissionPublisher {
       const evidenceDraftIds = arrayOfIds(
         submission.evidence_draft_ids_json, 'SUBMISSION_EVIDENCE_INVALID',
       )
-      if (mediaIds.length < 1 || evidenceDraftIds.length < 1) {
-        throw publicationError('SUBMISSION_PUBLICATION_DEPENDENCIES_MISSING')
-      }
 
       const media = await this.media(client, submission, mediaIds)
       const evidenceDrafts = await this.evidenceDrafts(client, submission, evidenceDraftIds)

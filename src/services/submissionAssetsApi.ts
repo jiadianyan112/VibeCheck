@@ -51,6 +51,7 @@ export interface SubmissionAssetUploadResult extends SubmissionAssetReadinessRes
 }
 
 export interface SubmissionCoverReferenceInput extends SubmissionAssetsApiRequestOptions {
+  readonly sortOrder?: number
   readonly draftId: string
   readonly mediaResourceId: string
   readonly altText: string
@@ -400,6 +401,7 @@ function makeEvidenceClient(options: SubmissionAssetsApiOptions, session: Submis
 }
 
 export interface SubmissionAssetsApi {
+  removeCoverReferences(input: { readonly draftId: string; readonly keepIds: readonly string[] } & SubmissionAssetsApiRequestOptions): Promise<void>
   uploadCover(input: SubmissionAssetUploadInput): Promise<SubmissionAssetUploadResult>
   getMediaStatus(input: { readonly mediaResourceId: string } & SubmissionAssetsApiRequestOptions): Promise<SubmissionAssetReadinessResult>
   ensureCoverReference(input: SubmissionCoverReferenceInput): Promise<SubmissionCoverReferenceResult>
@@ -412,6 +414,16 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
   const resolveUploadFetch = () => options.uploadFetch ?? globalThis.fetch.bind(globalThis)
 
   return {
+    async removeCoverReferences(input) {
+      try {
+        const client = makeMediaClient({ ...options, fetch: resolveApiFetch() }, input.session)
+        const existing = await client.listReferences({ target_type: 'submission_draft', target_id: input.draftId, role: 'cover' }, { signal: input.signal })
+        for (const reference of existing.items) {
+          if (input.keepIds.includes(reference.media_reference_id)) continue
+          await client.deleteReference(reference.media_reference_id, { expected_version: reference.version, operation_id: generatedId() }, { signal: input.signal })
+        }
+      } catch (error) { throw mapGatewayError(error, input.signal) }
+    },
     async uploadCover(input) {
       try {
         requireDraftId(input.draftId)
@@ -496,14 +508,14 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
           target_id: input.draftId,
           role: 'cover',
           alt_text: input.altText,
-          sort_order: 0,
+          sort_order: input.sortOrder ?? 0,
           crop_focus: null,
           variant: null,
           client_request_id: requireRequestId(input.referenceClientRequestId, 'referenceClientRequestId'),
         }, { signal: input.signal })
         if (reference.media_resource_id !== media.media_resource_id ||
             reference.target_type !== 'submission_draft' || reference.target_id !== input.draftId ||
-            reference.role !== 'cover' || reference.sort_order !== 0 ||
+            reference.role !== 'cover' || reference.sort_order !== (input.sortOrder ?? 0) ||
             reference.alt_text !== input.altText || reference.crop_focus !== null || reference.variant !== null) {
           throw protocolFailure('服务端返回了与封面引用请求不匹配的引用。')
         }

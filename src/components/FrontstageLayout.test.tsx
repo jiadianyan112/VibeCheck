@@ -36,7 +36,7 @@ describe('FrontstageLayout', () => {
     expect(footer).toContainElement(screen.getByRole('link', { name: '了解收录规则' }))
     expect(screen.getByRole('link', { name: '发布' })).toHaveAttribute(
       'href',
-      '/auth?return_to=%2Fsubmit',
+      '/submit',
     )
     expect(within(footer).getAllByRole('link')).toHaveLength(4)
     expect(document.querySelector('.app-shell')).toHaveClass('app-shell--has-compare-bar')
@@ -82,7 +82,7 @@ describe('FrontstageLayout', () => {
     const mobileNavigation = screen.getByRole('navigation', { name: '移动导航' })
     expect(within(mobileNavigation).getByRole('link', { name: '发布作品' })).toHaveAttribute(
       'href',
-      '/auth?return_to=%2Fsubmit',
+      '/submit',
     )
   })
 })

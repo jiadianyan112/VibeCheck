@@ -375,6 +375,22 @@ describe('SubmissionDraftClient', () => {
     assert.deepEqual(await client.preview(draftId, previewRequest), previewProjection)
   })
 
+  it('accepts a preview projection without optional media or evidence', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse({
+        ...previewProjection,
+        media_reference_ids: [],
+        evidence_draft_ids: [],
+      }, 200),
+      getCsrfToken: () => 'csrf-preview-01',
+      requestIdGenerator: () => 'preview-compact-request-id',
+    })
+
+    const result = await client.preview(draftId, previewRequest)
+    assert.deepEqual(result.media_reference_ids, [])
+    assert.deepEqual(result.evidence_draft_ids, [])
+  })
+
   it('returns the strict pending-review submission projection from status 202', async () => {
     const client = createSubmissionDraftClient({
       fetch: async () => jsonResponse(submissionProjection, 202),
@@ -382,6 +398,22 @@ describe('SubmissionDraftClient', () => {
       requestIdGenerator: () => 'submit-request-id',
     })
     assert.deepEqual(await client.submit(submitRequest), submissionProjection)
+  })
+
+  it('accepts a pending-review submission without optional media or evidence', async () => {
+    const client = createSubmissionDraftClient({
+      fetch: async () => jsonResponse({
+        ...submissionProjection,
+        media_reference_ids: [],
+        evidence_draft_ids: [],
+      }, 202),
+      getCsrfToken: () => 'csrf-submit-01',
+      requestIdGenerator: () => 'submit-compact-request-id',
+    })
+
+    const result = await client.submit(submitRequest)
+    assert.deepEqual(result.media_reference_ids, [])
+    assert.deepEqual(result.evidence_draft_ids, [])
   })
 
   for (const status of [401, 403, 404, 409, 410, 422]) {
@@ -511,7 +543,7 @@ describe('SubmissionDraftClient', () => {
   const invalidPreviewProjections: readonly [string, unknown][] = [
     ['extra top-level key', { ...previewProjection, unexpected: true }],
     ['63-character preview hash', { ...previewProjection, preview_hash: 'a'.repeat(63) }],
-    ['empty media references', { ...previewProjection, media_reference_ids: [] }],
+    ['invalid media reference id', { ...previewProjection, media_reference_ids: ['not-a-uuid'] }],
     ['invalid validation state', { ...previewProjection, validation: { valid: false, issue_count: 1 } }],
     ['extra validation key', { ...previewProjection, validation: { valid: true, issue_count: 0, extra: true } }],
     ['invalid generated date', { ...previewProjection, generated_at: '2026-02-30T10:00:00.000Z' }],
@@ -534,7 +566,7 @@ describe('SubmissionDraftClient', () => {
   const invalidSubmissionProjections: readonly [string, unknown][] = [
     ['extra top-level key', { ...submissionProjection, unexpected: true }],
     ['wrong review status', { ...submissionProjection, review_status: 'published' }],
-    ['empty evidence references', { ...submissionProjection, evidence_draft_ids: [] }],
+    ['invalid evidence reference id', { ...submissionProjection, evidence_draft_ids: ['not-a-uuid'] }],
     ['uppercase preview hash', { ...submissionProjection, preview_hash: previewHash.toUpperCase() }],
     ['non-positive version', { ...submissionProjection, version: 0 }],
     ['invalid updated date', { ...submissionProjection, updated_at: 'not-a-date' }],

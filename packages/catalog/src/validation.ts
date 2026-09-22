@@ -71,7 +71,7 @@ function projectCore(value: unknown): ProjectCoreSnapshot {
     public_url: text(record.public_url, 1, 2_048, 'CATALOG_SNAPSHOT_INVALID'),
     repository_url: nullableText(record.repository_url, 2_048, 'CATALOG_SNAPSHOT_INVALID'),
     original_platform: nullableText(record.original_platform, 120, 'CATALOG_SNAPSHOT_INVALID'),
-    cover_media_reference_ids: Object.freeze(strings(record.cover_media_reference_ids, 1, 20, 64, 'CATALOG_SNAPSHOT_INVALID')),
+    cover_media_reference_ids: Object.freeze(strings(record.cover_media_reference_ids, 0, 20, 64, 'CATALOG_SNAPSHOT_INVALID')),
     one_line_definition: text(record.one_line_definition, 1, 80, 'CATALOG_SNAPSHOT_INVALID'),
     ai_coding_tools: knowledgeState(record.ai_coding_tools),
     tech_stack: Object.freeze(strings(record.tech_stack, 0, 30, 50, 'CATALOG_SNAPSHOT_INVALID')),
@@ -93,7 +93,7 @@ function learning(value: unknown): LearningSchemaV1 {
     'learning_records', 'differentiation', 'core_features', 'secondary_features',
     'login_requirement', 'sharing_capability',
   ], 'LEARNING_SCHEMA_INVALID')
-  if (!Array.isArray(record.core_flow) || record.core_flow.length < 1 || record.core_flow.length > 10) {
+  if (!Array.isArray(record.core_flow) || record.core_flow.length > 10) {
     throw catalogError('LEARNING_SCHEMA_INVALID', 500)
   }
   const flow = record.core_flow.map((item, index) => {
@@ -103,11 +103,11 @@ function learning(value: unknown): LearningSchemaV1 {
     return Object.freeze({ order: index + 1, name: text(step.name, 1, 80, 'LEARNING_SCHEMA_INVALID') })
   })
   return Object.freeze({
-    target_users: Object.freeze(strings(record.target_users, 1, 3, 64, 'LEARNING_SCHEMA_INVALID')),
-    core_problem: text(record.core_problem, 1, 500, 'LEARNING_SCHEMA_INVALID'),
-    use_scenarios: Object.freeze(strings(record.use_scenarios, 1, 5, 64, 'LEARNING_SCHEMA_INVALID')),
-    main_inputs: Object.freeze(strings(record.main_inputs, 1, 5, 64, 'LEARNING_SCHEMA_INVALID')),
-    main_outputs: Object.freeze(strings(record.main_outputs, 1, 5, 64, 'LEARNING_SCHEMA_INVALID')),
+    target_users: Object.freeze(strings(record.target_users, 0, 3, 64, 'LEARNING_SCHEMA_INVALID')),
+    core_problem: text(record.core_problem, 0, 500, 'LEARNING_SCHEMA_INVALID'),
+    use_scenarios: Object.freeze(strings(record.use_scenarios, 0, 5, 64, 'LEARNING_SCHEMA_INVALID')),
+    main_inputs: Object.freeze(strings(record.main_inputs, 0, 5, 64, 'LEARNING_SCHEMA_INVALID')),
+    main_outputs: Object.freeze(strings(record.main_outputs, 0, 5, 64, 'LEARNING_SCHEMA_INVALID')),
     core_flow: Object.freeze(flow),
     content_processing: Object.freeze(strings(record.content_processing, 0, 10, 64, 'LEARNING_SCHEMA_INVALID')),
     practice_formats: Object.freeze(strings(record.practice_formats, 0, 9, 64, 'LEARNING_SCHEMA_INVALID')),
@@ -149,31 +149,31 @@ function portfolio(value: unknown): PortfolioSchemaV1 {
   if (record.ai_features !== undefined) {
     strings(record.ai_features, 0, 20, 80, 'PORTFOLIO_SCHEMA_INVALID')
   }
-  const coreModules = strings(record.core_modules, 2, 20, 64, 'PORTFOLIO_SCHEMA_INVALID')
+  const coreModules = strings(record.core_modules, 0, 20, 64, 'PORTFOLIO_SCHEMA_INVALID')
   const homepageSequence = strings(record.homepage_sequence, 0, 30, 64, 'PORTFOLIO_SCHEMA_INVALID')
   if (homepageSequence.some((module) => !coreModules.includes(module))) throw catalogError('PORTFOLIO_SCHEMA_INVALID', 500)
-  const interactionLevel = oneOf(record.interaction_level, ['static', 'light', 'moderate', 'high'], 'PORTFOLIO_SCHEMA_INVALID')
-  const interactionPatterns = strings(record.interaction_patterns, 1, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')
+  const interactionLevel = oneOf(record.interaction_level, ['static', 'light', 'moderate', 'high', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID')
+  const interactionPatterns = strings(record.interaction_patterns, 0, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')
   if (interactionLevel === 'static' && interactionPatterns.some((pattern) => pattern !== 'none')) {
     throw catalogError('PORTFOLIO_SCHEMA_INVALID', 500)
   }
-  const showcase = oneOf(record.project_showcase_format, ['card_grid', 'gallery', 'timeline', 'case_study_list', 'repository_list', 'full_bleed', 'mixed', 'none'], 'PORTFOLIO_SCHEMA_INVALID')
-  const depth = oneOf(record.case_study_depth, ['none', 'summary', 'overview', 'deep'], 'PORTFOLIO_SCHEMA_INVALID')
+  const showcase = oneOf(record.project_showcase_format, ['card_grid', 'gallery', 'timeline', 'case_study_list', 'repository_list', 'full_bleed', 'mixed', 'none', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID')
+  const depth = oneOf(record.case_study_depth, ['none', 'summary', 'overview', 'deep', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID')
   if (showcase === 'none' && depth !== 'none') throw catalogError('PORTFOLIO_SCHEMA_INVALID', 500)
   return Object.freeze({
-    site_type: oneOf(record.site_type, ['personal_homepage', 'portfolio', 'online_resume', 'academic_homepage', 'hybrid'], 'PORTFOLIO_SCHEMA_INVALID'),
-    creator_roles: Object.freeze(strings(record.creator_roles, 1, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
-    primary_goals: Object.freeze(strings(record.primary_goals, 1, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
-    page_model: oneOf(record.page_model, ['single_page', 'multi_page', 'hybrid'], 'PORTFOLIO_SCHEMA_INVALID'),
+    site_type: oneOf(record.site_type, ['personal_homepage', 'portfolio', 'online_resume', 'academic_homepage', 'hybrid', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID'),
+    creator_roles: Object.freeze(strings(record.creator_roles, 0, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
+    primary_goals: Object.freeze(strings(record.primary_goals, 0, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
+    page_model: oneOf(record.page_model, ['single_page', 'multi_page', 'hybrid', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID'),
     navigation_pattern: record.navigation_pattern === null ? null : oneOf(record.navigation_pattern, ['top_nav', 'side_nav', 'section_anchor', 'minimal_overlay', 'no_persistent_nav', 'other'], 'PORTFOLIO_SCHEMA_INVALID'),
     homepage_sequence: Object.freeze(homepageSequence),
     core_modules: Object.freeze(coreModules),
     project_showcase_format: showcase,
     case_study_depth: depth,
-    visual_styles: Object.freeze(strings(record.visual_styles, 1, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
-    layout_patterns: Object.freeze(strings(record.layout_patterns, 1, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
-    color_character: oneOf(record.color_character, ['monochrome', 'neutral', 'brand_led', 'vivid', 'gradient_dominant', 'mixed'], 'PORTFOLIO_SCHEMA_INVALID'),
-    theme_mode: oneOf(record.theme_mode, ['light_only', 'dark_only', 'switchable', 'system_adaptive'], 'PORTFOLIO_SCHEMA_INVALID'),
+    visual_styles: Object.freeze(strings(record.visual_styles, 0, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
+    layout_patterns: Object.freeze(strings(record.layout_patterns, 0, 8, 64, 'PORTFOLIO_SCHEMA_INVALID')),
+    color_character: oneOf(record.color_character, ['monochrome', 'neutral', 'brand_led', 'vivid', 'gradient_dominant', 'mixed', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID'),
+    theme_mode: oneOf(record.theme_mode, ['light_only', 'dark_only', 'switchable', 'system_adaptive', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID'),
     interaction_level: interactionLevel,
     interaction_patterns: Object.freeze(interactionPatterns),
     responsive_support: oneOf(record.responsive_support, ['confirmed', 'partial', 'not_supported', 'unknown'], 'PORTFOLIO_SCHEMA_INVALID'),
