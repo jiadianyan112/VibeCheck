@@ -23,6 +23,16 @@ export interface AuthChallengeDto {
   readonly masked_email: string
 }
 
+export interface AuthPasswordStatusDto {
+  readonly has_password: boolean
+  readonly can_set_password: boolean
+}
+
+export interface AuthPasswordLoginDto {
+  readonly session: AuthSessionDto
+  readonly return_to: string
+}
+
 export type AuthVerificationDto =
   | {
       readonly purpose: 'login'
@@ -135,6 +145,37 @@ export function verifyEmailChallenge(input: {
       otp: input.otp,
       client_request_id: input.clientRequestId,
     }),
+  })
+}
+
+export function passwordLogin(input: {
+  readonly email: string
+  readonly password: string
+  readonly returnTo: string
+}): Promise<AuthPasswordLoginDto> {
+  return authFetch('/api/v1/auth/password-login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: input.email,
+      password: input.password,
+      return_to: input.returnTo,
+    }),
+  })
+}
+
+export function getPasswordStatus(): Promise<AuthPasswordStatusDto> {
+  return authFetch('/api/v1/auth/password', { method: 'GET' })
+}
+
+export function setPassword(session: Pick<AuthSessionDto, 'csrf_token'>, password: string): Promise<void> {
+  return authFetch('/api/v1/auth/password', {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      'x-csrf-token': session.csrf_token,
+    },
+    body: JSON.stringify({ password }),
   })
 }
 

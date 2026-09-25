@@ -61,6 +61,7 @@ describe('CompareSessionPage management', () => {
     await user.selectOptions(screen.getByLabelText('添加一个作品'), 'project-speakmirror')
     expect(screen.getByText('2/5 个作品')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '登录并保存比较' }))
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     expect(await screen.findByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
     expect(router.state.location.search).toContain('return_to=')
 

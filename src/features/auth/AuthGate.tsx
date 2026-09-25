@@ -33,7 +33,7 @@ export function AuthModal({
 }) {
   return (
     <Modal open={open} title="登录后继续刚才的操作" onClose={onClose}>
-      <p>我们会向你的邮箱发送 6 位验证码。验证成功后返回原页面。</p>
+      <p>使用邮箱密码或验证码登录，完成后返回原页面。</p>
       {comparisonCount ? (
         <p className="boundary-note" role="note">
           当前 {comparisonCount} 个临时比较作品会保留；账号比较合并由后续数据接口工作包完成。
@@ -45,7 +45,7 @@ export function AuthModal({
           to={`/auth?return_to=${encodeURIComponent(returnTo)}`}
           onClick={onClose}
         >
-          使用邮箱验证码登录
+          前往登录
         </Link>
         <Button variant="secondary" onClick={onClose}>暂不登录</Button>
       </div>

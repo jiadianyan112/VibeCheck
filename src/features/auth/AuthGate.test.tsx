@@ -31,7 +31,7 @@ describe('AuthGate', () => {
     await user.click(screen.getByRole('button', { name: '收藏测试作品' }))
     expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
     expect(screen.getByLabelText('待执行动作')).toHaveTextContent('favorite')
-    expect(screen.getByRole('link', { name: '使用邮箱验证码登录' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '前往登录' })).toHaveAttribute(
       'href',
       '/auth?return_to=%2Fprojects',
     )

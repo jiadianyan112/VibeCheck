@@ -16,6 +16,7 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.1",
     "@vibecheck/config": "*",
     "@vibecheck/observability": "*",
     "pg": "^8.16.3"

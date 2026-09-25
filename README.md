@@ -67,7 +67,7 @@ npm run build
 | 作品 | `/project/:id`、`/compare/:sessionId` | 可信档案、来源、资产、讨论与 2–5 项比较 |
 | 发布 | `/submit`、`/submit/new` | 地址检查、查重、结构化发布与审核状态 |
 | 作者 | `/project/:id/verify-author`、`/project/:id/update`、`/creator/:id` | 身份材料、作品更新与作者主页 |
-| 账户 | `/auth`、`/me`、`/notifications` | 固定身份登录、个人资产与通知 |
+| 账户 | `/auth`、`/me`、`/notifications` | 邮箱登录、账号安全、个人资产与通知 |
 | 说明 | `/about` | 收录规则、可信边界与排除范围 |
 | 后台 | `/admin`、`/admin/projects`、`/admin/project/:id` | 看板、作品队列、字段、证据、历史与日志 |
 | 后台工作流 | `/admin/duplicates`、`/admin/reviews`、`/admin/author-verification`、`/admin/status-monitor` | 合并、发布审核、身份审核与状态复核 |
@@ -76,7 +76,7 @@ npm run build
 
 ## 固定测试账号
 
-原型不收集密码；在 `/auth` 或登录弹层直接选择身份。
+下列固定账号仅供原型场景面板和自动化测试使用，不参与真实认证。实际账号在 `/auth` 使用邮箱密码或验证码登录；首次设置和重设密码在 `/me` 完成，并要求近期邮箱验证码验证。
 
 | 身份 | 角色 | 适合验证 |
 | --- | --- | --- |

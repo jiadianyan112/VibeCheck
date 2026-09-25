@@ -46,6 +46,29 @@
 .ui-root .personal-section {
   scroll-margin-top: 6rem;
   padding-top: var(--space-3); padding-block: 16px; }
+.ui-root .security-panel {
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--color-surface-raised);
+}
+.ui-root .security-password-form {
+  display: grid;
+  gap: 12px;
+  max-width: 28rem;
+}
+.ui-root .security-password-form .button { justify-self: start; }
+.ui-root .security-panel__reauth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.ui-root .security-panel__reauth p,
+.ui-root .security-panel__error p,
+.ui-root .security-panel__notice { margin: 0; }
+.ui-root .security-panel__error { color: var(--brand-danger); }
+.ui-root .security-panel__notice { color: var(--color-muted); font-size: .8125rem; }
 .ui-root .notification-header {
   padding: var(--space-6);
   border: 1px solid var(--color-line-strong);

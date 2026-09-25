@@ -212,6 +212,15 @@ export interface ApiIdentityService {
   ): Promise<void>
 }
 
+export interface ApiPasswordIdentityService {
+  login(command: {
+    email: string; password: string; returnTo: string; anonymousSubjectId: string
+    currentSessionToken: string | null; ipAddress: string | null; userAgent: string | null; requestId: string
+  }): Promise<{ session: SessionProjection; sessionToken: string; returnTo: string }>
+  getStatus(sessionToken: string, userId: string): Promise<{ hasPassword: boolean; canSetPassword: boolean }>
+  setPassword(command: { sessionToken: string; userId: string; password: string; requestId: string }): Promise<void>
+}
+
 export interface ApiPendingActionService {
   create(command: CreatePendingActionCommand): Promise<PendingActionProjection>
   get(command: GetPendingActionCommand): Promise<PendingActionProjection>
@@ -440,6 +449,7 @@ export interface ApiServerDependencies {
   readonly catalogDefaultPageSize?: number
   readonly catalogMaximumPageSize?: number
   readonly identity?: ApiIdentityService
+  readonly passwordIdentity?: ApiPasswordIdentityService
   readonly evidence?: ApiEvidenceService
   readonly media?: ApiMediaService
   readonly pendingActions?: ApiPendingActionService
@@ -860,7 +870,9 @@ async function handleAuthRequest(
   const startPath = '/api/v1/auth/email-challenges'
   const verification = path.match(/^\/api\/v1\/auth\/email-challenges\/([^/]+)\/verify$/)
   const sessionPath = '/api/v1/auth/session'
-  if (path !== startPath && verification === null && path !== sessionPath) return null
+  const passwordLoginPath = '/api/v1/auth/password-login'
+  const passwordPath = '/api/v1/auth/password'
+  if (path !== startPath && verification === null && path !== sessionPath && path !== passwordLoginPath && path !== passwordPath) return null
 
   const identity = requireIdentity(dependencies)
   const secure = dependencies.authCookieSecure ?? config.environment === 'production'
@@ -872,6 +884,59 @@ async function handleAuthRequest(
 
   if ((method === 'POST' || method === 'DELETE') && !requestOriginAllowed(request, config)) {
     throw new IdentityError('ORIGIN_INVALID', 403, false)
+  }
+
+  if (method === 'POST' && path === passwordLoginPath) {
+    if (!dependencies.passwordIdentity) throw new IdentityError('AUTH_SERVICE_UNAVAILABLE', 503, true)
+    const body = await readJsonBody(request)
+    exactKeys(body, ['email', 'password', 'return_to'])
+    const anonymousSubjectId = verifiedAnonymousSubject(cookies[authCookieNames.anonymous], anonymousSecret) ?? randomUUID()
+    const result = await dependencies.passwordIdentity.login({
+      email: stringField(body, 'email', { maximum: 254 })!,
+      password: stringField(body, 'password', { maximum: 1024 })!,
+      returnTo: stringField(body, 'return_to', { maximum: 2_048 })!,
+      anonymousSubjectId,
+      currentSessionToken: cookies[authCookieNames.session] ?? null,
+      ipAddress: clientIp(request),
+      userAgent: request.headers['user-agent'] ?? null,
+      requestId,
+    })
+    const maxAgeSeconds = Math.max(0, Math.floor((Date.parse(result.session.expiresAt) - (dependencies.now?.() ?? new Date()).getTime()) / 1_000))
+    appendCookies(response, [
+      cookie(authCookieNames.anonymous, signAnonymousSubject(anonymousSubjectId, anonymousSecret), secure, { httpOnly: true, maxAgeSeconds: 31_536_000 }),
+      cookie(authCookieNames.session, result.sessionToken, secure, { httpOnly: true, maxAgeSeconds }),
+      cookie(authCookieNames.csrf, result.session.csrfToken, secure, { httpOnly: false, maxAgeSeconds }),
+    ])
+    writeJson(response, 200, { session: sessionResponse(result.session), return_to: result.returnTo }, requestId)
+    return 200
+  }
+
+  if (path === passwordPath && (method === 'GET' || method === 'PUT')) {
+    if (!dependencies.passwordIdentity) throw new IdentityError('AUTH_SERVICE_UNAVAILABLE', 503, true)
+    const sessionToken = cookies[authCookieNames.session] ?? null
+    const csrfToken = cookies[authCookieNames.csrf] ?? null
+    if (method === 'PUT') {
+      if (!requestOriginAllowed(request, config)) throw new IdentityError('ORIGIN_INVALID', 403, false)
+      if (typeof request.headers['x-csrf-token'] !== 'string' || request.headers['x-csrf-token'] !== csrfToken) {
+        throw new IdentityError('CSRF_INVALID', 403, false)
+      }
+    }
+    const session = await identity.getSession(sessionToken, csrfToken)
+    if (!sessionToken) throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
+    if (method === 'GET') {
+      const status = await dependencies.passwordIdentity.getStatus(sessionToken, session.userId)
+      writeJson(response, 200, { has_password: status.hasPassword, can_set_password: status.canSetPassword }, requestId)
+      return 200
+    }
+    const body = await readJsonBody(request)
+    exactKeys(body, ['password'])
+    await dependencies.passwordIdentity.setPassword({
+      sessionToken, userId: session.userId,
+      password: stringField(body, 'password', { maximum: 1024 })!, requestId,
+    })
+    response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
+    response.end()
+    return 204
   }
 
   if (method === 'POST' && path === startPath) {

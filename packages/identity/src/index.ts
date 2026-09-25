@@ -11,6 +11,8 @@ export {
 export { canUseReturnTo, maskEmail, normalizeEmail, normalizeReturnTo } from './normalize.js'
 export { permissionsFor, primaryRole } from './permissions.js'
 export { ResendEmailSender } from './resend.js'
+export { PasswordService, type PasswordStore, type PasswordCredential } from './password-service.js'
+export { PostgresPasswordStore } from './password-store.js'
 export { IdentityService, type IdentityServiceDependencies, type IdentityStore } from './service.js'
 export { PendingActionService, type PendingActionServiceDependencies } from './pending-action-service.js'
 export {

@@ -45,6 +45,8 @@ import {
   IdentityService,
   PendingActionService,
   PostgresIdentityStore,
+  PasswordService,
+  PostgresPasswordStore,
   PostgresPendingActionStore,
   ResendEmailSender,
 } from '@vibecheck/identity'
@@ -275,6 +277,10 @@ const server = createApiServer(config, {
             resendApiKey: identityConfig.resendApiKey,
             emailFrom: identityConfig.emailFrom,
           }),
+        }),
+        passwordIdentity: new PasswordService({
+          config: identityConfig,
+          store: new PostgresPasswordStore(pool),
         }),
         pendingActions: new PendingActionService({
           config: identityConfig,

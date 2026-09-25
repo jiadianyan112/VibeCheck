@@ -5,6 +5,7 @@ export const mockAuthProfiles = {
   mia: {
     label: '米娅',
     email: 'mia@example.test',
+    password: 'vibecheck password',
     session: {
       authenticated: true,
       user_id: '11111111-1111-4111-8111-111111111111',
@@ -22,6 +23,7 @@ export const mockAuthProfiles = {
   lin: {
     label: '林舟',
     email: 'lin.zhou@example.test',
+    password: 'admin vibecheck password',
     session: {
       authenticated: true,
       user_id: '22222222-2222-4222-8222-222222222222',
@@ -80,8 +82,9 @@ export interface MockAuthOptions {
 
 /**
  * Stubs the browser-facing auth contract. The tests still fill and submit the
- * production email + six-digit OTP form; no app storage or test hook is used.
- * Submission DTO routes are opt-in so public/auth-only cases stay network-clean.
+ * production email/password or six-digit OTP forms; no app storage or test
+ * hook is used. Submission DTO routes are opt-in so public/auth-only cases stay
+ * network-clean.
  */
 export async function installMockAuth(page: Page, options: MockAuthOptions = {}) {
   let activeProfile: MockAuthProfile | null = null
@@ -163,6 +166,34 @@ export async function installMockAuth(page: Page, options: MockAuthOptions = {})
         purpose: 'login',
         session: mockAuthProfiles[activeProfile].session,
         return_to: challenge.returnTo,
+      }),
+    })
+  })
+
+  await page.route('**/api/v1/auth/password-login', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    const body = route.request().postDataJSON() as { email?: unknown; password?: unknown; return_to?: unknown }
+    const email = typeof body.email === 'string' ? body.email : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    const profile = (Object.keys(mockAuthProfiles) as MockAuthProfile[]).find((candidate) => mockAuthProfiles[candidate].email === email)
+    if (!profile || password !== mockAuthProfiles[profile].password) {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify(errorBody('PASSWORD_LOGIN_INVALID')),
+      })
+      return
+    }
+    activeProfile = profile
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: mockAuthProfiles[profile].session,
+        return_to: typeof body.return_to === 'string' ? body.return_to : '/me',
       }),
     })
   })
@@ -259,6 +290,9 @@ export async function installMockAuth(page: Page, options: MockAuthOptions = {})
 
   async function completeLogin(profile: MockAuthProfile, returnPath: string) {
     nextProfile = profile
+    if (await page.getByRole('heading', { name: '邮箱密码登录' }).isVisible()) {
+      await page.getByRole('tab', { name: '验证码登录' }).click()
+    }
     await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
     await page.getByRole('textbox', { name: '邮箱地址' }).fill(mockAuthProfiles[profile].email)
     await page.getByRole('button', { name: '发送验证码' }).click()

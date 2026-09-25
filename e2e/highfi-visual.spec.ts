@@ -197,7 +197,7 @@ test.describe('探索首页真实用户交互', () => {
     await card.getByRole('button', { name: '收藏', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('link', { name: '使用邮箱验证码登录' })).toBeVisible()
+    await expect(dialog.getByRole('link', { name: '前往登录' })).toBeVisible()
     await expect(page.getByRole('button', { name: '使用米娅账号', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '使用周可账号', exact: true })).toHaveCount(0)
     await dialog.getByRole('button', { name: '暂不登录' }).click()

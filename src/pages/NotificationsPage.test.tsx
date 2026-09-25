@@ -110,9 +110,11 @@ describe('NotificationsPage', () => {
   })
 
   it('keeps private notifications invisible after logout or for a guest', async () => {
+    const user = userEvent.setup()
     renderNotifications()
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
     expect(screen.queryByText('口语回声发布 2.0')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
   })
 })

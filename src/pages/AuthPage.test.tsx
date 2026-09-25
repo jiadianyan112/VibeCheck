@@ -17,6 +17,7 @@ vi.mock('../services/authService', async (importOriginal) => {
     createAuthRequestId: vi.fn(() => '11111111-1111-4111-8111-111111111111'),
     startEmailChallenge: vi.fn(),
     verifyEmailChallenge: vi.fn(),
+    passwordLogin: vi.fn(),
   }
 })
 
@@ -73,11 +74,32 @@ describe('AuthPage', () => {
       session,
       return_to: '/submit',
     })
+    vi.mocked(authService.passwordLogin).mockResolvedValue({
+      session,
+      return_to: '/submit',
+    })
   })
 
-  it('completes email OTP login and returns to return_to', async () => {
+  it('uses password login by default and returns to return_to', async () => {
     const user = userEvent.setup()
     renderAuth()
+    expect(screen.getByRole('heading', { name: '邮箱密码登录' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
+    await user.type(screen.getByLabelText('密码'), 'correct password')
+    await user.click(screen.getByRole('button', { name: '登录' }))
+    expect(await screen.findByRole('heading', { name: '发布入口' })).toBeInTheDocument()
+    expect(screen.getByText('身份：us***@example.com')).toBeInTheDocument()
+    expect(authService.passwordLogin).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      password: 'correct password',
+      returnTo: '/submit',
+    })
+  })
+
+  it('completes email OTP login and returns to return_to after selecting OTP mode', async () => {
+    const user = userEvent.setup()
+    renderAuth()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     expect(screen.getByText('新邮箱验证后自动注册')).toBeInTheDocument()
     await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
     await user.click(screen.getByRole('button', { name: '发送验证码' }))
@@ -118,6 +140,7 @@ describe('AuthPage', () => {
   it('validates the email locally and keeps it editable on failure', async () => {
     const user = userEvent.setup()
     renderAuth()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'invalid')
     await user.click(screen.getByRole('button', { name: '发送验证码' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('请输入有效的邮箱地址。')
@@ -128,6 +151,7 @@ describe('AuthPage', () => {
   it('locks the challenged email and clears the old code when switching email', async () => {
     const user = userEvent.setup()
     renderAuth()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
     await user.click(screen.getByRole('button', { name: '发送验证码' }))
     expect(screen.getByRole('textbox', { name: /^邮箱地址/ })).toHaveAttribute('readonly')
@@ -146,6 +170,7 @@ describe('AuthPage', () => {
     )
     const user = userEvent.setup()
     renderAuth()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
     await user.click(screen.getByRole('button', { name: '发送验证码' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('网络连接不可用')
@@ -165,11 +190,38 @@ describe('AuthPage', () => {
     })
     const user = userEvent.setup()
     renderAuth()
+    await user.click(screen.getByRole('tab', { name: '验证码登录' }))
     await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
     await user.click(screen.getByRole('button', { name: '发送验证码' }))
     expect(screen.getByRole('button', { name: /秒后重新发送/ })).toBeDisabled()
     await user.type(screen.getByRole('textbox', { name: '6 位验证码' }), '123456')
     await user.click(screen.getByRole('button', { name: '登录' }))
     expect(await screen.findByRole('heading', { name: '发布入口' })).toBeInTheDocument()
+  })
+
+  it('allows a signed-in user to replace the current session through forced OTP mode', async () => {
+    const user = userEvent.setup()
+    persistAppState(appReducer(createInitialAppState(), createLoginAction(prototypeUsers[0]!)))
+    renderAuth('/auth?mode=otp&return_to=%2Fsubmit')
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: '发送验证码' }))
+    await user.type(screen.getByRole('textbox', { name: '6 位验证码' }), '123456')
+    await user.click(screen.getByRole('button', { name: '登录' }))
+    expect(await screen.findByRole('heading', { name: '发布入口' })).toBeInTheDocument()
+    expect(screen.getByText('身份：us***@example.com')).toBeInTheDocument()
+  })
+
+  it('sends forgot-password users to the forced OTP flow for password security settings', async () => {
+    const user = userEvent.setup()
+    renderAuth()
+    await user.click(screen.getByRole('link', { name: '忘记密码？使用验证码登录' }))
+    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
+    await user.click(screen.getByRole('button', { name: '发送验证码' }))
+    expect(authService.startEmailChallenge).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'user@example.com',
+      returnTo: '/me#security',
+    }))
   })
 })

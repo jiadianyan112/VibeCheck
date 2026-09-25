@@ -1,12 +1,36 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { installMockAuth } from './support/mock-auth'
+import { installMockAuth, mockAuthProfiles } from './support/mock-auth'
+
+test('default password login returns safely and keeps the session on reload', async ({ page }) => {
+  await installMockAuth(page)
+  await page.goto('/auth?return_to=%2Fabout')
+  await page.getByRole('textbox', { name: '邮箱地址' }).fill(mockAuthProfiles.mia.email)
+  await page.getByRole('textbox', { name: '密码' }).fill(mockAuthProfiles.mia.password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL(/\/about$/)
+
+  await page.goto('/auth?return_to=%2Fabout')
+  await expect(page.getByRole('heading', { name: '当前账号' })).toBeVisible()
+  await expect(page.getByText('米娅 · 已验证作者')).toBeVisible()
+})
+
+test('password login uses one generic error for invalid credentials', async ({ page }) => {
+  await installMockAuth(page)
+  await page.goto('/auth')
+  await page.getByRole('textbox', { name: '邮箱地址' }).fill(mockAuthProfiles.mia.email)
+  await page.getByRole('textbox', { name: '密码' }).fill('wrong password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('邮箱或密码不正确，请检查后重试。')
+  await expect(page).toHaveURL(/\/auth$/)
+})
 
 for (const width of [390, 768, 1440]) {
   test(`compact auth at ${width}px: keyboard, errors, recovery and return`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await installMockAuth(page)
     await page.goto('/auth?return_to=%2Fabout')
+    await page.getByRole('tab', { name: '验证码登录' }).click()
     const email = page.getByRole('textbox', { name: '邮箱地址' })
     const otp = page.getByRole('textbox', { name: '6 位验证码' })
     const login = page.getByRole('button', { name: '登录', exact: true })

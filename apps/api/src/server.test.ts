@@ -141,6 +141,7 @@ import {
   type ApiCommunityService,
   type ApiNotificationService,
   type ApiIdentityService,
+  type ApiPasswordIdentityService,
   type ApiPendingActionService,
   type ApiPendingActionExecutor,
   type ApiProjectUpdateService,
@@ -189,6 +190,7 @@ async function start(
   privateMaterials?: ApiPrivateMaterialService,
   ownershipCases?: ApiOwnershipCaseService,
   media?: ApiMediaService,
+  passwordIdentity?: ApiPasswordIdentityService,
 ): Promise<{
   readonly baseUrl: string
   readonly stop: () => Promise<void>
@@ -229,6 +231,7 @@ async function start(
     ...(privateMaterials ? { privateMaterials } : {}),
     ...(ownershipCases ? { ownershipCases } : {}),
     ...(media ? { media } : {}),
+    ...(passwordIdentity ? { passwordIdentity } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
   server.listen(0, '127.0.0.1')
@@ -3325,6 +3328,47 @@ test('email OTP flow establishes signed browser cookies and a server session', a
   } finally {
     await runtime.stop()
   }
+})
+
+test('password endpoints issue a session and protect password changes with CSRF', async () => {
+  let changed = false
+  const passwordIdentity: ApiPasswordIdentityService = {
+    async login(command) {
+      assert.equal(command.email, 'user@example.com')
+      assert.equal(command.password, 'pass word')
+      return { session, sessionToken: 'session-token-with-at-least-thirty-two-characters', returnTo: '/me' }
+    },
+    async getStatus() { return { hasPassword: true, canSetPassword: true } },
+    async setPassword(command) { changed = true; assert.equal(command.password, 'new pass word') },
+  }
+  const runtime = await start(async () => undefined, new FakeIdentityService(), undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, passwordIdentity)
+  try {
+    const login = await fetch(`${runtime.baseUrl}/api/v1/auth/password-login`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://web.example' },
+      body: JSON.stringify({ email: 'user@example.com', password: 'pass word', return_to: '/me' }),
+    })
+    assert.equal(login.status, 200)
+    assert.match(login.headers.get('set-cookie') ?? '', /vc_session=/)
+    const cookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+    const status = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, { headers: { cookie } })
+    assert.equal(status.status, 200)
+    assert.deepEqual(await status.json(), { has_password: true, can_set_password: true })
+    const rejected = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, {
+      method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ password: 'new pass word' }),
+    })
+    assert.equal(rejected.status, 403)
+    assert.equal(changed, false)
+    const update = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, {
+      method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json',
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' },
+      body: JSON.stringify({ password: 'new pass word' }),
+    })
+    assert.equal(update.status, 204)
+    assert.equal(changed, true)
+  } finally { await runtime.stop() }
 })
 
 test('authentication writes reject missing Origin and unknown input fields', async () => {

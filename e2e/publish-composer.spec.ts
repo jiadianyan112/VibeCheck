@@ -152,7 +152,7 @@ test('访客提交后登录回来会恢复四项输入', async ({ page, isMobile
   await fillRequiredFields(page)
   await submitFromFooter(page)
   await expect(page).toHaveURL(/\/auth\?return_to=%2Fsubmit%3Fresume%3Dguest$/)
-  await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '邮箱密码登录' })).toBeVisible()
 
   await auth.loginCurrent('mia', '/submit?resume=guest')
   await waitForPublishEditor(page)

@@ -165,7 +165,7 @@ test.describe('T54 响应式关键路径', () => {
     expect(dialogBox!.x).toBeGreaterThanOrEqual(0)
     expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390)
     expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(844)
-    await dialog.getByRole('link', { name: '使用邮箱验证码登录' }).click()
+    await dialog.getByRole('link', { name: '前往登录' }).click()
     await expect(page).toHaveURL(/\/auth\?return_to=%2Fproject%2Fproject-pdfquizlab$/)
     await mockAuth.loginCurrent('mia', '/project/project-pdfquizlab')
 
@@ -179,7 +179,7 @@ test.describe('T54 响应式关键路径', () => {
 
     await page.goto('/auth?return_to=%2Fadmin%2Fprojects')
     await page.getByRole('button', { name: '退出登录' }).click()
-    await expect(page.getByRole('heading', { name: '邮箱验证码登录' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '邮箱密码登录' })).toBeVisible()
     await mockAuth.loginCurrent('lin', '/admin/projects')
     await expect(page).toHaveURL(/\/admin\/projects$/)
     await expect(page.getByRole('note')).toContainText('后台按桌面工作台设计')

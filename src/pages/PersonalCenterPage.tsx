@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, EmptyState, Tag } from '../components'
-import { buildPersonalCenterData, isStaffRole, publishedProjectFromSubmission, roleLabels, submissionReviewStatusLabels, verificationStatusLabels } from '../features'
+import { Button, EmptyState, Input, Tag, useToast } from '../components'
+import { buildPersonalCenterData, isStaffRole, publishedProjectFromSubmission, roleLabels, submissionReviewStatusLabels, useAuthSession, verificationStatusLabels } from '../features'
 import { projects } from '../mocks'
+import { AuthApiError, getPasswordStatus, setPassword, type AuthPasswordStatusDto } from '../services/authService'
 import { useAppState } from '../state'
 import type { Project } from '../types'
 
@@ -12,13 +13,34 @@ function projectName(project: Project | undefined) {
   return project?.currentName.state === 'known' ? project.currentName.value : '名称未知作品'
 }
 
+function passwordErrorMessage(error: unknown) {
+  if (!(error instanceof AuthApiError)) return '密码服务暂时不可用，请稍后重试。'
+  const messages: Record<string, string> = {
+    PASSWORD_INVALID: '密码长度需为 8–64 个字符。',
+    OTP_REAUTH_REQUIRED: '请先完成邮箱验证码登录，再设置或重设密码。',
+    AUTH_RATE_LIMITED: '请求次数过多，请稍后再试。',
+    AUTH_SESSION_REQUIRED: '当前登录已失效，请重新登录。',
+    CSRF_INVALID: '登录验证环境已变化，请刷新页面后重试。',
+  }
+  return messages[error.code] ?? '密码服务暂时不可用，请稍后重试。'
+}
+
 function ProjectItems({ values, followedProjectIds = [], onToggleFollow, emptyTitle, emptyDescription, emptyTo, emptyAction }: { values: Project[]; followedProjectIds?: readonly Project['id'][]; onToggleFollow?: (project: Project) => void; emptyTitle: string; emptyDescription: string; emptyTo: string; emptyAction: string }) {
   return values.length ? <ul className="personal-item-list">{values.map((project) => { const followed = followedProjectIds.includes(project.id); return <li key={project.id}><div><strong><Link to={`/project/${project.id}`}>{projectName(project)}</Link></strong><p>{project.oneLineDefinition.state === 'known' ? project.oneLineDefinition.value : '作品定义待补充。'}</p></div><div className="cluster">{onToggleFollow ? <Button aria-pressed={followed} onClick={() => onToggleFollow(project)}>{followed ? '取消关注更新' : '关注更新'}</Button> : null}<Link className="button button--secondary" to={`/project/${project.id}`}>进入作品</Link></div></li> })}</ul> : <EmptyState title={emptyTitle} description={emptyDescription} action={<Link className="button button--secondary" to={emptyTo}>{emptyAction}</Link>} />
 }
 
 export function PersonalCenterPage() {
   const { state, dispatch } = useAppState()
+  const auth = useAuthSession()
+  const { pushToast } = useToast()
   const user = state.session.user
+  const [passwordStatus, setPasswordStatus] = useState<AuthPasswordStatusDto | null>(null)
+  const [passwordStatusLoading, setPasswordStatusLoading] = useState(true)
+  const [passwordStatusError, setPasswordStatusError] = useState<string | null>(null)
+  const [passwordValue, setPasswordValue] = useState('')
+  const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
   const allProjects = useMemo(() => {
     const approved = state.submissionDrafts.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))
     const base = [...projects, ...approved]
@@ -26,6 +48,62 @@ export function PersonalCenterPage() {
     return [...base.map((project) => state.projectOverrides.find((item) => item.id === project.id) ?? project), ...state.projectOverrides.filter((project) => !baseIds.has(project.id))]
   }, [state.projectOverrides, state.submissionDrafts])
   const data = useMemo(() => user ? buildPersonalCenterData(state, user, allProjects) : null, [allProjects, state, user])
+
+  const loadPasswordStatus = async () => {
+    if (!user) return
+    setPasswordStatusLoading(true)
+    setPasswordStatusError(null)
+    try {
+      setPasswordStatus(await getPasswordStatus())
+    } catch (error) {
+      setPasswordStatusError(passwordErrorMessage(error))
+    } finally {
+      setPasswordStatusLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadPasswordStatus()
+    // The account id is the only input that changes the endpoint result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+
+  const submitPassword = async (event: FormEvent) => {
+    event.preventDefault()
+    if (passwordSaving) return
+    const passwordLength = Array.from(passwordValue).length
+    if (passwordLength < 8 || passwordLength > 64) {
+      setPasswordError('密码长度需为 8–64 个字符。')
+      setPasswordNotice(null)
+      return
+    }
+    const currentSession = auth.session
+    if (!currentSession) {
+      setPasswordError('当前登录已失效，请重新登录。')
+      setPasswordNotice(null)
+      return
+    }
+    setPasswordSaving(true)
+    setPasswordError(null)
+    setPasswordNotice(null)
+    try {
+      await setPassword(currentSession, passwordValue)
+      setPasswordStatus((current) => ({
+        has_password: true,
+        can_set_password: current?.can_set_password ?? true,
+      }))
+      setPasswordValue('')
+      setPasswordNotice('密码已更新')
+      pushToast('密码已更新。', 'success')
+    } catch (error) {
+      if (error instanceof AuthApiError && error.code === 'OTP_REAUTH_REQUIRED') {
+        setPasswordStatus((current) => current ? { ...current, can_set_password: false } : current)
+      }
+      setPasswordError(passwordErrorMessage(error))
+    } finally {
+      setPasswordSaving(false)
+    }
+  }
 
   if (!user || !data) return null
   const activeComparisonPath = data.comparisonSessions[0]
@@ -41,8 +119,28 @@ export function PersonalCenterPage() {
       </header>
 
       <nav className="personal-section-nav" aria-label="个人资产导航">
-        <a href="#favorites">收藏</a><a href="#comparisons">比较</a><a href="#recent">最近浏览</a><a href="#drafts">草稿</a><a href="#reviews">审核</a><a href="#decisions">决策</a><a href="#verification">身份验证</a>{user.creatorId ? <a href="#my-projects">我的作品</a> : null}
+        <a href="#security">账号安全</a><a href="#favorites">收藏</a><a href="#comparisons">比较</a><a href="#recent">最近浏览</a><a href="#drafts">草稿</a><a href="#reviews">审核</a><a href="#decisions">决策</a><a href="#verification">身份验证</a>{user.creatorId ? <a href="#my-projects">我的作品</a> : null}
       </nav>
+
+      <section id="security" className="personal-section stack" aria-labelledby="security-heading">
+        <div className="section-heading"><h2 id="security-heading">账号安全</h2><p>使用邮箱验证码验证后，可以设置或重设登录密码。</p></div>
+        <div className="security-panel stack stack--small">
+          <div className="cluster cluster--between">
+            <div><strong>登录密码</strong><p className="page-description">密码长度为 8–64 个字符，可包含空格。</p></div>
+            {passwordStatusLoading ? <Tag tone="dashed">读取中</Tag> : passwordStatus?.has_password ? <Tag tone="strong">密码已设置</Tag> : <Tag tone="dashed">尚未设置密码</Tag>}
+          </div>
+          {passwordStatusError ? <div className="security-panel__error" role="alert"><p>{passwordStatusError}</p><Button variant="quiet" onClick={() => void loadPasswordStatus()}>重新读取</Button></div> : null}
+          {!passwordStatusLoading && !passwordStatusError && passwordStatus?.can_set_password ? (
+            <form className="security-password-form" onSubmit={(event) => void submitPassword(event)} noValidate>
+              <Input label="新密码" type="password" value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); setPasswordError(null); setPasswordNotice(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} error={passwordError ?? undefined} hint="设置后会让其他设备上的登录失效。" />
+              {passwordNotice ? <p className="security-panel__notice" role="status">{passwordNotice}</p> : null}
+              <Button type="submit" variant="primary" loading={passwordSaving}>{passwordStatus.has_password ? '更新密码' : '保存密码'}</Button>
+            </form>
+          ) : !passwordStatusLoading && !passwordStatusError && passwordStatus ? (
+            <div className="security-panel__reauth"><p>需要先验证邮箱，才能设置或重设密码。</p><Link className="button button--secondary" to="/auth?mode=otp&return_to=%2Fme%23security">使用验证码验证后设置密码</Link></div>
+          ) : null}
+        </div>
+      </section>
 
       <section id="favorites" className="personal-section stack" aria-labelledby="favorites-heading"><div className="section-heading"><h2 id="favorites-heading">收藏</h2><p>在这里选择需要关注更新的作品，新版本或状态变化会进入通知。</p></div><ProjectItems values={data.favoriteProjects} followedProjectIds={state.followedProjectIds} onToggleFollow={(project) => dispatch({ type: 'FOLLOW_TOGGLE', projectId: project.id })} emptyTitle="还没有收藏作品" emptyDescription="收藏后可以从这里快速返回作品，并按需关注更新。" emptyTo="/projects" emptyAction="浏览作品广场" /></section>
 

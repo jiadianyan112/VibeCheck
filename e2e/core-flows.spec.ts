@@ -20,7 +20,7 @@ test.describe('T52 四条核心用户流程', () => {
     await card.getByRole('button', { name: '收藏' }).click()
     const loginDialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
     await expect(loginDialog).toBeVisible()
-    await loginDialog.getByRole('link', { name: '使用邮箱验证码登录' }).click()
+    await loginDialog.getByRole('link', { name: '前往登录' }).click()
     await auth.loginCurrent('mia', '/projects')
     await expect(card.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
 

@@ -49,7 +49,7 @@ describe('application route skeleton', () => {
     await user.click(await screen.findByRole('button', { name: '收藏' }))
 
     const dialog = await screen.findByRole('dialog', { name: '登录后继续刚才的操作' })
-    expect(within(dialog).getByRole('link', { name: '使用邮箱验证码登录' })).toHaveAttribute(
+    expect(within(dialog).getByRole('link', { name: '前往登录' })).toHaveAttribute(
       'href',
       '/auth?return_to=%2Fproject%2Fproject-pdfquizlab',
     )
@@ -111,9 +111,9 @@ describe('application route skeleton', () => {
     expect(within(adminNavigation).queryByRole('link', { name: '证据管理' })).not.toBeInTheDocument()
   })
 
-  it('redirects a guest admin request to email OTP login', async () => {
+  it('redirects a guest admin request to the login page', async () => {
     renderRoute('/admin/projects')
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱密码登录' })).toBeInTheDocument()
   })
 })
