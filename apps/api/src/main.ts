@@ -39,7 +39,7 @@ import {
   loadWorkflowConfig,
   type MediaConfig,
 } from '@vibecheck/config'
-import { checkDatabase, createDatabasePool } from '@vibecheck/database'
+import { checkDatabase, createDatabasePool, runMigrations } from '@vibecheck/database'
 import { EvidenceService, PostgresEvidenceStore } from '@vibecheck/evidence'
 import {
   IdentityService,
@@ -106,6 +106,15 @@ const pool = createDatabasePool({
   ssl: config.databaseSsl,
   applicationName: config.serviceName,
 })
+const migrationDirectory = fileURLToPath(new URL('../../../db/migrations/', import.meta.url))
+const migrationResult = await runMigrations(pool, migrationDirectory)
+console.info(JSON.stringify({
+  level: 'info',
+  service: config.serviceName,
+  message: 'migrations_ready',
+  applied: migrationResult.applied.length,
+  existing: migrationResult.alreadyApplied.length,
+}))
 await validateLinkPermissionProfileDeployment(pool)
 const community = communityConfig.enabled
   ? new CommunityService({
