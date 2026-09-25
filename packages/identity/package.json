@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "fixture:verify": "tsx src/testing/verify-pending-action-fixture.ts",
+    "password:fixture:verify": "tsx src/testing/verify-password-store-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },
