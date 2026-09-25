@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { installMockAuth } from './support/mock-auth'
 
 async function loginAs(page: Page, displayName: '米娅' | '周可', returnPath: string) {
   await page.goto(`/auth?from=${encodeURIComponent(returnPath)}`)
@@ -9,23 +10,25 @@ async function loginAs(page: Page, displayName: '米娅' | '周可', returnPath:
 test.describe('T52 四条核心用户流程', () => {
   test('作品广场、详情、收藏和比较在返回后保持上下文', async ({ page, isMobile }) => {
     test.skip(isMobile, 'T52 桌面集成流程；移动端在 T54 单独覆盖')
+    const auth = await installMockAuth(page)
     await page.goto('/projects')
-    await expect(page.getByRole('heading', { name: '编辑精选' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '发现好作品' })).toBeVisible()
 
-    const picks = page.locator('#editor-picks')
+    const picks = page.getByRole('region', { name: '作品列表' })
     const card = picks.locator('article').filter({ has: page.locator('a[href="/project/project-papertopractice"]') })
     await expect(card).toHaveCount(1)
     await card.getByRole('button', { name: '收藏' }).click()
     const loginDialog = page.getByRole('dialog', { name: '登录后继续刚才的操作' })
     await expect(loginDialog).toBeVisible()
-    await loginDialog.getByRole('button', { name: /周可/ }).click()
+    await loginDialog.getByRole('link', { name: '前往登录' }).click()
+    await auth.loginCurrent('mia', '/projects')
     await expect(card.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
 
     await card.getByRole('button', { name: '加入比较' }).click()
     await expect(card.getByRole('button', { name: '移出比较' })).toHaveAttribute('aria-pressed', 'true')
     await card.scrollIntoViewIfNeeded()
     const scrollBeforeDetail = await page.evaluate(() => window.scrollY)
-    await card.getByRole('link', { name: 'Paper to Practice' }).click()
+    await card.getByRole('link', { name: 'Paper to Practice', exact: true }).click()
     await expect(page).toHaveURL(/\/project\/project-papertopractice$/)
     await expect(page.getByRole('heading', { name: 'Paper to Practice' })).toBeVisible()
 

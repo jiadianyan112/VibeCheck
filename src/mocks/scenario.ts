@@ -38,7 +38,7 @@ export const prototypeScenarios: PrototypeScenario[] = [
   { id: 'publication_duplicate', label: '发布重复', description: '发现已有档案，默认不新建作品。', group: '发布', path: '/submit?prototypeScenario=publication_duplicate&resumeUrl=https%3A%2F%2Fexample.test%2Fscenario-duplicate&autoCheck=1', requiresUser: true },
   { id: 'extraction_partial', label: '自动提取失败', description: '部分字段未提取，原始值和手填入口保留。', group: '发布', path: `/submit/new?draft=${scenarioExtractionDraftId}&step=prefill&prototypeScenario=extraction_partial`, requiresUser: true },
   { id: 'identity_pending', label: '身份审核中', description: '人工审核进行中，不展示虚构倒计时。', group: '身份与登录', path: '/project/project-pdfquizlab/verify-author?prototypeScenario=identity_pending', requiresUser: true },
-  { id: 'login_return', label: '登录回跳', description: '登录后返回带筛选的原页面。', group: '身份与登录', path: '/auth?from=%2Fsearch%3Fq%3DPDF%26status%3Dnormal&prototypeScenario=login_return' },
+  { id: 'login_return', label: '登录回跳', description: '登录后返回带筛选的原页面。', group: '身份与登录', path: '/auth?return_to=%2Fsearch%3Fq%3DPDF%26status%3Dnormal&prototypeScenario=login_return' },
   { id: 'service_error', label: '服务错误', description: '稳定错误码与原位重试入口。', group: '服务异常', path: '/search?q=PDF&prototypeScenario=service_error' },
   { id: 'external_link_risk', label: '外链风险', description: '安全检查阻止继续且不创建草稿。', group: '服务异常', path: '/submit?prototypeScenario=external_link_risk&resumeUrl=https%3A%2F%2Funsafe.example%2Fscenario&autoCheck=1', requiresUser: true },
 ]

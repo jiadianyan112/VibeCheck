@@ -78,7 +78,7 @@ function makeProject(seed: ProjectSeed): Project {
         id: `${seed.id}-cover`,
         kind: 'placeholder',
         url: null,
-        alt: `${seed.name} 作品截图占位`,
+        alt: '默认封面',
       },
     ],
     categoryId: 'ai_learning_quiz',

@@ -1,11 +1,32 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProviders } from '../app/providers'
 import { appRoutes } from '../app/router'
+import * as authContext from '../features/auth/AuthSessionContext'
 import { createLoginAction } from '../features/auth/session'
 import { prototypeUsers } from '../mocks'
+import * as authService from '../services/authService'
+import type { AuthSessionDto } from '../services/authService'
 import { appReducer, createInitialAppState, persistAppState } from '../state'
+
+vi.mock('../features/auth/AuthSessionContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../features/auth/AuthSessionContext')>()
+  return {
+    ...actual,
+    useAuthSession: vi.fn(),
+  }
+})
+
+vi.mock('../services/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/authService')>()
+  return {
+    ...actual,
+    getPasswordStatus: vi.fn(),
+    setPassword: vi.fn(),
+  }
+})
 
 function renderMe() {
   const router = createMemoryRouter(appRoutes, { initialEntries: ['/me'] })
@@ -18,13 +39,71 @@ function loginAs(index: number) {
   return state
 }
 
-describe('PersonalCenterPage', () => {
-  beforeEach(() => localStorage.clear())
+const testAuthSession: AuthSessionDto = {
+  authenticated: true,
+  user_id: 'user-mia',
+  display_name: '米娅',
+  account_status: 'active',
+  roles: ['user'],
+  primary_role: 'user',
+  permissions: [],
+  session_version: 1,
+  csrf_token: 'csrf-token',
+  recent_auth_at: '2026-09-25T10:00:00.000Z',
+  expires_at: '2026-09-26T10:00:00.000Z',
+}
 
-  it('returns a guest to role simulation and keeps the original route', async () => {
+describe('PersonalCenterPage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+    vi.mocked(authContext.useAuthSession).mockReturnValue({
+      status: 'authenticated',
+      session: testAuthSession,
+      acceptSession: vi.fn(),
+      signOut: vi.fn().mockResolvedValue(undefined),
+      refresh: vi.fn().mockResolvedValue(undefined),
+    })
+    vi.mocked(authService.getPasswordStatus).mockResolvedValue({ has_password: true, can_set_password: true })
+    vi.mocked(authService.setPassword).mockResolvedValue(undefined)
+  })
+
+  it('returns a guest to email OTP login and keeps the original route', async () => {
     renderMe()
     expect(await screen.findByRole('heading', { name: '登录／注册' })).toBeInTheDocument()
-    expect(screen.getByText(/登录后可以保存比较/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '邮箱密码登录' })).toBeInTheDocument()
+  })
+
+  it('shows password security status and submits a password without trimming spaces', async () => {
+    const user = userEvent.setup()
+    loginAs(0)
+    renderMe()
+    expect(await screen.findByRole('heading', { name: '账号安全' })).toBeInTheDocument()
+    expect(screen.getByText('密码已设置')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/^新密码/), 'secret 123')
+    await user.click(screen.getByRole('button', { name: '更新密码' }))
+    expect(authService.setPassword).toHaveBeenCalledWith(expect.anything(), 'secret 123')
+    expect(within(screen.getByRole('region', { name: '账号安全' })).getByRole('status')).toHaveTextContent('密码已更新')
+  })
+
+  it('links users without recent OTP authentication to the forced OTP security flow', async () => {
+    vi.mocked(authService.getPasswordStatus).mockImplementation(async () => ({ has_password: true, can_set_password: false }))
+    loginAs(0)
+    renderMe()
+    expect(await screen.findByText(/需要先验证邮箱/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '使用验证码验证后设置密码' })).toHaveAttribute('href', '/auth?mode=otp&return_to=%2Fme%23security')
+    expect(screen.queryByRole('textbox', { name: '新密码' })).not.toBeInTheDocument()
+  })
+
+  it('switches to the forced OTP flow when the recent email verification expires', async () => {
+    const user = userEvent.setup()
+    vi.mocked(authService.setPassword).mockRejectedValueOnce(new authService.AuthApiError('OTP_REAUTH_REQUIRED', 403, null, false, null))
+    loginAs(0)
+    renderMe()
+    expect(await screen.findByRole('button', { name: '更新密码' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/^新密码/), 'secret 123')
+    await user.click(screen.getByRole('button', { name: '更新密码' }))
+    expect(await screen.findByRole('link', { name: '使用验证码验证后设置密码' })).toHaveAttribute('href', '/auth?mode=otp&return_to=%2Fme%23security')
   })
 
   it('returns all registered-user history to shared source records', async () => {

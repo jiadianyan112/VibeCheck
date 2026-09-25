@@ -1,4 +1,4 @@
-import type { UrlCheckItem, UrlCheckResult } from '../../services'
+import type { UrlCheckItem, UrlCheckResult } from '../../services/submissionApi'
 import { submissionDraftId, type ProjectCategoryId, type SubmissionDraft, type UserId } from '../../types'
 
 export const urlCheckLabels: Record<UrlCheckItem['key'], string> = {

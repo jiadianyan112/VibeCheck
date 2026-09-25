@@ -1,23 +1,24 @@
-# VibeCheck Low-fidelity Design Contract
+# VibeCheck Design Contract
 
-## Direction
+The active visual reference is the deployed project discovery feed (`ProjectsHomePage`,
+`explore-feed.css`, and `feed-card.css`). The September 13, 2026 design direction extends
+that vocabulary to all other routes. The earlier Starboy specification is historical.
 
-本原型是用于验证信息结构、任务链路与状态的纯低保真界面。视觉保持灰阶、系统字体、1px 分隔线、标准表单控件和少量结构线框；不使用品牌插画、装饰渐变、彩色侧边条或嵌套卡片制造完成度错觉。
+Use a warm canvas (#f7f7f2), near-black ink (#111111), subdued borders, and lime
+(#b8ff3d) for primary actions. Desktop navigation stays at the left; mobile navigation
+collapses behind the menu. Headings are compact (24px desktop, 20px mobile), controls
+are rounded, and content appears near the top of the page. Prefer flat sections and
+clear spacing over nested panels, heavy dividers, decorative heroes, or repeated copy.
 
-## Category behavior
+Shared controls and admin styling live in `unified-ui.css`, scoped to `.ui-root` so
+the approved discovery feed retains its layout. Page families retain their own
+layout styles. Task forms and admin tables may be denser than browsing surfaces.
+Existing business state, evidence, unknown facts, errors, permissions, and
+reduced-motion behavior remain mandatory. Data tables scroll within their container.
 
-- 全局导航、主路由、作品 ID、收藏、比较、发布、作者、生命周期和后台骨架跨品类共享。
-- 分类、搜索筛选、详情结构、比较矩阵与发布字段必须读取作品的 `categoryId` 和 `categorySchemaVersion`。
-- AI 学习与题库继续使用材料—练习—反馈的原有界面。
-- 个人主页与作品集使用身份—用途—结构—项目展示—视觉—交互—实现—复用的界面；缩略图使用可区分的 CSS 站点线框。
-- 混合比较只展示公共事实，并明确品类差异，不把“不适用”显示为“资料缺失”。
+The full-site stylesheet budget is 21 KiB gzip (level 9), raised from 17,749 bytes
+for the former partial rollout. The unified 26-route surface measures about 20 KB
+after removing unused rules and consolidating 106 legacy selector definitions.
+The JavaScript budget is unchanged. This budget remains enforced in CI.
 
-## Responsive behavior
-
-- 360/390：单列内容，筛选折叠，比较横向滚动，操作按钮保持可触达。
-- 768：内容按逻辑分区，避免把标签与正文压成窄列。
-- 桌面：详情和后台可使用多列事实网格，但阅读行长受容器限制。
-
-## Accessibility
-
-键盘可完成品类选择、搜索、筛选、加入比较和发布；表单错误与字段关联；状态不只依赖颜色；CSS 线框具有可读的 `aria-label`，不向辅助技术暴露无意义的装饰节点。
+Untracked previews under `outputs/` are non-authoritative and must not override this contract or its linked specification.

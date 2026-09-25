@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AccessStatusBadge, AssetCard, Button, EmptyState, ExternalLinkGuard, Tag, useToast } from '../components'
+import { AssetCard, Button, EmptyState, ExternalLinkGuard, Tag, useToast } from '../components'
+import { FeedProjectCard } from '../components/domain/FeedProjectCard'
 import { buildCreatorProfile, relationConfirmationLabels } from '../features'
 import { creators, lifecycleEvents, projectRelations, projects, reusableAssets } from '../mocks'
 import { useAppState } from '../state'
@@ -63,7 +64,7 @@ export function CreatorProfilePage() {
   }
 
   return (
-    <main className="page-container page-with-bottom-space stack">
+    <main className="page-container page-with-bottom-space highfi-scope community-page stack">
       <nav aria-label="面包屑"><Link to="/projects">作品广场</Link> / 作者主页 / {creator.displayName}</nav>
       <header className="creator-profile-hero">
         <div className="creator-profile-avatar" aria-hidden="true">{creator.displayName.slice(0, 1)}</div>
@@ -86,12 +87,7 @@ export function CreatorProfilePage() {
       <section className="stack" aria-labelledby="creator-projects-heading">
         <div className="section-heading"><h2 id="creator-projects-heading">作者作品</h2><p>这里展示已经确认由该作者创作或维护的作品。</p></div>
         {profile.verifiedProjects.length ? <div className="creator-work-grid">{profile.verifiedProjects.map((project) => (
-          <article className="wire-card stack stack--small" key={project.id}>
-            <div className="cluster cluster--between"><Tag>归属已验证</Tag><AccessStatusBadge status={project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'} /></div>
-            <h3><Link to={`/project/${project.id}`}>{projectName(project)}</Link></h3>
-            <p>{project.oneLineDefinition.state === 'known' ? project.oneLineDefinition.value : '作品定义待补充。'}</p>
-            <Link className="button button--secondary" to={`/project/${project.id}`}>进入作品详情</Link>
-          </article>
+          <FeedProjectCard key={project.id} project={project} creators={[creator]} />
         ))}</div> : <EmptyState title="暂无已确认的作者作品" description="这个作者还没有完成作品关联。" action={<Link className="button button--secondary" to="/projects">浏览作品广场</Link>} />}
         {profile.pendingProjects.length ? <aside className="wire-panel stack"><strong>归属待确认</strong>{profile.pendingProjects.map((project) => <p key={project.id}><Link to={`/project/${project.id}`}>{projectName(project)}</Link> · 人工审核中，暂不计入作者作品。</p>)}</aside> : null}
       </section>

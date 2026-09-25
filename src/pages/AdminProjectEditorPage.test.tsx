@@ -141,6 +141,8 @@ describe('T48 admin project editor', () => {
   it('provides a stable exit for a missing project id', async () => {
     renderEditor('/admin/project/project-missing')
     expect(await screen.findByText('后台未找到对应作品')).toBeInTheDocument()
+    expect(screen.getByText('该稳定 ID 不存在，或作品尚未进入当前作品库。')).toBeInTheDocument()
+    expect(screen.queryByText('当前原型数据集')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回作品列表' })).toHaveAttribute('href', '/admin/projects')
   })
 })

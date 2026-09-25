@@ -1,0 +1,147 @@
+/* Reading and account surfaces share the feed's compact content rhythm. */
+.discovery-category__details { font-size: .8125rem; color: var(--color-muted); }
+.discovery-category__details summary { min-height: 32px; cursor: pointer; }
+.discovery-category__details[open] > :not(summary) { margin-block: 12px; }
+.ui-root .community-detail-hero { grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); gap: 32px; border: 0; padding: 0 0 24px; background: transparent; }
+.ui-root .community-detail-hero__media { min-height: 0; border: 0; border-radius: 16px; overflow: hidden; background: #e7e9df; align-self: start; }
+.app-shell .ui-root .community-detail-hero__media .project-media-stage { border: 0; background: #e7e9df; }
+.ui-root .community-detail-hero__media :is(img, video) { width: 100%; max-height: 360px; object-fit: contain; }
+.ui-root .community-detail-hero__media .media-placeholder { border: 0; min-height: 200px; }
+.ui-root .project-hero__definition { font-size: 1rem; line-height: 1.6; }
+.ui-root :is(.project-source, .project-profile, .project-section, .creator-profile-hero, .personal-summary, .notification-header) { background: transparent; border: 0; padding: 0; }
+.ui-root .project-source { padding-top: 16px; border-top: 1px solid var(--color-line); }
+.ui-root .project-primary-actions .external-link { border-radius: 24px; background: var(--brand-lime); color: var(--brand-ink); border-color: transparent; }
+.ui-root :is(.relationship-card, .comment-card, .comment-composer, .profile-field, .personal-item-list > li, .notification-item) { border: 1px solid var(--color-line); border-radius: 14px; padding: 16px; background: var(--color-surface-raised); }
+.ui-root .profile-field { border: 0; border-bottom: 1px solid var(--color-line); border-radius: 0; background: transparent; padding: 12px 0; }
+.ui-root .profile-field-grid { gap: 8px 24px; }
+.ui-root .creator-profile-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(14rem, 0.42fr);
+  gap: var(--space-6);
+  align-items: start;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised); padding: 8px 0 24px; border-bottom: 1px solid var(--color-line); }
+.ui-root .creator-profile-avatar {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  font-size: 2rem;
+  font-weight: 700; width: 72px; border: 0; border-radius: 50%; background: #e1eacb; }
+.ui-root :is(.creator-work-grid, .creator-update-list) { gap: 20px; }
+.ui-root .creator-work-grid {
+  display: grid;
+  gap: var(--space-4); grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.ui-root .personal-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised); align-items: center; padding-block: 8px 16px; }
+.ui-root .personal-section-nav {
+  display: flex;
+  overflow-x: auto; border: 0; background: transparent; padding: 4px 0; gap: 8px; }
+.ui-root .personal-section-nav a { white-space: nowrap; border-radius: 24px; background: var(--color-surface); padding: 10px 16px; text-decoration: none; }
+.ui-root .personal-section-nav a:hover { background: #e3e3db; }
+.ui-root .personal-section {
+  scroll-margin-top: 6rem;
+  padding-top: var(--space-3); padding-block: 16px; }
+.ui-root .security-panel {
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--color-surface-raised);
+}
+.ui-root .security-password-form {
+  display: grid;
+  gap: 12px;
+  max-width: 28rem;
+}
+.ui-root .security-password-form .button { justify-self: start; }
+.ui-root .security-panel__reauth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.ui-root .security-panel__reauth p,
+.ui-root .security-panel__error p,
+.ui-root .security-panel__notice { margin: 0; }
+.ui-root .security-panel__error { color: var(--brand-danger); }
+.ui-root .security-panel__notice { color: var(--color-muted); font-size: .8125rem; }
+.ui-root .notification-header {
+  padding: var(--space-6);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface-raised);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-5);
+  align-items: center; padding-bottom: 16px; }
+.ui-root .notification-filters {
+  display: flex;
+  justify-content: space-between;
+  align-items: center; border: 0; padding: 16px 0; flex-wrap: wrap; gap: 16px; }
+.ui-root .notification-item {
+  border: 1px solid var(--color-line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center; gap: 24px; border-width: 0 0 1px; border-radius: 0; background: transparent; padding: 20px 12px; }
+.ui-root .notification-item--unread { border-left: 0.35rem solid var(--color-ink); background: #eef2e6; border-radius: 12px; }
+.ui-root .notification-item__body h2 { font-size: 1rem; }
+.ui-root .notification-item__body time { color: var(--color-muted); font-size: .75rem; }
+.ui-root .about-page { width: min(calc(100% - 2 * var(--page-gutter)), var(--page-max)); margin-inline: auto; padding-block: 24px 80px; }
+.ui-root .about-hero { display: grid; border-bottom: 1px solid var(--color-line-strong); grid-template-columns: minmax(0, 1fr); gap: 20px; border: 0; }
+.ui-root .about-hero > div { padding: 0; gap: 12px; }
+.ui-root .about-hero .tag { justify-self: start; }
+.ui-root .about-hero > div > p { color: var(--color-muted); max-width: 70ch; font-size: .875rem; }
+.ui-root .about-hero > aside { display: grid; align-content: center; border-left: 1px solid var(--color-line-strong); border: 0; border-radius: 16px; padding: 20px; background: var(--color-surface); gap: 8px; }
+.ui-root .about-sections { gap: 0; width: 100%; padding-block: 12px; }
+.ui-root .about-split { display: grid; border-bottom: 1px solid var(--color-line-strong); grid-template-columns: 180px minmax(0, 1fr); gap: 32px; border-color: var(--color-line); padding-block: 28px; }
+.ui-root .rule-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.ui-root .rule-columns > div { border: 0; padding: 0; }
+.ui-root .rule-columns ul { padding-left: 20px; }
+.ui-root .rule-columns li { margin-bottom: 10px; }
+@media (max-width: 48rem) {
+  .ui-root .personal-summary {
+    align-items: stretch;
+    flex-direction: column;
+  } }
+@media (max-width: 48rem) {
+  .ui-root .notification-header {
+    align-items: stretch;
+    flex-direction: column;
+  } }
+@media (max-width: 48rem) {
+  .ui-root .notification-filters {
+    align-items: stretch;
+    flex-direction: column;
+  } }
+@media (max-width: 48rem) {
+  .ui-root .notification-item {
+    align-items: stretch;
+    flex-direction: column;
+  } }
+@media (max-width: 48rem) {
+  .ui-root .about-hero { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 48rem) {
+  .ui-root .about-split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 48rem) {
+  .ui-root .rule-columns { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 48rem) {
+  .ui-root .creator-profile-hero { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 48rem) {
+  .ui-root .creator-work-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 48rem) {
+  .ui-root .about-hero > aside { border-top: 1px solid var(--color-line-strong); border-left: 0; } }
+@media (max-width: 1100px) {
+  .ui-root .creator-profile-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .ui-root .creator-profile-hero > :last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 699px) {
+  .ui-root :is(.community-detail-hero, .about-split, .rule-columns, .creator-update-list, .profile-field-grid) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .ui-root .creator-work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .ui-root .community-detail-hero__media { width: 100%; max-height: 240px; }
+  .ui-root .community-detail-hero__media .media-placeholder { min-height: 160px; }
+  .ui-root :is(.personal-summary, .notification-header, .notification-item, .personal-item-list > li) { flex-direction: column; align-items: stretch; gap: 16px; }
+  .ui-root .personal-management-grid { grid-template-columns: minmax(0, 1fr); }
+}

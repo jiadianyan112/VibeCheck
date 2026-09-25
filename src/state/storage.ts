@@ -37,7 +37,7 @@ type PersistedState = Pick<
 export function selectPersistedState(state: AppState): PersistedState {
   return {
     schemaVersion: state.schemaVersion,
-    session: state.session,
+    session: import.meta.env.PROD ? { user: null, role: 'guest' } : state.session,
     comparisonProjectIds: state.comparisonProjectIds,
     activeComparisonSessionId: state.activeComparisonSessionId,
     comparisonSessions: state.comparisonSessions,
@@ -102,6 +102,7 @@ export function hydrateAppState(
     const hydrated: AppState = {
       ...fallback,
       ...persisted,
+      session: import.meta.env.PROD ? fallback.session : (persisted.session ?? fallback.session),
       favoriteProjectIds,
       followedProjectIds,
       submissionDrafts,

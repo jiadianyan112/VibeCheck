@@ -26,5 +26,20 @@ export {
   type UrlCheckItem,
   type UrlCheckResult,
 } from './submissionService'
+export {
+  editableFieldsToPatch,
+  makeSubmissionClientRequestId,
+  normalizeSubmissionUrl as normalizeSubmissionApiUrl,
+  remoteDraftToLocalDraft,
+  submissionApi,
+  SubmissionApiError,
+  type RemoteSubmissionDraft,
+  type SubmissionApiErrorKind,
+  type SubmissionApiRequestOptions,
+  type SubmissionApiSession,
+  type UrlCheckDuplicateCandidate,
+  type UrlCheckItem as ApiUrlCheckItem,
+  type UrlCheckResult as ApiUrlCheckResult,
+} from './submissionApi'
 export { verificationService } from './verificationService'
 export type { ServiceError, ServiceErrorKind, ServiceResult } from './result'

@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 
 export interface TagProps extends HTMLAttributes<HTMLSpanElement> {
-  tone?: 'default' | 'strong' | 'dashed'
+  tone?: 'default' | 'strong' | 'dashed' | 'accent' | 'inverse'
   children: ReactNode
 }
 

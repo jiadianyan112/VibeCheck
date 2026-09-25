@@ -1,0 +1,37 @@
+{
+  "name": "@vibecheck/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "admin:import": "tsx src/testing/run-admin-import.ts",
+    "admin:import:verify": "tsx src/testing/verify-admin-importer.ts",
+    "asset:resolve:verify": "tsx src/testing/verify-asset-resolution.ts",
+    "fixture:load": "tsx src/testing/load-synthetic-fixture.ts",
+    "fixture:verify": "tsx src/testing/verify-synthetic-fixture.ts",
+    "discovery:verify": "tsx src/testing/verify-discovery-fixture.ts",
+    "profile:verify": "tsx src/testing/verify-link-permission-profiles.ts",
+    "authorization:verify": "tsx src/testing/verify-author-authorization.ts",
+    "project-update:verify": "tsx src/testing/verify-project-update-drafts.ts",
+    "project-update:application:verify": "tsx src/testing/verify-project-update-application.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}

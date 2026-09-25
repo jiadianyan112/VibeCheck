@@ -48,6 +48,8 @@ function updateActiveComparison(state: AppState, update: (session: AppState['com
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
+    case 'SESSION_SYNCED':
+      return appReducer(state, { type: 'LOGIN_COMPLETED', user: action.user })
     case 'COMPARISON_ADD': {
       if (
         state.comparisonProjectIds.includes(action.projectId) ||

@@ -40,17 +40,19 @@ export function StyleSandboxPage() {
   const [tab, setTab] = useState<'normal' | 'error'>('normal')
 
   return (
-    <PageFrame title="低保真组件沙盒" description="T12：所有基础组件、交互状态与窄屏行为的统一验证入口。">
-      <div className="sandbox-grid">
+    <div className="app-shell">
+      <div className="highfi-scope">
+        <PageFrame title="低保真组件沙盒" description="T12：所有基础组件、交互状态与窄屏行为的统一验证入口。">
+          <div className="sandbox-grid">
         <section className="wire-panel stack" aria-labelledby="sandbox-actions">
           <div className="section-heading"><p className="eyebrow">Controls</p><h2 id="sandbox-actions">操作与输入</h2></div>
           <div className="cluster">
-            <Button variant="primary">主要操作</Button><Button>次要操作</Button><Button variant="quiet">文字操作</Button>
+            <Button variant="primary">主要操作</Button><Button variant="accent">品牌操作</Button><Button>次要操作</Button><Button variant="quiet">文字操作</Button>
             <Button disabled>不可用</Button><Button loading>提交</Button>
           </div>
           <Input label="作品名称或完整想法" placeholder="例如：把 PDF 自动生成练习题" hint="支持作品名、功能词和完整产品想法。" />
           <Input label="错误示例" defaultValue="无效地址" error="请输入完整的 https:// 地址" />
-          <div className="cluster" aria-label="状态标签示例"><Tag>正常可访问</Tag><Tag tone="strong">需要登录</Tag><Tag tone="dashed">信息待验证</Tag></div>
+          <div className="cluster" aria-label="状态标签示例"><Tag>正常可访问</Tag><Tag tone="strong">需要登录</Tag><Tag tone="dashed">信息待验证</Tag><Tag tone="accent">荧光状态</Tag><Tag tone="inverse">反相状态</Tag></div>
         </section>
 
         <section className="wire-panel stack" aria-labelledby="sandbox-card">
@@ -78,12 +80,14 @@ export function StyleSandboxPage() {
           <p>支持 Esc、遮罩关闭与焦点返回。</p>
           <div className="cluster"><Button onClick={() => setModalOpen(true)}>打开弹层示例</Button><Button onClick={() => setDrawerOpen(true)}>打开抽屉示例</Button></div>
         </section>
-      </div>
+          </div>
 
-      <Modal open={modalOpen} title="保留当前操作上下文" onClose={() => setModalOpen(false)} footer={<Button variant="primary" onClick={() => setModalOpen(false)}>确认</Button>}>
-        <p>关闭后焦点会返回到触发按钮。</p>
-      </Modal>
-      <Drawer open={drawerOpen} title="证据详情" onClose={() => setDrawerOpen(false)}><p>抽屉用于承载不打断主任务的补充信息。</p></Drawer>
-    </PageFrame>
+          <Modal open={modalOpen} title="保留当前操作上下文" onClose={() => setModalOpen(false)} footer={<Button variant="primary" onClick={() => setModalOpen(false)}>确认</Button>}>
+            <p>关闭后焦点会返回到触发按钮。</p>
+          </Modal>
+          <Drawer open={drawerOpen} title="证据详情" onClose={() => setDrawerOpen(false)}><p>抽屉用于承载不打断主任务的补充信息。</p></Drawer>
+        </PageFrame>
+      </div>
+    </div>
   )
 }

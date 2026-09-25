@@ -1,3 +1,5 @@
+import { MarqueeStrip } from '../components/editorial'
+import { DiscoveryShell } from '../components/discovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, EmptyState, ErrorPanel, LoadingState, ProjectCard, Tabs, Tag, useToast } from '../components'
@@ -124,15 +126,13 @@ export function DiscoverResultPage() {
     pushToast('已保存这次搜索，下次可以从相同链接继续。', 'success')
   }
 
-  if (loading) return <main className="page-container"><LoadingState label="正在寻找匹配作品" /></main>
-  if (error) return <main className="page-container"><ErrorPanel message={error.message} /></main>
+  if (loading) return <DiscoveryShell title="匹配分析"><LoadingState label="正在寻找匹配作品" /></DiscoveryShell>
+  if (error) return <DiscoveryShell title="匹配分析"><ErrorPanel message={error.message} /></DiscoveryShell>
 
   return (
-    <main className="page-container page-with-bottom-space stack">
+    <DiscoveryShell title="找到相似作品" description={<p>围绕“{intent.originalQuery || '你的想法'}”，找到 <strong>{analysis.exactProjects.length}</strong> 个完全匹配的作品{analysis.exactProjects.length === 0 && analysis.relaxedProjects.length ? `，并整理了 ${analysis.relaxedProjects.length} 个相近参考` : ''}。</p>}>
       <nav aria-label="面包屑"><Link to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>确认想法</Link> / 匹配结果</nav>
-      <header className="analysis-hero stack stack--small">
-        <h1>找到相似作品</h1>
-        <p>围绕“{intent.originalQuery || '你的想法'}”，找到 <strong>{analysis.exactProjects.length}</strong> 个完全匹配的作品{analysis.exactProjects.length === 0 && analysis.relaxedProjects.length ? `，并整理了 ${analysis.relaxedProjects.length} 个相近参考` : ''}。</p>
+      <section className="analysis-hero stack stack--small" aria-label="匹配条件与说明">
         <div className="cluster" aria-label="已确认意图">
           <Tag tone="strong">{intent.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag>
           {intent.targetUsers.map((value) => <Tag key={`target-${value}`}>{targetUserLabels[value]}</Tag>)}
@@ -147,7 +147,7 @@ export function DiscoverResultPage() {
           {intent.assetTypes?.map((value) => <Tag key={`asset-intent-${value}`}>希望复用：{assetLabels[value]}</Tag>)}
         </div>
         <aside className="boundary-note"><strong>关于这些结果</strong><p>结果来自社区目前收录的公开作品，用于发现和比较，不代表市场需求或商业机会。</p></aside>
-      </header>
+      </section>
 
       <div className="cluster cluster--between">
         <Tabs label="结果视图" items={[{ id: 'works', label: '作品结果' }, { id: 'analysis', label: '同类分析' }]} value={view} onChange={(value) => setParam('view', value)} />
@@ -166,7 +166,7 @@ export function DiscoverResultPage() {
 
           {analysis.exactProjects.length < 3 && analysis.relaxedProjects.length ? <div className="result-tier result-tier--relaxed stack"><div><Tag tone="dashed">相近推荐</Tag><h2>{analysis.exactProjects.length === 0 ? '最接近的作品' : '相近作品'}</h2><p>{analysis.exactProjects.length === 0 ? '这些作品命中了部分已确认条件，但不满足全部要求；差异会明确标出，不会冒充精确结果。' : '这些作品只符合部分条件，可以作为补充参考。'}</p></div><div className="compact-list">{analysis.relaxedProjects.map(({ project, reason }) => <div key={project.id} className="relaxed-hit"><p><strong>推荐原因：</strong>{reason}</p><ProjectCard project={project} creators={creatorsForProject(project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(project.id)} onToggleCompare={toggleCompare} /></div>)}</div></div> : null}
 
-          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相关问题</Tag><h2>换个方向继续探索</h2><p>{intent.categoryId === 'personal_site_portfolio' ? '根据你确认的网站类型、创作者身份和建站目的，我们找到了相关专题。' : '根据你的使用场景和输入内容，我们找到了这些相关专题。'}</p></div>{adjacentCategories.length ? <div className="analysis-group-grid">{adjacentCategories.map(({ category }) => <article key={category.slug} className="wire-card stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>查看相关专题 →</Link></article>)}</div> : <EmptyState title="暂时没有相关专题" description="可以返回上一步调整想法。" />}
+          {analysis.exactProjects.length === 0 ? <div className="result-tier result-tier--adjacent stack"><div><Tag tone="dashed">相关问题</Tag><h2>换个方向继续探索</h2><p>{intent.categoryId === 'personal_site_portfolio' ? '根据你确认的网站类型、创作者身份和建站目的，我们找到了相关专题。' : '根据你的使用场景和输入内容，我们找到了这些相关专题。'}</p></div>{adjacentCategories.length ? <MarqueeStrip label="相关专题">{adjacentCategories.map(({ category }) => <article key={category.slug} className="discovery-category stack stack--small"><strong>{category.name}</strong><p>{category.shortProblem}</p><Link to={`/categories/${category.slug}`}>查看相关专题 →</Link></article>)}</MarqueeStrip> : <EmptyState title="暂时没有相关专题" description="可以返回上一步调整想法。" />}
             <div className="cluster"><Link className="button" to={`/discover?idea=${encodeURIComponent(intent.originalQuery)}`}>修改条件</Link>{hasResultFilters ? <Button onClick={clearResultFilters}>清除统计筛选</Button> : null}<Button variant="primary" onClick={saveQuery}>保存查询</Button><Link className="button button--quiet" to="/projects">回到作品广场</Link></div>
           </div> : null}
         </section>
@@ -175,7 +175,7 @@ export function DiscoverResultPage() {
           {analysis.representative ? <section className="stack"><div className="section-heading"><h2>代表作品</h2><p>{analysis.representative.reason}</p></div><ProjectCard project={analysis.representative.project} creators={creatorsForProject(analysis.representative.project)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(analysis.representative.project.id)} onToggleCompare={toggleCompare} /></section> : null}
 
           <section className="stack"><div className="section-heading"><h2>常见做法</h2><p>{intent.categoryId === 'personal_site_portfolio' ? '看看这些作品采用了哪些网站类型、作者身份与建站目的。' : '看看这些作品采用了哪些场景、输入和练习方式。'}</p></div>
-            {analysis.solutionGroups.length ? <div className="analysis-group-grid">{analysis.solutionGroups.map((group) => <article key={group.id} className="wire-card stack stack--small"><div className="cluster">{intent.categoryId === 'personal_site_portfolio' ? <><Tag>{siteTypeLabels[group.scenario as SiteType] ?? group.scenario}</Tag><Tag>{creatorRoleLabels[group.input as CreatorRole] ?? group.input}</Tag><Tag>{primaryGoalLabels[group.practice as PrimaryGoal] ?? group.practice}</Tag></> : <><Tag>{scenarioLabels[group.scenario as UseScenario] ?? group.scenario}</Tag><Tag>{inputTypeLabels[group.input as InputType] ?? group.input}</Tag><Tag>{practiceFormatLabels[group.practice as PracticeFormat] ?? group.practice}</Tag></>}</div><strong>{group.projectIds.length} 个作品</strong><ul>{group.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></article>)}</div> : <EmptyState title="暂无可分组的精确作品" />}
+            {analysis.solutionGroups.length ? <div className="analysis-group-grid">{analysis.solutionGroups.map((group) => <article key={group.id} className="discovery-category stack stack--small"><div className="cluster">{intent.categoryId === 'personal_site_portfolio' ? <><Tag>{siteTypeLabels[group.scenario as SiteType] ?? group.scenario}</Tag><Tag>{creatorRoleLabels[group.input as CreatorRole] ?? group.input}</Tag><Tag>{primaryGoalLabels[group.practice as PrimaryGoal] ?? group.practice}</Tag></> : <><Tag>{scenarioLabels[group.scenario as UseScenario] ?? group.scenario}</Tag><Tag>{inputTypeLabels[group.input as InputType] ?? group.input}</Tag><Tag>{practiceFormatLabels[group.practice as PracticeFormat] ?? group.practice}</Tag></>}</div><strong>{group.projectIds.length} 个作品</strong><ul>{group.projectIds.map((id) => { const project = projects.find((item) => item.id === id); return project ? <li key={id}><Link to={`/project/${id}`}>{projectName(project)}</Link></li> : null })}</ul></article>)}</div> : <EmptyState title="暂无可分组的精确作品" />}
           </section>
 
           <section className="distribution-grid">
@@ -184,6 +184,6 @@ export function DiscoverResultPage() {
           </section>
         </div>
       )}
-    </main>
+    </DiscoveryShell>
   )
 }

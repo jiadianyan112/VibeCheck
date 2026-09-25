@@ -123,6 +123,7 @@ export type AppAction =
   | { type: 'FOLLOW_TOGGLE'; projectId: ProjectId }
   | { type: 'RECENT_PROJECT_ADD'; projectId: ProjectId }
   | { type: 'LOGIN_COMPLETED'; user: PrototypeUser; userComparisonProjectIds?: ProjectId[]; assets?: LoginAssets }
+  | { type: 'SESSION_SYNCED'; user: PrototypeUser }
   | { type: 'LOGOUT' }
   | { type: 'PENDING_ACTION_QUEUE'; action: PendingAction }
   | { type: 'PENDING_ACTION_REPLAY' }

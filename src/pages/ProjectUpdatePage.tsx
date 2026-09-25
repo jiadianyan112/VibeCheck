@@ -146,7 +146,7 @@ export function ProjectUpdatePage() {
   }
 
   if (!state.session.user) {
-    return <PageFrame title="作品更新" description="更新作品需要已验证的作者管理权限。"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?from=${encodeURIComponent(`${location.pathname}${location.search}`)}`}>登录并继续</Link></section></PageFrame>
+    return <PageFrame title="作品更新" description="更新作品需要已验证的作者管理权限。"><section className="submit-login-callout stack"><h2>请先登录</h2><Link className="button button--primary" to={`/auth?return_to=${encodeURIComponent(`${location.pathname}${location.search}`)}`}>登录并继续</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="作品更新权限加载中" /></main>
   if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>

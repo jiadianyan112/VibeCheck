@@ -1,0 +1,422 @@
+/* High-fidelity primitive variants. Keep all rules inside an explicit scope. */
+
+.app-shell .highfi-scope .button--accent {
+  border-color: var(--brand-ink);
+  background: var(--brand-lime);
+  color: var(--brand-ink);
+  transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.app-shell .highfi-scope .button--accent:hover:not(:disabled) {
+  background: var(--brand-yellow);
+  transform: translateY(-1px);
+}
+
+.app-shell .highfi-scope .button--accent:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.app-shell .highfi-scope .tag--accent {
+  border-color: var(--brand-ink);
+  background: var(--brand-lime);
+  color: var(--brand-ink);
+}
+
+.app-shell .highfi-scope .tag--inverse {
+  border-color: var(--brand-ink);
+  background: var(--brand-ink);
+  color: var(--brand-canvas);
+}
+
+.app-shell .brand-mark,
+.app-shell .highfi-scope .brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--brand-ink);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-shell .brand-mark__glyph,
+.app-shell .highfi-scope .brand-mark__glyph {
+  display: block;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.app-shell .brand-mark__ring,
+.app-shell .highfi-scope .brand-mark__ring {
+  fill: var(--brand-lime);
+  stroke: var(--brand-ink);
+  stroke-width: 2;
+}
+
+.app-shell .brand-mark__ellipse,
+.app-shell .highfi-scope .brand-mark__ellipse {
+  fill: none;
+  stroke: var(--brand-ink);
+  stroke-width: 1.5;
+  transform: rotate(-18deg);
+  transform-origin: center;
+}
+
+.app-shell .brand-mark__check,
+.app-shell .highfi-scope .brand-mark__check {
+  fill: none;
+  stroke: var(--brand-ink);
+  stroke-linecap: square;
+  stroke-linejoin: bevel;
+  stroke-width: 2.5;
+}
+
+.app-shell .brand-mark__name,
+.app-shell .highfi-scope .brand-mark__name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+
+.app-shell .brand-mark--compact,
+.app-shell .highfi-scope .brand-mark--compact {
+  gap: 0.35rem;
+}
+
+.app-shell .brand-mark--compact .brand-mark__glyph,
+.app-shell .highfi-scope .brand-mark--compact .brand-mark__glyph {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.app-shell .brand-mark--compact .brand-mark__name,
+.app-shell .highfi-scope .brand-mark--compact .brand-mark__name {
+  font-size: 0.9rem;
+}
+
+.app-shell .vibe-lens {
+  --vibe-lens-fill: var(--brand-lime);
+  position: relative;
+  display: inline-grid;
+  width: clamp(6rem, 16vw, 12rem);
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--brand-ink);
+  border-radius: 50%;
+  background: var(--vibe-lens-fill);
+  color: var(--brand-ink);
+  isolation: isolate;
+  transition: border-color var(--motion-standard) ease, background-color var(--motion-standard) ease;
+}
+
+.app-shell .vibe-lens--yellow {
+  --vibe-lens-fill: var(--brand-yellow);
+}
+
+.app-shell .vibe-lens--violet {
+  --vibe-lens-fill: var(--brand-violet);
+}
+
+.app-shell .vibe-lens--cyan {
+  --vibe-lens-fill: var(--brand-cyan);
+}
+
+.app-shell .vibe-lens--active {
+  border-width: 3px;
+}
+
+.app-shell .vibe-lens--pending {
+  border-style: dashed;
+}
+
+.app-shell .vibe-lens__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: var(--lens-x) var(--lens-y);
+  transform: rotate(var(--lens-tilt));
+  transition: transform var(--motion-standard) ease;
+}
+
+.app-shell .vibe-lens__outline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.app-shell .vibe-lens__ellipse {
+  fill: var(--vibe-lens-fill);
+  fill-opacity: 0.44;
+  stroke: currentColor;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.app-shell .vibe-lens__ellipse--tall {
+  fill-opacity: 0.22;
+}
+
+.app-shell .vibe-lens__notch {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: bevel;
+  stroke-width: 8;
+  vector-effect: non-scaling-stroke;
+}
+
+.app-shell .vibe-lens__spark {
+  fill: currentColor;
+}
+
+/* ProjectMediaStage also appears in legacy frontstage cards. Keep this
+ * structural baseline frontstage-safe; page-specific surface treatment
+ * stays opt-in to .highfi-scope. */
+.app-shell .project-media-stage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: clip;
+}
+
+.app-shell .project-media-stage--portrait {
+  aspect-ratio: 4 / 5;
+}
+
+.app-shell .project-media-stage--square {
+  aspect-ratio: 1;
+}
+
+.app-shell .project-media-stage > img,
+.app-shell .project-media-stage > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.app-shell .highfi-scope .project-media-stage {
+  border: 1px solid var(--brand-ink);
+  background: var(--color-surface);
+  isolation: isolate;
+}
+
+.app-shell .highfi-scope .project-media-stage > img,
+.app-shell .highfi-scope .project-media-stage > video {
+  background: var(--brand-ink);
+  transition: opacity var(--motion-standard) ease, transform var(--motion-standard) ease;
+}
+
+.app-shell .highfi-scope .project-media-stage--fallback {
+  background: var(--brand-canvas);
+}
+
+.app-shell .highfi-scope .project-media-stage__fallback {
+  width: min(40%, 14rem);
+  min-width: 6rem;
+}
+
+@media (hover: hover) {
+  .app-shell .highfi-scope .project-card--standard,
+  .app-shell .highfi-scope .project-card--featured {
+    transition: border-color var(--motion-standard) ease, transform var(--motion-standard) ease;
+  }
+
+  .app-shell .highfi-scope .project-card--standard:hover,
+  .app-shell .highfi-scope .project-card--featured:hover {
+    border-color: var(--brand-ink);
+    transform: translateY(-4px);
+  }
+}
+
+.app-shell .highfi-scope .project-card--standard:focus-within,
+.app-shell .highfi-scope .project-card--featured:focus-within {
+  border-color: var(--brand-ink);
+  transform: translateY(-4px);
+}
+
+.app-shell .highfi-scope .project-card--featured .project-media-stage--featured {
+  min-height: clamp(16rem, 30vw, 28rem);
+}
+
+.app-shell .highfi-scope .reveal {
+  opacity: 0;
+  transform: translate3d(0, 1rem, 0);
+  transition: opacity var(--motion-standard) ease var(--reveal-delay, 0ms),
+    transform var(--motion-standard) ease var(--reveal-delay, 0ms);
+}
+
+.app-shell .highfi-scope .reveal[data-reveal-state='visible'] {
+  opacity: 1;
+  transform: none;
+}
+
+.app-shell .highfi-scope .editorial-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 0.8fr);
+  gap: clamp(1.5rem, 5vw, 5rem);
+  align-items: stretch;
+  border-block: 1px solid var(--brand-ink);
+  padding-block: clamp(2.5rem, 8vw, 7rem);
+}
+
+.app-shell .highfi-scope .editorial-hero__content {
+  display: grid;
+  align-content: center;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .editorial-hero__header,
+.app-shell .highfi-scope .section-lead__header {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-shell .highfi-scope .editorial-hero__eyebrow,
+.app-shell .highfi-scope .section-lead__eyebrow {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-shell .highfi-scope .editorial-hero__description,
+.app-shell .highfi-scope .section-lead__description {
+  max-width: 48rem;
+  color: var(--color-muted);
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+}
+
+.app-shell .highfi-scope .editorial-hero__actions,
+.app-shell .highfi-scope .section-lead__action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.app-shell .highfi-scope .editorial-hero__artwork {
+  display: grid;
+  min-height: 16rem;
+  place-items: center;
+  overflow: clip;
+  border: 1px solid var(--brand-ink);
+  background: var(--color-surface);
+}
+
+.app-shell .highfi-scope .section-lead {
+  padding-block: clamp(2rem, 5vw, 4rem);
+}
+
+.app-shell .highfi-scope .section-lead__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.app-shell .highfi-scope .marquee-strip {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border-block: 1px solid var(--brand-ink);
+  background: var(--color-surface);
+  color: var(--brand-ink);
+}
+
+.app-shell .highfi-scope .marquee-strip__track {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  gap: var(--space-6);
+  align-items: center;
+  padding: var(--space-3) 0;
+}
+
+.app-shell .site-footer {
+  border-top: 1px solid var(--brand-ink);
+  background: var(--brand-canvas);
+  color: var(--brand-ink);
+  padding: clamp(2rem, 5vw, 4rem) max(var(--page-gutter), calc((100vw - var(--page-max)) / 2));
+}
+
+.app-shell .site-footer__inner {
+  display: grid;
+  width: min(100%, var(--page-max));
+  margin-inline: auto;
+  gap: var(--space-8);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.app-shell .site-footer__identity {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 22rem;
+}
+
+.app-shell .site-footer__identity p {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.app-shell .site-footer__navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: flex-end;
+}
+
+.app-shell .site-footer__navigation a {
+  color: inherit;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.app-shell .site-footer__navigation a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.app-shell .site-footer--compact {
+  padding-block: var(--space-4);
+}
+
+@media (max-width: 48rem) {
+  .app-shell .site-footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .app-shell .site-footer__navigation {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 48rem) {
+  .app-shell .highfi-scope .editorial-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .highfi-scope .section-lead__header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .highfi-scope .reveal,
+  .app-shell .highfi-scope .reveal[data-reveal-state='hidden'],
+  .app-shell .highfi-scope .reveal[data-reveal-state='visible'] {
+    opacity: 1;
+    transform: none;
+    transition: none !important;
+  }
+}
