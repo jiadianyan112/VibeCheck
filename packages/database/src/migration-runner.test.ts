@@ -51,6 +51,7 @@ describe('discoverMigrations', () => {
       '000040_retire_comparison_login_merge.sql',
       '000041_public_media_upload_control_plane.sql',
       '000042_email_password_auth.sql',
+      '000043_submission_review_session_confirmation.sql',
       ],
     )
     for (const migration of migrations) {
