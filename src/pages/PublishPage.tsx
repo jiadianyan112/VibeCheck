@@ -175,13 +175,16 @@ export function PublishPage() {
     const result = await getCheck(data)
     if (!data.category) throw new Error('请选择作品分类。')
     let draft = remote.current
-    const sameIdentity = draft && draft.category_id === data.category && draft.fields.publicUrl === result.normalizedUrl
-    if (!sameIdentity) {
+    const sameIdentity = draft?.status === 'editing' && draft.category_id === data.category && draft.fields.publicUrl === result.normalizedUrl
+    if (!sameIdentity || draft?.check_id !== result.checkId) {
+      const previousDraftId = draft?.draft_id
       draft = await submissionApi.create({ checkId: result.checkId!, categoryId: data.category, session })
       assertOwner()
       remote.current = draft
-      preserveRemoteCovers.current = false; setRemoteCoverCount(0)
-      setParams({ draft: draft.draft_id }, { replace: true })
+      if (draft.draft_id !== previousDraftId) {
+        preserveRemoteCovers.current = false; setRemoteCoverCount(0)
+        setParams({ draft: draft.draft_id }, { replace: true })
+      }
     }
     if (!draft) throw new Error('无法创建草稿，请重试。')
     const nextImages = [...current.current.images]
@@ -274,13 +277,20 @@ export function PublishPage() {
     try {
       await persistLocal()
       if (!session) { navigate(`/auth?return_to=${encodeURIComponent('/submit?resume=guest')}`); return }
+      if (pendingSubmit.current) {
+        const latestCheck = await getCheck()
+        const latest = await submissionApi.get({ draftId: pendingSubmit.current.draftId, session })
+        if (latestCheck.checkId !== pendingSubmit.current.checkId || latest.version !== pendingSubmit.current.draftVersion || latest.check_id !== pendingSubmit.current.checkId) {
+          pendingSubmit.current = null
+          submissionKey.current = makeSubmissionClientRequestId()
+        }
+      }
       if (!pendingSubmit.current) {
       let draft = await syncDraft(true)
-      const result = await getCheck()
-      const preview = await submissionApi.preview({ draftId: draft.draft_id, expectedVersion: draft.version, checkId: result.checkId!, session })
+      const preview = await submissionApi.preview({ draftId: draft.draft_id, expectedVersion: draft.version, checkId: draft.check_id, session })
       draft = await submissionApi.get({ draftId: draft.draft_id, session })
       remote.current = draft
-      pendingSubmit.current = { draftId: draft.draft_id, draftVersion: draft.version, checkId: result.checkId!, previewHash: preview.previewHash, submissionKey: submissionKey.current, session }
+      pendingSubmit.current = { draftId: draft.draft_id, draftVersion: draft.version, checkId: draft.check_id, previewHash: preview.previewHash, submissionKey: submissionKey.current, session }
       }
       await persistLocal()
       const submitted = await submissionApi.submit({ ...pendingSubmit.current, session })

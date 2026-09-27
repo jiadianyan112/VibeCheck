@@ -4,11 +4,11 @@ import { vi } from 'vitest'
 import { PublishPage } from './PublishPage'
 import { emptyPublishFields, type PublishSavedDraft } from '../features/submission/publishDraft'
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), save: vi.fn(), get: vi.fn(), check: vi.fn(), patch: vi.fn(), preview: vi.fn(), submit: vi.fn(), uploadCover: vi.fn(), ensureCoverReference: vi.fn(), createCoverReference: vi.fn(), removeCoverReferences: vi.fn() }))
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), read: vi.fn(), save: vi.fn(), get: vi.fn(), check: vi.fn(), create: vi.fn(), patch: vi.fn(), preview: vi.fn(), submit: vi.fn(), uploadCover: vi.fn(), ensureCoverReference: vi.fn(), createCoverReference: vi.fn(), removeCoverReferences: vi.fn() }))
 vi.mock('../features/auth/AuthSessionContext', () => ({ useOptionalAuthSession: mocks.auth }))
 vi.mock('../state', () => ({ useAppState: () => ({ dispatch: vi.fn() }) }))
 vi.mock('../features/submission/publishDraft', async importOriginal => ({ ...await importOriginal<typeof import('../features/submission/publishDraft')>(), readPublishDraft: mocks.read, savePublishDraft: mocks.save }))
-vi.mock('../services/submissionApi', async importOriginal => ({ ...await importOriginal<typeof import('../services/submissionApi')>(), remoteDraftToLocalDraft: () => ({ fields: {}, assetIds: [] }), submissionApi: { get: mocks.get, check: mocks.check, patch: mocks.patch, preview: mocks.preview, submit: mocks.submit } }))
+vi.mock('../services/submissionApi', async importOriginal => ({ ...await importOriginal<typeof import('../services/submissionApi')>(), remoteDraftToLocalDraft: () => ({ fields: {}, assetIds: [] }), submissionApi: { get: mocks.get, check: mocks.check, create: mocks.create, patch: mocks.patch, preview: mocks.preview, submit: mocks.submit } }))
 vi.mock('../services/submissionAssetsApi', () => ({ submissionAssetsApi: { uploadCover: mocks.uploadCover, ensureCoverReference: mocks.ensureCoverReference, createCoverReference: mocks.createCoverReference, removeCoverReferences: mocks.removeCoverReferences } }))
 
 function page(url = '/submit') { return <MemoryRouter initialEntries={[url]}><PublishPage /></MemoryRouter> }
@@ -59,7 +59,7 @@ it('waits for a pending cover scan and submits on the first click', async () => 
   const session = { user_id: '44444444-4444-4444-8444-444444444444' }
   const image = { id: 'image-1', file: new File(['image'], 'cover.png', { type: 'image/png' }) }
   const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const }
-  const draft = { draft_id: draftId, category_id: 'ai_learning_quiz', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 1, status: 'editing' }
+  const draft = { draft_id: draftId, category_id: 'ai_learning_quiz', check_id: 'check-1', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 1, status: 'editing' }
   mocks.auth.mockReturnValue({ status: 'authenticated', session })
   mocks.read.mockResolvedValue({ fields, images: [image], ownerId: session.user_id, remoteId: draftId })
   mocks.get.mockResolvedValue(draft)
@@ -86,6 +86,32 @@ it('waits for a pending cover scan and submits on the first click', async () => 
   expect(mocks.removeCoverReferences).toHaveBeenCalledWith(expect.objectContaining({ draftId, keepIds: [referenceId] }))
   expect(mocks.createCoverReference).not.toHaveBeenCalled()
   expect(screen.queryByText(/第 1 张图片未就绪/)).not.toBeInTheDocument()
+})
+
+it('refreshes the single remote draft check before previewing and submitting', async () => {
+  const draftId = '11111111-1111-4111-8111-111111111111'
+  const session = { user_id: '44444444-4444-4444-8444-444444444444' }
+  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const }
+  const oldDraft = { draft_id: draftId, category_id: fields.category, check_id: 'old-check', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 4, status: 'editing' }
+  const refreshed = { ...oldDraft, check_id: 'new-check', version: 5 }
+  const patched = { ...refreshed, version: 6 }
+  mocks.auth.mockReturnValue({ status: 'authenticated', session })
+  mocks.read.mockResolvedValue({ fields, images: [], ownerId: session.user_id, remoteId: draftId, pendingSubmission: { draftId, draftVersion: 4, checkId: 'old-check', previewHash: 'old-preview', submissionKey: 'old-submission' } })
+  mocks.get.mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(refreshed).mockResolvedValueOnce(patched)
+  mocks.check.mockResolvedValue({ normalizedUrl: fields.url, checks: [], duplicateProjectId: null, canCreateDraft: true, checkId: 'new-check', categoryId: fields.category })
+  mocks.create.mockResolvedValue(refreshed)
+  mocks.patch.mockResolvedValue(patched)
+  mocks.preview.mockResolvedValue({ previewHash: 'preview-hash' })
+  mocks.submit.mockResolvedValue({ submissionId: 'submission-1', reviewWorkItemId: 'work-1' })
+
+  render(page(`/submit?draft=${draftId}`))
+  await waitFor(() => expect(screen.getByLabelText('作品名称 *')).toHaveValue('作品'))
+  fireEvent.click(screen.getAllByRole('button', { name: '提交审核' })[0]!)
+  await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1))
+  expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ checkId: 'new-check' }))
+  expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ draftId, expectedVersion: 6, checkId: 'new-check' }))
+  expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ draftId, draftVersion: 6, checkId: 'new-check' }))
+  expect(screen.queryByText(/内容已在其他位置更新/)).not.toBeInTheDocument()
 })
 
 it('uses the styled button for retrying a failed image', async () => {

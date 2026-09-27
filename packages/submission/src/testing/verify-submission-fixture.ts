@@ -14,7 +14,7 @@ if (!databaseUrl) throw new Error('CONFIG_DATABASE_URL_REQUIRED')
 const pool = new Pool({ connectionString: databaseUrl })
 const userId = '82000000-0000-4000-8000-000000000001'
 const fixtureUrl = 'https://submission-fixture.example/work'
-const now = new Date('2026-08-13T10:00:00.000Z')
+let fixtureNow = new Date('2026-08-13T10:00:00.000Z')
 const store = new PostgresSubmissionStore(pool)
 const service = new SubmissionService({
   store,
@@ -34,7 +34,7 @@ const service = new SubmissionService({
     urlCheckTtlSeconds: 1_800,
     draftTtlSeconds: 2_592_000,
   }),
-  now: () => now,
+  now: () => fixtureNow,
 })
 
 async function run(): Promise<void> {
@@ -88,10 +88,30 @@ async function run(): Promise<void> {
   })
   assert.deepEqual(draftReplay, draft)
 
+  fixtureNow = new Date(fixtureNow.getTime() + 1_801_000)
+  const freshCheck = await service.checkUrl({
+    userId,
+    rawUrl: `${fixtureUrl}/#section`,
+    categoryHint: 'personal_site_portfolio',
+    clientRequestId: 'submission-fixture-check-0002',
+    requestId: 'fixture-http-check-0003',
+  })
+  assert.notEqual(freshCheck.check_id, checked.check_id)
+  assert.equal(freshCheck.can_create_draft, true)
+  const activeDraftReuse = await service.createDraft({
+    userId,
+    checkId: freshCheck.check_id,
+    categoryId: 'personal_site_portfolio',
+    clientRequestId: 'submission-fixture-draft-0002',
+    requestId: 'fixture-http-draft-0003',
+  })
+  assert.equal(activeDraftReuse.draft_id, draft.draft_id)
+  assert.equal(activeDraftReuse.check_id, freshCheck.check_id)
+
   const patched = await service.patchDraft({
     userId,
     draftId: draft.draft_id,
-    expectedVersion: 1,
+    expectedVersion: activeDraftReuse.version,
     patch: Object.freeze({
       project_core: Object.freeze({
         current_name: 'Submission Fixture',
@@ -102,7 +122,7 @@ async function run(): Promise<void> {
     operationId: 'submission-fixture-patch-0001',
     requestId: 'fixture-http-patch-0001',
   })
-  assert.equal(patched.version, 2)
+  assert.equal(patched.version, activeDraftReuse.version + 1)
   assert.deepEqual(patched.payload_snapshot.project_core, {
     public_url: fixtureUrl,
     current_name: 'Submission Fixture',
@@ -111,7 +131,7 @@ async function run(): Promise<void> {
   const patchReplay = await service.patchDraft({
     userId,
     draftId: draft.draft_id,
-    expectedVersion: 1,
+    expectedVersion: activeDraftReuse.version,
     patch: Object.freeze({
       project_core: Object.freeze({
         current_name: 'Submission Fixture',
@@ -139,7 +159,7 @@ async function run(): Promise<void> {
     () => service.patchDraft({
       userId,
       draftId: draft.draft_id,
-      expectedVersion: 2,
+      expectedVersion: patched.version,
       patch: Object.freeze({ project_core: Object.freeze({ public_url: 'https://changed.example' }) }),
       operationId: 'submission-fixture-patch-0003',
       requestId: 'fixture-http-patch-url',
@@ -209,6 +229,26 @@ async function run(): Promise<void> {
   assert.equal(duplicate.duplicate_result, 'exact')
   assert.equal(duplicate.can_create_draft, false)
   assert.equal(duplicate.duplicate_candidates[0]?.project_id, existingProject.rows[0]!.project_id)
+
+  const firstCheck = await service.checkUrl({
+    userId, rawUrl: 'https://submission-fixture.example/next-one',
+    categoryHint: 'personal_site_portfolio', clientRequestId: 'submission-fixture-check-one', requestId: 'fixture-http-check-one',
+  })
+  const firstDraft = await service.createDraft({
+    userId, checkId: firstCheck.check_id, categoryId: 'personal_site_portfolio',
+    clientRequestId: 'submission-fixture-draft-one', requestId: 'fixture-http-draft-one',
+  })
+  const secondCheck = await service.checkUrl({
+    userId, rawUrl: 'https://submission-fixture.example/next-two',
+    categoryHint: 'personal_site_portfolio', clientRequestId: 'submission-fixture-check-two', requestId: 'fixture-http-check-two',
+  })
+  const secondDraft = await service.createDraft({
+    userId, checkId: secondCheck.check_id, categoryId: 'personal_site_portfolio',
+    clientRequestId: 'submission-fixture-draft-two', requestId: 'fixture-http-draft-two',
+  })
+  assert.notEqual(secondDraft.draft_id, firstDraft.draft_id)
+  assert.equal((await service.getDraft({ userId, draftId: firstDraft.draft_id, requestId: 'fixture-http-get-one' })).status, 'closed')
+  assert.equal((await service.getDraft({ userId, draftId: secondDraft.draft_id, requestId: 'fixture-http-get-two' })).status, 'editing')
 
   console.info(JSON.stringify({
     fixture: 'submission-entry-and-drafts',

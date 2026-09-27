@@ -424,6 +424,8 @@ export class PostgresSubmissionStore implements SubmissionStore {
         check.duplicate_result !== 'none' || !check.canonical_url
       ) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
 
+      // A publisher keeps one editable creation draft; revision drafts belong to submitted work.
+      await this.lock(client, `submission-active-draft:${input.userId}`)
       await this.lock(client, `submission-url:${check.canonical_url}`)
 
       const currentDuplicate = await client.query<{ readonly project_id: string } & QueryResultRow>(
@@ -446,13 +448,39 @@ export class PostgresSubmissionStore implements SubmissionStore {
         [check.canonical_url, input.now],
       )
       if (activeDraft.rows[0]) {
-        if (activeDraft.rows[0].owner_user_id === input.userId) {
+        if (activeDraft.rows[0].owner_user_id === input.userId &&
+            activeDraft.rows[0].category_id === input.categoryId &&
+            activeDraft.rows[0].category_schema_version === input.schemaVersion) {
+          const current = activeDraft.rows[0]
+          const refreshed = current.check_id === input.checkId
+            ? current
+            : (await client.query<DraftRow>(
+              `UPDATE workflow.submission_drafts
+               SET check_id=$2,version=version+1,updated_at=$3,saved_at=$3
+               WHERE draft_id=$1 RETURNING *`,
+              [current.draft_id, input.checkId, input.now],
+            )).rows[0]!
+          await client.query(
+            `UPDATE workflow.submission_drafts
+             SET status='closed',version=version+1,updated_at=$2,saved_at=$2
+             WHERE owner_user_id=$1 AND status='editing' AND base_submission_id IS NULL
+               AND draft_id<>$3`,
+            [input.userId, input.now, current.draft_id],
+          )
           await client.query('COMMIT')
-          return this.draftProjection(activeDraft.rows[0])
+          return this.draftProjection(refreshed)
         }
-        throw submissionError('SUBMISSION_URL_IN_PROGRESS', 409)
+        if (activeDraft.rows[0].owner_user_id !== input.userId) {
+          throw submissionError('SUBMISSION_URL_IN_PROGRESS', 409)
+        }
       }
 
+      await client.query(
+        `UPDATE workflow.submission_drafts
+         SET status='closed',version=version+1,updated_at=$2,saved_at=$2
+         WHERE owner_user_id=$1 AND status='editing' AND base_submission_id IS NULL`,
+        [input.userId, input.now],
+      )
       const payloadSnapshot = validateDraftPayload({
         ...input.payloadSnapshot,
         project_core: { public_url: check.canonical_url },
