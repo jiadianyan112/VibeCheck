@@ -29,7 +29,7 @@ export function AdminReviewsPage() {
   const [duplicateRefreshed, setDuplicateRefreshed] = useState(false)
 
   function requestPublication(draft: SubmissionDraft, decision: PublicationDecision) {
-    if (!reason.trim()) { setError('所有审核操作都必须填写原因。'); return }
+    if (decision !== 'approve' && !reason.trim()) { setError('退回、拒绝和争议操作必须填写原因。'); return }
     if (searchParams.get('scenario') === 'duplicate_review' && !duplicateRefreshed) {
       setError('检测到同一提交版本已有审核单，未创建重复审核或重复事件。请刷新现有审核单后继续。')
       return
@@ -63,8 +63,8 @@ export function AdminReviewsPage() {
 
   return (
     <div className="admin-page stack">
-      <header className="admin-page-header"><div><h1>发布审核</h1><p>通过、退回、拒绝和争议均要求原因；通过后使用稳定提交 ID 生成公开档案。</p></div><Tag>{drafts.filter((draft) => draft.status === 'pending_review').length} 项待审核</Tag></header>
-      <label className="field"><span className="field__label">本次操作原因（必填）</span><textarea className="input textarea" rows={3} value={reason} onChange={(event) => { setReason(event.target.value); setError(null) }} placeholder="说明核对结论与依据" /></label>
+      <header className="admin-page-header"><div><h1>发布审核</h1><p>通过可直接提交；退回、拒绝和标记争议需填写原因。通过后使用稳定提交 ID 生成公开档案。</p></div><Tag>{drafts.filter((draft) => draft.status === 'pending_review').length} 项待审核</Tag></header>
+      <label className="field"><span className="field__label">本次操作原因（通过可选，其余必填）</span><textarea className="input textarea" rows={3} value={reason} onChange={(event) => { setReason(event.target.value); setError(null) }} placeholder="退回、拒绝或标争议时请说明原因" /></label>
       {error ? <p className="field-error" role="alert">{error}</p> : null}
       {error?.startsWith('检测到同一提交版本已有审核单') ? <div className="cluster"><Button onClick={() => { setDuplicateRefreshed(true); setError(null) }}>刷新现有审核单</Button><Link to="/admin/projects">返回作品列表</Link></div> : null}
 
