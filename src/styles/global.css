@@ -958,23 +958,59 @@ textarea {
   top: calc(4rem + var(--space-4));
   right: var(--space-4);
   display: grid;
-  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  width: min(22rem, calc(100vw - 2 * var(--space-4)));
   gap: var(--space-2);
+  pointer-events: none;
 }
 
 .toast {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--space-3);
-  border: 1px solid var(--color-line-strong);
-  background: var(--color-canvas);
-  padding: var(--space-3) var(--space-4);
-  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 12%);
+  min-height: 3.25rem;
+  border: 1px solid #d8d8ce;
+  border-radius: var(--radius-medium);
+  background: var(--brand-canvas);
+  color: var(--brand-ink);
+  padding: var(--space-3);
+  box-shadow: 0 0.375rem 1.25rem rgb(17 17 17 / 10%);
+  pointer-events: auto;
+  animation: toast-enter var(--motion-fast) cubic-bezier(.23, 1, .32, 1) both;
 }
 
-.toast--error { border-width: 2px; }
-.toast--success { border-width: 2px; }
-.toast button { border: 0; background: transparent; cursor: pointer; }
+.toast::before {
+  display: grid;
+  flex: 0 0 1.5rem;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #e7e7dd;
+  content: 'i';
+  font-size: .875rem;
+  font-weight: 700;
+}
+.toast--success::before { background: var(--brand-lime); content: '✓'; }
+.toast--error::before { background: #f9e3df; color: var(--brand-danger); content: '!'; }
+.toast__message { flex: 1; font-size: .875rem; line-height: 1.45; }
+.toast__dismiss {
+  display: grid;
+  flex: 0 0 2rem;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+.toast__dismiss:hover { background: #e9e9e0; color: var(--brand-ink); }
+.toast__dismiss:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
+@keyframes toast-enter { from { opacity: 0; transform: translateY(-.375rem); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 .compare-bar {
   position: fixed;
