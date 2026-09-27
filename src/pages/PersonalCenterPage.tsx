@@ -42,7 +42,7 @@ export function PersonalCenterPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
   const allProjects = useMemo(() => {
-    const approved = state.submissionDrafts.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))
+    const approved = import.meta.env.PROD ? [] : state.submissionDrafts.map(publishedProjectFromSubmission).filter((project): project is Project => Boolean(project))
     const base = [...projects, ...approved]
     const baseIds = new Set(base.map((project) => project.id))
     return [...base.map((project) => state.projectOverrides.find((item) => item.id === project.id) ?? project), ...state.projectOverrides.filter((project) => !baseIds.has(project.id))]
@@ -110,7 +110,7 @@ export function PersonalCenterPage() {
     ? `/compare/${data.comparisonSessions[0].id}${data.comparisonSessions[0].projectIds.length >= 2 ? '#structured-comparison-heading' : ''}`
     : '/projects'
   const summaryCount = data.favoriteProjects.length + data.comparisonSessions.length + data.drafts.length + data.reviews.length
-  const unpublishedReviews = data.reviews.filter((draft) => !draft.publishedProjectId || draft.status !== 'approved')
+  const unpublishedReviews = import.meta.env.PROD ? data.reviews : data.reviews.filter((draft) => !draft.publishedProjectId || draft.status !== 'approved')
 
   return (
     <main className="page-container page-with-bottom-space stack">
@@ -132,7 +132,10 @@ export function PersonalCenterPage() {
               const canUpdate = Boolean(user.creatorId && project.authorLinkStatus === 'linked' && project.creatorIds.includes(user.creatorId))
               return <li key={`project-${project.id}`}><div><div className="cluster"><strong><Link to={`/project/${project.id}`}>{projectName(project)}</Link></strong><Tag tone="strong">已发布</Tag></div><p>{project.oneLineDefinition.state === 'known' ? project.oneLineDefinition.value : '作品定义待补充。'}</p></div><div className="cluster"><Link className="button button--secondary" to={`/project/${project.id}`}>进入作品</Link>{canUpdate ? <Link className="button button--primary" to={`/project/${project.id}/update`}>更新作品</Link> : null}</div></li>
             })}
-            {unpublishedReviews.map((draft) => <li key={`review-${draft.id}`}><div><div className="cluster"><strong>{draft.fields.currentName ?? '未命名提交'}</strong><Tag tone={draft.status === 'approved' ? 'strong' : 'dashed'}>{submissionReviewStatusLabels[draft.status] ?? draft.status}</Tag></div>{Object.keys(draft.reviewMessages).length ? <ul>{Object.entries(draft.reviewMessages).map(([field, message]) => <li key={field}>{message}</li>)}</ul> : <p>当前没有需要修改的内容。</p>}</div><Link className="button button--secondary" to={`/submit/new?draft=${draft.id}`}>查看审核</Link></li>)}
+            {unpublishedReviews.map((draft) => {
+              const legacyApproval = import.meta.env.PROD && draft.status === 'approved' && draft.publishedProjectId?.startsWith('project-submission-')
+              return <li key={`review-${draft.id}`}><div><div className="cluster"><strong>{draft.fields.currentName ?? '未命名提交'}</strong><Tag tone={draft.status === 'approved' && !legacyApproval ? 'strong' : 'dashed'}>{legacyApproval ? '旧审核记录待核实' : submissionReviewStatusLabels[draft.status] ?? draft.status}</Tag></div>{legacyApproval ? <p>这条旧版审核记录尚未在公开目录确认发布，请联系管理员核对数据库审核队列。</p> : Object.keys(draft.reviewMessages).length ? <ul>{Object.entries(draft.reviewMessages).map(([field, message]) => <li key={field}>{message}</li>)}</ul> : <p>当前没有需要修改的内容。</p>}</div><Link className="button button--secondary" to={`/submit/new?draft=${draft.id}`}>查看审核</Link></li>
+            })}
             {data.drafts.map((draft) => <li key={`draft-${draft.id}`}><div><div className="cluster"><strong>{draft.fields.currentName ?? '未命名草稿'}</strong><Tag tone="dashed">草稿</Tag></div><p>更新于 {new Date(draft.updatedAt).toLocaleString('zh-CN')}</p></div><Link className="button button--secondary" to={`/submit/new?draft=${draft.id}&step=${draft.step}`}>继续编辑</Link></li>)}
           </ul>
         ) : <EmptyState title="还没有我的作品" description="发布作品后，可在这里查看审核进度和作品；未完成的草稿也会显示在这里。" action={<Link className="button button--primary" to="/submit">发布作品</Link>} />}

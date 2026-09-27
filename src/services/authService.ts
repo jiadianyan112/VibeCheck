@@ -131,6 +131,24 @@ export function startEmailChallenge(input: {
   })
 }
 
+export function startAdminEmailChallenge(input: {
+  readonly email: string
+  readonly previewToken: string
+  readonly clientRequestId: string
+}): Promise<AuthChallengeDto> {
+  return authFetch('/api/v1/auth/email-challenges', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: input.email,
+      purpose: 'admin_confirm',
+      return_to: '/admin/reviews',
+      preview_token: input.previewToken,
+      client_request_id: input.clientRequestId,
+    }),
+  })
+}
+
 export function verifyEmailChallenge(input: {
   readonly challengeId: string
   readonly authFlowId: string

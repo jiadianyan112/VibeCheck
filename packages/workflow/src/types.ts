@@ -48,6 +48,10 @@ export interface ReviewActor {
 
 export interface ReviewDomainSummary {
   readonly status: string
+  readonly version?: number
+  readonly current_name?: string
+  readonly public_url?: string
+  readonly one_line_definition?: string
 }
 
 export interface ReviewWorkItemProjection {

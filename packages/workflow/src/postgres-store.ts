@@ -534,12 +534,32 @@ export class PostgresWorkflowStore implements WorkflowStore {
   }
 
   private async domainSummary(client: PoolClient, row: WorkItemRow): Promise<ReviewDomainSummary> {
+    if (row.target_type === 'submission') {
+      const result = await client.query<{ readonly review_status: string; readonly version: string; readonly payload_snapshot: unknown } & QueryResultRow>(
+        'SELECT review_status,version,payload_snapshot FROM workflow.submissions WHERE submission_id=$1',
+        [row.target_id],
+      )
+      const submission = result.rows[0]
+      if (!submission) return Object.freeze({ status: 'target_missing' })
+      const snapshot = submission.payload_snapshot
+      const core = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+        ? (snapshot as Record<string, unknown>).project_core
+        : null
+      const fields = core && typeof core === 'object' && !Array.isArray(core)
+        ? core as Record<string, unknown>
+        : {}
+      return Object.freeze({
+        status: submission.review_status,
+        version: Number(submission.version),
+        ...(typeof fields.current_name === 'string' ? { current_name: fields.current_name } : {}),
+        ...(typeof fields.public_url === 'string' ? { public_url: fields.public_url } : {}),
+        ...(typeof fields.one_line_definition === 'string' ? { one_line_definition: fields.one_line_definition } : {}),
+      })
+    }
     let table: string
     let id: string
     let status: string
     switch (row.target_type) {
-      case 'submission':
-        table = 'workflow.submissions'; id = 'submission_id'; status = 'review_status'; break
       case 'comment':
         table = 'community.comments'; id = 'comment_id'; status = 'moderation_state'; break
       case 'report':

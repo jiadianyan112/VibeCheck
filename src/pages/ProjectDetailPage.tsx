@@ -107,6 +107,7 @@ export function ProjectDetailPage() {
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('project_viewed', { projectId }) })
   }, [dispatch])
   const submittedBundle = useMemo<ProjectBundle | null>(() => {
+    if (import.meta.env.PROD) return null
     const draft = state.submissionDrafts.find((item) => item.publishedProjectId === resolvedId && item.status === 'approved')
     if (!draft) return null
     const project = publishedProjectFromSubmission(draft)

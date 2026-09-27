@@ -5,6 +5,7 @@ import { applyPublicationWorkflow, isAdminWorkflowAllowed, mergeAdminProjects, r
 import { adminReviewDrafts, projects } from '../mocks'
 import { useAppState } from '../state'
 import type { SubmissionDraft } from '../types'
+import { ServerAdminReviewsPage } from './ServerAdminReviewsPage'
 
 function mergeDrafts(base: readonly SubmissionDraft[], overrides: readonly SubmissionDraft[]) {
   const byId = new Map(overrides.map((draft) => [draft.id, draft]))
@@ -17,6 +18,11 @@ const decisionLabels: Record<PublicationDecision, string> = {
 }
 
 export function AdminReviewsPage() {
+  if (import.meta.env.PROD) return <ServerAdminReviewsPage />
+  return <PrototypeAdminReviewsPage />
+}
+
+function PrototypeAdminReviewsPage() {
   const { state, dispatch } = useAppState()
   const [searchParams] = useSearchParams()
   const actor = state.session.user!
