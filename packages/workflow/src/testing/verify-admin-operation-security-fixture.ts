@@ -47,8 +47,8 @@ async function run(): Promise<void> {
     [actorUserId],
   )
   if ((existing.rows[0]?.event_count ?? 0) > 0) {
-    assert.equal(existing.rows[0]?.event_count, 6)
-    assert.equal(existing.rows[0]?.audit_count, 4)
+    assert.equal(existing.rows[0]?.event_count, 8)
+    assert.equal(existing.rows[0]?.audit_count, 6)
     return
   }
 
@@ -78,7 +78,7 @@ async function run(): Promise<void> {
   const recentPreview = await service.preview({
     actor,
     sessionToken,
-    operationType: 'submission_review',
+    operationType: 'archive',
     targets: [{ target_type: 'submission', target_id: 'fixture-submission-1' }],
     expectedVersions: { work_item: 2, submission: 1 },
     proposedDiff: { review_status: 'approved' },
@@ -117,6 +117,29 @@ async function run(): Promise<void> {
     `UPDATE iam.sessions SET recent_auth_at=$2,last_seen_at=$3 WHERE session_id_hash=$1`,
     [sessionHash, new Date(clock.getTime() - 301_000), clock],
   )
+  const submissionPreview = await service.preview({
+    actor,
+    sessionToken,
+    operationType: 'submission_review',
+    targets: [{ target_type: 'submission', target_id: 'fixture-submission-stale-session' }],
+    expectedVersions: { work_item: 3, submission: 1 },
+    proposedDiff: { review_status: 'approved' },
+    reasonCode: 'submission_approved',
+    claimToken: 'q'.repeat(43),
+    expectedConflictPrincipalVersion: null,
+    requestId: 'admin_fixture_preview_submission_without_otp',
+  })
+  const submissionConfirm = await service.confirm({
+    actor,
+    sessionToken,
+    previewToken: submissionPreview.preview_token,
+    confirmationSummaryHash: submissionPreview.confirmation_summary_hash,
+    confirmRequestId: 'admin_fixture_confirm_submission_without_otp',
+    reauthGrantId: null,
+    expectedConflictPrincipalVersion: null,
+    requestId: 'admin_fixture_confirm_submission_without_otp_1',
+  })
+  assert.equal(submissionConfirm.assurance_source, 'authenticated_session')
   const challengedPreview = await service.preview({
     actor,
     sessionToken,
@@ -187,10 +210,10 @@ async function run(): Promise<void> {
   )
   assert.deepEqual(state.rows[0], {
     grant_status: 'consumed',
-    preview_count: 2,
-    confirm_count: 2,
-    event_count: 6,
-    audit_count: 4,
+    preview_count: 3,
+    confirm_count: 3,
+    event_count: 8,
+    audit_count: 6,
   })
   await assert.rejects(
     () => pool.query(
@@ -203,7 +226,7 @@ async function run(): Promise<void> {
   console.info(JSON.stringify({
     fixture: 'admin-operation-preview-confirm-security',
     status: 'ok',
-    assurance_sources: ['recent_session', 'step_up_grant'],
+    assurance_sources: ['recent_session', 'authenticated_session', 'step_up_grant'],
   }))
 }
 

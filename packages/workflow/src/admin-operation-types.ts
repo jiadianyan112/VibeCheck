@@ -31,7 +31,7 @@ export interface AdminOperationConfirmProjection {
     target_count: number
     confirmation_summary_hash: string
   }>
-  readonly assurance_source: 'recent_session' | 'step_up_grant'
+  readonly assurance_source: 'recent_session' | 'authenticated_session' | 'step_up_grant'
   readonly conflict_principal_version: number | null
   readonly replayed: boolean
 }
@@ -74,7 +74,7 @@ export type ConfirmAdminOperationStoreResult =
       readonly kind: 'issued' | 'replayed'
       readonly confirmGrantId: string
       readonly preview: StoredAdminOperationPreview
-      readonly assuranceSource: 'recent_session' | 'step_up_grant'
+      readonly assuranceSource: 'recent_session' | 'authenticated_session' | 'step_up_grant'
       readonly expiresAt: Date
     }
   | {

@@ -24,7 +24,7 @@ interface PreviewRow extends QueryResultRow {
 
 interface ConfirmRow extends QueryResultRow {
   readonly confirm_grant_id: string
-  readonly assurance_source: 'recent_session' | 'step_up_grant'
+  readonly assurance_source: 'recent_session' | 'authenticated_session' | 'step_up_grant'
   readonly status: 'active' | 'consumed' | 'expired' | 'revoked'
   readonly expires_at: Date
 }
@@ -237,10 +237,14 @@ export class PostgresAdminOperationSecurityStore implements AdminOperationSecuri
     recentAuthAt: Date,
   ): Promise<
     | 'recent_session'
+    | 'authenticated_session'
     | 'step_up_grant'
     | null
     | { readonly code: string; readonly httpStatus: number }
   > {
+    if (preview.operation_type === 'submission_review' && input.reauthGrantId === null) {
+      return 'authenticated_session'
+    }
     if (preview.status === 'active') {
       if (input.reauthGrantId !== null) {
         return Object.freeze({ code: 'REAUTH_GRANT_UNEXPECTED', httpStatus: 422 })

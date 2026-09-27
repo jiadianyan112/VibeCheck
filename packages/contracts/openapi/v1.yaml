@@ -6303,7 +6303,7 @@ components:
               pattern: '^[a-f0-9]{64}$'
         assurance_source:
           type: string
-          enum: [recent_session, step_up_grant]
+          enum: [recent_session, authenticated_session, step_up_grant]
         conflict_principal_version:
           type: [integer, 'null']
           minimum: 1
