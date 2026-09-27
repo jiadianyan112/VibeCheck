@@ -106,7 +106,8 @@ async function run(): Promise<void> {
     requestId: 'fixture-http-draft-0003',
   })
   assert.equal(activeDraftReuse.draft_id, draft.draft_id)
-  assert.equal(activeDraftReuse.check_id, freshCheck.check_id)
+  assert.equal(activeDraftReuse.check_id, checked.check_id)
+  assert.equal(activeDraftReuse.version, draft.version)
 
   const patched = await service.patchDraft({
     userId,

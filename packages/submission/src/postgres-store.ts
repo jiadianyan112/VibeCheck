@@ -452,14 +452,6 @@ export class PostgresSubmissionStore implements SubmissionStore {
             activeDraft.rows[0].category_id === input.categoryId &&
             activeDraft.rows[0].category_schema_version === input.schemaVersion) {
           const current = activeDraft.rows[0]
-          const refreshed = current.check_id === input.checkId
-            ? current
-            : (await client.query<DraftRow>(
-              `UPDATE workflow.submission_drafts
-               SET check_id=$2,version=version+1,updated_at=$3,saved_at=$3
-               WHERE draft_id=$1 RETURNING *`,
-              [current.draft_id, input.checkId, input.now],
-            )).rows[0]!
           await client.query(
             `UPDATE workflow.submission_drafts
              SET status='closed',version=version+1,updated_at=$2,saved_at=$2
@@ -468,7 +460,7 @@ export class PostgresSubmissionStore implements SubmissionStore {
             [input.userId, input.now, current.draft_id],
           )
           await client.query('COMMIT')
-          return this.draftProjection(refreshed)
+          return this.draftProjection(current)
         }
         if (activeDraft.rows[0].owner_user_id !== input.userId) {
           throw submissionError('SUBMISSION_URL_IN_PROGRESS', 409)
@@ -1241,7 +1233,6 @@ export class PostgresSubmissionStore implements SubmissionStore {
         current_version: draft.version,
       })
     }
-    if (draft.check_id !== input.checkId) throw submissionError('SUBMISSION_CHECK_MISMATCH', 409)
     this.assertAssetSecurityGate(draft.asset_drafts_json)
     const checkResult = await client.query<UrlCheckRow>(
       `SELECT * FROM workflow.submission_url_checks WHERE check_id=$1 ${lockForSubmit ? 'FOR UPDATE' : 'FOR SHARE'}`,
@@ -1256,6 +1247,12 @@ export class PostgresSubmissionStore implements SubmissionStore {
       check.risk_result !== 'allowed' || !['accessible', 'uncertain'].includes(check.access_result) ||
       check.duplicate_result !== 'none' || check.canonical_url === null
     ) throw submissionError('SUBMISSION_URL_CHECK_NOT_ELIGIBLE', 422)
+    const payload = validateDraftPayload(draft.payload_snapshot)
+    const core = payload.project_core
+    if (core === null || typeof core !== 'object' || Array.isArray(core) ||
+        (core as Record<string, unknown>).public_url !== check.canonical_url) {
+      throw submissionError('SUBMISSION_CHECK_MISMATCH', 409)
+    }
     const duplicate = await client.query<{ readonly project_id: string } & QueryResultRow>(
       `SELECT project_id FROM catalog.projects
        WHERE canonical_url_hash=digest($1,'sha256') AND review_status<>'deleted'

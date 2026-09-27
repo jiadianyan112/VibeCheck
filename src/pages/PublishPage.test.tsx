@@ -88,18 +88,16 @@ it('waits for a pending cover scan and submits on the first click', async () => 
   expect(screen.queryByText(/第 1 张图片未就绪/)).not.toBeInTheDocument()
 })
 
-it('refreshes the single remote draft check before previewing and submitting', async () => {
+it('uses a fresh URL check with the same remote draft before previewing and submitting', async () => {
   const draftId = '11111111-1111-4111-8111-111111111111'
   const session = { user_id: '44444444-4444-4444-8444-444444444444' }
   const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const }
   const oldDraft = { draft_id: draftId, category_id: fields.category, check_id: 'old-check', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 4, status: 'editing' }
-  const refreshed = { ...oldDraft, check_id: 'new-check', version: 5 }
-  const patched = { ...refreshed, version: 6 }
+  const patched = { ...oldDraft, version: 5 }
   mocks.auth.mockReturnValue({ status: 'authenticated', session })
   mocks.read.mockResolvedValue({ fields, images: [], ownerId: session.user_id, remoteId: draftId, pendingSubmission: { draftId, draftVersion: 4, checkId: 'old-check', previewHash: 'old-preview', submissionKey: 'old-submission' } })
-  mocks.get.mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(refreshed).mockResolvedValueOnce(patched)
+  mocks.get.mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(oldDraft).mockResolvedValueOnce(patched)
   mocks.check.mockResolvedValue({ normalizedUrl: fields.url, checks: [], duplicateProjectId: null, canCreateDraft: true, checkId: 'new-check', categoryId: fields.category })
-  mocks.create.mockResolvedValue(refreshed)
   mocks.patch.mockResolvedValue(patched)
   mocks.preview.mockResolvedValue({ previewHash: 'preview-hash' })
   mocks.submit.mockResolvedValue({ submissionId: 'submission-1', reviewWorkItemId: 'work-1' })
@@ -108,9 +106,9 @@ it('refreshes the single remote draft check before previewing and submitting', a
   await waitFor(() => expect(screen.getByLabelText('作品名称 *')).toHaveValue('作品'))
   fireEvent.click(screen.getAllByRole('button', { name: '提交审核' })[0]!)
   await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1))
-  expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ checkId: 'new-check' }))
-  expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ draftId, expectedVersion: 6, checkId: 'new-check' }))
-  expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ draftId, draftVersion: 6, checkId: 'new-check' }))
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ draftId, expectedVersion: 5, checkId: 'new-check' }))
+  expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ draftId, draftVersion: 5, checkId: 'new-check' }))
   expect(screen.queryByText(/内容已在其他位置更新/)).not.toBeInTheDocument()
 })
 
