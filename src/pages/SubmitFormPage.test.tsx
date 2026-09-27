@@ -676,11 +676,11 @@ describe('remote P11 draft GET/PATCH form', () => {
 
     await waitFor(() => expect(router.state.location.search).toContain('step=preview'))
     expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
-    expect(transport.requests.map(requestKind)).toEqual([
+    await waitFor(() => expect(transport.requests.map(requestKind)).toEqual([
       'draft-get', 'draft-patch', 'media-prepare', 'upload-put', 'media-complete', 'media-inspect', 'media-reference',
       'draft-get', 'draft-patch', 'evidence-create', 'evidence-bind', 'evidence-patch', 'evidence-complete', 'draft-get',
       'draft-preview',
-    ])
+    ]))
     const patchRequests = transport.requests.filter((request) => request.init?.method === 'PATCH' && request.url.includes('/submission-drafts/'))
     expect(patchRequests.map((request) => request.body?.expected_version)).toEqual([3, 5])
     expect((patchRequests[0]?.body?.patch as WireFields).project_core).toMatchObject({ cover_media_reference_ids: [] })
