@@ -198,8 +198,19 @@ export function PublishPage() {
             if (upload.status === 'terminal') throw new Error('图片未通过安全检查，请移除或更换。')
           }
           if (!item.referenceId || item.referenceDraftId !== draft.draft_id || item.referenceOrder !== index) {
-            const reference = await submissionAssetsApi.createCoverReference({ draftId: draft.draft_id, mediaResourceId: item.resourceId!, altText: `${data.name || '作品'}截图 ${index + 1}`, sortOrder: index, referenceClientRequestId: `reference-${item.id}-${draft.draft_id}-${index}`, session })
-            item = { ...item, referenceId: reference.media_reference_id, referenceDraftId: draft.draft_id, referenceOrder: index, error: undefined }
+            const referenceInput = { draftId: draft.draft_id, mediaResourceId: item.resourceId!, altText: `${data.name || '作品'}截图 ${index + 1}`, sortOrder: index, referenceClientRequestId: `reference-${item.id}-${draft.draft_id}-${index}`, session }
+            const deadline = Date.now() + 30_000
+            let cover = await submissionAssetsApi.ensureCoverReference(referenceInput)
+            while (cover.status === 'pending' && Date.now() < deadline) {
+              setStatus(`第 ${index + 1} 张图片正在安全处理中…`)
+              await new Promise<void>(resolve => window.setTimeout(resolve, 750))
+              assertOwner()
+              cover = await submissionAssetsApi.ensureCoverReference(referenceInput)
+            }
+            if (cover.status === 'terminal') throw new Error('图片未通过安全检查，请移除或更换。')
+            if (cover.status !== 'ready') throw new Error('媒体仍在安全处理中，请稍后重试这张图片。')
+            if (!cover.reference) throw new Error('封面引用尚未创建，请重试这张图片。')
+            item = { ...item, referenceId: cover.reference.media_reference_id, referenceDraftId: draft.draft_id, referenceOrder: index, error: undefined }
           } else item = { ...item, error: undefined }
           assertOwner()
           nextImages[index] = item; current.current.images = nextImages; setImages([...nextImages]); await persistLocal(nextImages)
@@ -334,7 +345,7 @@ export function PublishPage() {
       {!ready && <p role="status">正在恢复草稿…</p>}
       <div className="publish-layout"><fieldset className="publish-editor" disabled={busy || !ready}>
         <section className="publish-section" aria-label="作品内容">
-          <div className="publish-media-grid">{images.map((item, index) => <div className="publish-media-item" key={item.id}><ImagePreview file={item.file} alt={`作品截图 ${index + 1}`} /><span>{index === 0 ? '封面' : index + 1}</span><div className="publish-media-actions"><button type="button" onClick={() => { setCrop(item.id); setRatio(1) }}>裁剪</button><button type="button" disabled={index === 0} aria-label={`将第 ${index + 1} 张图片前移`} onClick={() => { invalidateSubmission(); setImages(previous => { const next = [...previous]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next }) }}>前移</button><button type="button" aria-label={`移除第 ${index + 1} 张图片`} onClick={() => { invalidateSubmission(); setImages(previous => previous.filter(image => image.id !== item.id)) }}>移除</button></div>{item.error && <div className="publish-error"><small>{item.error}</small><button type="button" onClick={() => void save()}>重试这张图片</button></div>}</div>)}{images.length < 9 && <label className="publish-upload"><span aria-hidden="true">＋</span><strong>添加作品截图</strong><small>{images.length ? `${images.length}/9` : '第一张作为封面'}</small><input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple aria-label="添加作品截图" onChange={event => { addImages(event.target.files); event.target.value = '' }} /></label>}</div>
+          <div className="publish-media-grid">{images.map((item, index) => <div className="publish-media-item" key={item.id}><ImagePreview file={item.file} alt={`作品截图 ${index + 1}`} /><span>{index === 0 ? '封面' : index + 1}</span><div className="publish-media-actions"><button type="button" onClick={() => { setCrop(item.id); setRatio(1) }}>裁剪</button><button type="button" disabled={index === 0} aria-label={`将第 ${index + 1} 张图片前移`} onClick={() => { invalidateSubmission(); setImages(previous => { const next = [...previous]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next }) }}>前移</button><button type="button" aria-label={`移除第 ${index + 1} 张图片`} onClick={() => { invalidateSubmission(); setImages(previous => previous.filter(image => image.id !== item.id)) }}>移除</button></div>{item.error && <div className="publish-error"><small>{item.error}</small><button className="button button--secondary publish-retry-button" type="button" onClick={() => void save()}>重试这张图片</button></div>}</div>)}{images.length < 9 && <label className="publish-upload"><span aria-hidden="true">＋</span><strong>添加作品截图</strong><small>{images.length ? `${images.length}/9` : '第一张作为封面'}</small><input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple aria-label="添加作品截图" onChange={event => { addImages(event.target.files); event.target.value = '' }} /></label>}</div>
           {remoteCoverCount > 0 && <p className="publish-hint">已保留 {remoteCoverCount} 张云端截图，添加图片可替换。</p>}
           <p className="publish-hint">截图选填 · 最多 9 张 · 每张不超过 5 MB</p>
           {field('name', '作品名称 *', '给作品起个名字', 80)}

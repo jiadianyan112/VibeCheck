@@ -63,6 +63,7 @@
 .publish-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 24px 0 0; margin-top: 20px; border-top: 1px solid #dedfd5; }
 .publish-status { font-size: 12px; color: #66695e; line-height: 1.6; }
 .publish-error { padding: 12px 16px; margin: 12px 0; background: #f5e9e2; border-radius: 12px; color: #8c3528; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.publish-error .publish-retry-button { display: inline-flex; min-height: 36px; margin: 8px 0 0; border-color: #cfa89e; color: #692f25; font-size: 12px; }
 .publish-success { max-width: 600px; margin: 60px auto; padding: 30px 0; }
 .publish-success h1 { font-size: 24px; }
 .publish-success p { color: #62675a; line-height: 1.8; }
