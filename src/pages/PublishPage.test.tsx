@@ -78,6 +78,12 @@ it('waits for a pending cover scan and submits on the first click', async () => 
   fireEvent.click(screen.getAllByRole('button', { name: '提交审核' })[0]!)
   await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1), { timeout: 4000 })
   expect(mocks.ensureCoverReference).toHaveBeenCalledTimes(2)
+  expect(mocks.ensureCoverReference).toHaveBeenCalledWith(expect.objectContaining({
+    replaceAtSortOrder: true,
+    sortOrder: 0,
+    replacementOperationId: expect.any(Function),
+  }))
+  expect(mocks.removeCoverReferences).toHaveBeenCalledWith(expect.objectContaining({ draftId, keepIds: [referenceId] }))
   expect(mocks.createCoverReference).not.toHaveBeenCalled()
   expect(screen.queryByText(/第 1 张图片未就绪/)).not.toBeInTheDocument()
 })

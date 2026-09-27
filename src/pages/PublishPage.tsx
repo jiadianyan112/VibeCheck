@@ -198,7 +198,7 @@ export function PublishPage() {
             if (upload.status === 'terminal') throw new Error('图片未通过安全检查，请移除或更换。')
           }
           if (!item.referenceId || item.referenceDraftId !== draft.draft_id || item.referenceOrder !== index) {
-            const referenceInput = { draftId: draft.draft_id, mediaResourceId: item.resourceId!, altText: `${data.name || '作品'}截图 ${index + 1}`, sortOrder: index, referenceClientRequestId: `reference-${item.id}-${draft.draft_id}-${index}`, session }
+            const referenceInput = { draftId: draft.draft_id, mediaResourceId: item.resourceId!, altText: `${data.name || '作品'}截图 ${index + 1}`, sortOrder: index, replaceAtSortOrder: true, replacementOperationId: (mediaReferenceId: string) => `replace-${item.id}-${mediaReferenceId}`, referenceClientRequestId: `reference-${item.id}-${draft.draft_id}-${index}`, session }
             const deadline = Date.now() + 30_000
             let cover = await submissionAssetsApi.ensureCoverReference(referenceInput)
             while (cover.status === 'pending' && Date.now() < deadline) {
@@ -226,7 +226,7 @@ export function PublishPage() {
     // Existing remote-only covers are kept until the author explicitly replaces them.
     const keepRemote = nextImages.length === 0 && preserveRemoteCovers.current && draft.media_reference_ids.length > 0
     const references = keepRemote ? draft.media_reference_ids : referenceIds
-    if (draft.media_reference_ids.some(id => !references.includes(id))) await submissionAssetsApi.removeCoverReferences({ draftId: draft.draft_id, keepIds: references, session })
+    if (!keepRemote && (nextImages.length > 0 || draft.media_reference_ids.length > 0)) await submissionAssetsApi.removeCoverReferences({ draftId: draft.draft_id, keepIds: references, session })
     draft = await submissionApi.get({ draftId: draft.draft_id, session })
     draft = await submissionApi.patch({ draftId: draft.draft_id, expectedVersion: draft.version, snapshot: publishSnapshot(data, result.normalizedUrl, references, draft.payload_snapshot), session })
     assertOwner()
