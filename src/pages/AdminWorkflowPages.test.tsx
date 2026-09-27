@@ -29,7 +29,10 @@ describe('T50 admin workflow pages', () => {
     await user.type(screen.getByRole('textbox', { name: '本次操作原因（通过可选，其余必填）' }), '公开页面与提交版本一致。')
     await user.click(within(queue).getByRole('button', { name: '通过' }))
     await user.click(screen.getByRole('button', { name: '确认并留痕' }))
-    await waitFor(() => expect(storedState().submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')).toMatchObject({ status: 'approved' }))
+    await waitFor(() => {
+      expect(storedState().submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')).toMatchObject({ status: 'approved' })
+      expect(screen.queryByRole('region', { name: '发布审核队列' })).not.toBeInTheDocument()
+    })
     const state = storedState()
     const publishedId = state.submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')!.publishedProjectId!
     expect(state.notifications.at(-1)).toMatchObject({ userId: 'user-mia', type: 'submission_reviewed' })

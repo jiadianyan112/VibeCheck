@@ -124,6 +124,7 @@ export function applyPublicationWorkflow(
 ): AdminWorkflowMutation {
   const action = publicationActions[decision]
   requirePermission(action, actor)
+  if (draft.status !== 'pending_review') throw new Error('VC_ADMIN_WORKFLOW_NOT_PENDING')
   const normalizedReason = decision === 'approve' ? reason.trim() || '未填写原因（审核通过）' : requireReason(reason)
   const status = publicationStatuses[decision]
   const reviewed = decision === 'dispute'

@@ -327,6 +327,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case 'ADMIN_WORKFLOW_APPLY': {
       const mutation = action.mutation
+      if (mutation.submissionDraft && mutation.log.action.startsWith('publication_')) {
+        const currentDraft = state.submissionDrafts.find((draft) => draft.id === mutation.submissionDraft?.id)
+        if (currentDraft && currentDraft.status !== 'pending_review') return state
+      }
       const alias = mutation.alias
       const projects = upsertRecords(state.projectOverrides, mutation.projects ?? [])
       const submissionDrafts = mutation.submissionDraft

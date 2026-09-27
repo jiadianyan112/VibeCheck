@@ -12,6 +12,15 @@ const editor = prototypeUsers.find((user) => user.role === 'editor')!
 const admin = prototypeUsers.find((user) => user.role === 'admin')!
 
 describe('T50 admin workflows', () => {
+  it('only approves pending submissions and rejects approval of an already approved submission', () => {
+    const pending = adminReviewDrafts.find((item) => item.status === 'pending_review')!
+    const approved = applyPublicationWorkflow(pending, 'approve', editor, '公开页面与提交字段一致。').submissionDraft!
+
+    expect(approved.status).toBe('approved')
+    expect(() => applyPublicationWorkflow(approved, 'approve', editor, '再次核对。')).toThrow('VC_ADMIN_WORKFLOW_NOT_PENDING')
+    expect(applyPublicationWorkflow(pending, 'approve', editor, '公开页面与提交字段一致。').submissionDraft).toMatchObject({ status: 'approved' })
+  })
+
   it('reviews a submission with a required reason and stable audit output', () => {
     const draft = adminReviewDrafts.find((item) => item.status === 'pending_review')!
     const first = applyPublicationWorkflow(draft, 'approve', editor, '公开页面与提交字段一致。')
