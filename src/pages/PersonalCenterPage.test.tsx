@@ -6,7 +6,7 @@ import { AppProviders } from '../app/providers'
 import { appRoutes } from '../app/router'
 import * as authContext from '../features/auth/AuthSessionContext'
 import { createLoginAction } from '../features/auth/session'
-import { prototypeUsers } from '../mocks'
+import { adminReviewDrafts, prototypeUsers } from '../mocks'
 import * as authService from '../services/authService'
 import type { AuthSessionDto } from '../services/authService'
 import { appReducer, createInitialAppState, persistAppState } from '../state'
@@ -108,9 +108,17 @@ describe('PersonalCenterPage', () => {
 
   it('returns all registered-user history to shared source records', async () => {
     const user = userEvent.setup()
-    loginAs(0)
+    const state = loginAs(0)
+    const reviewDraft = adminReviewDrafts[0]!
+    persistAppState({ ...state, submissionDrafts: [...state.submissionDrafts, reviewDraft] })
     renderMe()
     expect(await screen.findByRole('heading', { name: '米娅的个人中心' })).toBeInTheDocument()
+    const personalNav = screen.getByRole('navigation', { name: '个人资产导航' })
+    expect(within(personalNav).getAllByRole('link')[0]).toHaveAttribute('href', '#my-projects')
+    expect(screen.getAllByRole('heading', { level: 2 })[0]).toHaveTextContent('我的作品')
+    const myProjects = screen.getByRole('region', { name: '我的作品' })
+    expect(within(myProjects).getByText('待审核')).toBeInTheDocument()
+    expect(within(myProjects).getByRole('link', { name: '查看审核' })).toHaveAttribute('href', `/submit/new?draft=${reviewDraft.id}`)
     const favorites = screen.getByRole('region', { name: '收藏' })
     const quizLink = within(favorites).getByRole('link', { name: '题练工坊' })
     expect(quizLink).toHaveAttribute('href', '/project/project-quizforge')
@@ -125,11 +133,10 @@ describe('PersonalCenterPage', () => {
       '/compare/comparison-anonymous-pdf#structured-comparison-heading',
       '/compare/comparison-mia-speaking#structured-comparison-heading',
     ]))
-    expect(screen.getByRole('link', { name: '继续编辑' })).toHaveAttribute('href', expect.stringContaining('/submit/new?draft=draft-mia-study-review'))
-    expect(screen.getByText('待人工审核')).toBeInTheDocument()
+    expect(within(myProjects).getByRole('link', { name: '继续编辑' })).toHaveAttribute('href', expect.stringContaining('/submit/new?draft=draft-mia-study-review'))
     expect(screen.getByRole('link', { name: '返回比较' })).toHaveAttribute('href', '/compare/comparison-mia-speaking#comparison-decision')
     expect(screen.queryByRole('heading', { name: '平台管理入口' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '我的作品' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '我的作品' })).toBeInTheDocument()
   })
 
   it('shows review status and field messages from the same submission draft', async () => {
@@ -146,6 +153,7 @@ describe('PersonalCenterPage', () => {
     loginAs(1)
     renderMe()
     expect(await screen.findByRole('heading', { name: '我的作品' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 })[0]).toHaveTextContent('我的作品')
     expect(screen.getByRole('link', { name: '查看我的作者主页' })).toHaveAttribute('href', '/creator/creator-zhou')
     expect(screen.getAllByRole('link', { name: '更新作品' })).toHaveLength(2)
     expect(screen.getByRole('heading', { name: '作品更新待办' })).toBeInTheDocument()
@@ -155,6 +163,9 @@ describe('PersonalCenterPage', () => {
   it('shows staff tools only to editor or administrator roles', async () => {
     loginAs(2)
     renderMe()
+    expect(await screen.findByRole('heading', { name: '我的作品' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 })[0]).toHaveTextContent('我的作品')
+    expect(screen.getByRole('region', { name: '我的作品' })).toHaveTextContent('还没有我的作品')
     expect(await screen.findByRole('heading', { name: '平台管理入口' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /发布审核/ })).toHaveAttribute('href', '/admin/reviews')
     expect(screen.getByRole('link', { name: /状态监测/ })).toHaveAttribute('href', '/admin/status-monitor')
