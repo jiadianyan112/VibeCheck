@@ -113,8 +113,8 @@ const community = communityConfig.enabled
       config: communityConfig,
     })
   : undefined
-const notifications = communityConfig.enabled
-  ? new NotificationService(new PostgresNotificationStore(pool), communityConfig.cursorSecret)
+const notifications = identityConfig.enabled
+  ? new NotificationService(new PostgresNotificationStore(pool), identityConfig.authTokenSecret)
   : undefined
 const comparison = comparisonConfig.enabled
   ? new ComparisonService({
