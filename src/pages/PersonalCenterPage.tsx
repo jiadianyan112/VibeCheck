@@ -43,7 +43,7 @@ export function PersonalCenterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [resetFlow, setResetFlow] = useState(false)
+  const [passwordAction, setPasswordAction] = useState<'change' | 'reset' | null>(null)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
@@ -73,6 +73,16 @@ export function PersonalCenterPage() {
     // The account id is the only input that changes the endpoint result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
+
+  const choosePasswordAction = (action: 'change' | 'reset' | null) => {
+    setPasswordAction(action)
+    if (action) setPasswordNotice(null)
+    setCurrentPassword('')
+    setPasswordValue('')
+    setConfirmPassword('')
+    setShowPassword(false)
+    setPasswordError(null)
+  }
 
   const submitPassword = async (event: FormEvent) => {
     event.preventDefault()
@@ -104,12 +114,13 @@ export function PersonalCenterPage() {
       setPasswordValue('')
       setConfirmPassword('')
       setCurrentPassword('')
+      setPasswordAction(null)
       setPasswordNotice('密码已更新')
       pushToast('密码已更新。', 'success')
     } catch (error) {
       if (error instanceof AuthApiError && error.code === 'OTP_REAUTH_REQUIRED') {
         setPasswordStatus((current) => current ? { ...current, can_set_password: false, can_set_without_current_password: false } : current)
-        setResetFlow(true)
+        choosePasswordAction('reset')
       }
       setPasswordError(passwordErrorMessage(error))
     } finally {
@@ -163,17 +174,20 @@ export function PersonalCenterPage() {
           {passwordStatusError ? <div className="security-panel__error" role="alert"><p>{passwordStatusError}</p><Button variant="quiet" onClick={() => void loadPasswordStatus()}>重新读取</Button></div> : null}
           {passwordNotice ? <p className="security-panel__notice" role="status">{passwordNotice}</p> : null}
           {!passwordStatusLoading && !passwordStatusError && passwordStatus ? <>
-            {passwordStatus.has_password ? <div className="cluster"><Button variant="quiet" onClick={() => { setResetFlow(false); setPasswordError(null) }}>修改密码</Button><Button variant="quiet" onClick={() => { setResetFlow(true); setPasswordError(null) }}>忘记当前密码</Button></div> : <strong>设置密码</strong>}
-            {resetFlow || (!passwordStatus.has_password && !passwordStatus.can_set_password)
-              ? <div className="security-panel__reauth stack stack--small"><p>验证当前账号的邮箱后，可以{passwordStatus.has_password ? '重设' : '设置'}密码。</p><PasswordResetFlow session={auth.session} onSuccess={() => { setResetFlow(false); setPasswordStatus({ has_password: true, can_set_password: false, can_set_without_current_password: false }); setPasswordNotice('密码已保存，其他设备已退出登录。'); pushToast('密码已保存。', 'success') }} /></div>
-              : <form className="security-password-form stack stack--small" onSubmit={(event) => void submitPassword(event)} noValidate>
+            <div className="cluster">
+              <Button variant="quiet" onClick={() => choosePasswordAction('change')} aria-expanded={passwordAction === 'change'} disabled={passwordSaving}>{passwordStatus.has_password ? '修改密码' : '设置密码'}</Button>
+              {passwordStatus.has_password ? <Button variant="quiet" onClick={() => choosePasswordAction('reset')} aria-expanded={passwordAction === 'reset'} disabled={passwordSaving}>忘记当前密码</Button> : null}
+            </div>
+            {passwordAction === 'reset' || (passwordAction === 'change' && !passwordStatus.has_password && !passwordStatus.can_set_password)
+              ? <div className="security-panel__reauth stack stack--small"><p>验证当前账号的邮箱后，可以{passwordStatus.has_password ? '重设' : '设置'}密码。</p><PasswordResetFlow session={auth.session} onSuccess={() => { choosePasswordAction(null); setPasswordStatus({ has_password: true, can_set_password: false, can_set_without_current_password: false }); setPasswordNotice('密码已保存，其他设备已退出登录。'); pushToast('密码已保存。', 'success') }} /><Button type="button" variant="quiet" onClick={() => choosePasswordAction(null)}>取消</Button></div>
+              : passwordAction === 'change' ? <form className="security-password-form stack stack--small" onSubmit={(event) => void submitPassword(event)} noValidate>
                 {passwordStatus.has_password ? <Input label="当前密码" type={showPassword ? 'text' : 'password'} value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setPasswordError(null) }} autoComplete="current-password" required disabled={passwordSaving} /> : <p>刚完成邮箱验证，可直接设置密码。</p>}
                 <Input label="新密码" type={showPassword ? 'text' : 'password'} value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); setPasswordError(null); setPasswordNotice(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} hint="设置后会让其他设备上的登录失效。" />
                 <Input label="确认新密码" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setPasswordError(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} />
                 <label className="cluster"><input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} />显示密码</label>
                 {passwordError ? <p className="field-error" role="alert">{passwordError}</p> : null}
-                <Button type="submit" variant="primary" loading={passwordSaving}>{passwordStatus.has_password ? '修改密码' : '设置密码'}</Button>
-              </form>}
+                <div className="cluster"><Button type="submit" variant="primary" loading={passwordSaving}>{passwordStatus.has_password ? '修改密码' : '设置密码'}</Button><Button type="button" variant="quiet" onClick={() => choosePasswordAction(null)} disabled={passwordSaving}>取消</Button></div>
+              </form> : null}
           </> : null}
         </div>
       </section>
