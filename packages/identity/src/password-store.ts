@@ -207,13 +207,13 @@ export class PostgresPasswordStore implements PasswordStore {
       if (!lookup.rows[0]) { await client.query('ROLLBACK'); return false }
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [lookup.rows[0].user_id])
       const grant = await client.query<{ user_id: string; primary_session_id_hash: Buffer | null }>(
-        `SELECT grant.user_id,grant.primary_session_id_hash FROM iam.password_reset_grants grant
-         JOIN iam.users account ON account.user_id=grant.user_id
-         JOIN iam.auth_email_challenges challenge ON challenge.challenge_id=grant.challenge_id
-         JOIN iam.user_email_identities identity ON identity.user_id=grant.user_id
+        `SELECT reset_grant.user_id,reset_grant.primary_session_id_hash FROM iam.password_reset_grants reset_grant
+         JOIN iam.users account ON account.user_id=reset_grant.user_id
+         JOIN iam.auth_email_challenges challenge ON challenge.challenge_id=reset_grant.challenge_id
+         JOIN iam.user_email_identities identity ON identity.user_id=reset_grant.user_id
            AND identity.normalized_email_hash=challenge.normalized_email_hash AND identity.status='active'
-         WHERE grant.grant_hash=$1 AND grant.consumed_at IS NULL AND grant.expires_at>$2
-           AND account.status IN ('active','restricted') FOR UPDATE OF grant,account`,
+         WHERE reset_grant.grant_hash=$1 AND reset_grant.consumed_at IS NULL AND reset_grant.expires_at>$2
+           AND account.status IN ('active','restricted') FOR UPDATE OF reset_grant,account`,
         [input.grantHash, input.now],
       )
       const row = grant.rows[0]
