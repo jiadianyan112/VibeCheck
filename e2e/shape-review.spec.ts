@@ -33,15 +33,15 @@ test.describe('低保真评审修复验收', () => {
   test('桌面筛选始终展开，移动筛选默认收起且可切换', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/search?q=PDF')
-    const desktopFilters = page.locator('.filter-panel')
-    await expect(desktopFilters).toHaveAttribute('open', '')
+    const desktopFilters = page.getByRole('complementary', { name: '搜索筛选' })
+    await expect(desktopFilters).toBeVisible()
     await expect(desktopFilters.getByLabel('当前状态')).toBeVisible()
 
     await page.setViewportSize({ width: 390, height: 844 })
-    await expect(desktopFilters).not.toHaveAttribute('open', '')
-    await expect(desktopFilters.getByLabel('当前状态')).not.toBeVisible()
-    await desktopFilters.locator('summary').click()
-    await expect(desktopFilters.getByLabel('当前状态')).toBeVisible()
+    await expect(desktopFilters).toHaveCount(0)
+    await expect(page.getByLabel('当前状态')).toHaveCount(0)
+    await page.getByRole('button', { name: '筛选与排序' }).click()
+    await expect(page.getByRole('dialog', { name: '搜索筛选' }).getByLabel('当前状态')).toBeVisible()
   })
 
   test('作品集仅需六项核心事实，专注发布流不显示比较栏', async ({ page, isMobile }) => {

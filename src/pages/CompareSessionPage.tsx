@@ -150,7 +150,7 @@ export function CompareSessionPage() {
 
   function saveComparison() {
     if (!state.session.user) {
-      navigate(`/auth?from=${encodeURIComponent(`/compare/${activeSessionId}#structured-comparison-heading`)}`)
+      navigate(`/auth?return_to=${encodeURIComponent(`/compare/${activeSessionId}#structured-comparison-heading`)}`)
       return
     }
     dispatch({ type: 'COMPARISON_SESSION_SAVE' })

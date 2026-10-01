@@ -55,7 +55,7 @@ export function AdminProjectsPage() {
   return (
     <div className="admin-page stack">
       <header className="admin-page-header">
-        <div><p className="eyebrow">A02 · Project work queue</p><h1>作品列表</h1><p>列表与前台作品档案和本地保存的作品覆盖记录同源；筛选条件保存在地址栏中，可复现和分享。</p></div>
+        <div><h1>作品列表</h1><p>列表与前台作品档案和本地保存的作品覆盖记录同源；筛选条件保存在地址栏中，可复现和分享。</p></div>
         <Tag>{filtered.length} / {rows.length} 项</Tag>
       </header>
 

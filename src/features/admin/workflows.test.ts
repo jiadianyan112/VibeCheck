@@ -12,6 +12,15 @@ const editor = prototypeUsers.find((user) => user.role === 'editor')!
 const admin = prototypeUsers.find((user) => user.role === 'admin')!
 
 describe('T50 admin workflows', () => {
+  it('only approves pending submissions and rejects approval of an already approved submission', () => {
+    const pending = adminReviewDrafts.find((item) => item.status === 'pending_review')!
+    const approved = applyPublicationWorkflow(pending, 'approve', editor, '公开页面与提交字段一致。').submissionDraft!
+
+    expect(approved.status).toBe('approved')
+    expect(() => applyPublicationWorkflow(approved, 'approve', editor, '再次核对。')).toThrow('VC_ADMIN_WORKFLOW_NOT_PENDING')
+    expect(applyPublicationWorkflow(pending, 'approve', editor, '公开页面与提交字段一致。').submissionDraft).toMatchObject({ status: 'approved' })
+  })
+
   it('reviews a submission with a required reason and stable audit output', () => {
     const draft = adminReviewDrafts.find((item) => item.status === 'pending_review')!
     const first = applyPublicationWorkflow(draft, 'approve', editor, '公开页面与提交字段一致。')
@@ -20,10 +29,15 @@ describe('T50 admin workflows', () => {
     expect(first.projects?.[0]?.id).toBe(first.submissionDraft?.publishedProjectId)
     expect(first.notifications?.[0]).toMatchObject({ userId: draft.userId, type: 'submission_reviewed' })
     expect(retry.log.id).toBe(first.log.id)
+    const approvedWithoutReason = applyPublicationWorkflow(draft, 'approve', editor, '')
+    expect(approvedWithoutReason.submissionDraft).toMatchObject({ status: 'approved' })
+    expect(approvedWithoutReason.log.reason).toBe('未填写原因（审核通过）')
     expect(applyPublicationWorkflow(draft, 'return', editor, '需要补充来源。').submissionDraft?.status).toBe('changes_requested')
     expect(applyPublicationWorkflow(draft, 'reject', editor, '不符合收录范围。').submissionDraft?.status).toBe('rejected')
     expect(applyPublicationWorkflow(draft, 'dispute', admin, '存在冲突主张。').submissionDraft?.status).toBe('restricted')
     expect(() => applyPublicationWorkflow(draft, 'reject', editor, '')).toThrow('VC_ADMIN_WORKFLOW_REASON_REQUIRED')
+    expect(() => applyPublicationWorkflow(draft, 'return', editor, '')).toThrow('VC_ADMIN_WORKFLOW_REASON_REQUIRED')
+    expect(() => applyPublicationWorkflow(draft, 'dispute', admin, '')).toThrow('VC_ADMIN_WORKFLOW_REASON_REQUIRED')
     expect(() => applyPublicationWorkflow(draft, 'dispute', editor, '归属冲突。')).toThrow('VC_ADMIN_WORKFLOW_FORBIDDEN')
   })
 

@@ -85,7 +85,7 @@ export function AuthorVerificationPage() {
 
   if (!state.session.user) {
     const from = encodeURIComponent(`${location.pathname}${location.search}`)
-    return <PageFrame title="作者身份验证" description="验证完成后，你可以管理和更新自己的作品信息。"><section className="submit-login-callout stack"><h2>请先登录后提交身份材料</h2><p>登录后会回到当前作品，材料不会公开展示。</p><Link className="button button--primary" to={`/auth?from=${from}`}>登录并继续</Link><Link to={`/project/${id}`}>先查看作品详情</Link></section></PageFrame>
+    return <PageFrame title="作者身份验证" description="验证完成后，你可以管理和更新自己的作品信息。"><section className="submit-login-callout stack"><h2>请先登录后提交身份材料</h2><p>登录后会回到当前作品，材料不会公开展示。</p><Link className="button button--primary" to={`/auth?return_to=${from}`}>登录并继续</Link><Link to={`/project/${id}`}>先查看作品详情</Link></section></PageFrame>
   }
   if (loading) return <main className="page-container"><LoadingState label="身份验证页面加载中" /></main>
   if (loadError || !project) return <main className="page-container stack"><ErrorPanel message={loadError?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>

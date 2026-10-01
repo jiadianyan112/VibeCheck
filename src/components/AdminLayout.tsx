@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { ScenarioPanel } from './ScenarioPanel'
+import { BrandMark } from './brand'
 
 const adminNavigation = [
   { to: '/admin', label: '后台首页', end: true },
@@ -7,17 +8,16 @@ const adminNavigation = [
   { to: '/admin/duplicates', label: '重复与合并' },
   { to: '/admin/reviews', label: '发布审核' },
   { to: '/admin/author-verification', label: '作者身份审核' },
-  { to: '/admin/evidence', label: '证据管理' },
   { to: '/admin/status-monitor', label: '状态监测' },
 ]
 
 export function AdminLayout() {
   return (
-    <div className="admin-shell">
+    <div className="admin-shell ui-root">
       <aside className="admin-sidebar">
         <div className="stack stack--small">
           <Link className="wordmark" to="/admin">
-            VibeCheck 管理
+            <BrandMark /><span className="admin-brand-label">管理</span>
           </Link>
           <Link className="admin-back-link" to="/projects">
             ← 返回前台

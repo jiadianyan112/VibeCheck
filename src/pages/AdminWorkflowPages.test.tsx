@@ -26,16 +26,30 @@ describe('T50 admin workflow pages', () => {
     const router = renderAdmin('/admin/reviews')
     const queue = await screen.findByRole('region', { name: '发布审核队列' })
     expect(within(queue).getByText('词汇回声')).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: '本次操作原因（必填）' }), '公开页面与提交版本一致。')
+    await user.type(screen.getByRole('textbox', { name: '本次操作原因（通过可选，其余必填）' }), '公开页面与提交版本一致。')
     await user.click(within(queue).getByRole('button', { name: '通过' }))
     await user.click(screen.getByRole('button', { name: '确认并留痕' }))
-    await waitFor(() => expect(storedState().submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')).toMatchObject({ status: 'approved' }))
+    await waitFor(() => {
+      expect(storedState().submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')).toMatchObject({ status: 'approved' })
+      expect(screen.queryByRole('region', { name: '发布审核队列' })).not.toBeInTheDocument()
+    })
     const state = storedState()
     const publishedId = state.submissionDrafts.find((draft) => draft.id === 'draft-mia-vocab-review')!.publishedProjectId!
     expect(state.notifications.at(-1)).toMatchObject({ userId: 'user-mia', type: 'submission_reviewed' })
     expect(state.adminWorkflowLogs.at(-1)).toMatchObject({ action: 'publication_approved', reason: '公开页面与提交版本一致。' })
     await act(async () => { await router.navigate(`/project/${publishedId}`) })
     expect(await screen.findByRole('heading', { name: '词汇回声', level: 1 })).toBeInTheDocument()
+  })
+
+  it('approves a publication without a written reason but still requires one for return', async () => {
+    const user = userEvent.setup()
+    renderAdmin('/admin/reviews')
+    const queue = await screen.findByRole('region', { name: '发布审核队列' })
+    await user.click(within(queue).getAllByRole('button', { name: '退回' })[0]!)
+    expect(screen.getByRole('alert')).toHaveTextContent('退回、拒绝和争议操作必须填写原因。')
+    await user.click(within(queue).getAllByRole('button', { name: '通过' })[0]!)
+    await user.click(screen.getByRole('button', { name: '确认并留痕' }))
+    await waitFor(() => expect(storedState().adminWorkflowLogs.at(-1)).toMatchObject({ action: 'publication_approved', reason: '未填写原因（审核通过）' }))
   })
 
   it('keeps high-risk controls disabled for an editor', async () => {
@@ -64,13 +78,24 @@ describe('T50 admin workflow pages', () => {
     const user = userEvent.setup()
     renderAdmin('/admin/author-verification')
     expect(await screen.findByText('private://verification/verification-mia-pdfquizlab')).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: '本次身份审核原因（必填）' }), '公开主页与作品地址相互关联。')
+    await user.type(screen.getByRole('textbox', { name: '本次身份审核原因（通过可选，其余必填）' }), '公开主页与作品地址相互关联。')
     await user.click(screen.getByRole('button', { name: '通过' }))
     await user.click(screen.getByRole('button', { name: '确认并留痕' }))
     await waitFor(() => expect(storedState().verificationRequests.find((request) => request.id === 'verification-mia-pdfquizlab')).toMatchObject({ status: 'verified' }))
     const state = storedState()
     expect(state.projectOverrides.find((project) => project.id === 'project-pdfquizlab')).toMatchObject({ authorLinkStatus: 'linked' })
     expect(JSON.stringify(state.adminWorkflowLogs)).not.toContain('private://verification/')
+  })
+
+  it('verifies identity without a written reason but requires one when requesting changes', async () => {
+    const user = userEvent.setup()
+    renderAdmin('/admin/author-verification')
+    const queue = await screen.findByRole('region', { name: '作者身份审核队列' })
+    await user.click(within(queue).getAllByRole('button', { name: '要求补充' })[0]!)
+    expect(screen.getByRole('alert')).toHaveTextContent('要求补充、失败和争议操作必须填写原因。')
+    await user.click(within(queue).getAllByRole('button', { name: '通过' })[0]!)
+    await user.click(screen.getByRole('button', { name: '确认并留痕' }))
+    await waitFor(() => expect(storedState().adminWorkflowLogs.at(-1)).toMatchObject({ action: 'identity_verified', reason: '未填写原因（身份审核通过）' }))
   })
 
   it('records the first URL anomaly without applying the proposed terminal state', async () => {

@@ -740,6 +740,7 @@ export interface ComparisonSession {
 
 export interface SubmissionProjectFields {
   categoryId?: ProjectCategoryId
+  categorySchemaVersion?: CategorySchemaVersion
   currentName: string
   publicUrl: string
   screenshotUrl: string | null
@@ -756,6 +757,9 @@ export interface SubmissionProjectFields {
   feedbackMethods: FeedbackMethod[]
   differentiation: string
   aiCodingTools: AiCodingTool[]
+  /** LearningSchemaV1 fields that the current form may leave unknown. */
+  loginRequirement?: LoginRequirement
+  sharingCapability?: SharingCapability
   siteType?: SiteType
   creatorRoles?: CreatorRole[]
   primaryGoals?: PrimaryGoal[]
@@ -774,6 +778,19 @@ export interface SubmissionProjectFields {
   blogSupport?: BlogSupport
 }
 
+/** Server-owned preview identity and the frozen snapshot used for submission. */
+export interface SubmissionDraftPreview {
+  draftVersion: number
+  checkId: string
+  previewHash: string
+  frozenSnapshot: Readonly<Record<string, unknown>>
+  mediaReferenceIds: readonly string[]
+  evidenceDraftIds: readonly string[]
+  generatedAt: string
+  /** Captures the exact local draft inputs used to request this preview. */
+  inputFingerprint: string
+}
+
 export interface SubmissionDraft {
   id: SubmissionDraftId
   userId: UserId
@@ -788,6 +805,10 @@ export interface SubmissionDraft {
   /** Immutable copy of the author-visible fields at the first submission. */
   submittedFields: Partial<SubmissionProjectFields> | null
   submittedAssetIds: AssetId[]
+  /** Server-owned media references currently attached to this remote draft. */
+  mediaReferenceIds?: readonly string[]
+  /** Server-owned evidence drafts currently attached to this remote draft. */
+  evidenceDraftIds?: readonly string[]
   supplementalMaterial: string
   publishedProjectId: ProjectId | null
   publishedEventId: LifecycleEventId | null
@@ -795,6 +816,42 @@ export interface SubmissionDraft {
   updatedAt: string
   submittedAt: string | null
   withdrawnAt: string | null
+  /** Server-owned draft identity and receipt metadata. */
+  draftId?: SubmissionDraftId
+  checkId?: string
+  version?: number
+  schemaVersion?: CategorySchemaVersion
+  savedAt?: string
+  expiresAt?: string
+  remoteStatus?: 'editing' | 'submitted' | 'closed' | 'expired'
+  payloadSnapshot?: Readonly<Record<string, unknown>>
+  preview?: SubmissionDraftPreview
+  submissionKey?: string
+  submissionId?: string
+  reviewWorkItemId?: string
+  reviewStatus?: 'pending_review'
+}
+
+/**
+ * A preview is bound to every input that can change the server-owned result.
+ * Keeping this fingerprint with the preview lets callers reject stale data
+ * even when a draft was restored from local storage.
+ */
+export function submissionDraftPreviewFingerprint(
+  draft: Pick<SubmissionDraft, 'id' | 'draftId' | 'version' | 'checkId' | 'fields' | 'assetIds' | 'submittedAssetIds' | 'mediaReferenceIds' | 'evidenceDraftIds' | 'payloadSnapshot'>,
+): string {
+  return JSON.stringify({
+    id: draft.id,
+    draftId: draft.draftId ?? null,
+    version: draft.version ?? null,
+    checkId: draft.checkId ?? null,
+    fields: draft.fields,
+    assetIds: draft.assetIds,
+    submittedAssetIds: draft.submittedAssetIds,
+    mediaReferenceIds: draft.mediaReferenceIds ?? [],
+    evidenceDraftIds: draft.evidenceDraftIds ?? [],
+    payloadSnapshot: draft.payloadSnapshot ?? null,
+  })
 }
 
 export interface AuthorVerificationRequest {

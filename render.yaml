@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: vibecheck-web
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run start -w @vibecheck/api
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 30
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibecheck-postgres
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"
+      - key: VITE_AUTH_ENABLED
+        value: "true"
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_ENCRYPTION_KEY
+        sync: false
+      - key: EMAIL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: EMAIL_HASH_PEPPER
+        generateValue: true
+      - key: OTP_PEPPER
+        generateValue: true
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
+      - key: CATALOG_ENABLED
+        value: "true"
+      - key: CATALOG_CURSOR_SECRET
+        generateValue: true
+      - key: SEARCH_ENABLED
+        value: "true"
+      - key: SEARCH_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: SEARCH_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: SEARCH_SUBJECT_HASH_PEPPER
+        generateValue: true
+      - key: SEARCH_RESULT_TOKEN_SECRET
+        generateValue: true
+      - key: SEARCH_SUBJECT_COOKIE_SECRET
+        generateValue: true
+      - key: COMPARISON_ENABLED
+        value: "true"
+      - key: COMPARISON_SUBJECT_HASH_PEPPER
+        generateValue: true
+      - key: COMPARISON_SUBJECT_COOKIE_SECRET
+        generateValue: true
+      - key: ANALYTICS_ENABLED
+        value: "false"
+      - key: SUBMISSION_ENABLED
+        value: "true"
+      - key: SUBMISSION_URL_CHECK_TTL_SECONDS
+        value: "1800"
+      - key: SUBMISSION_DRAFT_TTL_SECONDS
+        value: "2592000"
+      - key: REVIEW_WORKFLOW_ENABLED
+        value: "true"
+      - key: REVIEW_WORKFLOW_CURSOR_SECRET
+        generateValue: true
+      - key: REVIEW_WORKFLOW_LEASE_SECONDS
+        value: "60"
+      - key: REVIEW_WORKFLOW_MAXIMUM_CLAIM_SECONDS
+        value: "900"
+      - key: REVIEW_WORKFLOW_QUEUE_PAGE_SIZE
+        value: "25"
+      - key: MEDIA_ENABLED
+        value: "false"
+      - key: MEDIA_AWS_REGION
+        value: ap-southeast-1
+      - key: MEDIA_S3_BUCKET
+        sync: false
+      - key: MEDIA_S3_PREFIX
+        value: public-media/
+      - key: EVIDENCE_ENABLED
+        value: "false"
+      - key: PRIVATE_MATERIAL_ENABLED
+        value: "false"
+      - key: PRIVATE_MATERIAL_AWS_REGION
+        value: ap-southeast-1
+      - key: PRIVATE_MATERIAL_S3_BUCKET
+        sync: false
+      - key: PRIVATE_MATERIAL_S3_PREFIX
+        value: identity/verification/
+      - key: PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: worker
+    name: vibecheck-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build:libraries && npm run build -w @vibecheck/worker
+    startCommand: npm run start -w @vibecheck/worker
+    maxShutdownDelaySeconds: 60
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vibecheck-postgres
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "1000"
+      - key: WORKER_BATCH_SIZE
+        value: "25"
+      - key: MEDIA_ENABLED
+        value: "false"
+      - key: MEDIA_AWS_REGION
+        value: ap-southeast-1
+      - key: MEDIA_S3_BUCKET
+        sync: false
+      - key: MEDIA_S3_PREFIX
+        value: public-media/
+      - key: PRIVATE_MATERIAL_ENABLED
+        value: "false"
+      - key: PRIVATE_MATERIAL_AWS_REGION
+        value: ap-southeast-1
+      - key: PRIVATE_MATERIAL_S3_BUCKET
+        sync: false
+      - key: PRIVATE_MATERIAL_S3_PREFIX
+        value: identity/verification/
+      - key: PRIVATE_MATERIAL_ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: PRIVATE_MATERIAL_ENCRYPTION_KEY_VERSION
+        value: v1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+databases:
+  - name: vibecheck-postgres
+    region: singapore
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+    databaseName: vibecheck
+    user: vibecheck
+    ipAllowList: []
+    storageAutoscalingEnabled: true

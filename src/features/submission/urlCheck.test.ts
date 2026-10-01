@@ -1,5 +1,5 @@
 import { projectId, userId } from '../../types'
-import type { UrlCheckResult } from '../../services'
+import type { UrlCheckResult } from '../../services/submissionApi'
 import { canContinueAfterUrlCheck, createUrlCheckDraft } from './urlCheck'
 
 const passingResult: UrlCheckResult = {

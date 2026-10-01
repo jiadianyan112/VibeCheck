@@ -1,0 +1,172 @@
+/* Content-first discovery shell. Focused task flows retain their existing shell. */
+.navigation-icon { display: none; }
+.app-shell.app-shell--browse {
+  --browse-sidebar: 208px;
+  --browse-header: 88px;
+  background: var(--brand-canvas);
+  padding-top: var(--browse-header);
+}
+.app-shell--browse .global-header {
+  position: fixed;
+  inset: 0 0 auto;
+  height: var(--browse-header);
+  border: 0;
+  background: var(--brand-canvas);
+  backdrop-filter: none;
+  z-index: 25;
+}
+.app-shell--browse .global-header__inner { width: 100%; min-height: 0; display: block; margin: 0; }
+.app-shell--browse .wordmark { position: absolute; top: 29px; left: 24px; }
+.app-shell--browse .wordmark .brand-mark__name { font-size: 1.2rem; }
+.app-shell--browse .desktop-navigation {
+  position: fixed;
+  top: 104px;
+  left: 16px;
+  width: calc(var(--browse-sidebar) - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.app-shell--browse .nav-link,
+.app-shell--browse .header-action {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 28px;
+  color: var(--brand-ink);
+  font: 500 0.9375rem/1.5 var(--font-body);
+  text-decoration: none;
+}
+.app-shell--browse .navigation-icon { display: block; width: 22px; height: 22px; flex: 0 0 auto; }
+.app-shell--browse .nav-link--active { background: #eaeae3; font-weight: 700; }
+.app-shell--browse .nav-link:hover,
+.app-shell--browse .header-action:hover { background: #eeeee8; }
+.app-shell--browse .header-actions {
+  position: fixed;
+  top: 340px;
+  bottom: 28px;
+  left: 16px;
+  width: calc(var(--browse-sidebar) - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  overflow-y: auto;
+}
+.app-shell--browse .header-action--strong { background: transparent; }
+.app-shell--browse .navigation-count { margin-left: auto; color: #686862; font-size: 0.75rem; }
+.app-shell--browse .avatar-link {
+  margin-top: auto;
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 28px;
+  background: var(--brand-lime);
+  color: var(--brand-ink);
+  font-size: 0.9375rem;
+}
+.app-shell--browse .global-search {
+  position: absolute;
+  top: 21px;
+  left: calc(var(--browse-sidebar) + (100% - var(--browse-sidebar)) / 2);
+  transform: translateX(-50%);
+  display: flex;
+  width: min(520px, calc(100% - var(--browse-sidebar) - 64px));
+  height: 46px;
+  border: 1px solid transparent;
+  border-radius: 28px;
+  background: #eeeee8;
+  overflow: hidden;
+}
+.app-shell--browse .global-search:focus-within { border-color: #71716a; }
+.app-shell--browse .global-search__input { flex: 1; width: 100%; min-width: 0; height: 100%; padding: 0 20px; font: 400 0.875rem var(--font-body); }
+.app-shell--browse .global-search__submit { height: 100%; flex-shrink: 0; padding: 0 20px; border: 0; background: transparent; color: #55554f; font: 500 0.8125rem var(--font-body); }
+.app-shell--browse .app-shell__content,
+.app-shell--browse > .site-footer { margin-left: var(--browse-sidebar); }
+.app-shell--browse > .site-footer { border-top: 1px solid #e3e3db; padding-block: 32px; }
+.app-shell--browse .site-footer__inner { gap: 24px; }
+.app-shell--browse .site-footer__identity p { font-size: 0.75rem; }
+.app-shell--browse .site-footer__navigation { gap: 20px; font-size: 0.8125rem; }
+.app-shell--browse .compare-bar {
+  left: calc(var(--browse-sidebar) + 24px);
+  right: 24px;
+  bottom: 16px;
+  border: 1px solid #deded5;
+  border-radius: 16px;
+  background: var(--brand-canvas);
+  box-shadow: 0 4px 24px #1111110a;
+  padding-inline: 20px;
+}
+.app-shell .highfi-scope.explore-page { min-height: calc(100svh - var(--browse-header)); padding: 0 32px 40px; }
+.explore-channels {
+  position: sticky;
+  top: var(--browse-header);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 18px;
+  background: var(--brand-canvas);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.explore-channels button { flex-shrink: 0; min-height: 42px; padding: 10px 22px; border: 0; border-radius: 24px; background: transparent; color: #65655e; font: 500 0.9375rem/1.4 var(--font-body); cursor: pointer; }
+.explore-channels button:hover { background: #eeeee8; }
+.explore-channels button[aria-pressed="true"] { background: var(--brand-ink); color: var(--brand-canvas); }
+.explore-channels__more { margin-left: auto; padding: 10px 4px 10px 18px; white-space: nowrap; color: #65655e; text-decoration: none; font-size: 0.8125rem; }
+.explore-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 8px 0 24px; }
+.app-shell .explore-page h1 { margin: 0; max-width: none; font: 750 1.5rem/1.4 var(--font-body); letter-spacing: -0.03em; }
+.explore-heading p { margin: 6px 0 0; color: #72726a; font-size: 0.8125rem; }
+.explore-sort { flex-shrink: 0; }
+.explore-sort select { min-height: 40px; max-width: 130px; border: 0; background: transparent; color: #62625b; padding: 8px; font: 400 0.8125rem var(--font-body); cursor: pointer; }
+.explore-feed { columns: 4; column-gap: 22px; }
+.explore-feed > article { break-inside: avoid; margin: 0 0 28px; }
+.explore-end { margin: 32px 0; text-align: center; color: #71716a; font-size: 0.8125rem; }
+.explore-end a { color: inherit; text-underline-offset: 4px; }
+.explore-empty { padding: 80px 0; text-align: center; }
+.explore-empty .cluster { justify-content: center; margin-top: 24px; }
+.app-shell .explore-empty h2 { font: 700 1.5rem/1.4 var(--font-body); }
+.explore-empty p { color: #65655e; }
+@media (min-width: 1680px) { .explore-feed { columns: 5; } }
+@media (max-width: 1279px) {
+  .app-shell.app-shell--browse { --browse-sidebar: 184px; }
+  .app-shell--browse .wordmark { left: 20px; }
+  .app-shell--browse .wordmark .brand-mark__name { font-size: 1rem; }
+  .app-shell--browse .nav-link, .app-shell--browse .header-action { padding-inline: 14px; }
+  .explore-feed { columns: 3; column-gap: 18px; }
+  .app-shell .highfi-scope.explore-page { padding-inline: 24px; }
+}
+@media (max-width: 959px) {
+  .app-shell.app-shell--browse { --browse-sidebar: 0px; --browse-header: 116px; }
+  .app-shell--browse .wordmark { top: 19px; left: 24px; }
+  .app-shell--browse .desktop-navigation, .app-shell--browse .header-actions { display: none; }
+  .app-shell--browse .global-header .global-search { display: flex; top: 64px; width: calc(100% - 48px); height: 40px; }
+  .app-shell--browse .mobile-navigation { display: block; position: absolute; right: 24px; top: 12px; }
+  .app-shell--browse .mobile-navigation summary { display: grid; min-width: 48px; min-height: 40px; place-items: center; border: 0; border-radius: 22px; background: #eaeae3; font-size: 0.8125rem; cursor: pointer; }
+  .app-shell--browse .mobile-navigation[open] nav { position: fixed; top: 62px; right: 16px; left: auto; width: min(320px, calc(100vw - 32px)); max-height: calc(100svh - 80px); overflow-y: auto; border: 1px solid #deded5; border-radius: 16px; background: var(--brand-canvas); box-shadow: 0 8px 28px #11111112; }
+  .app-shell--browse .mobile-navigation .nav-link { min-height: 44px; font-size: 0.875rem; }
+  .explore-channels { gap: 4px; }
+  .explore-channels button { padding-inline: 18px; }
+}
+@media (max-width: 599px) {
+  .app-shell .highfi-scope.explore-page { padding-inline: 16px; }
+  .app-shell--browse .wordmark { left: 16px; }
+  .app-shell--browse .global-header .global-search { width: calc(100% - 32px); }
+  .app-shell--browse .mobile-navigation { right: 16px; }
+  .explore-feed { columns: 2; column-gap: 14px; }
+  .explore-channels { margin-right: -16px; padding-right: 16px; padding-bottom: 12px; }
+  .explore-channels button { padding: 8px 16px; font-size: 0.8125rem; min-height: 40px; }
+  .explore-channels__more { font-size: 0.75rem; }
+  .explore-heading { margin: 8px 0 20px; }
+  .app-shell .explore-page h1 { font-size: 1.25rem; }
+  .explore-heading p { max-width: 180px; font-size: 0.75rem; }
+  .explore-sort select { padding-right: 0; font-size: 0.75rem; }
+  .app-shell--browse .compare-bar { left: 12px; right: 12px; bottom: 12px; padding-inline: 12px; }
+  .app-shell--browse .compare-bar__summary span { display: none; }
+  .app-shell--browse .compare-bar__actions { gap: 4px; }
+  .app-shell--browse .compare-bar__actions .button { font-size: 0.75rem; padding-inline: 8px; }
+}

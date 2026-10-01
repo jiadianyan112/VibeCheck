@@ -2,9 +2,10 @@ import { Link } from 'react-router-dom'
 import type { Creator, Evidence, LifecycleEvent, Project } from '../../types'
 import { aiCodingToolLabels } from '../../utils'
 import { Button, Card, Tag } from '../ui'
+import { ProjectMediaStage } from '../editorial'
 import { AccessStatusBadge, EvidenceDrawer, UnknownFact } from './StatusAndEvidence'
 
-export type ProjectCardVariant = 'compact' | 'standard' | 'event'
+export type ProjectCardVariant = 'compact' | 'standard' | 'featured' | 'event'
 
 export interface ProjectCardProps {
   project: Project
@@ -71,6 +72,7 @@ export function ProjectCard({
   const definitionFact = project.summary
   const status = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const categoryLabel = project.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'
+  const mediaTone = project.categoryId === 'personal_site_portfolio' ? 'violet' : 'lime'
 
   if (variant === 'compact') {
     return (
@@ -98,13 +100,19 @@ export function ProjectCard({
     )
   }
 
+  const isFeatured = variant === 'featured'
+
   return (
-    <Card className="project-card project-card--standard stack">
-      {project.coverMedia[0]?.kind === 'wireframe' ? (
-        <div className={`portfolio-wireframe portfolio-wireframe--${project.coverMedia[0].variant ?? 'minimal'}`} aria-label={project.coverMedia[0].alt}>
-          <span className="portfolio-wireframe__nav" /><span className="portfolio-wireframe__hero" /><span className="portfolio-wireframe__copy" /><span className="portfolio-wireframe__tile" /><span className="portfolio-wireframe__tile" /><span className="portfolio-wireframe__tile" />
-        </div>
-      ) : <div className="media-placeholder" aria-label={project.coverMedia[0]?.alt ?? `${name} 截图占位`}>{project.coverMedia[0]?.kind === 'placeholder' ? '16:9 作品截图' : '作品媒体'}</div>}
+    <Card className={`project-card project-card--${isFeatured ? 'featured' : 'standard'} stack`}>
+      <ProjectMediaStage
+        media={project.coverMedia[0]}
+        projectId={project.id}
+        title={name}
+        tone={mediaTone}
+        priority={isFeatured}
+        aspect={isFeatured ? 'portrait' : 'landscape'}
+        className={isFeatured ? 'project-media-stage--featured' : undefined}
+      />
       <div className="stack stack--small">
         <div className="cluster cluster--between"><div className="stack stack--small"><Tag tone="dashed">{categoryLabel}</Tag><h3><Link to={`/project/${project.id}`}>{name}</Link></h3></div><AccessStatusBadge status={status} /></div>
         {definitionFact.state === 'known' ? <p>{definitionFact.value}</p> : <UnknownFact reason={definitionFact.reason} />}

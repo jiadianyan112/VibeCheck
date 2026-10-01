@@ -54,7 +54,7 @@ export const adminService = {
     reason: string,
     options?: ServiceOptions,
   ): Promise<ServiceResult<{ projectId: ProjectId; status: ReviewStatus; reason: string }>> {
-    if (!reason.trim()) {
+    if (status !== 'approved' && !reason.trim()) {
       return Promise.resolve({
         ok: false,
         error: {

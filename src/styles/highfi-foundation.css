@@ -1,0 +1,73 @@
+/*
+ * The high-fidelity foundation is opt-in. Formal pages should add
+ * .highfi-scope under .app-shell; the legacy global layer remains the
+ * functional baseline for task and admin surfaces.
+ */
+
+.app-shell .highfi-scope {
+  --color-canvas: var(--brand-canvas);
+  --color-surface: #ecece7;
+  --color-surface-raised: #ffffff;
+  --color-ink: var(--brand-ink);
+  --color-muted: #55554f;
+  --color-subtle: #75756d;
+  --color-line: #d1d1c9;
+  --color-line-strong: var(--brand-ink);
+  --color-inverse: var(--brand-canvas);
+  --font-sans: var(--font-body);
+  --page-gutter: clamp(1rem, 4vw, 3rem);
+
+  min-height: 100vh;
+  color: var(--brand-ink);
+  background: var(--brand-canvas);
+  font-family: var(--font-body);
+}
+
+.app-shell .highfi-scope h1,
+.app-shell .highfi-scope h2,
+.app-shell .highfi-scope h3,
+.app-shell .highfi-scope .wordmark {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+
+.app-shell .highfi-scope h1 {
+  max-width: 12ch;
+  font-size: clamp(2.5rem, 8vw, 6.5rem);
+  line-height: 0.94;
+}
+
+.app-shell .highfi-scope h2 {
+  line-height: 1;
+}
+
+.app-shell .highfi-scope :focus-visible {
+  outline: 2px solid var(--brand-lime);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px var(--brand-ink);
+}
+
+@media (min-width: 64rem) {
+  .app-shell .highfi-scope {
+    --page-gutter: clamp(2rem, 5vw, 5rem);
+  }
+}
+
+@media (max-width: 30rem) {
+  .app-shell .highfi-scope {
+    --page-gutter: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .highfi-scope,
+  .app-shell .highfi-scope *,
+  .app-shell .highfi-scope *::before,
+  .app-shell .highfi-scope *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

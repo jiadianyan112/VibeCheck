@@ -27,7 +27,7 @@ describe('ActivityPage', () => {
     await user.selectOptions(screen.getByLabelText('事件类型'), 'ended')
     expect(screen.getByLabelText('当前查询')).toHaveTextContent('type=ended')
     expect(screen.getAllByText('作者声明结束').length).toBeGreaterThan(0)
-    await user.selectOptions(screen.getByLabelText('学习分类'), 'speaking-practice')
+    await user.selectOptions(screen.getByLabelText('作品分类'), 'speaking-practice')
     expect(screen.getByLabelText('当前查询')).toHaveTextContent('category=speaking-practice')
   })
 })

@@ -25,3 +25,18 @@
   --shadow-focus: 0 0 0 3px #ffffff, 0 0 0 5px #151515;
   --breakpoint-mobile: 48rem;
 }
+
+:root {
+  --brand-canvas: #f7f7f2;
+  --brand-ink: #111111;
+  --brand-lime: #b8ff3d;
+  --brand-yellow: #ffd93d;
+  --brand-violet: #b78cff;
+  --brand-cyan: #61e7f2;
+  --brand-danger: #b42318;
+  --font-display: "Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --motion-fast: 180ms;
+  --motion-standard: 320ms;
+  --motion-slow: 500ms;
+}

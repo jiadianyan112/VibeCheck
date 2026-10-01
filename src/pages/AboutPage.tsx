@@ -7,7 +7,7 @@ const excluded = ['仅有想法、没有可核查公开痕迹的概念', '企业
 export function AboutPage() {
   return (
     <main className="about-page page-with-bottom-space">
-      <header className="about-hero"><div className="stack"><Tag tone="strong">关于 VibeCheck</Tag><h1>发现作品，也看懂它是怎么做的。</h1><p>VibeCheck 并列收录 AI 学习与题库、个人主页与作品集两类 Vibe Coding 作品，帮助你了解定位、结构、实现、当前状态和可复用内容。</p></div><aside><strong>我们提供什么</strong><p>这里提供有来源的作品信息和品类内方案差异，但不替你判断市场需求、竞争强度或项目成败。</p></aside></header>
+      <header className="about-hero"><div className="stack"><Tag tone="strong">关于 VibeCheck</Tag><h1>发现作品，了解如何实现</h1><p>收录 AI 学习工具和个人网站，记录作品的实现方式、当前状态与可复用内容。</p></div><aside><strong>我们提供什么</strong><p>这里提供有来源的作品信息和品类内方案差异，但不替你判断市场需求、竞争强度或项目成败。</p></aside></header>
 
       <div className="page-container about-sections stack">
         <section className="about-split" id="rules"><div><h2>收录范围</h2></div><div className="rule-columns"><div><h3>收录</h3><ul>{included.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>不收录／不声称</h3><ul>{excluded.map((item) => <li key={item}>{item}</li>)}</ul></div></div></section>

@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react'
 import { ErrorBoundary, ToastProvider } from '../components'
-import { AuthGateProvider } from '../features'
+import { AuthSessionProvider } from '../features'
+import { ServerNotificationProvider } from '../features/notifications/ServerNotificationContext'
 import { AppStateProvider } from '../state'
 
 export function AppProviders({ children }: PropsWithChildren) {
@@ -8,9 +9,9 @@ export function AppProviders({ children }: PropsWithChildren) {
     <ErrorBoundary>
       <AppStateProvider>
         <ToastProvider>
-          <AuthGateProvider>
-            {children}
-          </AuthGateProvider>
+          <AuthSessionProvider>
+            <ServerNotificationProvider>{children}</ServerNotificationProvider>
+          </AuthSessionProvider>
         </ToastProvider>
       </AppStateProvider>
     </ErrorBoundary>

@@ -69,7 +69,7 @@ describe('T51 admin exception states', () => {
     const user = userEvent.setup()
     renderAdmin('/admin/reviews?scenario=duplicate_review')
     const queue = await screen.findByRole('region', { name: '发布审核队列' })
-    const reason = screen.getByRole('textbox', { name: '本次操作原因（必填）' })
+    const reason = screen.getByRole('textbox', { name: '本次操作原因（通过可选，其余必填）' })
     await user.type(reason, '复用已存在审核单。')
     await user.click(within(queue).getByRole('button', { name: '通过' }))
     expect(await screen.findByText(/检测到同一提交版本已有审核单/)).toBeInTheDocument()

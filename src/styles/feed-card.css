@@ -1,0 +1,378 @@
+/* Small content card for the projects feed. Keep the feed surface quiet so
+ * real project media and titles carry the visual weight. */
+.app-shell .highfi-scope .feed-card {
+  --feed-card-canvas: #fffdf7;
+  --feed-card-ink: #161713;
+  --feed-card-muted: #6c6c62;
+  --feed-card-line: #e4e1d7;
+  --feed-card-lime: var(--brand-lime, #b8ff3d);
+  display: grid;
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--feed-card-ink);
+  box-shadow: none;
+  transition: border-color 180ms ease, transform 180ms ease;
+}
+
+.app-shell .highfi-scope .feed-card:hover,
+.app-shell .highfi-scope .feed-card:focus-within {
+  border-color: var(--feed-card-ink);
+  transform: translateY(-2px);
+}
+
+.app-shell .highfi-scope .feed-card__media-link {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #f0eee6;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .feed-card__media-frame {
+  position: relative;
+  min-width: 0;
+}
+
+.app-shell .highfi-scope .feed-card__status {
+  position: absolute;
+  z-index: 1;
+  top: 0.65rem;
+  right: 0.65rem;
+  pointer-events: none;
+}
+
+.app-shell .highfi-scope .feed-card .feed-card__status .tag {
+  border: 1px solid var(--feed-card-ink);
+  border-radius: 999px;
+  background: var(--feed-card-canvas);
+  color: var(--feed-card-ink);
+  padding: 0.3rem 0.52rem;
+  font-size: 0.66rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.app-shell .highfi-scope .feed-card .feed-card__status .tag--strong {
+  background: var(--feed-card-ink);
+  color: var(--feed-card-canvas);
+}
+
+.app-shell .highfi-scope .feed-card.project-card .feed-card__media-stage,
+.app-shell .highfi-scope .feed-card.project-card .feed-card__media-stage.project-media-stage {
+  border: 0;
+  border-radius: 0;
+  background: #f0eee6;
+}
+
+.app-shell .highfi-scope .feed-card.project-card .feed-card__media-stage > img,
+.app-shell .highfi-scope .feed-card.project-card .feed-card__media-stage > video {
+  background: #f0eee6;
+  transition: transform 240ms ease;
+}
+
+.app-shell .highfi-scope .feed-card:hover .feed-card__media-stage > img,
+.app-shell .highfi-scope .feed-card:hover .feed-card__media-stage > video {
+  transform: scale(1.025);
+}
+
+.app-shell .highfi-scope .feed-card__cover {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: end start;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  padding: clamp(0.8rem, 2vw, 1.1rem);
+  background: #dce8d3;
+  color: var(--feed-card-ink);
+}
+
+.app-shell .highfi-scope .feed-card__cover-monogram {
+  position: absolute;
+  top: -0.12em;
+  right: -0.05em;
+  font: 900 10rem/1 var(--font-display);
+  color: var(--feed-card-ink);
+  opacity: 0.07;
+  pointer-events: none;
+}
+
+.app-shell .highfi-scope .feed-card__cover--portrait {
+  aspect-ratio: 4 / 5;
+}
+
+.app-shell .highfi-scope .feed-card__cover--landscape {
+  aspect-ratio: 16 / 10;
+}
+
+.app-shell .highfi-scope .feed-card__cover--square {
+  aspect-ratio: 1;
+}
+
+.app-shell .highfi-scope .feed-card__cover--peach { background: #efd9d0; }
+.app-shell .highfi-scope .feed-card__cover--sage { background: #dce8d3; }
+.app-shell .highfi-scope .feed-card__cover--blue { background: #d6e5e5; }
+.app-shell .highfi-scope .feed-card__cover--lavender { background: #dfd9e8; }
+.app-shell .highfi-scope .feed-card__cover--sand { background: #e9dec9; }
+
+.app-shell .highfi-scope .feed-card__cover-content {
+  display: grid;
+  min-width: 0;
+  width: min(100%, 15rem);
+  gap: 0.45rem;
+  transform: rotate(var(--feed-card-cover-tilt, 0deg));
+  transform-origin: bottom left;
+}
+
+.app-shell .highfi-scope .feed-card__cover-label {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--feed-card-ink) 35%, transparent);
+  border-radius: 999px;
+  padding: 0.28rem 0.52rem;
+  color: var(--feed-card-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.app-shell .highfi-scope .feed-card__cover-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: clamp(1.15rem, 2.8vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.app-shell .highfi-scope .feed-card__body {
+  display: grid;
+  min-width: 0;
+  gap: 0.52rem;
+  padding: clamp(0.78rem, 1.6vw, 1rem) clamp(0.78rem, 1.8vw, 1.1rem) 0.7rem;
+}
+
+.app-shell .highfi-scope .feed-card__title {
+  min-width: 0;
+  margin: 0;
+  font-size: clamp(0.98rem, 1.55vw, 1.14rem);
+  font-weight: 850;
+  letter-spacing: -0.025em;
+  line-height: 1.18;
+}
+
+.app-shell .highfi-scope .feed-card__title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .feed-card__title a:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 0.11em;
+  text-underline-offset: 0.16em;
+}
+
+.app-shell .highfi-scope .feed-card__summary {
+  display: -webkit-box;
+  min-height: 2.35em;
+  margin: 0;
+  overflow: hidden;
+  color: var(--feed-card-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.app-shell .highfi-scope .feed-card__byline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  color: var(--feed-card-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.app-shell .highfi-scope .feed-card__author,
+.app-shell .highfi-scope .feed-card__tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell .highfi-scope .feed-card__author {
+  color: var(--feed-card-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app-shell .highfi-scope .feed-card__author:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.app-shell .highfi-scope .feed-card__author--unknown {
+  color: var(--feed-card-muted);
+  font-weight: 500;
+}
+
+.app-shell .highfi-scope .feed-card__verified {
+  display: inline-grid;
+  width: 1rem;
+  height: 1rem;
+  margin-left: 0.2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--feed-card-lime);
+  color: var(--feed-card-ink);
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.app-shell .highfi-scope .feed-card__tool {
+  color: var(--feed-card-muted);
+  text-align: right;
+}
+
+.app-shell .highfi-scope .feed-card__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin: 0 clamp(0.78rem, 1.8vw, 1.1rem);
+  border-top: 0;
+  padding-block: 0.4rem;
+}
+
+.app-shell .highfi-scope .feed-card .feed-card__action {
+  display: inline-flex;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--feed-card-muted);
+  font-size: 0.76rem;
+  line-height: 1;
+  text-decoration: none;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.app-shell .highfi-scope .feed-card .feed-card__action:hover:not(:disabled),
+.app-shell .highfi-scope .feed-card .feed-card__action[aria-pressed='true'] {
+  background: var(--feed-card-lime);
+  color: var(--feed-card-ink);
+}
+
+.app-shell .highfi-scope .feed-card .feed-card__action:focus-visible {
+  outline: 2px solid var(--feed-card-ink);
+  outline-offset: 2px;
+}
+
+.app-shell .highfi-scope .feed-card__heart {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.app-shell .highfi-scope .feed-card__favorite-count,
+.app-shell .highfi-scope .feed-card__favorite-count-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell .highfi-scope .feed-card__favorite-count-static {
+  min-height: 2.5rem;
+  color: var(--feed-card-muted);
+  font-size: 0.76rem;
+}
+
+.app-shell .highfi-scope .feed-card__compare {
+  margin-left: auto;
+}
+
+.app-shell .highfi-scope .feed-card__compare-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+@media (max-width: 30rem) {
+  .app-shell .highfi-scope .feed-card__cover {
+    padding: 0.65rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__status {
+    top: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .app-shell .highfi-scope .feed-card .feed-card__status .tag {
+    padding: 0.24rem 0.4rem;
+    font-size: 0.58rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__cover-label {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.6rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__cover-title {
+    font-size: 1.05rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__body {
+    gap: 0.42rem;
+    padding: 0.65rem 0.65rem 0.55rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__title {
+    font-size: 0.9rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__summary {
+    font-size: 0.8125rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__byline {
+    font-size: 0.75rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__footer {
+    margin-inline: 0.65rem;
+  }
+
+  .app-shell .highfi-scope .feed-card .feed-card__action {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    padding-inline: 0.45rem;
+  }
+
+  .app-shell .highfi-scope .feed-card__compare-copy {
+    display: inline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .highfi-scope .feed-card,
+  .app-shell .highfi-scope .feed-card .feed-card__action,
+  .app-shell .highfi-scope .feed-card__media-stage > img,
+  .app-shell .highfi-scope .feed-card__media-stage > video {
+    transition: none;
+  }
+}

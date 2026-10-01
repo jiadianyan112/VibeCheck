@@ -4,8 +4,9 @@ import {
   submissionDraftId,
   userId,
 } from '../types'
-import { prototypeUsers, submissionDrafts } from '../mocks'
+import { adminReviewDrafts, prototypeUsers, submissionDrafts } from '../mocks'
 import { createLoginAction } from '../features/auth/session'
+import { applyPublicationWorkflow } from '../features/admin/workflows'
 import { createInitialAppState } from './initialState'
 import { appReducer } from './reducer'
 import {
@@ -18,6 +19,18 @@ import type { AppState } from './types'
 describe('global state and persistence', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  it('ignores a stale second approval without adding another audit record', () => {
+    const draft = adminReviewDrafts[0]!
+    const admin = prototypeUsers.find((user) => user.role === 'admin')!
+    const first = applyPublicationWorkflow(draft, 'approve', admin, '')
+    const second = applyPublicationWorkflow(draft, 'approve', admin, '再次通过')
+    const approved = appReducer(createInitialAppState(), { type: 'ADMIN_WORKFLOW_APPLY', mutation: first })
+    const afterRetry = appReducer(approved, { type: 'ADMIN_WORKFLOW_APPLY', mutation: second })
+    expect(afterRetry).toBe(approved)
+    expect(afterRetry.adminWorkflowLogs).toHaveLength(1)
+    expect(afterRetry.notifications).toHaveLength(1)
   })
 
   it('persists and restores a merged comparison and authenticated draft', () => {

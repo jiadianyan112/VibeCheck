@@ -1,3 +1,4 @@
+import { DiscoveryShell } from '../components/discovery'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorPanel, LoadingState, Tag } from '../components'
@@ -72,8 +73,8 @@ export function DiscoverPage() {
   if (!idea) return <Navigate to="/search" replace />
 
   return (
-    <main className="page-container page-with-bottom-space stack">
-      <header className="page-intro stack stack--small"><h1>一起把想法说清楚</h1><p>先确认作品品类，再核对真正影响查同类的条件。</p></header>
+    <DiscoveryShell title="一起把想法说清楚" description="先确认作品品类，再核对真正影响查同类的条件。">
+
       <section className="idea-query-summary stack stack--small" aria-labelledby="original-idea-heading"><strong id="original-idea-heading">原始想法</strong><p>{idea}</p></section>
       <details className="idea-input-panel idea-input-panel--collapsible"><summary>修改原始想法</summary><div className="stack"><label className="field"><span className="field__label">完整产品想法</span><textarea className="input textarea" rows={4} value={draftText} onChange={(event) => setDraftText(event.target.value)} placeholder="例如：我想把大学 PDF 讲义生成选择题和简答题" /></label><div className="cluster"><Button variant="primary" disabled={!draftText.trim()} onClick={beginParse}>重新整理这段想法</Button><Button variant="quiet" onClick={() => { setDraftText(idea) }}>恢复当前文本</Button></div></div></details>
 
@@ -83,6 +84,6 @@ export function DiscoverPage() {
         <div className="cluster cluster--between"><Button onClick={() => setIntent(originalIntent)}>撤销修改</Button><div className="cluster"><Button variant="quiet" onClick={() => navigate(`/search?q=${encodeURIComponent(idea)}&mode=works`)}>查看关键词结果</Button><Button variant="primary" disabled={!hasAnyIntent(intent)} onClick={confirm}>确认并查找相似作品</Button></div></div>
         {!hasAnyIntent(intent) ? <p className="field__error" role="alert">请先选择作品品类，并至少补充一个查找条件后继续。</p> : null}
       </section> : null}
-    </main>
+    </DiscoveryShell>
   )
 }

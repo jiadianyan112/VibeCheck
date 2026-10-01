@@ -124,7 +124,8 @@ export function applyPublicationWorkflow(
 ): AdminWorkflowMutation {
   const action = publicationActions[decision]
   requirePermission(action, actor)
-  const normalizedReason = requireReason(reason)
+  if (draft.status !== 'pending_review') throw new Error('VC_ADMIN_WORKFLOW_NOT_PENDING')
+  const normalizedReason = decision === 'approve' ? reason.trim() || '未填写原因（审核通过）' : requireReason(reason)
   const status = publicationStatuses[decision]
   const reviewed = decision === 'dispute'
     ? {
@@ -158,7 +159,7 @@ export function applyPublicationWorkflow(
     projects: project ? [project] : [],
     lifecycleEvents: event ? [event] : [],
     notifications: [notification],
-    log: workflowLog({ action, actor, targetId: nextDraft.id, projectId: project?.id ?? null, beforeValue: draft.status, afterValue: nextDraft.status, reason, now }),
+    log: workflowLog({ action, actor, targetId: nextDraft.id, projectId: project?.id ?? null, beforeValue: draft.status, afterValue: nextDraft.status, reason: normalizedReason, now }),
   }
 }
 
@@ -240,7 +241,7 @@ export function applyIdentityWorkflow(
 ): AdminWorkflowMutation {
   const action = identityActions[decision]
   requirePermission(action, actor)
-  const normalizedReason = requireReason(reason)
+  const normalizedReason = decision === 'verified' ? reason.trim() || '未填写原因（身份审核通过）' : requireReason(reason)
   const reviewed = applyVerificationReview(request, decision, now)
   const verificationRequest = {
     ...reviewed,
@@ -265,7 +266,7 @@ export function applyIdentityWorkflow(
     verificationRequest,
     projects: [nextProject],
     notifications: [notification],
-    log: workflowLog({ action, actor, targetId: request.id, projectId: project.id, beforeValue: request.status, afterValue: decision, reason, now }),
+    log: workflowLog({ action, actor, targetId: request.id, projectId: project.id, beforeValue: request.status, afterValue: decision, reason: normalizedReason, now }),
   }
 }
 

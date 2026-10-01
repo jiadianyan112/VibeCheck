@@ -1,5 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import '../styles/tokens.css'
+import '../styles/highfi-foundation.css'
+import '../styles/highfi-components.css'
 import { StyleSandboxPage } from './StyleSandboxPage'
 
 describe('StyleSandboxPage', () => {
@@ -12,6 +15,28 @@ describe('StyleSandboxPage', () => {
     expect(screen.getByRole('button', { name: '处理中…' })).toBeDisabled()
     expect(screen.getByText('请输入完整的 https:// 地址')).toHaveAttribute('role', 'alert')
     expect(screen.getByRole('region', { name: /可横向滚动/ })).toHaveAttribute('tabindex', '0')
+  })
+
+  it('renders high-fidelity accent and inverse primitives', () => {
+    render(<StyleSandboxPage />)
+    expect(screen.getByRole('button', { name: '品牌操作' })).toHaveClass('button--accent')
+    expect(screen.getByText('荧光状态')).toHaveClass('tag--accent')
+    expect(screen.getByText('反相状态')).toHaveClass('tag--inverse')
+  })
+
+  it('opts the sandbox into the high-fidelity scope and applies accent color', () => {
+    render(<StyleSandboxPage />)
+    const main = screen.getByRole('main')
+    const appShell = main.closest('.app-shell')
+    const highfiScope = main.closest('.highfi-scope')
+    expect(appShell).not.toBeNull()
+    expect(highfiScope).not.toBeNull()
+    expect(highfiScope).not.toBe(appShell)
+    expect(appShell?.contains(highfiScope)).toBe(true)
+    const accentButton = screen.getByRole('button', { name: '品牌操作' })
+    const accentStyle = getComputedStyle(accentButton)
+    expect(accentStyle.background).toBe('var(--brand-lime)')
+    expect(accentStyle.transition).toContain('background-color')
   })
 
   it('changes controlled tabs', async () => {
