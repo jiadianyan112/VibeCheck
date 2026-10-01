@@ -5,8 +5,13 @@ import { notificationTargetAccess, notificationTypeLabels } from '../features'
 import { projects } from '../mocks'
 import { useAppState } from '../state'
 import type { NotificationType, Project } from '../types'
+import { ServerNotificationsPage } from './ServerNotificationsPage'
 
 export function NotificationsPage() {
+  return import.meta.env.PROD ? <ServerNotificationsPage /> : <PrototypeNotificationsPage />
+}
+
+function PrototypeNotificationsPage() {
   const { state, dispatch } = useAppState()
   const user = state.session.user
   const navigate = useNavigate()

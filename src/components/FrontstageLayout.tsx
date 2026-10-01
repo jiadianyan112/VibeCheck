@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ComparisonProvider, FloatingCompareBar } from '../features'
 import { isStaffRole } from '../features/auth/session'
+import { useServerNotifications } from '../features/notifications/ServerNotificationContext'
 import { useAppState } from '../state'
 import { RouteScrollManager } from './RouteScrollManager'
 import { ScenarioPanel } from './ScenarioPanel'
@@ -38,9 +39,10 @@ function restrictedPath(path: string, isLoggedIn: boolean, returnTo: string) {
 
 function FrontstageContent() {
   const { state } = useAppState()
+  const serverNotifications = useServerNotifications()
   const location = useLocation()
   const isLoggedIn = state.session.role !== 'guest'
-  const unreadCount = isLoggedIn
+  const unreadCount = import.meta.env.PROD ? serverNotifications.unreadCount : isLoggedIn
     ? state.notifications.filter(
         (notification) =>
           !notification.isRead &&
