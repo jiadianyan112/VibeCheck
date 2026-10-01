@@ -16,7 +16,7 @@ export const identityPermissions = [
 ] as const
 export type IdentityPermission = (typeof identityPermissions)[number]
 
-export type AuthPurpose = 'login' | 'admin_confirm'
+export type AuthPurpose = 'login' | 'admin_confirm' | 'password_reset'
 export type AccountStatus = 'active' | 'restricted' | 'disabled'
 
 export interface IdentityLinkProjection {
@@ -40,7 +40,7 @@ export interface SessionProjection {
 }
 
 export interface StartChallengeCommand {
-  readonly email: string
+  readonly email: string | null
   readonly purpose: AuthPurpose
   readonly returnTo: string
   readonly clientRequestId: string
@@ -90,6 +90,11 @@ export type VerifyChallengeResult =
       readonly reauthGrantId: string
       readonly recentAuthAt: string
       readonly returnTo: string
+    }
+  | {
+      readonly purpose: 'password_reset'
+      readonly resetGrant: string
+      readonly expiresAt: string
     }
 
 export interface EmailOtpMessage {

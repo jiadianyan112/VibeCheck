@@ -56,7 +56,7 @@ paths:
     post:
       tags: [Identity]
       operationId: OP-AUTH-START
-      summary: Start an email OTP login or administrator reauthentication flow
+      summary: Start an email OTP login, password reset, or administrator reauthentication flow
       requestBody:
         required: true
         content:
@@ -82,11 +82,110 @@ paths:
           $ref: '#/components/responses/Error'
         '503':
           $ref: '#/components/responses/Error'
+  /api/v1/auth/password-login:
+    post:
+      tags: [Identity]
+      operationId: OP-AUTH-PASSWORD-LOGIN
+      summary: Sign in with an email and password
+      description: >-
+        Password failures, accounts without a password, unknown accounts and disabled accounts use the
+        same stable error response. A safe return_to path is validated by the server before the session
+        is established.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthPasswordLoginRequest'
+      responses:
+        '200':
+          description: Password authentication succeeded and a session was established.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPasswordLoginResponse'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/auth/password:
+    get:
+      tags: [Identity]
+      operationId: OP-AUTH-PASSWORD-STATUS
+      summary: Read password status for the current account
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Password status and whether an email-verified session may set one without the current password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPasswordStatus'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [Identity]
+      operationId: OP-AUTH-PASSWORD-SET
+      summary: Set or change the current account password
+      description: >-
+        The request must be authenticated and CSRF protected. A first password may be set without
+        current_password only when the session has a recent email verification; an existing password
+        requires current_password unless the same recent verification authorizes the change.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthPasswordUpdateRequest'
+      responses:
+        '204':
+          description: Password changed; the current session remains active and other sessions are revoked.
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/auth/password-reset:
+    put:
+      tags: [Identity]
+      operationId: OP-AUTH-PASSWORD-RESET
+      summary: Complete an email-verified password reset
+      description: >-
+        The one-time reset_grant is issued after a browser-bound password_reset email challenge. It is
+        bound to the authenticated session when present, expires after five minutes, and cannot be
+        reused. Anonymous resets revoke all account sessions; authenticated resets retain the current
+        session. The endpoint never creates an account. Authenticated callers must provide CSRF protection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthPasswordResetRequest'
+      responses:
+        '204':
+          description: Password reset completed; other sessions are revoked.
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/auth/email-challenges/{challenge_id}/verify:
     post:
       tags: [Identity]
       operationId: OP-AUTH-CALLBACK
-      summary: Verify one email OTP and atomically establish or elevate a session
+      summary: Verify one email OTP and establish a session or issue a reset grant
       parameters:
         - in: path
           name: challenge_id
@@ -2791,6 +2890,10 @@ components:
       type: apiKey
       in: cookie
       name: vc_session
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
   parameters:
     OwnershipCaseId:
       in: path
@@ -5018,7 +5121,7 @@ components:
     AuthChallengeRequest:
       type: object
       additionalProperties: false
-      required: [email, purpose, return_to, client_request_id]
+      required: [purpose, return_to, client_request_id]
       properties:
         email:
           type: string
@@ -5026,7 +5129,7 @@ components:
           maxLength: 254
         purpose:
           type: string
-          enum: [login, admin_confirm]
+          enum: [login, admin_confirm, password_reset]
         return_to:
           type: string
           minLength: 1
@@ -5041,6 +5144,20 @@ components:
         pending_action_id:
           type: string
           format: uuid
+      description: >-
+        email is required for login and admin_confirm. For password_reset it is required for an
+        anonymous request and may be omitted by an authenticated caller to use the current account.
+      allOf:
+        - if:
+            properties:
+              purpose: { const: login }
+          then:
+            required: [email]
+        - if:
+            properties:
+              purpose: { const: admin_confirm }
+          then:
+            required: [email]
     AuthChallengeAccepted:
       type: object
       additionalProperties: false
@@ -5116,6 +5233,89 @@ components:
               type: string
               minLength: 1
               maxLength: 2048
+        - type: object
+          additionalProperties: false
+          required: [purpose, reset_grant, expires_at]
+          properties:
+            purpose:
+              const: password_reset
+            reset_grant:
+              type: string
+              minLength: 32
+              maxLength: 512
+              description: One-time opaque grant; never log or expose it outside the reset flow.
+            expires_at:
+              type: string
+              format: date-time
+    AuthPasswordLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, return_to]
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 64
+        return_to:
+          type: string
+          minLength: 1
+          maxLength: 2048
+    AuthPasswordLoginResponse:
+      type: object
+      additionalProperties: false
+      required: [session, return_to]
+      properties:
+        session:
+          $ref: '#/components/schemas/AuthSession'
+        return_to:
+          type: string
+          minLength: 1
+          maxLength: 2048
+    AuthPasswordStatus:
+      type: object
+      additionalProperties: false
+      required: [has_password, can_set_password, can_set_without_current_password]
+      properties:
+        has_password:
+          type: boolean
+        can_set_password:
+          type: boolean
+          description: Compatibility field retained for existing clients.
+        can_set_without_current_password:
+          type: boolean
+          description: True only for a recent email-verified session that may set or reset a password without the current password.
+    AuthPasswordUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+          minLength: 8
+          maxLength: 64
+        current_password:
+          type: string
+          minLength: 8
+          maxLength: 64
+          description: Required when changing an existing password without a recent email verification.
+    AuthPasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [reset_grant, new_password]
+      properties:
+        reset_grant:
+          type: string
+          minLength: 32
+          maxLength: 512
+          description: One-time opaque grant returned by password_reset OTP verification.
+        new_password:
+          type: string
+          minLength: 8
+          maxLength: 64
     AuthSession:
       type: object
       additionalProperties: false

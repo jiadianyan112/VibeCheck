@@ -92,17 +92,28 @@ export class IdentityService {
   async startChallenge(command: StartChallengeCommand): Promise<StartChallengeResult> {
     this.assertEnabled()
     const now = this.now()
-    const email = normalizeEmail(command.email)
     const returnTo = normalizeReturnTo(command.returnTo)
     const clientRequestId = requireUuid('CLIENT_REQUEST_ID', command.clientRequestId)
     const anonymousSubjectId = requireUuid('ANONYMOUS_SUBJECT_ID', command.anonymousSubjectId)
     const pendingActionId = command.pendingActionId === null
       ? null
       : requireUuid('PENDING_ACTION_ID', command.pendingActionId)
-    const normalizedEmailHash = keyedHash(this.config.emailHashPepper, email)
     const currentSession = command.sessionToken === null
       ? null
       : await this.getStoredSession(command.sessionToken)
+    if (command.purpose !== 'password_reset' && command.email === null) throw identityError('EMAIL_INVALID', 422)
+    if (command.purpose === 'password_reset' && command.email === null && currentSession === null) {
+      throw identityError('AUTHENTICATION_REQUIRED', 401)
+    }
+    const email = currentSession && command.purpose === 'password_reset'
+      ? normalizeEmail(this.decryptStoredEmail(currentSession.emailCiphertext, currentSession.emailKeyVersion))
+      : normalizeEmail(command.email!)
+    const normalizedEmailHash = keyedHash(this.config.emailHashPepper, email)
+    if (currentSession && command.purpose === 'password_reset' && command.email !== null &&
+      !currentSession.normalizedEmailHash.equals(normalizedEmailHash)) throw identityError('AUTH_FLOW_MISMATCH', 403)
+    if (command.purpose === 'password_reset' && (pendingActionId !== null || command.previewToken !== null)) {
+      throw identityError('PENDING_ACTION_NOT_ALLOWED', 422)
+    }
 
     if (command.purpose === 'admin_confirm') {
       if (pendingActionId !== null) throw identityError('PENDING_ACTION_NOT_ALLOWED', 422)
@@ -203,6 +214,7 @@ export class IdentityService {
     const now = this.now()
     const sessionToken = opaqueToken()
     const csrfToken = opaqueToken()
+    const resetGrant = opaqueToken()
     const result = await this.store.completeVerification({
       challengeId,
       authFlowId,
@@ -215,6 +227,7 @@ export class IdentityService {
       ipHash: this.hashOptional(command.ipAddress),
       userAgentHash: this.hashOptional(command.userAgent),
       reauthExpiresAt: addSeconds(now, 300),
+      resetGrantHash: keyedHash(this.config.authTokenSecret, resetGrant),
       identityLinkExpiresAt: addSeconds(now, 300),
       requestId: command.requestId,
       now,
@@ -228,6 +241,9 @@ export class IdentityService {
         returnTo: result.returnTo,
       })
     }
+    if (result.kind === 'password_reset') return Object.freeze({
+      purpose: 'password_reset', resetGrant, expiresAt: result.expiresAt.toISOString(),
+    })
 
     const email = this.decryptStoredEmail(result.emailCiphertext, result.emailKeyVersion)
     const safeReturnTo = canUseReturnTo(result.returnTo, result.roles) ? result.returnTo : '/me'

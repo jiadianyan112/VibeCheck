@@ -25,9 +25,11 @@ try {
   assert.deepEqual(await store.getStatus(randomUUID(), sessionHash, now), {
     hasPassword: false,
     canSetPassword: false,
+    passwordHash: null,
   })
   assert.equal(await store.setPassword({
-    userId: randomUUID(), sessionHash, passwordHash: 'unused', now, requestId: randomUUID(),
+    userId: randomUUID(), sessionHash, passwordHash: 'unused', expectedPasswordHash: null,
+    allowRecentOtp: true, now, requestId: randomUUID(),
   }), false)
   process.stdout.write('password_store_fixture_ok\n')
 } finally {

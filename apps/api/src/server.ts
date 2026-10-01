@@ -217,8 +217,9 @@ export interface ApiPasswordIdentityService {
     email: string; password: string; returnTo: string; anonymousSubjectId: string
     currentSessionToken: string | null; ipAddress: string | null; userAgent: string | null; requestId: string
   }): Promise<{ session: SessionProjection; sessionToken: string; returnTo: string }>
-  getStatus(sessionToken: string, userId: string): Promise<{ hasPassword: boolean; canSetPassword: boolean }>
-  setPassword(command: { sessionToken: string; userId: string; password: string; requestId: string }): Promise<void>
+  getStatus(sessionToken: string, userId: string): Promise<{ hasPassword: boolean; canSetPassword: boolean; canSetWithoutCurrentPassword?: boolean }>
+  setPassword(command: { sessionToken: string; userId: string; password: string; currentPassword?: string | null; ipAddress?: string | null; requestId: string }): Promise<void>
+  resetPassword(command: { resetGrant: string; sessionToken: string | null; password: string; requestId: string }): Promise<void>
 }
 
 export interface ApiPendingActionService {
@@ -872,7 +873,8 @@ async function handleAuthRequest(
   const sessionPath = '/api/v1/auth/session'
   const passwordLoginPath = '/api/v1/auth/password-login'
   const passwordPath = '/api/v1/auth/password'
-  if (path !== startPath && verification === null && path !== sessionPath && path !== passwordLoginPath && path !== passwordPath) return null
+  const passwordResetPath = '/api/v1/auth/password-reset'
+  if (path !== startPath && verification === null && path !== sessionPath && path !== passwordLoginPath && path !== passwordPath && path !== passwordResetPath) return null
 
   const identity = requireIdentity(dependencies)
   const secure = dependencies.authCookieSecure ?? config.environment === 'production'
@@ -925,14 +927,39 @@ async function handleAuthRequest(
     if (!sessionToken) throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
     if (method === 'GET') {
       const status = await dependencies.passwordIdentity.getStatus(sessionToken, session.userId)
-      writeJson(response, 200, { has_password: status.hasPassword, can_set_password: status.canSetPassword }, requestId)
+      writeJson(response, 200, { has_password: status.hasPassword, can_set_password: status.canSetPassword,
+        can_set_without_current_password: status.canSetWithoutCurrentPassword ?? status.canSetPassword }, requestId)
       return 200
     }
     const body = await readJsonBody(request)
-    exactKeys(body, ['password'])
+    exactKeys(body, ['new_password', 'current_password'])
     await dependencies.passwordIdentity.setPassword({
       sessionToken, userId: session.userId,
-      password: stringField(body, 'password', { maximum: 1024 })!, requestId,
+      password: stringField(body, 'new_password', { maximum: 1024 })!,
+      currentPassword: stringField(body, 'current_password', { maximum: 1024, optional: true }),
+      ipAddress: clientIp(request), requestId,
+    })
+    response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
+    response.end()
+    return 204
+  }
+
+  if (method === 'PUT' && path === passwordResetPath) {
+    if (!dependencies.passwordIdentity) throw new IdentityError('AUTH_SERVICE_UNAVAILABLE', 503, true)
+    if (!requestOriginAllowed(request, config)) throw new IdentityError('ORIGIN_INVALID', 403, false)
+    const sessionToken = cookies[authCookieNames.session] ?? null
+    if (sessionToken) {
+      const csrfToken = cookies[authCookieNames.csrf] ?? null
+      if (typeof request.headers['x-csrf-token'] !== 'string' || request.headers['x-csrf-token'] !== csrfToken) {
+        throw new IdentityError('CSRF_INVALID', 403, false)
+      }
+      await identity.getSession(sessionToken, csrfToken)
+    }
+    const body = await readJsonBody(request)
+    exactKeys(body, ['reset_grant', 'new_password'])
+    await dependencies.passwordIdentity.resetPassword({
+      resetGrant: stringField(body, 'reset_grant', { maximum: 128 })!,
+      password: stringField(body, 'new_password', { maximum: 1024 })!, sessionToken, requestId,
     })
     response.writeHead(204, { 'cache-control': 'no-store', 'x-request-id': requestId })
     response.end()
@@ -945,13 +972,13 @@ async function handleAuthRequest(
       'email', 'purpose', 'return_to', 'client_request_id', 'preview_token', 'pending_action_id',
     ])
     const purpose = stringField(body, 'purpose', { maximum: 32 })
-    if (purpose !== 'login' && purpose !== 'admin_confirm') {
+    if (purpose !== 'login' && purpose !== 'admin_confirm' && purpose !== 'password_reset') {
       throw new IdentityError('REQUEST_PURPOSE_INVALID', 422, false)
     }
     const anonymousSubjectId = verifiedAnonymousSubject(cookies[authCookieNames.anonymous], anonymousSecret)
       ?? randomUUID()
     const result = await identity.startChallenge({
-      email: stringField(body, 'email', { maximum: 254 })!,
+      email: stringField(body, 'email', { maximum: 254, optional: purpose === 'password_reset' }),
       purpose,
       returnTo: stringField(body, 'return_to', { maximum: 2_048 })!,
       clientRequestId: stringField(body, 'client_request_id', { maximum: 64 })!,
@@ -1033,12 +1060,10 @@ async function handleAuthRequest(
       appendCookies(response, [
         cookie(authCookieNames.browserBinding, '', secure, { httpOnly: true, maxAgeSeconds: 0 }),
       ])
-      writeJson(response, 200, {
-        purpose: 'admin_confirm',
-        reauth_grant_id: result.reauthGrantId,
-        recent_auth_at: result.recentAuthAt,
-        return_to: result.returnTo,
-      }, requestId)
+      writeJson(response, 200, result.purpose === 'password_reset'
+        ? { purpose: 'password_reset', reset_grant: result.resetGrant, expires_at: result.expiresAt }
+        : { purpose: 'admin_confirm', reauth_grant_id: result.reauthGrantId,
+            recent_auth_at: result.recentAuthAt, return_to: result.returnTo }, requestId)
     }
     return 200
   }

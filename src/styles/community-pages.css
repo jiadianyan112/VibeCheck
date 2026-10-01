@@ -59,11 +59,13 @@
 }
 .ui-root .security-password-form .button { justify-self: start; }
 .ui-root .security-panel__reauth {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
   gap: 16px;
+  max-width: 28rem;
 }
+.ui-root .password-reset-flow { width: 100%; }
+.ui-root .password-reset-flow form { display: grid; gap: 12px; }
+.ui-root .password-reset-flow .button { justify-self: start; }
 .ui-root .security-panel__reauth p,
 .ui-root .security-panel__error p,
 .ui-root .security-panel__notice { margin: 0; }

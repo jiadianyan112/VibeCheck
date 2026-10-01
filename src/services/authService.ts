@@ -26,6 +26,11 @@ export interface AuthChallengeDto {
 export interface AuthPasswordStatusDto {
   readonly has_password: boolean
   readonly can_set_password: boolean
+  /**
+   * Whether the current session has a recent email verification that permits
+   * changing the password without supplying the existing password.
+   */
+  readonly can_set_without_current_password: boolean
 }
 
 export interface AuthPasswordLoginDto {
@@ -44,6 +49,11 @@ export type AuthVerificationDto =
       readonly reauth_grant_id: string
       readonly recent_auth_at: string
       readonly return_to: string
+    }
+  | {
+      readonly purpose: 'password_reset'
+      readonly reset_grant: string
+      readonly expires_at: string
     }
 
 interface ErrorBody {
@@ -131,6 +141,33 @@ export function startEmailChallenge(input: {
   })
 }
 
+/**
+ * Start the email verification step for a password reset.
+ *
+ * An authenticated account-security flow may omit `email`; the API resolves
+ * the account from the current session. The login-page flow supplies an email
+ * address. The server deliberately returns the same accepted response for an
+ * unknown address, so callers should not use this result to infer account
+ * existence.
+ */
+export function startPasswordResetChallenge(input: {
+  readonly email?: string
+  readonly returnTo?: string
+  readonly clientRequestId: string
+}): Promise<AuthChallengeDto> {
+  const body: Record<string, string> = {
+    purpose: 'password_reset',
+    return_to: input.returnTo ?? '/auth',
+    client_request_id: input.clientRequestId,
+  }
+  if (input.email !== undefined) body.email = input.email
+  return authFetch('/api/v1/auth/email-challenges', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 export function startAdminEmailChallenge(input: {
   readonly email: string
   readonly previewToken: string
@@ -186,14 +223,41 @@ export function getPasswordStatus(): Promise<AuthPasswordStatusDto> {
   return authFetch('/api/v1/auth/password', { method: 'GET' })
 }
 
-export function setPassword(session: Pick<AuthSessionDto, 'csrf_token'>, password: string): Promise<void> {
+export function setPassword(
+  session: Pick<AuthSessionDto, 'csrf_token'>,
+  newPassword: string,
+  currentPassword?: string,
+): Promise<void> {
+  const body: Record<string, string> = { new_password: newPassword }
+  if (currentPassword !== undefined) body.current_password = currentPassword
   return authFetch('/api/v1/auth/password', {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
       'x-csrf-token': session.csrf_token,
     },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * Complete a password reset with the one-time grant returned by OTP
+ * verification. When called from an authenticated account-security flow, the
+ * session supplies the CSRF token and the server keeps that device signed in.
+ * The login-page flow omits it; the server then revokes all existing sessions
+ * and requires the user to sign in with the new password.
+ */
+export function resetPassword(
+  resetGrant: string,
+  newPassword: string,
+  session?: Pick<AuthSessionDto, 'csrf_token'>,
+): Promise<void> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (session) headers['x-csrf-token'] = session.csrf_token
+  return authFetch('/api/v1/auth/password-reset', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ reset_grant: resetGrant, new_password: newPassword }),
   })
 }
 

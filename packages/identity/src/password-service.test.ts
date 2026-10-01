@@ -17,6 +17,7 @@ class MemoryPasswordStore implements PasswordStore {
   hash: string | null = null
   lastLogin: Parameters<PasswordStore['completeLogin']>[0] | null = null
   allowed = true
+  resetAllowed = true
   eligible = true
   accountStatus: 'active' | 'disabled' = 'active'
   readonly userId = '11111111-1111-4111-8111-111111111111'
@@ -29,8 +30,10 @@ class MemoryPasswordStore implements PasswordStore {
     } : null
   }
   async completeLogin(input: Parameters<PasswordStore['completeLogin']>[0]) { this.lastLogin = input; return true }
-  async getStatus() { return { hasPassword: this.hash !== null, canSetPassword: this.eligible } }
+  async getStatus() { return { hasPassword: this.hash !== null, canSetPassword: this.eligible, passwordHash: this.hash } }
+  async consumeChangeAttempt() { return this.allowed }
   async setPassword(input: { passwordHash: string }) { this.hash = input.passwordHash; return true }
+  async resetPassword(input: { passwordHash: string }) { if (!this.resetAllowed) return false; this.hash = input.passwordHash; return true }
 }
 
 describe('PasswordService', () => {
@@ -79,6 +82,32 @@ describe('PasswordService', () => {
     assert.equal(store.hash, null)
   })
 
+  it('changes an existing password with the current password without requiring OTP', async () => {
+    const store = new MemoryPasswordStore()
+    const service = new PasswordService({ config, store, now: () => now })
+    await service.setPassword({ sessionToken: 's'.repeat(43), userId: store.userId, password: 'old secret', requestId: 'test' })
+    store.eligible = false
+    await assert.rejects(() => service.setPassword({ sessionToken: 's'.repeat(43), userId: store.userId,
+      currentPassword: 'wrong secret', password: 'new secret', ipAddress: '127.0.0.1', requestId: 'test' }), { code: 'CURRENT_PASSWORD_INVALID' })
+    await service.setPassword({ sessionToken: 's'.repeat(43), userId: store.userId,
+      currentPassword: 'old secret', password: 'new secret', ipAddress: '127.0.0.1', requestId: 'test' })
+    await assert.rejects(() => service.login({ email: 'user@example.com', password: 'old secret', returnTo: '/me',
+      anonymousSubjectId: store.userId, currentSessionToken: null, ipAddress: null, userAgent: null, requestId: 'test' }), { code: 'PASSWORD_LOGIN_INVALID' })
+  })
+
+  it('limits current-password attempts and does not update the credential on rejection', async () => {
+    const store = new MemoryPasswordStore()
+    const service = new PasswordService({ config, store, now: () => now })
+    await service.setPassword({ sessionToken: 's'.repeat(43), userId: store.userId,
+      password: 'old secret', requestId: 'test' })
+    const original = store.hash
+    store.eligible = false
+    store.allowed = false
+    await assert.rejects(() => service.setPassword({ sessionToken: 's'.repeat(43), userId: store.userId,
+      currentPassword: 'old secret', password: 'new secret', ipAddress: '127.0.0.1', requestId: 'test' }), { code: 'AUTH_RATE_LIMITED' })
+    assert.equal(store.hash, original)
+  })
+
   it('uses the same login error for a disabled account', async () => {
     const store = new MemoryPasswordStore()
     const service = new PasswordService({ config, store, now: () => now })
@@ -88,5 +117,20 @@ describe('PasswordService', () => {
     await assert.rejects(() => service.login({ email: 'user@example.com', password: 'correct password',
       returnTo: '/me', anonymousSubjectId: store.userId, currentSessionToken: null,
       ipAddress: null, userAgent: null, requestId: 'test' }), { code: 'PASSWORD_LOGIN_INVALID' })
+  })
+
+  it('sets a password from a verified reset grant without creating a session', async () => {
+    const store = new MemoryPasswordStore()
+    const service = new PasswordService({ config, store, now: () => now })
+    await service.resetPassword({ resetGrant: 'r'.repeat(43), sessionToken: null,
+      password: 'reset secret', requestId: 'reset-test' })
+    assert.match(store.hash!, /^\$argon2id\$/)
+    const original = store.hash
+    store.resetAllowed = false
+    await assert.rejects(() => service.resetPassword({ resetGrant: 'r'.repeat(43), sessionToken: null,
+      password: 'another secret', requestId: 'reset-test' }), { code: 'PASSWORD_RESET_INVALID' })
+    assert.equal(store.hash, original)
+    await assert.rejects(() => service.resetPassword({ resetGrant: 'bad', sessionToken: null,
+      password: 'another secret', requestId: 'reset-test' }), { code: 'PASSWORD_RESET_INVALID' })
   })
 })

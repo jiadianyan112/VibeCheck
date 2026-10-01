@@ -80,6 +80,7 @@ export interface CompleteVerificationInput {
   readonly ipHash: Buffer | null
   readonly userAgentHash: Buffer | null
   readonly reauthExpiresAt: Date
+  readonly resetGrantHash: Buffer
   readonly identityLinkExpiresAt: Date
   readonly requestId: string
   readonly now: Date
@@ -113,6 +114,7 @@ export type CompleteVerificationResult =
       readonly recentAuthAt: Date
       readonly returnTo: string
     }
+  | { readonly kind: 'password_reset'; readonly expiresAt: Date }
 
 interface ExistingChallengeRow {
   challenge_id: string
@@ -443,7 +445,9 @@ export class PostgresIdentityStore {
 
       const completed = challenge.purpose === 'login'
         ? await this.completeLogin(client, challenge, input)
-        : await this.completeAdminConfirm(client, challenge, input)
+        : challenge.purpose === 'password_reset'
+          ? await this.completePasswordReset(client, challenge, input)
+          : await this.completeAdminConfirm(client, challenge, input)
       await client.query('COMMIT')
       return completed
     } catch (error) {
@@ -452,6 +456,37 @@ export class PostgresIdentityStore {
     } finally {
       client.release()
     }
+  }
+
+  private async completePasswordReset(
+    client: PoolClient,
+    challenge: VerificationRow,
+    input: CompleteVerificationInput,
+  ): Promise<CompleteVerificationResult> {
+    if (challenge.primary_session_id_hash !== null &&
+      (input.currentSessionHash === null || !challenge.primary_session_id_hash.equals(input.currentSessionHash))) {
+      return { kind: 'error', code: 'AUTH_FLOW_MISMATCH', httpStatus: 403 }
+    }
+    const account = await client.query<{ user_id: string }>(
+      `SELECT identity.user_id FROM iam.user_email_identities identity
+       JOIN iam.users account ON account.user_id=identity.user_id
+       WHERE identity.normalized_email_hash=$1 AND identity.status='active'
+         AND account.status IN ('active','restricted')`,
+      [challenge.normalized_email_hash],
+    )
+    const userId = account.rows[0]?.user_id
+    await client.query(`UPDATE iam.auth_email_challenges SET status='consumed',consumed_at=$2 WHERE challenge_id=$1`,
+      [challenge.challenge_id, input.now])
+    if (!userId) return { kind: 'error', code: 'PASSWORD_RESET_INVALID', httpStatus: 403 }
+    await client.query(
+      `INSERT INTO iam.password_reset_grants
+       (grant_hash,challenge_id,user_id,primary_session_id_hash,issued_at,expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [input.resetGrantHash, challenge.challenge_id, userId, challenge.primary_session_id_hash,
+        input.now, input.reauthExpiresAt],
+    )
+    await this.insertSecurityEvent(client, 'auth_password_reset_verified', 'info', input.requestId, null)
+    return { kind: 'password_reset', expiresAt: input.reauthExpiresAt }
   }
 
   private async completeLogin(

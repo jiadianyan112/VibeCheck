@@ -80,6 +80,9 @@ class InMemoryFlowStore implements IdentityStore {
     this.completed = input
     const created = this.created!
     if (!input.otpValid) return { kind: 'error', code: 'OTP_INVALID', httpStatus: 422 } as const
+    if (created.purpose === 'password_reset') return {
+      kind: 'password_reset', expiresAt: input.reauthExpiresAt,
+    } as const
     return {
       kind: 'login',
       userId: '11111111-1111-4111-8111-111111111111',
@@ -187,5 +190,27 @@ describe('IdentityService', () => {
       /OTP_INVALID/,
     )
     assert.equal(store.completed?.otpValid, false)
+  })
+
+  it('verifies password recovery without creating a login session', async () => {
+    const store = new InMemoryFlowStore()
+    const sender = new CapturingSender()
+    const service = new IdentityService({ config, store, emailSender: sender, now: () => now })
+    const challenge = await service.startChallenge({
+      email: 'user@example.com', purpose: 'password_reset', returnTo: '/auth',
+      clientRequestId: '55555555-5555-4555-8555-555555555555',
+      anonymousSubjectId: '66666666-6666-4666-8666-666666666666',
+      browserBindingToken: null, sessionToken: null, previewToken: null, pendingActionId: null,
+      ipAddress: null, userAgent: null, requestId: 'reset-start',
+    })
+    const verified = await service.verifyChallenge({
+      challengeId: challenge.challengeId, authFlowId: challenge.authFlowId,
+      otp: sender.message!.code, clientRequestId: '77777777-7777-4777-8777-777777777777',
+      browserBindingToken: challenge.browserBindingToken, currentSessionToken: null,
+      ipAddress: null, userAgent: null, requestId: 'reset-verify',
+    })
+    assert.equal(verified.purpose, 'password_reset')
+    if (verified.purpose !== 'password_reset') assert.fail('expected password reset grant')
+    assert.ok(verified.resetGrant.length >= 32)
   })
 })

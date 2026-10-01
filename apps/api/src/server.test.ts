@@ -3332,6 +3332,7 @@ test('email OTP flow establishes signed browser cookies and a server session', a
 
 test('password endpoints issue a session and protect password changes with CSRF', async () => {
   let changed = false
+  let resetSession: string | null | undefined
   const passwordIdentity: ApiPasswordIdentityService = {
     async login(command) {
       assert.equal(command.email, 'user@example.com')
@@ -3340,6 +3341,7 @@ test('password endpoints issue a session and protect password changes with CSRF'
     },
     async getStatus() { return { hasPassword: true, canSetPassword: true } },
     async setPassword(command) { changed = true; assert.equal(command.password, 'new pass word') },
+    async resetPassword(command) { resetSession = command.sessionToken; assert.equal(command.resetGrant, 'r'.repeat(43)); assert.equal(command.password, 'reset password') },
   }
   const runtime = await start(async () => undefined, new FakeIdentityService(), undefined, undefined, undefined,
     undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
@@ -3354,20 +3356,70 @@ test('password endpoints issue a session and protect password changes with CSRF'
     const cookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
     const status = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, { headers: { cookie } })
     assert.equal(status.status, 200)
-    assert.deepEqual(await status.json(), { has_password: true, can_set_password: true })
+    assert.deepEqual(await status.json(), { has_password: true, can_set_password: true, can_set_without_current_password: true })
     const rejected = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, {
       method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'new pass word' }),
+      body: JSON.stringify({ new_password: 'new pass word' }),
     })
     assert.equal(rejected.status, 403)
     assert.equal(changed, false)
     const update = await fetch(`${runtime.baseUrl}/api/v1/auth/password`, {
       method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json',
         'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' },
-      body: JSON.stringify({ password: 'new pass word' }),
+      body: JSON.stringify({ new_password: 'new pass word' }),
     })
     assert.equal(update.status, 204)
     assert.equal(changed, true)
+    const guestReset = await fetch(`${runtime.baseUrl}/api/v1/auth/password-reset`, {
+      method: 'PUT', headers: { origin: 'https://web.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ reset_grant: 'r'.repeat(43), new_password: 'reset password' }),
+    })
+    assert.equal(guestReset.status, 204)
+    assert.equal(resetSession, null)
+    resetSession = undefined
+    const resetWithoutCsrf = await fetch(`${runtime.baseUrl}/api/v1/auth/password-reset`, {
+      method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ reset_grant: 'r'.repeat(43), new_password: 'reset password' }),
+    })
+    assert.equal(resetWithoutCsrf.status, 403)
+    assert.equal(resetSession, undefined)
+    const accountReset = await fetch(`${runtime.baseUrl}/api/v1/auth/password-reset`, {
+      method: 'PUT', headers: { cookie, origin: 'https://web.example', 'content-type': 'application/json',
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' },
+      body: JSON.stringify({ reset_grant: 'r'.repeat(43), new_password: 'reset password' }),
+    })
+    assert.equal(accountReset.status, 204)
+    assert.equal(resetSession, 'session-token-with-at-least-thirty-two-characters')
+  } finally { await runtime.stop() }
+})
+
+test('password recovery challenge verifies to a grant without creating a login session', async () => {
+  const fake = new FakeIdentityService()
+  const identity: ApiIdentityService = {
+    startChallenge: (command) => fake.startChallenge(command),
+    verifyChallenge: async () => ({ purpose: 'password_reset', resetGrant: 'r'.repeat(43),
+      expiresAt: '2026-08-10T00:05:00.000Z' }),
+    getSession: () => fake.getSession(),
+    logout: (token, csrf, version) => fake.logout(token, csrf, version),
+  }
+  const runtime = await start(async () => undefined, identity)
+  try {
+    const started = await fetch(`${runtime.baseUrl}/api/v1/auth/email-challenges`, {
+      method: 'POST', headers: { origin: 'https://web.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'user@example.com', purpose: 'password_reset', return_to: '/auth',
+        client_request_id: '99999999-9999-4999-8999-999999999999' }),
+    })
+    assert.equal(started.status, 202)
+    assert.equal(fake.startCommand?.purpose, 'password_reset')
+    const verified = await fetch(`${runtime.baseUrl}/api/v1/auth/email-challenges/33333333-3333-4333-8333-333333333333/verify`, {
+      method: 'POST', headers: { origin: 'https://web.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ auth_flow_id: '22222222-2222-4222-8222-222222222222', otp: '123456',
+        client_request_id: '99999999-9999-4999-8999-999999999999' }),
+    })
+    assert.equal(verified.status, 200)
+    assert.deepEqual(await verified.json(), { purpose: 'password_reset', reset_grant: 'r'.repeat(43),
+      expires_at: '2026-08-10T00:05:00.000Z' })
+    assert.doesNotMatch(verified.headers.get('set-cookie') ?? '', /vc_session=/)
   } finally { await runtime.stop() }
 })
 

@@ -34,8 +34,10 @@ export interface PasswordStore {
     readonly now: Date
     readonly requestId: string
   }): Promise<boolean>
-  getStatus(userId: string, sessionHash: Buffer, now: Date): Promise<{ hasPassword: boolean; canSetPassword: boolean }>
-  setPassword(input: { userId: string; sessionHash: Buffer; passwordHash: string; now: Date; requestId: string }): Promise<boolean>
+  getStatus(userId: string, sessionHash: Buffer, now: Date): Promise<{ hasPassword: boolean; canSetPassword: boolean; passwordHash: string | null }>
+  consumeChangeAttempt(userHash: Buffer, ipHash: Buffer | null, now: Date, windowSeconds: number): Promise<boolean>
+  setPassword(input: { userId: string; sessionHash: Buffer; passwordHash: string; expectedPasswordHash: string | null; allowRecentOtp: boolean; now: Date; requestId: string }): Promise<boolean>
+  resetPassword(input: { grantHash: Buffer; sessionHash: Buffer | null; passwordHash: string; now: Date; requestId: string }): Promise<boolean>
 }
 
 const options = { algorithm: 2 as const, memoryCost: 19_456, timeCost: 2, parallelism: 1 }
@@ -108,23 +110,54 @@ export class PasswordService {
 
   async getStatus(sessionToken: string, userId: string) {
     this.enabled()
-    return this.store.getStatus(userId, keyedHash(this.config.authTokenSecret, sessionToken), this.now())
+    const { hasPassword, canSetPassword } = await this.store.getStatus(userId, keyedHash(this.config.authTokenSecret, sessionToken), this.now())
+    return { hasPassword, canSetPassword: !hasPassword && canSetPassword, canSetWithoutCurrentPassword: canSetPassword }
   }
 
-  async setPassword(command: { sessionToken: string; userId: string; password: string; requestId: string }): Promise<void> {
+  async setPassword(command: { sessionToken: string; userId: string; password: string; currentPassword?: string | null; ipAddress?: string | null; requestId: string }): Promise<void> {
     this.enabled()
     const length = Array.from(command.password).length
     if (length < 8 || length > 64 || Buffer.byteLength(command.password, 'utf8') > 1024) {
       throw identityError('PASSWORD_INVALID', 422)
     }
     const sessionHash = keyedHash(this.config.authTokenSecret, command.sessionToken)
-    const status = await this.store.getStatus(command.userId, sessionHash, this.now())
-    if (!status.canSetPassword) throw identityError('OTP_REAUTH_REQUIRED', 403)
+    const now = this.now()
+    const status = await this.store.getStatus(command.userId, sessionHash, now)
+    let expectedPasswordHash: string | null = null
+    let allowRecentOtp = false
+    if (status.hasPassword && command.currentPassword) {
+      const userHash = keyedHash(this.config.authTokenSecret, command.userId)
+      const ipHash = command.ipAddress ? keyedHash(this.config.authTokenSecret, command.ipAddress) : null
+      if (!await this.store.consumeChangeAttempt(userHash, ipHash, now, this.config.rateWindowSeconds)) {
+        throw identityError('AUTH_RATE_LIMITED', 429, true, this.config.rateWindowSeconds)
+      }
+      let valid = false
+      try { valid = await verify(status.passwordHash ?? await dummyHash, command.currentPassword) } catch { /* malformed stored hash */ }
+      if (!valid || !status.passwordHash) throw identityError('CURRENT_PASSWORD_INVALID', 403)
+      expectedPasswordHash = status.passwordHash
+    } else {
+      if (!status.canSetPassword) throw identityError('OTP_REAUTH_REQUIRED', 403)
+      allowRecentOtp = true
+    }
     const passwordHash = await hash(command.password, options)
     if (!await this.store.setPassword({
       userId: command.userId,
       sessionHash,
-      passwordHash, now: this.now(), requestId: command.requestId,
+      passwordHash, expectedPasswordHash, allowRecentOtp, now, requestId: command.requestId,
     })) throw identityError('OTP_REAUTH_REQUIRED', 403)
+  }
+
+  async resetPassword(command: { resetGrant: string; sessionToken: string | null; password: string; requestId: string }): Promise<void> {
+    this.enabled()
+    const length = Array.from(command.password).length
+    if (length < 8 || length > 64 || Buffer.byteLength(command.password, 'utf8') > 1024) throw identityError('PASSWORD_INVALID', 422)
+    if (!/^[A-Za-z0-9_-]{43}$/.test(command.resetGrant)) throw identityError('PASSWORD_RESET_INVALID', 403)
+    const passwordHash = await hash(command.password, options)
+    const updated = await this.store.resetPassword({
+      grantHash: keyedHash(this.config.authTokenSecret, command.resetGrant),
+      sessionHash: command.sessionToken ? keyedHash(this.config.authTokenSecret, command.sessionToken) : null,
+      passwordHash, now: this.now(), requestId: command.requestId,
+    })
+    if (!updated) throw identityError('PASSWORD_RESET_INVALID', 403)
   }
 }

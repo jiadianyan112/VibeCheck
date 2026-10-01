@@ -16,8 +16,10 @@ vi.mock('../services/authService', async (importOriginal) => {
     ...actual,
     createAuthRequestId: vi.fn(() => '11111111-1111-4111-8111-111111111111'),
     startEmailChallenge: vi.fn(),
+    startPasswordResetChallenge: vi.fn(),
     verifyEmailChallenge: vi.fn(),
     passwordLogin: vi.fn(),
+    resetPassword: vi.fn(),
   }
 })
 
@@ -78,6 +80,19 @@ describe('AuthPage', () => {
       session,
       return_to: '/submit',
     })
+    vi.mocked(authService.startPasswordResetChallenge).mockResolvedValue({
+      auth_flow_id: '55555555-5555-4555-8555-555555555555',
+      challenge_id: '66666666-6666-4666-8666-666666666666',
+      expires_at: '2026-08-11T00:10:00.000Z',
+      resend_after: '2026-08-11T00:01:00.000Z',
+      masked_email: 'us***@example.com',
+    })
+    vi.mocked(authService.verifyEmailChallenge).mockResolvedValue({
+      purpose: 'login',
+      session,
+      return_to: '/submit',
+    })
+    vi.mocked(authService.resetPassword).mockResolvedValue(undefined)
   })
 
   it('uses password login by default and returns to return_to', async () => {
@@ -212,16 +227,28 @@ describe('AuthPage', () => {
     expect(screen.getByText('身份：us***@example.com')).toBeInTheDocument()
   })
 
-  it('sends forgot-password users to the forced OTP flow for password security settings', async () => {
+  it('completes the guest forgot-password flow without creating a session', async () => {
     const user = userEvent.setup()
     renderAuth()
-    await user.click(screen.getByRole('link', { name: '忘记密码？使用验证码登录' }))
-    expect(screen.getByRole('heading', { name: '邮箱验证码登录' })).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: /^邮箱地址/ }), 'user@example.com')
-    await user.click(screen.getByRole('button', { name: '发送验证码' }))
-    expect(authService.startEmailChallenge).toHaveBeenCalledWith(expect.objectContaining({
+    await user.click(screen.getByRole('link', { name: '忘记密码？' }))
+    expect(screen.getByRole('heading', { name: '重设密码' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: '账号邮箱' }), 'user@example.com')
+    await user.click(screen.getByRole('button', { name: '发送邮箱验证码' }))
+    expect(authService.startPasswordResetChallenge).toHaveBeenCalledWith(expect.objectContaining({
       email: 'user@example.com',
-      returnTo: '/me#security',
     }))
+    vi.mocked(authService.verifyEmailChallenge).mockResolvedValueOnce({
+      purpose: 'password_reset',
+      reset_grant: 'reset-grant-token',
+      expires_at: '2026-08-11T00:10:00.000Z',
+    })
+    await user.type(screen.getByRole('textbox', { name: '邮箱验证码' }), '123456')
+    await user.click(screen.getByRole('button', { name: '验证邮箱' }))
+    expect(await screen.findByText('邮箱已验证，请设置新密码。')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('新密码'), 'new secret')
+    await user.type(screen.getByLabelText('确认新密码'), 'new secret')
+    await user.click(screen.getByRole('button', { name: '保存新密码' }))
+    expect(authService.resetPassword).toHaveBeenCalledWith('reset-grant-token', 'new secret', undefined)
+    expect(await screen.findByText('密码已重设。请使用新密码登录。')).toBeInTheDocument()
   })
 })

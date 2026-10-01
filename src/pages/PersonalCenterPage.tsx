@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, EmptyState, Input, Tag, useToast } from '../components'
+import { PasswordResetFlow } from '../components/PasswordResetFlow'
 import { buildPersonalCenterData, isStaffRole, publishedProjectFromSubmission, roleLabels, submissionReviewStatusLabels, useAuthSession, verificationStatusLabels } from '../features'
 import { projects } from '../mocks'
 import { AuthApiError, getPasswordStatus, setPassword, type AuthPasswordStatusDto } from '../services/authService'
@@ -17,7 +18,8 @@ function passwordErrorMessage(error: unknown) {
   if (!(error instanceof AuthApiError)) return '密码服务暂时不可用，请稍后重试。'
   const messages: Record<string, string> = {
     PASSWORD_INVALID: '密码长度需为 8–64 个字符。',
-    OTP_REAUTH_REQUIRED: '请先完成邮箱验证码登录，再设置或重设密码。',
+    OTP_REAUTH_REQUIRED: '邮箱验证已过期，请在此重新验证。',
+    CURRENT_PASSWORD_INVALID: '当前密码不正确，请重试。',
     AUTH_RATE_LIMITED: '请求次数过多，请稍后再试。',
     AUTH_SESSION_REQUIRED: '当前登录已失效，请重新登录。',
     CSRF_INVALID: '登录验证环境已变化，请刷新页面后重试。',
@@ -38,6 +40,10 @@ export function PersonalCenterPage() {
   const [passwordStatusLoading, setPasswordStatusLoading] = useState(true)
   const [passwordStatusError, setPasswordStatusError] = useState<string | null>(null)
   const [passwordValue, setPasswordValue] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [resetFlow, setResetFlow] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null)
@@ -77,6 +83,8 @@ export function PersonalCenterPage() {
       setPasswordNotice(null)
       return
     }
+    if (passwordValue !== confirmPassword) { setPasswordError('两次输入的密码不一致。'); return }
+    if (passwordStatus?.has_password && !currentPassword) { setPasswordError('请输入当前密码。'); return }
     const currentSession = auth.session
     if (!currentSession) {
       setPasswordError('当前登录已失效，请重新登录。')
@@ -87,17 +95,21 @@ export function PersonalCenterPage() {
     setPasswordError(null)
     setPasswordNotice(null)
     try {
-      await setPassword(currentSession, passwordValue)
+      await setPassword(currentSession, passwordValue, passwordStatus?.has_password ? currentPassword : undefined)
       setPasswordStatus((current) => ({
         has_password: true,
-        can_set_password: current?.can_set_password ?? true,
+        can_set_password: false,
+        can_set_without_current_password: current?.can_set_without_current_password ?? false,
       }))
       setPasswordValue('')
+      setConfirmPassword('')
+      setCurrentPassword('')
       setPasswordNotice('密码已更新')
       pushToast('密码已更新。', 'success')
     } catch (error) {
       if (error instanceof AuthApiError && error.code === 'OTP_REAUTH_REQUIRED') {
-        setPasswordStatus((current) => current ? { ...current, can_set_password: false } : current)
+        setPasswordStatus((current) => current ? { ...current, can_set_password: false, can_set_without_current_password: false } : current)
+        setResetFlow(true)
       }
       setPasswordError(passwordErrorMessage(error))
     } finally {
@@ -142,22 +154,27 @@ export function PersonalCenterPage() {
       </section>
 
       <section id="security" className="personal-section stack" aria-labelledby="security-heading">
-        <div className="section-heading"><h2 id="security-heading">账号安全</h2><p>使用邮箱验证码验证后，可以设置或重设登录密码。</p></div>
+        <div className="section-heading"><h2 id="security-heading">账号安全</h2><p>管理登录密码，忘记当前密码时可在这里验证邮箱。</p></div>
         <div className="security-panel stack stack--small">
           <div className="cluster cluster--between">
             <div><strong>登录密码</strong><p className="page-description">密码长度为 8–64 个字符，可包含空格。</p></div>
             {passwordStatusLoading ? <Tag tone="dashed">读取中</Tag> : passwordStatus?.has_password ? <Tag tone="strong">密码已设置</Tag> : <Tag tone="dashed">尚未设置密码</Tag>}
           </div>
           {passwordStatusError ? <div className="security-panel__error" role="alert"><p>{passwordStatusError}</p><Button variant="quiet" onClick={() => void loadPasswordStatus()}>重新读取</Button></div> : null}
-          {!passwordStatusLoading && !passwordStatusError && passwordStatus?.can_set_password ? (
-            <form className="security-password-form" onSubmit={(event) => void submitPassword(event)} noValidate>
-              <Input label="新密码" type="password" value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); setPasswordError(null); setPasswordNotice(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} error={passwordError ?? undefined} hint="设置后会让其他设备上的登录失效。" />
-              {passwordNotice ? <p className="security-panel__notice" role="status">{passwordNotice}</p> : null}
-              <Button type="submit" variant="primary" loading={passwordSaving}>{passwordStatus.has_password ? '更新密码' : '保存密码'}</Button>
-            </form>
-          ) : !passwordStatusLoading && !passwordStatusError && passwordStatus ? (
-            <div className="security-panel__reauth"><p>需要先验证邮箱，才能设置或重设密码。</p><Link className="button button--secondary" to="/auth?mode=otp&return_to=%2Fme%23security">使用验证码验证后设置密码</Link></div>
-          ) : null}
+          {passwordNotice ? <p className="security-panel__notice" role="status">{passwordNotice}</p> : null}
+          {!passwordStatusLoading && !passwordStatusError && passwordStatus ? <>
+            {passwordStatus.has_password ? <div className="cluster"><Button variant="quiet" onClick={() => { setResetFlow(false); setPasswordError(null) }}>修改密码</Button><Button variant="quiet" onClick={() => { setResetFlow(true); setPasswordError(null) }}>忘记当前密码</Button></div> : <strong>设置密码</strong>}
+            {resetFlow || (!passwordStatus.has_password && !passwordStatus.can_set_password)
+              ? <div className="security-panel__reauth stack stack--small"><p>验证当前账号的邮箱后，可以{passwordStatus.has_password ? '重设' : '设置'}密码。</p><PasswordResetFlow session={auth.session} onSuccess={() => { setResetFlow(false); setPasswordStatus({ has_password: true, can_set_password: false, can_set_without_current_password: false }); setPasswordNotice('密码已保存，其他设备已退出登录。'); pushToast('密码已保存。', 'success') }} /></div>
+              : <form className="security-password-form stack stack--small" onSubmit={(event) => void submitPassword(event)} noValidate>
+                {passwordStatus.has_password ? <Input label="当前密码" type={showPassword ? 'text' : 'password'} value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setPasswordError(null) }} autoComplete="current-password" required disabled={passwordSaving} /> : <p>刚完成邮箱验证，可直接设置密码。</p>}
+                <Input label="新密码" type={showPassword ? 'text' : 'password'} value={passwordValue} onChange={(event) => { setPasswordValue(event.target.value); setPasswordError(null); setPasswordNotice(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} hint="设置后会让其他设备上的登录失效。" />
+                <Input label="确认新密码" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setPasswordError(null) }} autoComplete="new-password" minLength={8} required disabled={passwordSaving} />
+                <label className="cluster"><input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} />显示密码</label>
+                {passwordError ? <p className="field-error" role="alert">{passwordError}</p> : null}
+                <Button type="submit" variant="primary" loading={passwordSaving}>{passwordStatus.has_password ? '修改密码' : '设置密码'}</Button>
+              </form>}
+          </> : null}
         </div>
       </section>
 

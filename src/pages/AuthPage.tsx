@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Button, Input, useToast } from '../components'
+import { PasswordResetFlow } from '../components/PasswordResetFlow'
 import { BrandMark } from '../components/brand'
 import { roleLabels, useAuthSession } from '../features'
 import {
@@ -48,7 +49,7 @@ function authErrorMessage(error: unknown): string {
   return messages[error.code] ?? '登录服务暂时不可用，请稍后重试。'
 }
 
-type AuthMode = 'password' | 'otp'
+type AuthMode = 'password' | 'otp' | 'reset'
 
 export function AuthPage() {
   const { state, dispatch } = useAppState()
@@ -58,7 +59,9 @@ export function AuthPage() {
   const navigate = useNavigate()
   const returnPath = safeReturnPath(searchParams.get('return_to'))
   const forceOtp = searchParams.get('mode') === 'otp'
-  const [mode, setMode] = useState<AuthMode>(forceOtp ? 'otp' : 'password')
+  const forceReset = searchParams.get('mode') === 'reset'
+  const [mode, setMode] = useState<AuthMode>(forceReset ? 'reset' : forceOtp ? 'otp' : 'password')
+  const [resetDone, setResetDone] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
@@ -72,8 +75,10 @@ export function AuthPage() {
   const [errorField, setErrorField] = useState<'email' | 'password' | 'otp' | null>(null)
 
   useEffect(() => {
-    if (forceOtp) setMode('otp')
-  }, [forceOtp])
+    if (forceReset) setMode('reset')
+    else if (forceOtp) setMode('otp')
+    else setMode('password')
+  }, [forceOtp, forceReset])
 
   useEffect(() => {
     if (challenge) otpInput.current?.focus()
@@ -184,6 +189,17 @@ export function AuthPage() {
       setSubmitting(false)
     }
   }
+
+  if (mode === 'reset') return <main className="auth-page highfi-scope">
+    <Link className="auth-page__back" to="/projects">← 返回作品广场</Link>
+    <section className="auth-page__content" aria-labelledby="password-reset-heading">
+      <BrandMark />
+      <h1 id="password-reset-heading">重设密码</h1>
+      {resetDone ? <div className="stack stack--small" role="status"><p>密码已重设。请使用新密码登录。</p><Link className="button button--primary" to="/auth?mode=password">返回密码登录</Link></div>
+        : <><p>输入账号邮箱，验证后设置新密码。重设不会创建新账号。</p><PasswordResetFlow onSuccess={() => setResetDone(true)} /></>}
+      <Link className="auth-page__guest" to="/auth?mode=password">返回登录</Link>
+    </section>
+  </main>
 
   if (state.session.user && mode !== 'otp') {
     const logout = async () => {
@@ -301,7 +317,7 @@ export function AuthPage() {
               </div>
               <Button className="auth-page__submit" type="submit" variant="primary" loading={submitting}>登录</Button>
               <p className="auth-page__note">密码长度为 8–64 个字符，可包含空格</p>
-              <Link className="auth-page__forgot" to="/auth?mode=otp&return_to=%2Fme%23security" replace>忘记密码？使用验证码登录</Link>
+              <Link className="auth-page__forgot" to="/auth?mode=reset">忘记密码？</Link>
             </>
           ) : (
             <>

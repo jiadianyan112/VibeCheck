@@ -25,6 +25,9 @@ vi.mock('../services/authService', async (importOriginal) => {
     ...actual,
     getPasswordStatus: vi.fn(),
     setPassword: vi.fn(),
+    startPasswordResetChallenge: vi.fn(),
+    verifyEmailChallenge: vi.fn(),
+    resetPassword: vi.fn(),
   }
 })
 
@@ -64,8 +67,21 @@ describe('PersonalCenterPage', () => {
       signOut: vi.fn().mockResolvedValue(undefined),
       refresh: vi.fn().mockResolvedValue(undefined),
     })
-    vi.mocked(authService.getPasswordStatus).mockResolvedValue({ has_password: true, can_set_password: true })
+    vi.mocked(authService.getPasswordStatus).mockResolvedValue({ has_password: true, can_set_password: true, can_set_without_current_password: false })
     vi.mocked(authService.setPassword).mockResolvedValue(undefined)
+    vi.mocked(authService.startPasswordResetChallenge).mockResolvedValue({
+      auth_flow_id: '55555555-5555-4555-8555-555555555555',
+      challenge_id: '66666666-6666-4666-8666-666666666666',
+      expires_at: '2026-09-25T10:10:00.000Z',
+      resend_after: '2026-09-25T10:01:00.000Z',
+      masked_email: 'mi***@example.com',
+    })
+    vi.mocked(authService.verifyEmailChallenge).mockResolvedValue({
+      purpose: 'password_reset',
+      reset_grant: 'reset-grant-token',
+      expires_at: '2026-09-25T10:10:00.000Z',
+    })
+    vi.mocked(authService.resetPassword).mockResolvedValue(undefined)
   })
 
   it('returns a guest to email OTP login and keeps the original route', async () => {
@@ -74,36 +90,54 @@ describe('PersonalCenterPage', () => {
     expect(screen.getByRole('heading', { name: '邮箱密码登录' })).toBeInTheDocument()
   })
 
-  it('shows password security status and submits a password without trimming spaces', async () => {
+  it('shows password security status and changes a password with the current password', async () => {
     const user = userEvent.setup()
     loginAs(0)
     renderMe()
     expect(await screen.findByRole('heading', { name: '账号安全' })).toBeInTheDocument()
     expect(screen.getByText('密码已设置')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('当前密码'), 'old secret')
     await user.type(screen.getByLabelText(/^新密码/), 'secret 123')
-    await user.click(screen.getByRole('button', { name: '更新密码' }))
-    expect(authService.setPassword).toHaveBeenCalledWith(expect.anything(), 'secret 123')
+    await user.type(screen.getByLabelText('确认新密码'), 'secret 123')
+    await user.click(screen.getAllByRole('button', { name: '修改密码' })[1]!)
+    expect(authService.setPassword).toHaveBeenCalledWith(expect.anything(), 'secret 123', 'old secret')
     expect(within(screen.getByRole('region', { name: '账号安全' })).getByRole('status')).toHaveTextContent('密码已更新')
   })
 
-  it('links users without recent OTP authentication to the forced OTP security flow', async () => {
-    vi.mocked(authService.getPasswordStatus).mockImplementation(async () => ({ has_password: true, can_set_password: false }))
+  it('offers current-password change and inline email reset actions', async () => {
+    const user = userEvent.setup()
+    vi.mocked(authService.getPasswordStatus).mockResolvedValue({ has_password: true, can_set_password: false, can_set_without_current_password: false })
     loginAs(0)
     renderMe()
-    expect(await screen.findByText(/需要先验证邮箱/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '使用验证码验证后设置密码' })).toHaveAttribute('href', '/auth?mode=otp&return_to=%2Fme%23security')
-    expect(screen.queryByRole('textbox', { name: '新密码' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '账号安全' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '修改密码' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '忘记当前密码' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '忘记当前密码' }))
+    expect(screen.getByRole('button', { name: '发送邮箱验证码' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '发送邮箱验证码' }))
+    expect(authService.startPasswordResetChallenge).toHaveBeenCalledWith(expect.objectContaining({
+      clientRequestId: expect.any(String),
+    }))
+    await user.type(screen.getByRole('textbox', { name: '邮箱验证码' }), '123456')
+    await user.click(screen.getByRole('button', { name: '验证邮箱' }))
+    expect(await screen.findByText('邮箱已验证，请设置新密码。')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('新密码'), 'reset secret')
+    await user.type(screen.getByLabelText('确认新密码'), 'reset secret')
+    await user.click(screen.getByRole('button', { name: '保存新密码' }))
+    expect(authService.resetPassword).toHaveBeenCalledWith('reset-grant-token', 'reset secret', testAuthSession)
+    expect(await within(screen.getByRole('region', { name: '账号安全' })).findByRole('status')).toHaveTextContent('密码已保存')
   })
 
-  it('switches to the forced OTP flow when the recent email verification expires', async () => {
+  it('requires the current password before submitting an existing password change', async () => {
     const user = userEvent.setup()
-    vi.mocked(authService.setPassword).mockRejectedValueOnce(new authService.AuthApiError('OTP_REAUTH_REQUIRED', 403, null, false, null))
     loginAs(0)
     renderMe()
-    expect(await screen.findByRole('button', { name: '更新密码' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: '账号安全' })
     await user.type(screen.getByLabelText(/^新密码/), 'secret 123')
-    await user.click(screen.getByRole('button', { name: '更新密码' }))
-    expect(await screen.findByRole('link', { name: '使用验证码验证后设置密码' })).toHaveAttribute('href', '/auth?mode=otp&return_to=%2Fme%23security')
+    await user.type(screen.getByLabelText('确认新密码'), 'secret 123')
+    await user.click(screen.getAllByRole('button', { name: '修改密码' })[1]!)
+    expect(await screen.findByRole('alert')).toHaveTextContent('请输入当前密码。')
+    expect(authService.setPassword).not.toHaveBeenCalled()
   })
 
   it('returns all registered-user history to shared source records', async () => {

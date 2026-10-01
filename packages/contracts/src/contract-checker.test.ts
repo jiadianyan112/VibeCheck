@@ -10,6 +10,10 @@ describe('OpenAPI contract', () => {
       'OP-PLATFORM-LIVE',
       'OP-PLATFORM-READY',
       'OP-AUTH-START',
+      'OP-AUTH-PASSWORD-LOGIN',
+      'OP-AUTH-PASSWORD-STATUS',
+      'OP-AUTH-PASSWORD-SET',
+      'OP-AUTH-PASSWORD-RESET',
       'OP-AUTH-CALLBACK',
       'OP-AUTH-SESSION-GET',
       'OP-AUTH-SESSION-DELETE',
@@ -103,7 +107,7 @@ describe('OpenAPI contract', () => {
       'OP-OWNERSHIP-WITHDRAW-REQUEST',
       'OP-OWNERSHIP-WITHDRAW-REJECT',
     ])
-    assert.equal(result.pathCount, 85)
+    assert.equal(result.pathCount, 88)
   })
 
   it('rejects a dangling local schema reference', () => {
