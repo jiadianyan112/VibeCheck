@@ -720,6 +720,37 @@ paths:
         '415': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/interactions/projects:
+    get:
+      tags: [Community]
+      operationId: OP-INTERACTIONS-PROJECTS-GET
+      summary: Read the authenticated user's interaction state for public projects
+      description: >-
+        Returns only projects currently published on the platform or by their author and
+        with a current version. The response is bound to the authenticated session; state
+        for another user is never exposed. Duplicate project IDs are collapsed and at most
+        100 IDs may be requested.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: project_ids
+          required: true
+          description: Comma-separated project UUIDs, with duplicates removed by the server.
+          schema:
+            type: string
+            minLength: 36
+            maxLength: 3699
+            pattern: '^[0-9a-fA-F-]+(,[0-9a-fA-F-]+){0,99}$'
+      responses:
+        '200':
+          description: Interaction state and aggregate counts for the public requested projects.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectInteractionsProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/projects/{project_id}/comments:
     get:
       tags: [Community]
@@ -3734,6 +3765,23 @@ components:
         count_deltas: { $ref: '#/components/schemas/InteractionCountDeltas' }
         change_sources: { $ref: '#/components/schemas/InteractionChangeSources' }
         updated_at: { type: string, format: date-time }
+    ProjectInteractionReadProjection:
+      type: object
+      additionalProperties: false
+      required: [project_id, states, counts]
+      properties:
+        project_id: { type: string, format: uuid }
+        states: { $ref: '#/components/schemas/InteractionStates' }
+        counts: { $ref: '#/components/schemas/InteractionCounts' }
+    ProjectInteractionsProjection:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProjectInteractionReadProjection' }
     NotificationType:
       type: string
       enum: [submission_published, project_updated]

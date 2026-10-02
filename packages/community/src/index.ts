@@ -13,6 +13,7 @@ export {
 export type {
   ProjectInteractionFactChange,
   ProjectInteractionStore,
+  GetStoredProjectInteractionsInput,
   SetStoredProjectInteractionInput,
 } from './store-port.js'
 export {
@@ -22,6 +23,9 @@ export {
   type InteractionCounts,
   type InteractionStates,
   type ProjectInteractionProjection,
+  type ProjectInteractionReadProjection,
+  type ProjectInteractionsProjection,
+  type GetProjectInteractionsCommand,
   type ProjectInteractionType,
   type SetProjectInteractionCommand,
   commentModerationStates,

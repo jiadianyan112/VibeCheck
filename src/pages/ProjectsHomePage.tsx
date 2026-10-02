@@ -1,3 +1,4 @@
+import { useProjectInteractions } from '../features/interactions/ProjectInteractionContext'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ErrorPanel, LoadingState } from '../components'
@@ -45,6 +46,8 @@ export function ProjectsHomePage() {
     return () => { active = false }
   }, [state.serviceScenario])
 
+  const interactions = useProjectInteractions(projects)
+
   const visibleProjects = useMemo(() => {
     const filtered = projects.filter((project) => {
       if (channel === 'portfolio') return project.categoryId === 'personal_site_portfolio'
@@ -73,7 +76,7 @@ export function ProjectsHomePage() {
   function toggleLike(project: Project) {
     const sourcePath = `/projects${searchParams.size ? `?${searchParams}` : ''}`
     const action = { id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath } as const
-    requireLogin(action, () => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id }))
+    requireLogin(action, () => interactions.toggleLike(project))
   }
 
   return (
@@ -92,7 +95,7 @@ export function ProjectsHomePage() {
             key={project.id}
             project={project}
             creators={creatorsForProject(project)}
-            liked={state.likedProjectIds.includes(project.id)}
+            liked={interactions.liked(project)} likeCount={interactions.likeCount(project)} likePending={interactions.busy(project)}
             selectedForCompare={state.comparisonProjectIds.includes(project.id)}
             onToggleLike={toggleLike}
             onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)}

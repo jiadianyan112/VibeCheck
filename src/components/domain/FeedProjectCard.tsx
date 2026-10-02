@@ -17,6 +17,8 @@ export type FeedProjectCardProps = Pick<
   'project' | 'creators' | 'selectedForCompare' | 'onToggleCompare'
 > & {
   liked?: boolean
+  likeCount?: number
+  likePending?: boolean
   onToggleLike?: (project: ProjectCardProps['project']) => void
 }
 
@@ -64,6 +66,8 @@ export function FeedProjectCard({
   project,
   creators = [],
   liked = false,
+  likeCount: confirmedLikeCount,
+  likePending = false,
   selectedForCompare = false,
   onToggleLike,
   onToggleCompare,
@@ -73,7 +77,7 @@ export function FeedProjectCard({
   const media = project.coverMedia[0]
   const realMedia = hasRealMedia(media)
   const tool = firstTool(project)
-  const likeCount = project.interactionSummary.likeCount + (liked ? 1 : 0)
+  const likeCount = confirmedLikeCount ?? project.interactionSummary.likeCount + (liked ? 1 : 0)
   const creator = creators[0]
   const accessStatus = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const titleId = `feed-card-title-${project.id}`
@@ -135,6 +139,7 @@ export function FeedProjectCard({
             className="feed-card__action feed-card__favorite"
             aria-label={liked ? '取消点赞' : '点赞'}
             aria-pressed={liked}
+            disabled={likePending}
             onClick={() => onToggleLike(project)}
           >
             <span className="feed-card__heart" aria-hidden="true">{liked ? '♥' : '♡'}</span>

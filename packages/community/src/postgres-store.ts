@@ -4,6 +4,7 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
 import { communityError } from './errors.js'
 import type {
+  GetStoredProjectInteractionsInput,
   ProjectInteractionFactChange,
   ProjectInteractionStore,
   SetStoredProjectInteractionInput,
@@ -17,6 +18,7 @@ import type {
   InteractionCounts,
   PublicCommentProjection,
   ProjectInteractionProjection,
+  ProjectInteractionsProjection,
   ProjectInteractionType,
 } from './types.js'
 
@@ -34,6 +36,13 @@ interface CounterRow extends QueryResultRow {
   readonly favorite_count: string
   readonly like_count: string
   readonly follower_count: string
+}
+
+interface ProjectInteractionReadRow extends CounterRow {
+  readonly project_id: string
+  readonly favorite_state: boolean
+  readonly like_state: boolean
+  readonly follow_state: boolean
 }
 
 interface ReceiptRow extends QueryResultRow {
@@ -98,6 +107,42 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
   private readonly publicCommentStates = new Set<CommentModerationState>(['visible', 'collapsed'])
 
   constructor(private readonly pool: Pool) {}
+
+  async getProjectInteractions(
+    input: GetStoredProjectInteractionsInput,
+  ): Promise<ProjectInteractionsProjection> {
+    const result = await this.pool.query<ProjectInteractionReadRow>(
+      `SELECT p.project_id,
+         COALESCE(bool_or(interaction.interaction_type='favorite' AND interaction.state),false) AS favorite_state,
+         COALESCE(bool_or(interaction.interaction_type='like' AND interaction.state),false) AS like_state,
+         COALESCE(bool_or(interaction.interaction_type='follow' AND interaction.state),false) AS follow_state,
+         COALESCE(counter.favorite_count,0)::text AS favorite_count,
+         COALESCE(counter.like_count,0)::text AS like_count,
+         COALESCE(counter.follower_count,0)::text AS follower_count
+       FROM catalog.projects p
+       LEFT JOIN community.project_interactions interaction
+         ON interaction.project_id=p.project_id AND interaction.user_id=$1
+       LEFT JOIN catalog.project_interaction_counters counter
+         ON counter.project_id=p.project_id
+       WHERE p.project_id=ANY($2::uuid[])
+         AND p.review_status IN ('published_platform','published_author')
+         AND p.current_version_id IS NOT NULL
+       GROUP BY p.project_id,counter.favorite_count,counter.like_count,counter.follower_count
+       ORDER BY array_position($2::uuid[],p.project_id)`,
+      [input.userId, input.projectIds],
+    )
+    return Object.freeze({
+      items: Object.freeze(result.rows.map((row) => Object.freeze({
+        project_id: row.project_id,
+        states: Object.freeze({
+          favorite: row.favorite_state,
+          like: row.like_state,
+          follow: row.follow_state,
+        }),
+        counts: this.counts(row),
+      }))),
+    })
+  }
 
   async setProjectInteraction(
     input: SetStoredProjectInteractionInput,

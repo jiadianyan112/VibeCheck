@@ -30,6 +30,21 @@ export interface ProjectInteractionProjection {
   readonly updated_at: string
 }
 
+export interface ProjectInteractionReadProjection {
+  readonly project_id: string
+  readonly states: InteractionStates
+  readonly counts: InteractionCounts
+}
+
+export interface ProjectInteractionsProjection {
+  readonly items: readonly ProjectInteractionReadProjection[]
+}
+
+export interface GetProjectInteractionsCommand {
+  readonly userId: string
+  readonly projectIds: readonly string[]
+}
+
 export interface SetProjectInteractionCommand {
   readonly userId: string
   readonly projectId: string

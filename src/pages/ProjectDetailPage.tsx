@@ -1,3 +1,4 @@
+import { useProjectInteractions } from '../features/interactions/ProjectInteractionContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ExperienceSection } from '../components/ExperienceSection'
@@ -97,6 +98,7 @@ export function ProjectDetailPage() {
   const { addProject } = useComparison()
   const { pushToast } = useToast()
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
+  const interactions = useProjectInteractions(bundle ? [bundle.project] : [])
   const [error, setError] = useState<ServiceError | null>(null)
   const [loading, setLoading] = useState(true)
   const [comments, setComments] = useState<ProjectComment[]>([])
@@ -209,7 +211,7 @@ export function ProjectDetailPage() {
   const status = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const selected = state.comparisonProjectIds.includes(project.id)
   const favorited = state.favoriteProjectIds.includes(project.id)
-  const liked = state.likedProjectIds.includes(project.id)
+  const liked = interactions.liked(project)
   const portfolio = project.categoryId === 'personal_site_portfolio' ? project.categoryData : null
   const trustVariant = searchParams.get('variant')
   const submissionUrl = searchParams.get('from') === 'submit'
@@ -316,7 +318,7 @@ export function ProjectDetailPage() {
         </div>
       </section>
 
-      <section className="interaction-strip" aria-label="社区互动"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{project.interactionSummary.likeCount + (liked ? 1 : 0)}</strong><span>点赞</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} onClick={() => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })}>{liked ? '已点赞' : '点赞'}</Button></section>
+      <section className="interaction-strip" aria-label="社区互动"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{interactions.likeCount(project)}</strong><span>点赞</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} disabled={interactions.busy(project)} onClick={() => requireLogin({ id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleLike(project))}>{liked ? '已点赞' : '点赞'}</Button></section>
 
       <section className="trust-variants stack" aria-labelledby="trust-variants-heading">
         <div className="section-heading cluster cluster--between"><div><h2 id="trust-variants-heading">作品信息与状态</h2></div><div className="cluster"><Link className="button button--quiet" to={`/submit?mode=supplement&project=${project.id}`}>补充作品信息</Link><details className="status-report-placeholder"><summary>状态说明</summary><p>这里仅说明当前状态，不会发起变更。需要补充或纠正信息时，请使用“补充作品信息”。</p></details></div></div>

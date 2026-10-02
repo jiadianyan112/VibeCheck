@@ -7,6 +7,7 @@ import type {
   InteractionChangeSource,
   PublicCommentProjection,
   ProjectInteractionProjection,
+  ProjectInteractionsProjection,
   ProjectInteractionType,
 } from './types.js'
 
@@ -20,10 +21,18 @@ export interface SetStoredProjectInteractionInput {
   readonly now: Date
 }
 
+export interface GetStoredProjectInteractionsInput {
+  readonly userId: string
+  readonly projectIds: readonly string[]
+}
+
 export interface ProjectInteractionStore {
   setProjectInteraction(
     input: SetStoredProjectInteractionInput,
   ): Promise<ProjectInteractionProjection>
+  getProjectInteractions?(
+    input: GetStoredProjectInteractionsInput,
+  ): Promise<ProjectInteractionsProjection>
 }
 
 export interface PublicCommentPageAnchor {

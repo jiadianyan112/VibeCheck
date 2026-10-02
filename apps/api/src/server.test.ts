@@ -47,11 +47,13 @@ import type {
   CreateCommentCommand,
   CreateExperienceCommand,
   ExperienceProjection,
+  GetProjectInteractionsCommand,
   ReplyToExperienceCommand,
   ListCommentsCommand,
   NotificationPage,
   NotificationReadProjection,
   ProjectInteractionProjection,
+  ProjectInteractionsProjection,
   ReportCommentCommand,
   SetProjectInteractionCommand,
   WithdrawCommentCommand,
@@ -413,6 +415,7 @@ class FakeComparisonService implements ApiComparisonService {
 
 class FakeCommunityService implements ApiCommunityService {
   command: SetProjectInteractionCommand | null = null
+  readCommand: GetProjectInteractionsCommand | null = null
   createCommand: CreateCommentCommand | null = null
   listCommand: ListCommentsCommand | null = null
   reportCommand: ReportCommentCommand | null = null
@@ -462,6 +465,19 @@ class FakeCommunityService implements ApiCommunityService {
         favorite: 'follow_cascade', like: null, follow: 'explicit',
       }),
       updated_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async getProjectInteractions(
+    command: GetProjectInteractionsCommand,
+  ): Promise<ProjectInteractionsProjection> {
+    this.readCommand = command
+    return Object.freeze({
+      items: Object.freeze(command.projectIds.map((project_id) => Object.freeze({
+        project_id,
+        states: Object.freeze({ favorite: false, like: true, follow: false }),
+        counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
+      }))),
     })
   }
 
@@ -2982,6 +2998,70 @@ test('project interaction requires login, writable account and matching CSRF bef
     assert.deepEqual((await written.json() as ProjectInteractionProjection).states, {
       favorite: true, like: false, follow: true,
     })
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('project interaction reads require login, bind the session user, and are no-store without write checks', async () => {
+  const firstProjectId = '10000000-0000-4000-8000-000000000001'
+  const secondProjectId = '10000000-0000-4000-8000-000000000002'
+  const path = `/api/v1/interactions/projects?project_ids=${firstProjectId},${firstProjectId.toUpperCase()},${secondProjectId}`
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+
+  const anonymousCommunity = new FakeCommunityService()
+  const anonymousRuntime = await start(
+    async () => undefined,
+    new RejectingIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    anonymousCommunity,
+  )
+  try {
+    const rejected = await fetch(`${anonymousRuntime.baseUrl}${path}`)
+    assert.equal(rejected.status, 401)
+    assert.equal(anonymousCommunity.readCommand, null)
+  } finally {
+    await anonymousRuntime.stop()
+  }
+
+  const community = new FakeCommunityService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    community,
+  )
+  try {
+    const invalid = await fetch(
+      `${runtime.baseUrl}/api/v1/interactions/projects?project_ids=not-a-uuid`,
+      { headers: { cookie: sessionCookie } },
+    )
+    assert.equal(invalid.status, 422)
+    assert.equal(community.readCommand, null)
+
+    const read = await fetch(`${runtime.baseUrl}${path}`, {
+      headers: {
+        cookie: sessionCookie,
+        origin: 'https://attacker.example',
+      },
+    })
+    assert.equal(read.status, 200)
+    assert.equal(read.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(community.readCommand, {
+      userId: session.userId,
+      projectIds: [firstProjectId, secondProjectId],
+    })
+    assert.deepEqual((await read.json() as ProjectInteractionsProjection).items.map((item) => item.project_id), [firstProjectId, secondProjectId])
   } finally {
     await runtime.stop()
   }

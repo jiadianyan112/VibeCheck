@@ -7,11 +7,13 @@ import type { CommunityStore, ProjectInteractionStore } from './store-port.js'
 import type {
   CommentProjection,
   CommentReportProjection,
+  ProjectInteractionsProjection,
   ProjectInteractionProjection,
 } from './types.js'
 
 const userId = '10000000-0000-4000-8000-000000000001'
 const projectId = '20000000-0000-4000-8000-000000000001'
+const secondProjectId = '20000000-0000-4000-8000-000000000002'
 const now = new Date('2026-08-13T00:00:00.000Z')
 
 const projection: ProjectInteractionProjection = Object.freeze({
@@ -54,6 +56,7 @@ const reportProjection: CommentReportProjection = Object.freeze({
 
 class FakeStore implements CommunityStore {
   input: Parameters<ProjectInteractionStore['setProjectInteraction']>[0] | null = null
+  readInput: Parameters<NonNullable<ProjectInteractionStore['getProjectInteractions']>>[0] | null = null
   createInput: Parameters<CommunityStore['createComment']>[0] | null = null
   reportInput: Parameters<CommunityStore['reportComment']>[0] | null = null
   experienceInput: Parameters<CommunityStore['createExperience']>[0] | null = null
@@ -64,6 +67,19 @@ class FakeStore implements CommunityStore {
   ): Promise<ProjectInteractionProjection> {
     this.input = input
     return projection
+  }
+
+  async getProjectInteractions(
+    input: Parameters<NonNullable<ProjectInteractionStore['getProjectInteractions']>>[0],
+  ): Promise<ProjectInteractionsProjection> {
+    this.readInput = input
+    return Object.freeze({
+      items: Object.freeze(input.projectIds.map((project_id) => Object.freeze({
+        project_id,
+        states: Object.freeze({ favorite: false, like: true, follow: false }),
+        counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
+      }))),
+    })
   }
 
   async createComment(input: Parameters<CommunityStore['createComment']>[0]) {
@@ -225,6 +241,54 @@ describe('CommunityService interactions', () => {
       422,
     )
     assert.equal(store.input, null)
+  })
+
+  it('reads only normalized, deduplicated project IDs for the authenticated user', async () => {
+    const store = new FakeStore()
+    const service = new CommunityService({ store })
+    const result = await service.getProjectInteractions({
+      userId: userId.toUpperCase(),
+      projectIds: [projectId.toUpperCase(), projectId, secondProjectId],
+    })
+    assert.deepEqual(store.readInput, {
+      userId,
+      projectIds: [projectId, secondProjectId],
+    })
+    assert.deepEqual(result.items.map((item) => item.project_id), [projectId, secondProjectId])
+    assert.equal(result.items[0]?.states.like, true)
+  })
+
+  it('rejects invalid read ID lists and reports an unavailable optional read store', async () => {
+    const store = new FakeStore()
+    const service = new CommunityService({ store })
+    await failure(
+      () => service.getProjectInteractions({ userId, projectIds: [] }),
+      'PROJECT_IDS_INVALID',
+      422,
+    )
+    await failure(
+      () => service.getProjectInteractions({ userId, projectIds: ['invalid'] }),
+      'PROJECT_ID_INVALID',
+      422,
+    )
+    await failure(
+      () => service.getProjectInteractions({
+        userId,
+        projectIds: Array.from({ length: 101 }, () => projectId),
+      }),
+      'PROJECT_IDS_INVALID',
+      422,
+    )
+
+    const writeOnlyStore: ProjectInteractionStore = {
+      setProjectInteraction: store.setProjectInteraction.bind(store),
+    }
+    const readUnavailable = new CommunityService({ store: writeOnlyStore })
+    await failure(
+      () => readUnavailable.getProjectInteractions({ userId, projectIds: [projectId] }),
+      'COMMUNITY_INTERACTION_READ_STORE_UNAVAILABLE',
+      503,
+    )
   })
 })
 

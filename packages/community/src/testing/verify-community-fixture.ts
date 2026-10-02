@@ -23,6 +23,7 @@ const service = new CommunityService({
   now: () => new Date('2026-08-13T08:00:00.000Z'),
 })
 const userId = '71000000-0000-4000-8000-000000000001'
+const otherUserId = '71000000-0000-4000-8000-000000000002'
 const projectId = '10000000-0000-4000-8000-000000000001'
 
 async function run(): Promise<void> {
@@ -73,6 +74,10 @@ async function run(): Promise<void> {
   await pool.query(
     `DELETE FROM community.project_interactions WHERE user_id=$1 AND project_id=$2`,
     [userId, projectId],
+  )
+  await pool.query(
+    `DELETE FROM community.project_interactions WHERE user_id=$1 AND project_id=$2`,
+    [otherUserId, projectId],
   )
   await pool.query(
     `UPDATE catalog.project_interaction_counters
@@ -193,6 +198,39 @@ async function run(): Promise<void> {
   assert.deepEqual(new Set([likeA.result, likeB.result]), new Set(['changed', 'no_change']))
   assert.equal(likeA.counts.like_count, 1)
   assert.equal(likeB.counts.like_count, 1)
+
+  const ownInteractions = await service.getProjectInteractions({
+    userId,
+    projectIds: [projectId, projectId],
+  })
+  assert.equal(ownInteractions.items.length, 1)
+  assert.equal(ownInteractions.items[0]?.states.like, true)
+  assert.equal(ownInteractions.items[0]?.counts.like_count, 1)
+
+  const otherInteractions = await service.getProjectInteractions({
+    userId: otherUserId,
+    projectIds: [projectId],
+  })
+  assert.equal(otherInteractions.items.length, 1)
+  assert.equal(otherInteractions.items[0]?.states.like, false)
+  assert.equal(otherInteractions.items[0]?.counts.like_count, 1)
+
+  const privateProject = await pool.query<{ project_id: string }>(
+    `SELECT project_id
+     FROM catalog.projects
+     WHERE project_id <> $1::uuid
+       AND (current_version_id IS NULL OR review_status NOT IN ('published_platform','published_author'))
+     ORDER BY project_id
+     LIMIT 1`,
+    [projectId],
+  )
+  if (privateProject.rows[0]) {
+    const publicOnly = await service.getProjectInteractions({
+      userId,
+      projectIds: [projectId, privateProject.rows[0].project_id],
+    })
+    assert.deepEqual(publicOnly.items.map(({ project_id }) => project_id), [projectId])
+  }
 
   const eventState = await pool.query<{
     interaction_count: number

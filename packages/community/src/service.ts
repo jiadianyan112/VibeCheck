@@ -15,11 +15,13 @@ import {
   type CreateExperienceCommand,
   type ExperiencePage,
   type ExperienceProjection,
+  type GetProjectInteractionsCommand,
   type ListExperiencesCommand,
   type ReplyToExperienceCommand,
   type ListCommentsCommand,
   type ModerateCommentCommand,
   type ProjectInteractionProjection,
+  type ProjectInteractionsProjection,
   type ProjectInteractionType,
   type ReportCommentCommand,
   type SetProjectInteractionCommand,
@@ -228,6 +230,32 @@ export class CommunityService {
       clientRequestId: command.clientRequestId,
       requestHash,
       now: this.now(),
+    })
+  }
+
+  async getProjectInteractions(
+    command: GetProjectInteractionsCommand,
+  ): Promise<ProjectInteractionsProjection> {
+    const userId = this.uuid(command.userId, 'USER_ID_INVALID')
+    if (!Array.isArray(command.projectIds) || command.projectIds.length < 1 || command.projectIds.length > 100) {
+      throw communityError('PROJECT_IDS_INVALID', 422)
+    }
+    const projectIds: string[] = []
+    const seen = new Set<string>()
+    for (const projectId of command.projectIds) {
+      const normalized = this.uuid(projectId, 'PROJECT_ID_INVALID')
+      if (!seen.has(normalized)) {
+        seen.add(normalized)
+        projectIds.push(normalized)
+      }
+    }
+    const store = this.dependencies.store as Partial<ProjectInteractionStore>
+    if (typeof store.getProjectInteractions !== 'function') {
+      throw communityError('COMMUNITY_INTERACTION_READ_STORE_UNAVAILABLE', 503, true)
+    }
+    return store.getProjectInteractions({
+      userId,
+      projectIds: Object.freeze(projectIds),
     })
   }
 

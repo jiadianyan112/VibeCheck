@@ -61,6 +61,8 @@ import {
   type NotificationPage,
   type NotificationReadProjection,
   type ProjectInteractionProjection,
+  type ProjectInteractionsProjection,
+  type GetProjectInteractionsCommand,
   type ReportCommentCommand,
   type SetProjectInteractionCommand,
   type WithdrawCommentCommand,
@@ -331,6 +333,9 @@ export interface ApiCommunityService {
   setProjectInteraction(
     command: SetProjectInteractionCommand,
   ): Promise<ProjectInteractionProjection>
+  getProjectInteractions?(
+    command: GetProjectInteractionsCommand,
+  ): Promise<ProjectInteractionsProjection>
   createComment(command: CreateCommentCommand): Promise<CommentProjection>
   listComments(command: ListCommentsCommand): Promise<CommentPage>
   createExperience(command: CreateExperienceCommand): Promise<ExperienceProjection>
@@ -517,6 +522,28 @@ function exactQueryKeys(searchParams: URLSearchParams, allowed: readonly string[
       throw new CatalogError('QUERY_PARAMETER_INVALID', 400)
     }
   }
+}
+
+function projectInteractionIds(raw: string | null): readonly string[] {
+  if (raw === null) throw new CommunityError('PROJECT_IDS_INVALID', 422)
+  const values = raw.split(',')
+  if (values.length < 1 || values.length > 100) {
+    throw new CommunityError('PROJECT_IDS_INVALID', 422)
+  }
+  const projectIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!projectIdPattern.test(value)) {
+      throw new CommunityError('PROJECT_ID_INVALID', 422)
+    }
+    const normalized = value.toLowerCase()
+    if (!seen.has(normalized)) {
+      seen.add(normalized)
+      ids.push(normalized)
+    }
+  }
+  return Object.freeze(ids)
 }
 
 function errorEnvelope(
@@ -3143,6 +3170,7 @@ async function handleCommunityRequest(
   dependencies: ApiServerDependencies,
 ): Promise<number | null> {
   const interactionMatch = path.match(/^\/api\/v1\/interactions\/([^/]+)\/([^/]+)\/([^/]+)$/)
+  const projectInteractionsReadPath = path === '/api/v1/interactions/projects'
   const projectCommentsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/comments$/)
   const projectExperiencesMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/experiences$/)
   const experienceReplyMatch = path.match(/^\/api\/v1\/experiences\/([^/]+)\/replies$/)
@@ -3150,10 +3178,11 @@ async function handleCommunityRequest(
   const reportMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/reports$/)
   const withdrawMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/withdraw$/)
   if (
-    interactionMatch === null && projectCommentsMatch === null && projectExperiencesMatch === null && experienceReplyMatch === null && adminCommentDecisionMatch === null &&
+    !projectInteractionsReadPath && interactionMatch === null && projectCommentsMatch === null && projectExperiencesMatch === null && experienceReplyMatch === null && adminCommentDecisionMatch === null &&
     reportMatch === null && withdrawMatch === null
   ) return null
   if (
+    (projectInteractionsReadPath && method !== 'GET') ||
     (interactionMatch !== null && method !== 'PUT') ||
     (projectCommentsMatch !== null && method !== 'GET' && method !== 'POST') ||
     (projectExperiencesMatch !== null && method !== 'GET' && method !== 'POST') ||
@@ -3164,6 +3193,21 @@ async function handleCommunityRequest(
   ) return null
   if (!dependencies.community) {
     throw new CommunityError('COMMUNITY_SERVICE_UNAVAILABLE', 503, true)
+  }
+
+  if (projectInteractionsReadPath && method === 'GET') {
+    if (typeof dependencies.community.getProjectInteractions !== 'function') {
+      throw new CommunityError('COMMUNITY_INTERACTION_READ_UNAVAILABLE', 503, true)
+    }
+    const session = await resolveAuthenticatedSession(request, dependencies)
+    exactQueryKeys(url.searchParams, ['project_ids'])
+    const rawProjectIds = url.searchParams.get('project_ids')
+    const projection = await dependencies.community.getProjectInteractions({
+      userId: session.userId,
+      projectIds: projectInteractionIds(rawProjectIds),
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
   }
 
   if (projectCommentsMatch !== null && method === 'GET') {

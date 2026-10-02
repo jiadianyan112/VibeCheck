@@ -169,6 +169,8 @@ describe('ProjectDetailPage discussion interactions', () => {
     expect(screen.queryByText('分项评分在短录音场景下是否也使用相同权重？')).not.toBeInTheDocument()
     expect(screen.getByLabelText('社区互动')).toHaveTextContent('点赞')
     await user.click(screen.getByRole('button', { name: '点赞' }))
+    expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '模拟服务端登录' }))
     expect(screen.getByRole('button', { name: '已点赞' })).toHaveAttribute('aria-pressed', 'true')
   })
 
