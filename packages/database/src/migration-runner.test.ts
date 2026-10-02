@@ -54,6 +54,7 @@ describe('discoverMigrations', () => {
       '000043_submission_review_session_confirmation.sql',
       '000044_password_change_and_reset.sql',
       '000045_structured_experiences.sql',
+      '000046_community_rate_limit_defaults.sql',
       ],
     )
     for (const migration of migrations) {
@@ -61,4 +62,5 @@ describe('discoverMigrations', () => {
       assert.ok(migration.sql.length > 100)
     }
   })
+
 })

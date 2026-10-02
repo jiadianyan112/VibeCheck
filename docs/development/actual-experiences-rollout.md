@@ -2,6 +2,8 @@
 
 ## 顺序
 
+部署前，`vibecheck-web` 的 Runtime variables 必须包含 `COMMUNITY_ENABLED=true`、至少32字符的 `COMMUNITY_CURSOR_SECRET`、32字节随机密钥Base64格式的 `COMMUNITY_REPORT_ENCRYPTION_KEY` 与 `COMMUNITY_REPORT_ENCRYPTION_KEY_VERSION=community-v1`。密钥已有则保留，不能随着构建更换。
+
 1. Northflank → Jobs → vibecheck-db-migrate，构建并部署 `codex/actual-experiences` 分支的最新提交。
 2. 保持 CMD override 为 `npm run db:migrate`，使用生产 PostgreSQL 对应的 DATABASE_URL，手动运行一次。
 3. 首次运行预期 `migrations_ok applied=1 existing=44`、退出码 0；重复运行预期 applied=0。需确认运行的是包含 `000045_structured_experiences.sql` 的提交。
@@ -28,3 +30,9 @@
 ## 待执行
 
 当前环境没有生产数据库连接与可用的 Northflank 登录会话，也没有运行中的本地 PostgreSQL。真实数据库迁移、并发事务集成验证和线上验收尚未执行。不要把本地测试通过视为已经上线。
+
+## 上线记录与限流策略补齐
+
+2026-10-02 用户提供日志确认 `000045` 已成功应用：`migrations_ok applied=1 existing=44`，退出码0。网页部署后开启社区服务，发布时报 `RATE_LIMIT_POLICY_UNAVAILABLE`：原社区限流策略仅测试fixture初始化，生产迁移未写入。
+
+`000046_community_rate_limit_defaults.sql` 给尚无已发布配置的键补齐默认策略：评论/体验/回复共用每用户60秒3次，举报每用户60秒2次；已发布策略不覆盖。构建并部署该提交到 `vibecheck-db-migrate` 后运行 `npm run db:migrate`，预期首次 `applied=1 existing=45`。无需再次修改密钥，也不需要为仅数据库策略迁移重部署网页。
