@@ -52,6 +52,8 @@ describe('discoverMigrations', () => {
       '000041_public_media_upload_control_plane.sql',
       '000042_email_password_auth.sql',
       '000043_submission_review_session_confirmation.sql',
+      '000044_password_change_and_reset.sql',
+      '000045_structured_experiences.sql',
       ],
     )
     for (const migration of migrations) {

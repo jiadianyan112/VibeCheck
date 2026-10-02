@@ -51,6 +51,12 @@ import {
   type CommentProjection,
   type CommentReportProjection,
   type CreateCommentCommand,
+  type CreateExperienceCommand,
+  type ExperiencePage,
+  type ExperienceProjection,
+  type ListExperiencesCommand,
+  type ModerateCommentCommand,
+  type ReplyToExperienceCommand,
   type ListCommentsCommand,
   type NotificationPage,
   type NotificationReadProjection,
@@ -123,6 +129,7 @@ import {
   type PrepareMediaResourceCommand,
   type PrepareMediaResourceProjection,
   type ReadMediaResourceContentCommand,
+  type ReadPublicExperienceContentCommand,
   type ReadMediaResourceContentProjection,
 } from '@vibecheck/media'
 import {
@@ -326,8 +333,12 @@ export interface ApiCommunityService {
   ): Promise<ProjectInteractionProjection>
   createComment(command: CreateCommentCommand): Promise<CommentProjection>
   listComments(command: ListCommentsCommand): Promise<CommentPage>
+  createExperience(command: CreateExperienceCommand): Promise<ExperienceProjection>
+  listExperiences(command: ListExperiencesCommand): Promise<ExperiencePage>
+  replyToExperience(command: ReplyToExperienceCommand): Promise<CommentProjection>
   withdrawComment(command: WithdrawCommentCommand): Promise<CommentProjection>
   reportComment(command: ReportCommentCommand): Promise<CommentReportProjection>
+  moderateComment(command: ModerateCommentCommand): Promise<CommentProjection>
 }
 
 export interface ApiNotificationService {
@@ -421,6 +432,7 @@ export interface ApiMediaService {
   prepareResource(command: PrepareMediaResourceCommand): Promise<PrepareMediaResourceProjection>
   completeResource(command: CompleteMediaResourceCommand): Promise<CompleteMediaResourceProjection>
   readResourceContent(command: ReadMediaResourceContentCommand): Promise<ReadMediaResourceContentProjection>
+  readPublicExperienceContent(command: ReadPublicExperienceContentCommand): Promise<ReadMediaResourceContentProjection>
   getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection>
   createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection>
   listReferences(command: ListMediaReferencesCommand): Promise<MediaReferencePage>
@@ -453,6 +465,7 @@ export interface ApiServerDependencies {
   readonly passwordIdentity?: ApiPasswordIdentityService
   readonly evidence?: ApiEvidenceService
   readonly media?: ApiMediaService
+  readonly fetchMediaContent?: typeof fetch
   readonly pendingActions?: ApiPendingActionService
   readonly pendingActionExecutor?: ApiPendingActionExecutor
   readonly search?: ApiSearchService
@@ -2341,14 +2354,55 @@ async function handleMediaRequest(
   const resourceMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)$/)
   const resourceCompleteMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)\/complete$/)
   const resourceContentMatch = path.match(/^\/api\/v1\/media-resources\/([^/]+)\/content$/)
+  const experienceContentMatch = path.match(/^\/api\/v1\/experiences\/([^/]+)\/screenshots\/([^/]+)\/content$/)
+  const reviewContentMatch = path.match(/^\/api\/v1\/admin\/experiences\/([^/]+)\/screenshots\/([^/]+)\/content$/)
   const referenceCollection = '/api/v1/media-references'
   const referenceMatch = path.match(/^\/api\/v1\/media-references\/([^/]+)$/)
   if (
     path !== resourceCollection && resourceMatch === null && resourceCompleteMatch === null &&
-    resourceContentMatch === null &&
+    resourceContentMatch === null && experienceContentMatch === null && reviewContentMatch === null &&
     path !== referenceCollection && referenceMatch === null
   ) return null
   if (!dependencies.media) throw new MediaError('MEDIA_SERVICE_UNAVAILABLE', 503, true)
+  if ((experienceContentMatch !== null || reviewContentMatch !== null) && method === 'GET') {
+    exactQueryKeys(url.searchParams, [])
+    const contentMatch = experienceContentMatch ?? reviewContentMatch!
+    const reviewer = reviewContentMatch ? await resolveAuthenticatedSession(request, dependencies) : null
+    if (reviewer && !reviewer.roles.includes('admin') && !reviewer.permissions.includes('admin:review')) throw new MediaError('MEDIA_RESOURCE_FORBIDDEN', 403)
+    const contentCommand = {
+      experienceId: contentMatch[1]!, mediaResourceId: contentMatch[2]!, requestId,
+      ...(reviewer ? { reviewerUserId: reviewer.userId } : {}),
+    }
+    const projection = await dependencies.media.readPublicExperienceContent(contentCommand)
+    const upstream = await (dependencies.fetchMediaContent ?? fetch)(projection.redirect_url, {
+      signal: AbortSignal.timeout(15_000), redirect: 'error',
+    })
+    const mime = upstream.headers.get('content-type')?.split(';')[0]?.trim()
+    if (!upstream.ok || !mime || !['image/jpeg', 'image/png', 'image/webp'].includes(mime) || !upstream.body) {
+      await upstream.body?.cancel()
+      throw new MediaError('MEDIA_CONTENT_UNAVAILABLE', 503, true)
+    }
+    const reader = upstream.body.getReader()
+    const chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        size += chunk.value.byteLength
+        if (size > 5 * 1024 * 1024) throw new MediaError('MEDIA_CONTENT_UNAVAILABLE', 503, true)
+        chunks.push(chunk.value)
+      }
+    } finally { await reader.cancel() }
+    // Recheck after download so a report during storage access prevents publication.
+    await dependencies.media.readPublicExperienceContent(contentCommand)
+    response.writeHead(200, {
+      'content-type': mime, 'content-length': size, 'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff', 'x-request-id': requestId,
+    })
+    response.end(Buffer.concat(chunks))
+    return 200
+  }
   const session = await resolveAuthenticatedSession(request, dependencies)
 
   if (resourceMatch !== null && method === 'GET') {
@@ -3090,15 +3144,21 @@ async function handleCommunityRequest(
 ): Promise<number | null> {
   const interactionMatch = path.match(/^\/api\/v1\/interactions\/([^/]+)\/([^/]+)\/([^/]+)$/)
   const projectCommentsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/comments$/)
+  const projectExperiencesMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/experiences$/)
+  const experienceReplyMatch = path.match(/^\/api\/v1\/experiences\/([^/]+)\/replies$/)
+  const adminCommentDecisionMatch = path.match(/^\/api\/v1\/admin\/community\/comments\/([^/]+)\/decision$/)
   const reportMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/reports$/)
   const withdrawMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/withdraw$/)
   if (
-    interactionMatch === null && projectCommentsMatch === null &&
+    interactionMatch === null && projectCommentsMatch === null && projectExperiencesMatch === null && experienceReplyMatch === null && adminCommentDecisionMatch === null &&
     reportMatch === null && withdrawMatch === null
   ) return null
   if (
     (interactionMatch !== null && method !== 'PUT') ||
     (projectCommentsMatch !== null && method !== 'GET' && method !== 'POST') ||
+    (projectExperiencesMatch !== null && method !== 'GET' && method !== 'POST') ||
+    (experienceReplyMatch !== null && method !== 'POST') ||
+    (adminCommentDecisionMatch !== null && method !== 'POST') ||
     (reportMatch !== null && method !== 'POST') ||
     (withdrawMatch !== null && method !== 'POST')
   ) return null
@@ -3116,6 +3176,14 @@ async function handleCommunityRequest(
     writeJson(response, 200, projection, requestId, 'public, max-age=15')
     return 200
   }
+  if (projectExperiencesMatch !== null && method === 'GET') {
+    exactQueryKeys(url.searchParams, ['cursor'])
+    const projection = await dependencies.community.listExperiences({
+      projectId: projectExperiencesMatch[1]!, cursor: url.searchParams.get('cursor'),
+    })
+    writeJson(response, 200, projection, requestId, 'no-store')
+    return 200
+  }
 
   exactQueryKeys(url.searchParams, [])
   if (!requestOriginAllowed(request, config)) throw new CommunityError('ORIGIN_INVALID', 403)
@@ -3123,6 +3191,22 @@ async function handleCommunityRequest(
   const session = await resolveAuthenticatedSession(request, dependencies)
   if (session.accountStatus === 'restricted') throw new CommunityError('ACCOUNT_WRITE_RESTRICTED', 403)
   requireCommunityMutationCsrf(request)
+
+  if (adminCommentDecisionMatch !== null) {
+    if (!session.roles.includes('admin') && !session.permissions.includes('admin:review')) throw new CommunityError('COMMENT_MODERATION_FORBIDDEN', 403)
+    exactKeys(body, ['expected_version', 'resulting_state', 'decision_id', 'reason_code', 'work_item_id', 'claim_token'])
+    const resultingState = stringField(body, 'resulting_state', { maximum: 32 })!
+    if (resultingState !== 'visible' && resultingState !== 'collapsed' && resultingState !== 'hidden' && resultingState !== 'rejected') throw new CommunityError('COMMENT_MODERATION_STATE_INVALID', 422)
+    const projection = await dependencies.community.moderateComment({
+      commentId: adminCommentDecisionMatch[1]!, expectedVersion: integerField(body, 'expected_version', 1),
+      resultingState, decisionId: stringField(body, 'decision_id', { maximum: 36 })!,
+      reasonCode: stringField(body, 'reason_code', { maximum: 64 })!,
+      actorType: session.roles.includes('admin') ? 'admin' : 'platform_editor', ruleVersion: null,
+      reviewContext: { actorUserId: session.userId, workItemId: stringField(body, 'work_item_id', { maximum: 36 })!, claimToken: stringField(body, 'claim_token', { minimum: 43, maximum: 43 })! },
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
 
   if (interactionMatch !== null && method === 'PUT') {
     exactKeys(body, ['state', 'client_request_id'])
@@ -3148,6 +3232,32 @@ async function handleCommunityRequest(
       projectId: projectCommentsMatch[1]!,
       body: stringField(body, 'body', { maximum: 8_000 })!,
       parentCommentId: typeof rawParent === 'string' ? rawParent : null,
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, projection.result === 'created' ? 201 : 200, projection, requestId)
+    return projection.result === 'created' ? 201 : 200
+  }
+  if (projectExperiencesMatch !== null && method === 'POST') {
+    exactKeys(body, ['task', 'outcome', 'scenario', 'limitation', 'screenshot_media_resource_ids', 'client_request_id'])
+    const projection = await dependencies.community.createExperience({
+      userId: session.userId,
+      projectId: projectExperiencesMatch[1]!,
+      task: stringField(body, 'task', { maximum: 2_000 })!,
+      outcome: stringField(body, 'outcome', { maximum: 2_000 })!,
+      scenario: body.scenario === null || body.scenario === undefined ? null : stringField(body, 'scenario', { maximum: 2_000 })!,
+      limitation: body.limitation === null || body.limitation === undefined ? null : stringField(body, 'limitation', { maximum: 2_000 })!,
+      screenshotMediaResourceIds: stringArrayField(body, 'screenshot_media_resource_ids', 3, 64),
+      clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
+    })
+    writeJson(response, projection.result === 'created' ? 201 : 200, projection, requestId)
+    return projection.result === 'created' ? 201 : 200
+  }
+  if (experienceReplyMatch !== null && method === 'POST') {
+    exactKeys(body, ['body', 'client_request_id'])
+    const projection = await dependencies.community.replyToExperience({
+      userId: session.userId,
+      experienceId: experienceReplyMatch[1]!,
+      body: stringField(body, 'body', { maximum: 8_000 })!,
       clientRequestId: stringField(body, 'client_request_id', { maximum: 128 })!,
     })
     writeJson(response, projection.result === 'created' ? 201 : 200, projection, requestId)

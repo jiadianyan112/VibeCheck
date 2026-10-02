@@ -5,6 +5,7 @@ import {
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
 import { PublishPage } from '../pages/PublishPage'
+import { AdminCommunityPage } from '../pages/AdminCommunityPage'
 import { AboutPage, ActivityPage, AdminAuthorVerificationPage, AdminDashboardPage, AdminDuplicatesPage, AdminProjectEditorPage, AdminProjectsPage, AdminReviewsPage, AdminStatusMonitorPage, AuthorVerificationPage, AuthPage, CategoriesPage, CategoryDetailPage, CompareSessionPage, CreatorProfilePage, DiscoverPage, DiscoverResultPage, NotFoundPage, NotificationsPage, PersonalCenterPage, ProjectDetailPage, ProjectUpdatePage, ProjectsHomePage, SearchPage, StyleSandboxPage } from '../pages'
 import { AdminLayout, FrontstageLayout } from '../components'
 import { AuthGateProvider, AuthenticatedRoute, StaffRoute } from '../features'
@@ -43,7 +44,7 @@ export const appRoutes: RouteObject[] = [
   },
   {
     element: <StaffRoute><AdminLayout /></StaffRoute>,
-    children: adminRoutes,
+    children: [...adminRoutes, { path: '/admin/community', element: <AdminCommunityPage /> }],
   },
   ...(import.meta.env.DEV ? [{ path: '/__sandbox', element: <StyleSandboxPage /> }] : []),
 ]

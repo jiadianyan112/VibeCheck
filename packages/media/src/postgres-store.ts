@@ -146,6 +146,33 @@ export class PostgresMediaStore implements MediaStore {
     return Object.freeze({ projection: this.resourceProjection(row), storageKey: row.storage_key })
   }
 
+  async getPublicExperienceContentResource(
+    input: Parameters<MediaStore['getPublicExperienceContentResource']>[0],
+  ): Promise<StoredContentResource> {
+    const result = await this.pool.query<ResourceRow>(
+      `SELECT r.* FROM media.media_resources r
+       JOIN community.experience_screenshots s ON s.media_resource_id=r.media_resource_id
+       JOIN community.comments c ON c.comment_id=s.comment_id
+       JOIN catalog.projects p ON p.project_id=c.project_id
+       WHERE s.comment_id=$1 AND r.media_resource_id=$2
+         AND c.entry_type='experience' AND (
+           ($3::uuid IS NULL AND c.moderation_state='visible' AND p.review_status IN ('published_platform','published_author') AND p.current_version_id IS NOT NULL)
+           OR ($3::uuid IS NOT NULL AND EXISTS (
+             SELECT 1 FROM workflow.review_work_items w WHERE w.work_type='community' AND w.target_type='comment' AND w.target_id=c.comment_id
+               AND w.status='claimed' AND w.assignee_user_id=$3 AND w.lease_expires_at>$4
+               AND NOT EXISTS (SELECT 1 FROM workflow.review_work_item_conflict_principals cp WHERE cp.work_item_id=w.work_item_id AND cp.principal_user_id=$3 AND cp.revoked_at IS NULL)
+           ))
+         )
+         AND r.purpose='experience_screenshot'
+         AND r.status='ready' AND r.scan_result='clean' AND r.exif_removed=true
+         AND r.deletion_guard_job_id IS NULL`,
+      [input.experienceId, input.mediaResourceId, input.reviewerUserId ?? null, input.now ?? null],
+    )
+    const row = result.rows[0]
+    if (!row) throw mediaError('MEDIA_RESOURCE_NOT_FOUND', 404)
+    return Object.freeze({ projection: this.resourceProjection(row), storageKey: row.storage_key })
+  }
+
   async getCompletionReceipt(
     input: Parameters<MediaStore['getCompletionReceipt']>[0],
   ): Promise<MediaCompletionReceipt | null> {

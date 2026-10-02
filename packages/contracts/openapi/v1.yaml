@@ -788,6 +788,144 @@ paths:
         '422': { $ref: '#/components/responses/Error' }
         '429': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/projects/{project_id}/experiences:
+    get:
+      tags: [Community]
+      operationId: OP-EXPERIENCE-LIST
+      summary: List public structured experiences for one public project
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: cursor
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+      responses:
+        '200':
+          description: Stable public page of visible or collapsed experiences; the response is not cached.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExperiencePage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Community]
+      operationId: OP-EXPERIENCE-CREATE
+      summary: Create one visible structured experience for a project
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExperienceCreateRequest' }
+      responses:
+        '201':
+          description: New visible experience.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExperienceProjection' }
+        '200':
+          description: Idempotently recovered existing experience.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExperienceProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/experiences/{experience_id}/replies:
+    post:
+      tags: [Community]
+      operationId: OP-EXPERIENCE-REPLY
+      summary: Create one verified author reply to a visible experience
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: experience_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExperienceReplyRequest' }
+      responses:
+        '201':
+          description: New visible verified author reply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '200':
+          description: Idempotently recovered existing reply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/community/comments/{comment_id}/decision:
+    post:
+      tags: [Community]
+      operationId: OP-ADMIN-COMMUNITY-DECISION
+      summary: Commit one claimed administrator moderation decision for a community comment
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: comment_id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentModerationDecisionRequest' }
+      responses:
+        '200':
+          description: Moderation decision applied or identically replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommentProjection' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/comments/{comment_id}/reports:
     post:
       tags: [Community]
@@ -1863,6 +2001,73 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '410': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/experiences/{experience_id}/screenshots/{media_resource_id}/content:
+    get:
+      tags: [Media]
+      operationId: OP-EXPERIENCE-SCREENSHOT-CONTENT
+      summary: Proxy a public experience screenshot through the API
+      parameters:
+        - in: path
+          name: experience_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: media_resource_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Scanned screenshot bytes proxied by the API; the browser receives no storage redirect.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/admin/experiences/{experience_id}/screenshots/{media_resource_id}/content:
+    get:
+      tags: [Media]
+      operationId: OP-ADMIN-EXPERIENCE-SCREENSHOT-CONTENT
+      summary: Proxy a claimed experience screenshot to an authorized community reviewer
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: experience_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: media_resource_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Scanned screenshot bytes proxied by the API; the browser receives no storage redirect.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
   /api/v1/media-references:
     get:
@@ -3013,7 +3218,7 @@ components:
       additionalProperties: false
       required: [purpose, declared_mime, byte_size, checksum_sha256]
       properties:
-        purpose: { const: project_cover }
+        purpose: { enum: [project_cover, experience_screenshot] }
         declared_mime: { enum: [image/jpeg, image/png, image/webp, image/avif] }
         byte_size: { type: integer, minimum: 1, maximum: 5242880 }
         checksum_sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
@@ -3628,6 +3833,182 @@ components:
           minLength: 8
           maxLength: 128
           pattern: '^[A-Za-z0-9_-]+$'
+    ExperienceCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [task, outcome, screenshot_media_resource_ids, client_request_id]
+      properties:
+        task: { type: string, minLength: 1, maxLength: 500 }
+        outcome: { type: string, minLength: 1, maxLength: 1000 }
+        scenario:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        limitation:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        screenshot_media_resource_ids:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        client_request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+    ExperienceProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - comment_id
+        - project_id
+        - author_user_id
+        - task
+        - outcome
+        - scenario
+        - limitation
+        - screenshot_media_resource_ids
+        - moderation_state
+        - version
+        - result
+        - created_at
+      properties:
+        comment_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        author_user_id: { type: string, format: uuid }
+        task: { type: string, minLength: 1, maxLength: 500 }
+        outcome: { type: string, minLength: 1, maxLength: 1000 }
+        scenario:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        limitation:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        screenshot_media_resource_ids:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        moderation_state:
+          enum: [pending, under_review, visible, collapsed, hidden, rejected, author_withdrawn]
+        version: { type: integer, minimum: 1 }
+        result: { enum: [created, deduplicated] }
+        created_at: { type: string, format: date-time }
+    PublicExperienceReply:
+      type: object
+      additionalProperties: false
+      required: [comment_id, body, created_at, moderation_state]
+      properties:
+        comment_id: { type: string, format: uuid }
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        created_at: { type: string, format: date-time }
+        moderation_state: { enum: [visible, collapsed] }
+    PublicExperienceProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - comment_id
+        - project_id
+        - task
+        - outcome
+        - scenario
+        - limitation
+        - screenshot_media_resource_ids
+        - author_label
+        - moderation_state
+        - author_reply
+        - author_reply_at
+        - replies
+        - version
+        - created_at
+      properties:
+        comment_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        task: { type: string, minLength: 1, maxLength: 500 }
+        outcome: { type: string, minLength: 1, maxLength: 1000 }
+        scenario:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        limitation:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 500
+            - type: 'null'
+        screenshot_media_resource_ids:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        author_label: { type: string, minLength: 1, maxLength: 200 }
+        moderation_state: { enum: [visible, collapsed] }
+        author_reply:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 2000
+            - type: 'null'
+        author_reply_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        replies:
+          type: array
+          items: { $ref: '#/components/schemas/PublicExperienceReply' }
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+    ExperiencePage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicExperienceProjection' }
+        next_cursor:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 1024
+            - type: 'null'
+    ExperienceReplyRequest:
+      type: object
+      additionalProperties: false
+      required: [body, client_request_id]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        client_request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+    CommentModerationDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, resulting_state, decision_id, reason_code, work_item_id, claim_token]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        resulting_state: { enum: [visible, collapsed, hidden, rejected] }
+        decision_id: { type: string, format: uuid }
+        reason_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        work_item_id: { type: string, format: uuid }
+        claim_token: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
     CommentProjection:
       type: object
       additionalProperties: false
@@ -6545,6 +6926,30 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+        version: { type: integer, minimum: 1 }
+        current_name: { type: string, minLength: 1, maxLength: 120 }
+        public_url: { type: string, format: uri, maxLength: 2048 }
+        one_line_definition: { type: string, minLength: 1, maxLength: 500 }
+        entry_type: { type: string, minLength: 1, maxLength: 64 }
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        experience_task:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+        experience_scenario:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+        experience_limitation:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+        screenshot_media_resource_ids:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
     ReviewWorkItem:
       type: object
       additionalProperties: false

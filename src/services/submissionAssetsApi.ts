@@ -404,6 +404,7 @@ function makeEvidenceClient(options: SubmissionAssetsApiOptions, session: Submis
 export interface SubmissionAssetsApi {
   removeCoverReferences(input: { readonly draftId: string; readonly keepIds: readonly string[] } & SubmissionAssetsApiRequestOptions): Promise<void>
   uploadCover(input: SubmissionAssetUploadInput): Promise<SubmissionAssetUploadResult>
+  uploadExperienceScreenshot(input: Omit<SubmissionAssetUploadInput, 'draftId'>): Promise<SubmissionAssetUploadResult>
   getMediaStatus(input: { readonly mediaResourceId: string } & SubmissionAssetsApiRequestOptions): Promise<SubmissionAssetReadinessResult>
   ensureCoverReference(input: SubmissionCoverReferenceInput): Promise<SubmissionCoverReferenceResult>
   createCoverReference(input: SubmissionCoverReferenceInput): Promise<MediaReference>
@@ -461,6 +462,34 @@ export function createSubmissionAssetsApi(options: SubmissionAssetsApiOptions = 
       } catch (error) {
         throw mapGatewayError(error, input.signal)
       }
+    },
+
+    async uploadExperienceScreenshot(input) {
+      try {
+        const file = requireFile(input.file)
+        const checksumSha256 = await sha256(input.file)
+        const client = makeMediaClient({ ...options, fetch: resolveApiFetch() }, input.session)
+        const prepared = await client.prepare({
+          purpose: 'experience_screenshot', declared_mime: file.mime,
+          byte_size: file.size, checksum_sha256: checksumSha256,
+        }, { idempotencyKey: requireRequestId(input.prepareIdempotencyKey, 'prepareIdempotencyKey'), signal: input.signal })
+        if (prepared.media.checksum_sha256 !== checksumSha256 ||
+            prepared.media.declared_mime !== file.mime || prepared.media.byte_size !== file.size) {
+          throw protocolFailure('服务端返回的媒体资源与本次上传不匹配。')
+        }
+        const uploadReceipt = await putSignedUpload(resolveUploadFetch(), {
+          uploadUrl: prepared.upload_url, uploadHeaders: prepared.upload_headers,
+          file: input.file, signal: input.signal,
+        })
+        const completed = await client.complete(prepared.media.media_resource_id, {
+          checksum_sha256: checksumSha256, upload_receipt: uploadReceipt,
+        }, { idempotencyKey: requireRequestId(input.completeIdempotencyKey, 'completeIdempotencyKey'), signal: input.signal })
+        if (completed.media.media_resource_id !== prepared.media.media_resource_id ||
+            completed.media.checksum_sha256 !== checksumSha256) {
+          throw protocolFailure('服务端返回的完成媒体资源与本次上传不匹配。')
+        }
+        return { ...readiness(completed.media), checksumSha256 }
+      } catch (error) { throw mapGatewayError(error, input.signal) }
     },
 
     async getMediaStatus(input) {

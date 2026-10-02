@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ExperienceSection } from '../components/ExperienceSection'
+import { useOptionalAuthSession } from '../features/auth'
+import { discussionApi, type DiscussionComment } from '../services/discussionApi'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, ProjectMediaStage, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
@@ -88,6 +91,7 @@ export function ProjectDetailPage() {
   const { state, dispatch } = useAppState()
   const resolvedId = (id ? state.projectAliases[id] ?? id : id) as Project['id']
   const { requireLogin } = useAuthGate()
+  const authSession = useOptionalAuthSession()?.session ?? null
   const { addProject } = useComparison()
   const { pushToast } = useToast()
   const [bundle, setBundle] = useState<ProjectBundle | null>(null)
@@ -98,7 +102,23 @@ export function ProjectDetailPage() {
   const [commentCategory, setCommentCategory] = useState<CommentCategory>('usage_feedback')
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
+  const [discussionError, setDiscussionError] = useState<string | null>(null)
   const trackedProjectId = useRef<Project['id'] | null>(null)
+  const replayingCommentId = useRef<string | null>(null)
+
+  const reloadDiscussion = useCallback(async (projectId: Project['id']) => {
+    if (!import.meta.env.PROD) return
+    try {
+      const page = await discussionApi.list(projectId)
+      setComments(page.items.map((item: DiscussionComment) => ({
+        id: item.comment_id, projectId, authorUserId: '' as UserId,
+        category: 'usage_feedback' as CommentCategory, body: item.body,
+        parentId: item.parent_comment_id, moderationStatus: item.moderation_state,
+        reportCount: 0, createdAt: item.created_at,
+      })))
+      setDiscussionError(null)
+    } catch (cause) { setDiscussionError(cause instanceof Error ? cause.message : '讨论暂时无法读取') }
+  }, [])
 
   const trackProjectView = useCallback((projectId: Project['id']) => {
     if (trackedProjectId.current === projectId) return
@@ -132,7 +152,7 @@ export function ProjectDetailPage() {
     }
     Promise.all([
       projectService.getBundle(resolvedId, { scenario: state.serviceScenario }),
-      communityService.listComments(resolvedId, { scenario: state.serviceScenario }),
+      import.meta.env.PROD ? Promise.resolve({ ok: true as const, data: [] as ProjectComment[] }) : communityService.listComments(resolvedId, { scenario: state.serviceScenario }),
     ]).then(([result, commentResult]) => {
       if (!active) return
       if (result.ok && commentResult.ok) {
@@ -146,20 +166,33 @@ export function ProjectDetailPage() {
         }
         setBundle(mergedBundle); setError(null)
         setComments(commentResult.data)
+        void reloadDiscussion(mergedBundle.project.id)
         trackProjectView(mergedBundle.project.id)
       } else setError(!result.ok ? result.error : commentResult.ok ? null : commentResult.error)
       setLoading(false)
     })
     return () => { active = false }
-  }, [resolvedId, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle, trackProjectView])
+  }, [resolvedId, state.evidenceOverrides, state.lifecycleEventAdditions, state.projectOverrides, state.reusableAssetAdditions, state.serviceScenario, submittedBundle, trackProjectView, reloadDiscussion])
 
   useEffect(() => {
     if (!pendingCommentId || state.lastReplayedActionId !== pendingCommentId || !state.session.user || !commentDraft.trim()) return
+    if (import.meta.env.PROD) {
+      if (authSession && replayingCommentId.current !== pendingCommentId) {
+        replayingCommentId.current = pendingCommentId
+        void discussionApi.create(resolvedId, authSession, commentDraft.trim(), replyTo, pendingCommentId).then(() => {
+        setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
+        pushToast('评论已提交审核。')
+        void reloadDiscussion(resolvedId)
+        }).catch((cause: unknown) => setDiscussionError(cause instanceof Error ? cause.message : '评论提交失败'))
+          .finally(() => { replayingCommentId.current = null })
+      }
+      return
+    }
     const newComment: ProjectComment = { id: pendingCommentId, projectId: resolvedId, authorUserId: state.session.user.id, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
     setComments((current) => [...current, newComment])
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: newComment.projectId, commentId: newComment.id }) })
     setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
-  }, [commentCategory, commentDraft, dispatch, pendingCommentId, replyTo, resolvedId, state.lastReplayedActionId, state.session.user])
+  }, [authSession, commentCategory, commentDraft, dispatch, pendingCommentId, replyTo, resolvedId, state.lastReplayedActionId, state.session.user, reloadDiscussion, pushToast])
 
   if (loading) return <main className="page-container highfi-scope community-page community-page--detail"><LoadingState label="作品档案加载中" /></main>
   if (error || !bundle) return <main className="page-container stack highfi-scope community-page community-page--detail"><ErrorPanel message={error?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
@@ -202,6 +235,18 @@ export function ProjectDetailPage() {
 
   function submitComment() {
     if (!commentDraft.trim()) return
+    if (import.meta.env.PROD && !authSession) {
+      const commentId = `comment-${project.id}-${Date.now()}`
+      setPendingCommentId(commentId)
+      requireLogin({ id: commentId, kind: 'comment', sourcePath: `/project/${project.id}#discussion`, payload: { body: commentDraft, category: commentCategory, parentId: replyTo ?? '' } })
+      return
+    }
+    if (import.meta.env.PROD && authSession) {
+      void discussionApi.create(project.id, authSession, commentDraft.trim(), replyTo).then(() => {
+        setCommentDraft(''); setReplyTo(null); pushToast('评论已提交审核。'); void reloadDiscussion(project.id)
+      }).catch((cause: unknown) => setDiscussionError(cause instanceof Error ? cause.message : '评论提交失败'))
+      return
+    }
     const commentId = `comment-${project.id}-${Date.now()}`
     if (state.session.user) { appendComment(state.session.user.id, commentId); return }
     setPendingCommentId(commentId)
@@ -209,6 +254,14 @@ export function ProjectDetailPage() {
   }
 
   function reportComment(commentId: string) {
+    if (import.meta.env.PROD && !authSession) {
+      requireLogin({ id: `report-${commentId}-${Date.now()}`, kind: 'comment', sourcePath: `/project/${project.id}#discussion`, payload: { body: '', category: 'usage_feedback', parentId: '' } })
+      return
+    }
+    if (import.meta.env.PROD && authSession) {
+      void discussionApi.report(commentId, authSession).then(() => { pushToast('举报已提交，评论进入审核。'); void reloadDiscussion(project.id) }).catch((cause: unknown) => setDiscussionError(cause instanceof Error ? cause.message : '举报失败'))
+      return
+    }
     setComments((current) => current.map((comment) => comment.id === commentId ? { ...comment, reportCount: comment.reportCount + 1, moderationStatus: 'under_review' } : comment))
     pushToast('举报已记录，评论历史保留并进入审核。')
   }
@@ -337,8 +390,11 @@ export function ProjectDetailPage() {
 
       <section className="stack" aria-labelledby="relations-heading"><div className="section-heading"><h2 id="relations-heading">相关作品</h2></div>{bundle.relations.length ? <div className="relationship-list">{bundle.relations.map((relation) => { const relatedId = relation.sourceProjectId === project.id ? relation.targetProjectId : relation.sourceProjectId; const related = bundle.relatedProjects.find((item) => item.id === relatedId); return <article key={relation.id} className="relationship-card stack stack--small"><div className="cluster"><Tag tone="strong">{relationLabels[relation.type]}</Tag><Tag tone={relation.confirmationStatus === 'platform_confirmed' ? 'default' : 'dashed'}>{relationStatusLabels[relation.confirmationStatus]}</Tag><span>{relation.direction === 'two_way' ? '双向关系' : '单向关系'}</span></div><p>{relation.summary}</p>{related ? <ProjectCard project={related} creators={creatorsForProject(related)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(related.id)} onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)} /> : <UnknownFact reason="相关作品暂时不可用" />}<EvidenceDrawer label="关系来源" evidences={bundle.evidences.filter((evidence) => relation.evidenceIds.includes(evidence.id))} /></article>})}</div> : <EmptyState title="暂时没有确认的相关作品" />}</section>
 
+      <ExperienceSection key={project.id} projectId={project.id} />
+
       <section id="discussion" className="discussion-section stack" aria-labelledby="discussion-heading">
         <div className="section-heading"><h2 id="discussion-heading">作品讨论</h2><p>交流使用体验、实现方法和改进建议。</p></div>
+        {discussionError ? <p className="field-error" role="alert">讨论暂时不可用（{discussionError}）。</p> : null}
         {comments.length ? <ol className="comment-list">{comments.map((comment) => { const author = prototypeUsers.find((user) => user.id === comment.authorUserId); const content = <><div className="cluster cluster--between"><div className="cluster"><Tag>{commentCategoryLabels[comment.category]}</Tag><strong>{author?.displayName ?? '社区用户'}</strong>{comment.parentId ? <span>回复</span> : null}</div><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleDateString('zh-CN')}</time></div><p>{comment.body}</p><div className="cluster"><Button variant="quiet" onClick={() => { setReplyTo(comment.id); document.getElementById('comment-body')?.focus() }}>回复</Button><Button variant="quiet" onClick={() => reportComment(comment.id)}>{comment.moderationStatus === 'under_review' ? '已举报审核中' : '举报'}</Button>{comment.reportCount ? <span>{comment.reportCount} 次举报记录</span> : null}</div></>; return <li key={comment.id} className={`comment-card ${comment.parentId ? 'comment-card--reply' : ''}`}>{comment.moderationStatus === 'collapsed' ? <details><summary>该评论因与作品无关而折叠</summary>{content}</details> : content}</li>})}</ol> : <EmptyState title="还没有人讨论这个作品" description="可以从使用体验、开发过程或复用方式开始聊。" />}
         <div className="comment-composer stack"><div className="cluster cluster--between"><h3>{replyTo ? '回复评论' : '参与讨论'}</h3>{replyTo ? <Button variant="quiet" onClick={() => setReplyTo(null)}>取消回复</Button> : null}</div><label className="field"><span className="field__label">评论类别</span><select className="input" value={commentCategory} onChange={(event) => setCommentCategory(event.target.value as CommentCategory)}>{Object.entries(commentCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field__label">评论内容</span><textarea id="comment-body" className="input textarea" rows={4} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="分享具体的使用体验、实现方法或复用建议" /></label><Button variant="primary" disabled={!commentDraft.trim()} onClick={submitComment}>发布评论</Button></div>
       </section>

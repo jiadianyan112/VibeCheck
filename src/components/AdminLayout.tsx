@@ -7,6 +7,7 @@ const adminNavigation = [
   { to: '/admin/projects', label: '作品列表' },
   { to: '/admin/duplicates', label: '重复与合并' },
   { to: '/admin/reviews', label: '发布审核' },
+  { to: '/admin/community', label: '社区内容审核' },
   { to: '/admin/author-verification', label: '作者身份审核' },
   { to: '/admin/status-monitor', label: '状态监测' },
 ]

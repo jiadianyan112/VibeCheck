@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 
 import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
@@ -12,6 +12,8 @@ import type {
   CommentModerationState,
   CommentProjection,
   CommentReportProjection,
+  ExperienceProjection,
+  PublicExperienceProjection,
   InteractionCounts,
   PublicCommentProjection,
   ProjectInteractionProjection,
@@ -45,6 +47,11 @@ interface CommentRow extends QueryResultRow {
   readonly author_user_id: string
   readonly parent_comment_id: string | null
   readonly body: string
+  readonly entry_type: 'discussion' | 'experience'
+  readonly experience_task: string | null
+  readonly experience_outcome: string | null
+  readonly experience_scenario: string | null
+  readonly experience_limitation: string | null
   readonly moderation_state: CommentModerationState
   readonly version: number
   readonly client_request_id: string
@@ -235,6 +242,188 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
     }
   }
 
+  async createExperience(input: {
+    readonly userId: string
+    readonly projectId: string
+    readonly task: string
+    readonly outcome: string
+    readonly scenario: string | null
+    readonly limitation: string | null
+    readonly screenshotMediaResourceIds: readonly string[]
+    readonly clientRequestId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ExperienceProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lock(client, `comment-create:${input.userId}:${input.clientRequestId}`)
+      const existing = await client.query<CommentRow>(
+        'SELECT * FROM community.comments WHERE author_user_id=$1 AND client_request_id=$2',
+        [input.userId, input.clientRequestId],
+      )
+      if (existing.rows[0]) {
+        if (existing.rows[0].request_hash !== input.requestHash || existing.rows[0].entry_type !== 'experience') {
+          throw communityError('CLIENT_REQUEST_ID_REUSED', 409)
+        }
+        const images = await client.query<{ media_resource_id: string }>(
+          'SELECT media_resource_id FROM community.experience_screenshots WHERE comment_id=$1 ORDER BY sort_order',
+          [existing.rows[0].comment_id],
+        )
+        await client.query('COMMIT')
+        return this.experienceProjection(existing.rows[0], images.rows.map(row => row.media_resource_id), 'deduplicated')
+      }
+      await this.consumeRateLimit(client, 'comment_create', input.userId, input.now)
+      const project = await client.query<ProjectRow>(
+        'SELECT review_status,current_version_id FROM catalog.projects WHERE project_id=$1 FOR SHARE',
+        [input.projectId],
+      )
+      this.assertProjectWritable(project.rows[0])
+      if (input.screenshotMediaResourceIds.length) {
+        const media = await client.query<{ media_resource_id: string }>(
+          `SELECT r.media_resource_id FROM media.media_resources r
+           WHERE r.media_resource_id=ANY($1::uuid[]) AND r.owner_user_id=$2 AND r.purpose='experience_screenshot'
+             AND r.status='ready' AND r.scan_result='clean' AND r.exif_removed=true AND r.deletion_guard_job_id IS NULL
+             AND NOT EXISTS (SELECT 1 FROM community.experience_screenshots s WHERE s.media_resource_id=r.media_resource_id)
+           ORDER BY r.media_resource_id FOR UPDATE OF r`,
+          [input.screenshotMediaResourceIds, input.userId],
+        )
+        if (media.rows.length !== input.screenshotMediaResourceIds.length) throw communityError('EXPERIENCE_SCREENSHOT_NOT_READY', 422)
+      }
+      const inserted = await client.query<CommentRow>(
+        `INSERT INTO community.comments (
+           project_id,author_user_id,parent_comment_id,body,entry_type,experience_task,
+           experience_outcome,experience_scenario,experience_limitation,moderation_state,
+           client_request_id,request_hash,created_at,updated_at
+         ) VALUES ($1,$2,NULL,$3,'experience',$4,$5,$6,$7,'visible',$8,$9,$10,$10) RETURNING *`,
+        [input.projectId, input.userId, input.outcome, input.task, input.outcome,
+          input.scenario, input.limitation, input.clientRequestId, input.requestHash, input.now],
+      )
+      const row = inserted.rows[0]!
+      for (const [index, mediaResourceId] of input.screenshotMediaResourceIds.entries()) {
+        await client.query(
+          'INSERT INTO community.experience_screenshots (comment_id,media_resource_id,sort_order) VALUES ($1,$2,$3)',
+          [row.comment_id, mediaResourceId, index],
+        )
+      }
+      await this.applyVisibleCommentDelta(client, input.projectId, 1, row.comment_id)
+      await this.outbox(client, {
+        aggregateId: row.comment_id, eventName: 'comment_created',
+        payload: { project_id: input.projectId, comment_id: row.comment_id, parent_comment_id: null, resulting_status: 'visible', result: 'created', client_request_id: input.clientRequestId },
+        now: input.now,
+      })
+      await client.query('COMMIT')
+      return this.experienceProjection(row, input.screenshotMediaResourceIds, 'created')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async listExperiences(input: {
+    readonly projectId: string
+    readonly after: { readonly createdAt: Date; readonly commentId: string } | null
+    readonly limit: number
+  }): Promise<{ readonly items: readonly PublicExperienceProjection[]; readonly nextAnchor: { readonly createdAt: Date; readonly commentId: string } | null }> {
+    const project = await this.pool.query<ProjectRow>(
+      'SELECT review_status,current_version_id FROM catalog.projects WHERE project_id=$1', [input.projectId],
+    )
+    this.assertProjectWritable(project.rows[0])
+    const result = await this.pool.query<CommentRow & { screenshot_ids: string[]; reply_body: string | null; reply_at: Date | null; replies: { comment_id: string; body: string; created_at: string; moderation_state: 'visible' | 'collapsed' }[] }>(
+      `SELECT c.*,
+         COALESCE((SELECT array_agg(s.media_resource_id ORDER BY s.sort_order) FROM community.experience_screenshots s WHERE s.comment_id=c.comment_id),ARRAY[]::uuid[]) AS screenshot_ids,
+         (SELECT r.body FROM community.comments r WHERE r.parent_comment_id=c.comment_id AND r.verified_author_reply=true AND r.moderation_state='visible' ORDER BY r.created_at DESC LIMIT 1) AS reply_body,
+         (SELECT r.created_at FROM community.comments r WHERE r.parent_comment_id=c.comment_id AND r.verified_author_reply=true AND r.moderation_state='visible' ORDER BY r.created_at DESC LIMIT 1) AS reply_at,
+         COALESCE((SELECT jsonb_agg(jsonb_build_object('comment_id',r.comment_id,'body',r.body,'created_at',r.created_at,'moderation_state',r.moderation_state) ORDER BY r.created_at) FROM community.comments r WHERE r.parent_comment_id=c.comment_id AND r.verified_author_reply=false AND r.moderation_state IN ('visible','collapsed')),'[]'::jsonb) AS replies
+       FROM community.comments c WHERE c.project_id=$1 AND c.entry_type='experience'
+         AND c.moderation_state IN ('visible','collapsed')
+         AND ($2::timestamptz IS NULL OR (c.created_at,c.comment_id)<($2::timestamptz,$3::uuid))
+       ORDER BY c.created_at DESC,c.comment_id DESC LIMIT $4`,
+      [input.projectId, input.after?.createdAt ?? null, input.after?.commentId ?? null, input.limit + 1],
+    )
+    const rows = result.rows.slice(0, input.limit)
+    return Object.freeze({
+      items: Object.freeze(rows.map(row => Object.freeze({
+        comment_id: row.comment_id, project_id: row.project_id,
+        task: row.experience_task!, outcome: row.experience_outcome!,
+        scenario: row.experience_scenario, limitation: row.experience_limitation,
+        screenshot_media_resource_ids: Object.freeze(row.screenshot_ids),
+        author_label: '社区用户', moderation_state: row.moderation_state as 'visible' | 'collapsed',
+        author_reply: row.reply_body, author_reply_at: row.reply_at?.toISOString() ?? null,
+        replies: Object.freeze(row.replies),
+        version: row.version, created_at: row.created_at.toISOString(),
+      }))),
+      nextAnchor: result.rows.length > input.limit && rows.length
+        ? Object.freeze({ createdAt: rows.at(-1)!.created_at, commentId: rows.at(-1)!.comment_id }) : null,
+    })
+  }
+
+  async replyToExperience(input: {
+    readonly userId: string
+    readonly experienceId: string
+    readonly body: string
+    readonly clientRequestId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<CommentProjection> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await this.lock(client, `comment-create:${input.userId}:${input.clientRequestId}`)
+      const existing = await client.query<CommentRow>(
+        'SELECT * FROM community.comments WHERE author_user_id=$1 AND client_request_id=$2',
+        [input.userId, input.clientRequestId],
+      )
+      if (existing.rows[0]) {
+        if (existing.rows[0].request_hash !== input.requestHash || existing.rows[0].parent_comment_id !== input.experienceId) throw communityError('CLIENT_REQUEST_ID_REUSED', 409)
+        await client.query('COMMIT')
+        return this.commentProjection(existing.rows[0], 'deduplicated')
+      }
+      await this.consumeRateLimit(client, 'comment_create', input.userId, input.now)
+      const parent = await client.query<CommentRow>(
+        "SELECT * FROM community.comments WHERE comment_id=$1 AND entry_type='experience' AND moderation_state='visible' FOR SHARE",
+        [input.experienceId],
+      )
+      if (!parent.rows[0]) throw communityError('EXPERIENCE_NOT_FOUND', 404)
+      const author = await client.query(
+        `SELECT 1 FROM catalog.creator_account_links link
+         JOIN catalog.creators creator ON creator.creator_id=link.creator_id AND creator.canonical_creator_id IS NULL
+         JOIN catalog.author_relations relation ON relation.creator_id=link.creator_id
+         WHERE link.user_id=$1 AND link.status='active' AND relation.project_id=$2 AND relation.status='active' LIMIT 1`,
+        [input.userId, parent.rows[0].project_id],
+      )
+      if (!author.rowCount) throw communityError('EXPERIENCE_REPLY_FORBIDDEN', 403)
+      const inserted = await client.query<CommentRow>(
+        `INSERT INTO community.comments (project_id,author_user_id,parent_comment_id,body,entry_type,verified_author_reply,moderation_state,client_request_id,request_hash,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,'discussion',true,'visible',$5,$6,$7,$7) RETURNING *`,
+        [parent.rows[0].project_id, input.userId, input.experienceId, input.body, input.clientRequestId, input.requestHash, input.now],
+      )
+      const row = inserted.rows[0]!
+      await this.applyVisibleCommentDelta(client, row.project_id, 1, row.comment_id)
+      await this.outbox(client, { aggregateId: row.comment_id, eventName: 'comment_created', payload: { project_id: row.project_id, comment_id: row.comment_id, parent_comment_id: input.experienceId, resulting_status: 'visible', result: 'created', client_request_id: input.clientRequestId }, now: input.now })
+      await client.query('COMMIT')
+      return this.commentProjection(row, 'created')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  private experienceProjection(row: CommentRow, screenshotMediaResourceIds: readonly string[], result: ExperienceProjection['result']): ExperienceProjection {
+    return Object.freeze({
+      comment_id: row.comment_id, project_id: row.project_id, author_user_id: row.author_user_id,
+      task: row.experience_task!, outcome: row.experience_outcome!,
+      scenario: row.experience_scenario, limitation: row.experience_limitation,
+      screenshot_media_resource_ids: Object.freeze([...screenshotMediaResourceIds]),
+      moderation_state: row.moderation_state, version: row.version, result,
+      created_at: row.created_at.toISOString(),
+    })
+  }
+
   async createComment(input: {
     readonly userId: string
     readonly projectId: string
@@ -306,6 +495,7 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
         now: input.now,
       })
       const projection = this.commentProjection(inserted.rows[0]!, 'created')
+      await this.ensureCommentWorkItem(client, commentId, input.now)
       await client.query('COMMIT')
       return projection
     } catch (error) {
@@ -328,7 +518,9 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
     this.assertProjectWritable(project.rows[0])
     const result = await this.pool.query<CommentRow>(
       `SELECT * FROM community.comments
-       WHERE project_id=$1 AND moderation_state IN ('visible','collapsed')
+       WHERE project_id=$1 AND entry_type='discussion' AND verified_author_reply=false
+         AND (parent_comment_id IS NULL OR parent_comment_id NOT IN (SELECT comment_id FROM community.comments WHERE entry_type='experience'))
+         AND moderation_state IN ('visible','collapsed')
          AND ($2::timestamptz IS NULL OR (created_at,comment_id) < ($2::timestamptz,$3::uuid))
        ORDER BY created_at DESC,comment_id DESC LIMIT $4`,
       [input.projectId, input.after?.createdAt ?? null, input.after?.commentId ?? null, input.limit + 1],
@@ -552,6 +744,7 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
   }
 
   async moderateComment(input: {
+    readonly reviewContext?: { readonly actorUserId: string; readonly workItemId: string; readonly claimTokenHash: Buffer }
     readonly commentId: string
     readonly expectedVersion: number
     readonly resultingState: Exclude<CommentModerationState, 'author_withdrawn'>
@@ -581,6 +774,23 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
       }
       const comment = await this.commentRow(client, input.commentId, true)
       if (!comment) throw communityError('COMMENT_NOT_FOUND', 404)
+      if (input.actorType !== 'system') {
+        const context = input.reviewContext
+        if (!context) throw communityError('COMMENT_REVIEW_CLAIM_REQUIRED', 403)
+        const work = await client.query<{ assignee_user_id: string | null; claim_token_hash: Buffer | null; lease_expires_at: Date | null }>(
+          `SELECT assignee_user_id,claim_token_hash,lease_expires_at FROM workflow.review_work_items
+           WHERE work_item_id=$1 AND work_type='community' AND target_type='comment' AND target_id=$2 AND status='claimed' FOR UPDATE`,
+          [context.workItemId, input.commentId],
+        )
+        const claim = work.rows[0]
+        if (!claim || claim.assignee_user_id !== context.actorUserId || !claim.claim_token_hash || claim.claim_token_hash.length !== context.claimTokenHash.length || !timingSafeEqual(claim.claim_token_hash, context.claimTokenHash) || !claim.lease_expires_at || claim.lease_expires_at <= input.now) throw communityError('COMMENT_REVIEW_CLAIM_INVALID', 403)
+        const conflict = await client.query(
+          `SELECT 1 FROM workflow.review_work_item_conflict_principals WHERE work_item_id=$1 AND principal_user_id=$2 AND revoked_at IS NULL
+           UNION ALL SELECT 1 FROM community.comment_reports WHERE comment_id=$3 AND reporter_user_id=$2 AND status='open' LIMIT 1`,
+          [context.workItemId, context.actorUserId, input.commentId],
+        )
+        if (comment.author_user_id === context.actorUserId || conflict.rowCount) throw communityError('CONFLICT_OF_INTEREST', 403)
+      }
       if (comment.version !== input.expectedVersion) {
         throw communityError('COMMENT_VERSION_CONFLICT', 409)
       }
@@ -604,14 +814,21 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
       if (!updated.rows[0]) throw communityError('COMMENT_VERSION_CONFLICT', 409)
       if (input.resultingState === 'under_review') {
         await this.ensureCommentWorkItem(client, input.commentId, input.now)
-      } else if (comment.moderation_state === 'under_review') {
+      } else if (comment.moderation_state === 'under_review' || comment.moderation_state === 'pending') {
+        await client.query(
+          `UPDATE community.comment_reports SET status=$2,decision_id=$3,resolved_at=$4,
+             updated_at=$4,version=version+1
+           WHERE comment_id=$1 AND status='open'`,
+          [input.commentId, input.resultingState === 'visible' ? 'resolved_no_action' : 'resolved_actioned',
+            input.decisionId, input.now],
+        )
         await this.cancelCommentWorkItem(client, input.commentId, 'moderation_completed', input.now)
       }
       await this.applyVisibleCommentDelta(client, comment.project_id, countDelta, input.decisionId)
       const transactionId = randomUUID()
       await this.moderationOutbox(
         client, updated.rows[0], comment.moderation_state, input.resultingState,
-        input.decisionId, countDelta, input.reasonCode, input.ruleVersion, input.now, transactionId,
+        input.decisionId, countDelta, input.reasonCode, input.ruleVersion, input.now, transactionId, input.reviewContext?.actorUserId,
       )
       const projection = this.commentProjection(updated.rows[0], 'changed')
       await this.saveCommentReceipt(
@@ -912,6 +1129,7 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
     ruleVersion: string | null,
     now: Date,
     transactionId?: string,
+    actorUserId?: string,
   ): Promise<void> {
     return this.outbox(client, {
       aggregateId: row.comment_id,
@@ -925,6 +1143,7 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
         count_delta: countDelta,
         reason_code: reasonCode,
         rule_version: ruleVersion,
+        ...(actorUserId ? { actor_user_id: actorUserId } : {}),
         result: 'changed',
       },
       now,

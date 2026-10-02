@@ -556,12 +556,34 @@ export class PostgresWorkflowStore implements WorkflowStore {
         ...(typeof fields.one_line_definition === 'string' ? { one_line_definition: fields.one_line_definition } : {}),
       })
     }
+    if (row.target_type === 'comment') {
+      const result = await client.query<{
+        readonly moderation_state: string
+        readonly version: number
+        readonly entry_type: string
+        readonly body: string
+        readonly experience_task: string | null
+        readonly experience_scenario: string | null
+        readonly experience_limitation: string | null
+        readonly screenshot_media_resource_ids: string[]
+        readonly project_id: string
+      } & QueryResultRow>(
+        `SELECT c.moderation_state,c.version,c.entry_type,c.body,c.experience_task,c.experience_scenario,c.experience_limitation,c.project_id,
+         COALESCE((SELECT array_agg(s.media_resource_id ORDER BY s.sort_order) FROM community.experience_screenshots s WHERE s.comment_id=c.comment_id),ARRAY[]::uuid[]) AS screenshot_media_resource_ids
+         FROM community.comments c WHERE c.comment_id=$1`,
+        [row.target_id],
+      )
+      const comment = result.rows[0]
+      return comment ? Object.freeze({ status: comment.moderation_state, version: comment.version,
+        entry_type: comment.entry_type, body: comment.body, experience_task: comment.experience_task,
+        experience_scenario: comment.experience_scenario, experience_limitation: comment.experience_limitation,
+        screenshot_media_resource_ids: comment.screenshot_media_resource_ids,
+        project_id: comment.project_id }) : Object.freeze({ status: 'target_missing' })
+    }
     let table: string
     let id: string
     let status: string
     switch (row.target_type) {
-      case 'comment':
-        table = 'community.comments'; id = 'comment_id'; status = 'moderation_state'; break
       case 'report':
         table = 'community.comment_reports'; id = 'report_id'; status = 'status'; break
       case 'verification_request':

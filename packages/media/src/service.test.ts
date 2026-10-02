@@ -35,9 +35,17 @@ const uploading: MediaResourceProjection = Object.freeze({
 
 class FakeStore implements MediaStore {
   createInput: Parameters<MediaStore['createReference']>[0] | null = null
+  publicContentInput: Parameters<MediaStore['getPublicExperienceContentResource']>[0] | null = null
   async prepareResource(input: Parameters<MediaStore['prepareResource']>[0]): ReturnType<MediaStore['prepareResource']> { void input; throw new Error('not used') }
   async getUploadResource(input: Parameters<MediaStore['getUploadResource']>[0]): ReturnType<MediaStore['getUploadResource']> { void input; throw new Error('not used') }
   async getContentResource(input: Parameters<MediaStore['getContentResource']>[0]): ReturnType<MediaStore['getContentResource']> { void input; throw new Error('not used') }
+  async getPublicExperienceContentResource(input: Parameters<MediaStore['getPublicExperienceContentResource']>[0]) {
+    this.publicContentInput = input
+    return Object.freeze({
+      projection: uploading,
+      storageKey: `ready/${input.experienceId}/${input.mediaResourceId}`,
+    })
+  }
   getCompletionReceipt(input: Parameters<MediaStore['getCompletionReceipt']>[0]): Promise<null> { void input; return Promise.resolve(null) }
   async completeResource(input: Parameters<MediaStore['completeResource']>[0]): ReturnType<MediaStore['completeResource']> { void input; throw new Error('not used') }
   getResource(): never { throw new Error('not used') }
@@ -85,7 +93,10 @@ class UploadStore extends FakeStore {
   }
 }
 
-function uploadStorage(providerChecksum: string | null = 'a'.repeat(64)): MediaStorage {
+function uploadStorage(
+  providerChecksum: string | null = 'a'.repeat(64),
+  onRead?: (input: Parameters<MediaStorage['issueRead']>[0]) => void,
+): MediaStorage {
   const storage = Object.freeze({
     async issueUpload(input: Parameters<MediaStorage['issueUpload']>[0]) {
       return Object.freeze({
@@ -99,12 +110,87 @@ function uploadStorage(providerChecksum: string | null = 'a'.repeat(64)): MediaS
     async inspectUpload() {
       return Object.freeze({ detectedMime: 'image/png', byteSize: 1024, checksumSha256: providerChecksum })
     },
-    async issueRead() { return Object.freeze({ readUrl: 'https://storage.example/read' }) },
+    async issueRead(input: Parameters<MediaStorage['issueRead']>[0]) {
+      onRead?.(input)
+      return Object.freeze({ readUrl: 'https://storage.example/read' })
+    },
   })
   return storage as unknown as MediaStorage
 }
 
 describe('MediaService', () => {
+  it('signs public experience content from the store-selected storage key', async () => {
+    const store = new FakeStore()
+    const readInputs: Array<Parameters<MediaStorage['issueRead']>[0]> = []
+    const service = new MediaService(
+      store,
+      uploadStorage('a'.repeat(64), (input) => readInputs.push(input)),
+      () => new Date('2026-08-13T12:00:00.000Z'),
+    )
+
+    const content = await service.readPublicExperienceContent({
+      experienceId: '91000000-0000-4000-8000-000000000004',
+      mediaResourceId: '91000000-0000-4000-8000-000000000005',
+      requestId: 'media-public-experience-read-0001',
+    })
+
+    assert.deepEqual(store.publicContentInput, {
+      experienceId: '91000000-0000-4000-8000-000000000004',
+      mediaResourceId: '91000000-0000-4000-8000-000000000005',
+    })
+    assert.equal(content.redirect_url, 'https://storage.example/read')
+    assert.deepEqual(readInputs, [{
+      storageKey: 'ready/91000000-0000-4000-8000-000000000004/91000000-0000-4000-8000-000000000005',
+      expiresAt: new Date('2026-08-13T12:00:10.000Z'),
+    }])
+  })
+
+  it('rejects malformed public experience and media resource UUIDs before store access', async () => {
+    const store = new FakeStore()
+    const service = new MediaService(store, uploadStorage())
+
+    await assert.rejects(
+      service.readPublicExperienceContent({
+        experienceId: 'not-a-uuid',
+        mediaResourceId: '91000000-0000-4000-8000-000000000005',
+        requestId: 'media-public-experience-read-0002',
+      }),
+      (error: unknown) => error instanceof MediaError && error.code === 'EXPERIENCE_ID_INVALID',
+    )
+    await assert.rejects(
+      service.readPublicExperienceContent({
+        experienceId: '91000000-0000-4000-8000-000000000004',
+        mediaResourceId: 'not-a-uuid',
+        requestId: 'media-public-experience-read-0003',
+      }),
+      (error: unknown) => error instanceof MediaError && error.code === 'MEDIA_RESOURCE_ID_INVALID',
+    )
+    assert.equal(store.publicContentInput, null)
+  })
+
+  it('passes authenticated reviewer identity and lease time to the screenshot permission check', async () => {
+    const store = new FakeStore()
+    const now = new Date('2026-08-13T12:00:00.000Z')
+    const service = new MediaService(store, uploadStorage(), () => now)
+    await service.readPublicExperienceContent({
+      experienceId: '91000000-0000-4000-8000-000000000004',
+      mediaResourceId: '91000000-0000-4000-8000-000000000005',
+      reviewerUserId: '91000000-0000-4000-8000-000000000006', requestId: 'review-read-0001',
+    })
+    assert.equal(store.publicContentInput?.reviewerUserId, '91000000-0000-4000-8000-000000000006')
+    assert.equal(store.publicContentInput?.now, now)
+  })
+
+  it('accepts experience screenshots through the existing scanned upload pipeline', async () => {
+    const store = new UploadStore()
+    const service = new MediaService(store, uploadStorage(), () => new Date('2026-08-13T12:00:00.000Z'))
+    await service.prepareResource({
+      userId: '91000000-0000-4000-8000-000000000004', purpose: 'experience_screenshot',
+      declaredMime: 'image/png', byteSize: 1024, checksumSha256: 'a'.repeat(64),
+      idempotencyKey: 'media-experience-prepare-0001', requestId: 'media-experience-request-0001',
+    })
+    assert.equal(store.preparedInput?.purpose, 'experience_screenshot')
+  })
   it('prepares and completes a quarantined cover without exposing storage keys', async () => {
     const store = new UploadStore()
     const service = new MediaService(store, uploadStorage(), () => new Date('2026-08-13T12:00:00.000Z'))

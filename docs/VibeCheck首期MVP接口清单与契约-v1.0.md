@@ -298,6 +298,63 @@
 | OP-CONFIG-DRAFT-CREATE | IF-CONFIG-002 | POST `/api/v1/admin/config-drafts` | 编辑起草 | PRD v1.10 |
 | OP-CONFIG-DRAFT-PATCH | IF-CONFIG-002 | PATCH `/api/v1/admin/config-drafts/{draft_id}` | 草稿作者/授权编辑 | PRD v1.10 |
 
+## 7A. 社区体验与审核实现契约（代码对齐补充）
+
+本节补充当前 API 服务已实现的结构化体验、截图公开读取和社区审核路由。除特别说明外，路径均使用 `/api/v1`；写请求使用同站 Origin、会话 Cookie 和 CSRF 校验，未知 JSON 字段返回 `422 REQUEST_FIELD_UNKNOWN`。
+
+### 7A.1 体验路由
+
+| Operation | 方法与路径 | 鉴权 | 成功响应 |
+| --- | --- | --- | --- |
+| `OP-EXPERIENCE-LIST` | GET `/api/v1/projects/{project_id}/experiences?cursor={cursor}` | 公共；按作品公开状态过滤 | `200 ExperiencePage`，`Cache-Control: no-store` |
+| `OP-EXPERIENCE-CREATE` | POST `/api/v1/projects/{project_id}/experiences` | 已认证且账户可写 | `201` 新建或 `200` 幂等重放，`ExperienceProjection` |
+| `OP-EXPERIENCE-REPLY` | POST `/api/v1/experiences/{experience_id}/replies` | 该作品的已验证作者关系 | `201` 新建或 `200` 幂等重放，`CommentProjection` |
+| `OP-EXPERIENCE-SCREENSHOT-CONTENT` | GET `/api/v1/experiences/{experience_id}/screenshots/{media_resource_id}/content` | 公共；服务端重新校验公开资格 | `200 image/jpeg\|image/png\|image/webp` 图片字节，`Cache-Control: no-store`、`X-Content-Type-Options: nosniff` |
+| `OP-ADMIN-EXPERIENCE-SCREENSHOT-CONTENT` | GET `/api/v1/admin/experiences/{experience_id}/screenshots/{media_resource_id}/content` | `admin` 角色或 `admin:review` 权限；必须已领取该体验对应审核任务、租约有效且无利益冲突 | `200 image/jpeg\|image/png\|image/webp` 图片字节，`Cache-Control: no-store`、`X-Content-Type-Options: nosniff` |
+| `OP-ADMIN-COMMUNITY-DECISION` | POST `/api/v1/admin/community/comments/{comment_id}/decision` | `admin` 角色或 `admin:review` 权限；必须已领取目标 comment 的审核任务、租约有效且无利益冲突 | `200 CommentProjection` |
+
+**列表响应** `ExperiencePage` 为 `{items,next_cursor}`。每个 item 返回 `comment_id`、`project_id`、`task`、`outcome`、可空的 `scenario`/`limitation`、按提交顺序排列的 `screenshot_media_resource_ids`、`author_label`、`moderation_state`（仅 `visible`/`collapsed`）、最新可见已验证作者回复 `author_reply`/`author_reply_at`、`version` 和 `created_at`。`next_cursor` 是绑定作品和排序位置的签名 opaque 游标；列表只返回当前作品为 `published_platform` 或 `published_author` 且有当前版本的体验。
+
+创建请求允许的 JSON 键为（`scenario`、`limitation` 可省略或显式传 `null`）：
+
+```json
+{
+  "task": "从 PDF 生成练习题",
+  "outcome": "成功生成十道题",
+  "scenario": null,
+  "limitation": null,
+  "screenshot_media_resource_ids": [],
+  "client_request_id": "experience_request_0001"
+}
+```
+
+有效长度（按 Unicode 字符计）为 `task` 1–500、`outcome` 1–1000、`scenario`/`limitation` 可空且非空时 1–500；文本会去除首尾空白并拒绝控制字符。截图 ID 必须是不重复的 UUID，最多 3 个；`client_request_id` 为 8–128 个 `[A-Za-z0-9_-]` 字符。新建体验初始为 `visible`。同一用户使用相同请求 ID 和相同载荷返回原结果，载荷不同返回 `409 CLIENT_REQUEST_ID_REUSED`。项目不存在返回 404，项目受限或未发布返回 403，已归档/删除或无当前版本返回 410。
+
+回复请求的 JSON 键必须为 `body`、`client_request_id`；正文有效长度为 1–2000。目标必须仍为 `visible` 的体验，且会话用户需拥有该作品的 active Creator/Author relation；否则分别返回 404 或 403。回复作为 `verified_author_reply=true` 的可见 discussion comment 写入，列表只展示最新一条可见回复。
+
+### 7A.2 截图媒体用途与公开内容
+
+- `POST /api/v1/media-resources` 的 `purpose` 允许 `project_cover` 或 `experience_screenshot`；体验只能绑定后者。准备请求仍需 `declared_mime`、`byte_size`、`checksum_sha256`，支持 `image/jpeg`、`image/png`、`image/webp`、`image/avif`，单文件不超过 5 MiB。
+- 准备成功返回 201 和单用途 HTTPS 上传 URL，上传凭证有效期 15 分钟；完成上传返回 202 并进入扫描/处理队列。创建体验时，所有截图必须属于当前用户、状态为 `ready`、扫描结果为 `clean`、已移除 EXIF 且没有删除保护任务，否则返回 `422 EXPERIENCE_SCREENSHOT_NOT_READY`。
+- 公开内容路由不会返回存储 key、`Location` 或签名 URL，也不接受认证凭据。服务端同时要求截图属于该体验、体验为 `entry_type=experience` 且 `moderation_state=visible`、作品已发布并有当前版本、媒体为 `ready/clean`、已移除 EXIF 且无删除任务；不满足条件按 404 处理。服务端下载后再次校验公开资格，再以 `200` 代理返回 `image/jpeg`、`image/png` 或 `image/webp` 图片字节，并设置 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。
+- 管理员审核截图路由不会返回存储 key、`Location` 或签名 URL。服务端要求会话用户具有 `admin` 角色或 `admin:review` 权限，并在数据库内重新校验该用户已领取目标体验对应的 `community/comment` 审核任务、任务仍为 `claimed`、租约未过期且当前用户不在活动冲突主体集合；任一条件不满足按 403/404 处理。服务端下载后再次校验审核资格，再以 `200` 代理返回允许的图片字节，并设置 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。
+
+### 7A.3 举报、审核与状态变化
+
+举报路由 `POST /api/v1/comments/{comment_id}/reports` 的 JSON 键必须为 `reason_code`、可空的 `note`、`client_request_id`。`reason_code` 匹配 `^[a-z][a-z0-9_]{0,63}$`；`note` 非空时最多 1000 字符并在存储前加密，响应只返回 `note_provided`。举报只接受当前公开的 `visible`/`collapsed` comment。首次举报返回 201、`status=open` 和 `review_work_item_id`，并将 comment 置为 `under_review` 从公开列表移除；同一用户对同一 comment 和 reason 的活动举报或同请求 ID 重放返回 200 `result=deduplicated`。举报和评论创建各使用发布配置的用户级限流，超限返回 429 和 `Retry-After`。
+
+管理员决策请求的 JSON 键必须为 `expected_version`、`resulting_state`、`decision_id`、`reason_code`、`work_item_id`、`claim_token`；允许的 `resulting_state` 为 `visible`、`collapsed`、`hidden`、`rejected`。审核前必须先通过 `POST /api/v1/admin/work-items/{work_item_id}/claim` 领取目标审核任务，再提交与当前会话绑定的 `work_item_id` 和 `claim_token`；服务端从当前会话事实派生真实 `admin`/`platform_editor` 角色，忽略客户端提交的角色字段，并在数据库锁内复核任务目标、`claimed` 状态、领取人、租约和活动冲突主体，任何一项不匹配或存在利益冲突均返回 403。服务端按 `expected_version` 做 CAS，版本过期返回 409；状态转换不合法返回 409；相同 `comment_id + decision_id` 载荷可安全重放，载荷不同返回 409。离开 `under_review` 时，关联举报按最终状态标记为 `resolved_no_action`（回到 visible）或 `resolved_actioned`（其他结果），并取消活动社区审核工单。审核决定和举报均产生对应 Outbox 事件。
+
+普通 discussion comment（包括带 `parent_comment_id` 的普通回复）以 `pending` 状态写入，并在同一数据库事务中创建或确保对应的 `work_type=community`、`target_type=comment` 审核任务；评论、任务、冲突主体和 Outbox 任一写入失败时整笔事务回滚，不得留下孤立的 pending 评论。
+
+社区审核任务的 `domain_summary` 必须携带目标 comment 的 `entry_type`、`body`、`project_id`、`experience_task`、可空的 `experience_scenario`/`experience_limitation` 以及按提交顺序排列的 `screenshot_media_resource_ids`，使审核者在领取后可以直接查看体验内容和截图。
+
+### 7A.4 共同限制与安全要求
+
+- 社区写请求要求 `Content-Type: application/json`，请求体上限 16 KiB；会话必须有效且 `account_status` 不能为 `restricted`。`X-CSRF-Token` 必须与 `vc_csrf` Cookie 相同，Origin 必须在服务端允许列表内。
+- 公开内容 GET 不建立会话；管理员审核截图 GET 必须有效会话并经过真实角色、领取租约和利益冲突校验。写请求中的用户、作者关系、媒体所有权和审核权限均由服务端从会话/数据库事实判定，客户端提交的 `user_id`、角色或权限字段不参与授权。
+- 所有路径和资源 ID 在领域层按 UUID 校验；游标为签名 opaque 值；响应回显 `X-Request-Id`。错误响应不泄露存储 key、报告正文明文、token 或内部堆栈。
+
 
 ## 8. 既有 Operation 的技术修订
 

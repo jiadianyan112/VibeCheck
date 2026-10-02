@@ -80,6 +80,62 @@ export interface CommentPage {
   readonly next_cursor: string | null
 }
 
+export interface ExperienceProjection {
+  readonly comment_id: string
+  readonly project_id: string
+  readonly author_user_id: string
+  readonly task: string
+  readonly outcome: string
+  readonly scenario: string | null
+  readonly limitation: string | null
+  readonly screenshot_media_resource_ids: readonly string[]
+  readonly moderation_state: CommentModerationState
+  readonly version: number
+  readonly result: 'created' | 'deduplicated'
+  readonly created_at: string
+}
+
+export interface PublicExperienceProjection extends Omit<ExperienceProjection, 'author_user_id' | 'result' | 'moderation_state'> {
+  readonly author_label: string
+  readonly moderation_state: 'visible' | 'collapsed'
+  readonly author_reply: string | null
+  readonly author_reply_at: string | null
+  readonly replies: readonly {
+    readonly comment_id: string
+    readonly body: string
+    readonly created_at: string
+    readonly moderation_state: 'visible' | 'collapsed'
+  }[]
+}
+
+export interface ExperiencePage {
+  readonly items: readonly PublicExperienceProjection[]
+  readonly next_cursor: string | null
+}
+
+export interface CreateExperienceCommand {
+  readonly userId: string
+  readonly projectId: string
+  readonly task: string
+  readonly outcome: string
+  readonly scenario: string | null
+  readonly limitation: string | null
+  readonly screenshotMediaResourceIds: readonly string[]
+  readonly clientRequestId: string
+}
+
+export interface ListExperiencesCommand {
+  readonly projectId: string
+  readonly cursor: string | null
+}
+
+export interface ReplyToExperienceCommand {
+  readonly userId: string
+  readonly experienceId: string
+  readonly body: string
+  readonly clientRequestId: string
+}
+
 export interface CreateCommentCommand {
   readonly userId: string
   readonly projectId: string
@@ -125,6 +181,7 @@ export interface ReportCommentCommand {
 }
 
 export interface ModerateCommentCommand {
+  readonly reviewContext?: { readonly actorUserId: string; readonly workItemId: string; readonly claimToken: string }
   readonly commentId: string
   readonly expectedVersion: number
   readonly resultingState: Exclude<CommentModerationState, 'author_withdrawn'>

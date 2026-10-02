@@ -52,6 +52,13 @@ export interface ReviewDomainSummary {
   readonly current_name?: string
   readonly public_url?: string
   readonly one_line_definition?: string
+  readonly entry_type?: string
+  readonly body?: string
+  readonly experience_task?: string | null
+  readonly experience_scenario?: string | null
+  readonly experience_limitation?: string | null
+  readonly screenshot_media_resource_ids?: readonly string[]
+  readonly project_id?: string
 }
 
 export interface ReviewWorkItemProjection {

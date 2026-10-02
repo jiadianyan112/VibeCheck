@@ -12,6 +12,11 @@ import {
   type CommentProjection,
   type CommentReportProjection,
   type CreateCommentCommand,
+  type CreateExperienceCommand,
+  type ExperiencePage,
+  type ExperienceProjection,
+  type ListExperiencesCommand,
+  type ReplyToExperienceCommand,
   type ListCommentsCommand,
   type ModerateCommentCommand,
   type ProjectInteractionProjection,
@@ -47,6 +52,48 @@ export class CommunityService {
     return store.createComment({
       userId, projectId, parentCommentId, body, clientRequestId, requestHash, now: this.now(),
     })
+  }
+
+  createExperience(command: CreateExperienceCommand): Promise<ExperienceProjection> {
+    const store = this.commentStore()
+    const userId = this.uuid(command.userId, 'USER_ID_INVALID')
+    const projectId = this.uuid(command.projectId, 'PROJECT_ID_INVALID')
+    const task = this.normalizedText(command.task, 500, 'EXPERIENCE_TASK_INVALID')
+    const outcome = this.normalizedText(command.outcome, 1000, 'EXPERIENCE_OUTCOME_INVALID')
+    const scenario = command.scenario === null || command.scenario.trim() === '' ? null : this.normalizedText(command.scenario, 500, 'EXPERIENCE_SCENARIO_INVALID')
+    const limitation = command.limitation === null || command.limitation.trim() === '' ? null : this.normalizedText(command.limitation, 500, 'EXPERIENCE_LIMITATION_INVALID')
+    if (!Array.isArray(command.screenshotMediaResourceIds) || command.screenshotMediaResourceIds.length > 3 || new Set(command.screenshotMediaResourceIds).size !== command.screenshotMediaResourceIds.length) {
+      throw communityError('EXPERIENCE_SCREENSHOTS_INVALID', 422)
+    }
+    const screenshotMediaResourceIds = Object.freeze(command.screenshotMediaResourceIds.map(id => this.uuid(id, 'EXPERIENCE_SCREENSHOTS_INVALID')))
+    const clientRequestId = this.requestId(command.clientRequestId)
+    return store.createExperience({
+      userId, projectId, task, outcome, scenario, limitation, screenshotMediaResourceIds,
+      clientRequestId,
+      requestHash: this.hash({ projectId, task, outcome, scenario, limitation, screenshotMediaResourceIds }),
+      now: this.now(),
+    })
+  }
+
+  async listExperiences(command: ListExperiencesCommand): Promise<ExperiencePage> {
+    const store = this.commentStore()
+    const projectId = this.uuid(command.projectId, 'PROJECT_ID_INVALID')
+    const config = this.commentConfig()
+    const after = command.cursor === null ? null : this.decodeCursor(command.cursor, projectId, config.cursorSecret)
+    const page = await store.listExperiences({ projectId, after, limit: config.commentPageSize })
+    return Object.freeze({
+      items: page.items,
+      next_cursor: page.nextAnchor === null ? null : this.encodeCursor(page.nextAnchor, projectId, config.cursorSecret),
+    })
+  }
+
+  replyToExperience(command: ReplyToExperienceCommand): Promise<CommentProjection> {
+    const store = this.commentStore()
+    const userId = this.uuid(command.userId, 'USER_ID_INVALID')
+    const experienceId = this.uuid(command.experienceId, 'EXPERIENCE_ID_INVALID')
+    const body = this.normalizedText(command.body, 2_000, 'COMMENT_BODY_INVALID')
+    const clientRequestId = this.requestId(command.clientRequestId)
+    return store.replyToExperience({ userId, experienceId, body, clientRequestId, requestHash: this.hash({ experienceId, body }), now: this.now() })
   }
 
   async listComments(command: ListCommentsCommand): Promise<CommentPage> {
@@ -117,7 +164,7 @@ export class CommunityService {
     const decisionId = this.uuid(command.decisionId, 'DECISION_ID_INVALID')
     this.version(command.expectedVersion)
     if (
-      command.actorType !== 'system' ||
+      !['system', 'platform_editor', 'admin'].includes(command.actorType) ||
       !commentModerationStates.includes(command.resultingState)
     ) throw communityError('COMMUNITY_MANUAL_REVIEW_NOT_IMPLEMENTED', 501)
     if (!/^[a-z][a-z0-9_]{0,63}$/.test(command.reasonCode)) {
@@ -127,8 +174,16 @@ export class CommunityService {
       command.ruleVersion !== null &&
       !/^[A-Za-z0-9._-]{1,64}$/.test(command.ruleVersion)
     ) throw communityError('MODERATION_RULE_VERSION_INVALID', 422)
+    let reviewContext: { actorUserId: string; workItemId: string; claimTokenHash: Buffer } | undefined
+    if (command.actorType !== 'system') {
+      if (!command.reviewContext || !/^[A-Za-z0-9_-]{43}$/.test(command.reviewContext.claimToken)) throw communityError('COMMENT_REVIEW_CLAIM_REQUIRED', 403)
+      reviewContext = { actorUserId: this.uuid(command.reviewContext.actorUserId, 'USER_ID_INVALID'), workItemId: this.uuid(command.reviewContext.workItemId, 'WORK_ITEM_ID_INVALID'), claimTokenHash: createHash('sha256').update(command.reviewContext.claimToken).digest() }
+    }
+    const { reviewContext: _rawReviewContext, ...moderation } = command
+    void _rawReviewContext
     return store.moderateComment({
-      ...command,
+      ...moderation,
+      ...(reviewContext ? { reviewContext } : {}),
       commentId,
       decisionId,
       requestHash: this.hash({
@@ -138,6 +193,8 @@ export class CommunityService {
         actorType: command.actorType,
         reasonCode: command.reasonCode,
         ruleVersion: command.ruleVersion,
+        actorUserId: reviewContext?.actorUserId ?? null,
+        workItemId: reviewContext?.workItemId ?? null,
       }),
       now: this.now(),
     })
@@ -186,6 +243,8 @@ export class CommunityService {
     const store = this.dependencies.store as Partial<CommunityStore>
     if (
       typeof store.createComment !== 'function' || typeof store.listComments !== 'function' ||
+      typeof store.createExperience !== 'function' || typeof store.listExperiences !== 'function' ||
+      typeof store.replyToExperience !== 'function' ||
       typeof store.withdrawComment !== 'function' || typeof store.reportComment !== 'function' ||
       typeof store.moderateComment !== 'function'
     ) throw communityError('COMMUNITY_COMMENT_STORE_UNAVAILABLE', 503, true)

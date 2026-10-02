@@ -56,6 +56,8 @@ class FakeStore implements CommunityStore {
   input: Parameters<ProjectInteractionStore['setProjectInteraction']>[0] | null = null
   createInput: Parameters<CommunityStore['createComment']>[0] | null = null
   reportInput: Parameters<CommunityStore['reportComment']>[0] | null = null
+  experienceInput: Parameters<CommunityStore['createExperience']>[0] | null = null
+  moderateInput: Parameters<CommunityStore['moderateComment']>[0] | null = null
 
   async setProjectInteraction(
     input: Parameters<ProjectInteractionStore['setProjectInteraction']>[0],
@@ -67,6 +69,19 @@ class FakeStore implements CommunityStore {
   async createComment(input: Parameters<CommunityStore['createComment']>[0]) {
     this.createInput = input
     return Object.freeze({ ...commentProjection, body: input.body })
+  }
+
+  async createExperience(input: Parameters<CommunityStore['createExperience']>[0]) {
+    this.experienceInput = input
+    return Object.freeze({ ...commentProjection, body: input.outcome, moderation_state: 'visible' as const })
+  }
+
+  async listExperiences() {
+    return Object.freeze({ items: Object.freeze([]), nextAnchor: null })
+  }
+
+  async replyToExperience(input: Parameters<CommunityStore['replyToExperience']>[0]) {
+    return Object.freeze({ ...commentProjection, parent_comment_id: input.experienceId, body: input.body, moderation_state: 'visible' as const })
   }
 
   async listComments(input: Parameters<CommunityStore['listComments']>[0]) {
@@ -93,10 +108,51 @@ class FakeStore implements CommunityStore {
     return reportProjection
   }
 
-  async moderateComment() {
+  async moderateComment(input: Parameters<CommunityStore['moderateComment']>[0]) {
+    this.moderateInput = input
     return commentProjection
   }
 }
+
+it('creates a structured experience with task and outcome and preserves its screenshot ids', async () => {
+  const store = new FakeStore()
+  const service = new CommunityService({ store, config: communityConfig, now: () => now })
+  const created = await service.createExperience({
+    userId,
+    projectId,
+    task: '从 PDF 生成练习题',
+    outcome: '成功生成十道题',
+    scenario: '课前复习',
+    limitation: null,
+    screenshotMediaResourceIds: [],
+    clientRequestId: 'experience_request_0001',
+  })
+  assert.equal(created.moderation_state, 'visible')
+  assert.equal(store.experienceInput?.task, '从 PDF 生成练习题')
+  assert.equal(store.experienceInput?.outcome, '成功生成十道题')
+  assert.throws(() => service.createExperience({
+    userId, projectId, task: ' ', outcome: '有结果', scenario: null, limitation: null,
+    screenshotMediaResourceIds: [], clientRequestId: 'experience_request_0002',
+  }))
+})
+
+it('rejects invalid experience lengths, screenshots and cross-project cursors before storage', async () => {
+  const store = new FakeStore()
+  const service = new CommunityService({ store, config: communityConfig, now: () => now })
+  const base = {
+    userId, projectId, task: '完成课程练习', outcome: '生成十道题', scenario: null,
+    limitation: null, screenshotMediaResourceIds: [] as readonly string[],
+    clientRequestId: 'experience_request_0003',
+  }
+  await failure(() => service.createExperience({ ...base, outcome: ' ' }), 'EXPERIENCE_OUTCOME_INVALID', 422)
+  await failure(() => service.createExperience({ ...base, task: 'x'.repeat(501) }), 'EXPERIENCE_TASK_INVALID', 422)
+  await failure(() => service.createExperience({ ...base, screenshotMediaResourceIds: [userId, userId] }), 'EXPERIENCE_SCREENSHOTS_INVALID', 422)
+  await failure(() => service.createExperience({ ...base, screenshotMediaResourceIds: [userId, projectId, commentProjection.comment_id, reportProjection.report_id] }), 'EXPERIENCE_SCREENSHOTS_INVALID', 422)
+  assert.equal(store.experienceInput, null)
+  const page = await service.listExperiences({ projectId, cursor: null })
+  assert.equal(page.next_cursor, null)
+  await failure(() => service.listExperiences({ projectId, cursor: 'invalid' }), 'COMMENT_CURSOR_INVALID', 400)
+})
 
 const communityConfig = Object.freeze({
   enabled: true,
@@ -217,7 +273,7 @@ describe('CommunityService comments', () => {
     assert.equal(store.reportInput?.noteCiphertext?.includes(Buffer.from('private reviewer note')), false)
   })
 
-  it('rejects oversized/control text and keeps manual review behind the review workflow', async () => {
+  it('rejects oversized/control text and validates manual review decisions', async () => {
     const store = new FakeStore()
     const service = new CommunityService({ store, config: communityConfig })
     await failure(() => service.createComment({
@@ -234,14 +290,23 @@ describe('CommunityService comments', () => {
       parentCommentId: null,
       clientRequestId: 'comment_request_0003',
     }), 'COMMENT_BODY_INVALID', 422)
-    await failure(() => service.moderateComment({
+    await service.moderateComment({
       commentId: commentProjection.comment_id,
       expectedVersion: 1,
       resultingState: 'visible',
       decisionId: '60000000-0000-4000-8000-000000000001',
       actorType: 'platform_editor',
+      reviewContext: { actorUserId: userId, workItemId: '60000000-0000-4000-8000-000000000002', claimToken: 'a'.repeat(43) },
       reasonCode: 'approved',
       ruleVersion: null,
-    }), 'COMMUNITY_MANUAL_REVIEW_NOT_IMPLEMENTED', 501)
+    })
+    assert.equal(store.moderateInput?.actorType, 'platform_editor')
+    assert.equal(store.moderateInput?.resultingState, 'visible')
+    assert.equal(store.moderateInput?.reviewContext?.claimTokenHash.equals(Buffer.from('a'.repeat(43))), false)
+    await failure(() => service.moderateComment({
+      commentId: commentProjection.comment_id, expectedVersion: 1, resultingState: 'visible',
+      decisionId: '60000000-0000-4000-8000-000000000003', actorType: 'platform_editor',
+      reasonCode: 'approved', ruleVersion: null,
+    }), 'COMMENT_REVIEW_CLAIM_REQUIRED', 403)
   })
 })

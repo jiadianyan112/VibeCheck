@@ -1,6 +1,8 @@
 import type {
   CommentProjection,
   CommentReportProjection,
+  ExperienceProjection,
+  PublicExperienceProjection,
   CommentModerationState,
   InteractionChangeSource,
   PublicCommentProjection,
@@ -35,6 +37,31 @@ export interface StoredPublicCommentPage {
 }
 
 export interface CommunityStore extends ProjectInteractionStore {
+  createExperience(input: {
+    readonly userId: string
+    readonly projectId: string
+    readonly task: string
+    readonly outcome: string
+    readonly scenario: string | null
+    readonly limitation: string | null
+    readonly screenshotMediaResourceIds: readonly string[]
+    readonly clientRequestId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<ExperienceProjection>
+  listExperiences(input: {
+    readonly projectId: string
+    readonly after: PublicCommentPageAnchor | null
+    readonly limit: number
+  }): Promise<{ readonly items: readonly PublicExperienceProjection[]; readonly nextAnchor: PublicCommentPageAnchor | null }>
+  replyToExperience(input: {
+    readonly userId: string
+    readonly experienceId: string
+    readonly body: string
+    readonly clientRequestId: string
+    readonly requestHash: string
+    readonly now: Date
+  }): Promise<CommentProjection>
   createComment(input: {
     readonly userId: string
     readonly projectId: string
@@ -68,6 +95,7 @@ export interface CommunityStore extends ProjectInteractionStore {
     readonly now: Date
   }): Promise<CommentReportProjection>
   moderateComment(input: {
+    readonly reviewContext?: { readonly actorUserId: string; readonly workItemId: string; readonly claimTokenHash: Buffer }
     readonly commentId: string
     readonly expectedVersion: number
     readonly resultingState: Exclude<CommentModerationState, 'author_withdrawn'>

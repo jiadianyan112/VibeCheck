@@ -18,6 +18,7 @@ import {
   type PrepareMediaResourceCommand,
   type PrepareMediaResourceProjection,
   type ReadMediaResourceContentCommand,
+  type ReadPublicExperienceContentCommand,
   type ReadMediaResourceContentProjection,
   type MediaStorage,
   type PublicMediaMime,
@@ -153,6 +154,25 @@ export class MediaService {
     return Object.freeze({ redirect_url: signed.readUrl })
   }
 
+  async readPublicExperienceContent(
+    command: ReadPublicExperienceContentCommand,
+  ): Promise<ReadMediaResourceContentProjection> {
+    const storage = this.requiredStorage()
+    const row = await this.store.getPublicExperienceContentResource({
+      ...(command.reviewerUserId ? { reviewerUserId: this.uuid(command.reviewerUserId, 'MEDIA_USER_INVALID'), now: this.now() } : {}),
+      experienceId: this.uuid(command.experienceId, 'EXPERIENCE_ID_INVALID'),
+      mediaResourceId: this.uuid(command.mediaResourceId, 'MEDIA_RESOURCE_ID_INVALID'),
+    })
+    this.requestId(command.requestId)
+    const signed = await storage.issueRead({
+      storageKey: row.storageKey, expiresAt: new Date(this.now().getTime() + 10_000),
+    })
+    if (new URL(signed.readUrl).protocol !== 'https:') {
+      throw mediaError('MEDIA_STORAGE_RESPONSE_INVALID', 503, true)
+    }
+    return Object.freeze({ redirect_url: signed.readUrl })
+  }
+
   createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection> {
     const targetType = this.targetType(command.targetType)
     if (!editableTargetTypes.has(targetType)) throw mediaError('MEDIA_REFERENCE_TARGET_READ_ONLY', 403)
@@ -249,8 +269,8 @@ export class MediaService {
     return this.storage
   }
 
-  private purpose(value: string): 'project_cover' {
-    if (value !== 'project_cover') throw mediaError('MEDIA_PURPOSE_INVALID', 422)
+  private purpose(value: string): 'project_cover' | 'experience_screenshot' {
+    if (value !== 'project_cover' && value !== 'experience_screenshot') throw mediaError('MEDIA_PURPOSE_INVALID', 422)
     return value
   }
 

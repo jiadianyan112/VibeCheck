@@ -31,6 +31,7 @@ export {
   type PrepareMediaResourceCommand,
   type PrepareMediaResourceProjection,
   type ReadMediaResourceContentCommand,
+  type ReadPublicExperienceContentCommand,
   type ReadMediaResourceContentProjection,
   type PublicMediaMime,
   type PublicMediaPurpose,

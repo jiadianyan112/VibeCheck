@@ -31,7 +31,7 @@ export interface MediaStore {
   prepareResource(input: {
     readonly mediaResourceId: string
     readonly userId: string
-    readonly purpose: 'project_cover'
+    readonly purpose: 'project_cover' | 'experience_screenshot'
     readonly storageKey: string
     readonly declaredMime: PublicMediaMime
     readonly byteSize: number
@@ -48,6 +48,12 @@ export interface MediaStore {
   }): Promise<StoredUploadResource>
   getContentResource(input: {
     readonly userId: string
+    readonly mediaResourceId: string
+  }): Promise<StoredContentResource>
+  getPublicExperienceContentResource(input: {
+    readonly reviewerUserId?: string
+    readonly now?: Date
+    readonly experienceId: string
     readonly mediaResourceId: string
   }): Promise<StoredContentResource>
   getCompletionReceipt(input: {

@@ -22,7 +22,7 @@ export type MediaValidationRejectionReason =
   | 'DECODE_UNSUPPORTED'
 export const publicMediaMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'] as const
 export type PublicMediaMime = (typeof publicMediaMimeTypes)[number]
-export type PublicMediaPurpose = 'project_cover'
+export type PublicMediaPurpose = 'project_cover' | 'experience_screenshot'
 
 export interface MediaResourceProjection {
   readonly media_resource_id: string
@@ -75,6 +75,13 @@ export interface GetMediaResourceCommand {
 
 export interface ReadMediaResourceContentCommand {
   readonly userId: string
+  readonly mediaResourceId: string
+  readonly requestId: string
+}
+
+export interface ReadPublicExperienceContentCommand {
+  readonly reviewerUserId?: string
+  readonly experienceId: string
   readonly mediaResourceId: string
   readonly requestId: string
 }

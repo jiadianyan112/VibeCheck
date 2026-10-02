@@ -50,7 +50,7 @@ export interface MediaResource {
 }
 
 export interface MediaResourcePrepareRequest {
-  readonly purpose: 'project_cover'
+  readonly purpose: 'project_cover' | 'experience_screenshot'
   readonly declared_mime: MediaPublicMime
   readonly byte_size: number
   readonly checksum_sha256: string
@@ -468,7 +468,7 @@ function isUploadUrl(value: unknown): value is string {
 function validPrepareRequest(value: unknown): value is MediaResourcePrepareRequest {
   return isRecord(value) &&
     hasExactKeys(value, prepareRequestKeys) &&
-    value.purpose === 'project_cover' &&
+    (value.purpose === 'project_cover' || value.purpose === 'experience_screenshot') &&
     isPublicMime(value.declared_mime) &&
     isPositiveInteger(value.byte_size) && value.byte_size <= 5_242_880 &&
     isChecksum(value.checksum_sha256)

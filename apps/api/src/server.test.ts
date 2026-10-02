@@ -45,6 +45,9 @@ import type {
   CommentProjection,
   CommentReportProjection,
   CreateCommentCommand,
+  CreateExperienceCommand,
+  ExperienceProjection,
+  ReplyToExperienceCommand,
   ListCommentsCommand,
   NotificationPage,
   NotificationReadProjection,
@@ -93,6 +96,7 @@ import type {
   ReadMediaResourceContentCommand,
   ReadMediaResourceContentProjection,
 } from '@vibecheck/media'
+import { MediaError } from '@vibecheck/media'
 import type { SearchCommand, SearchProjection, SearchSubject } from '@vibecheck/search'
 import type {
   CheckSubmissionUrlCommand,
@@ -230,7 +234,7 @@ async function start(
     ...(verificationRequests ? { verificationRequests } : {}),
     ...(privateMaterials ? { privateMaterials } : {}),
     ...(ownershipCases ? { ownershipCases } : {}),
-    ...(media ? { media } : {}),
+    ...(media ? { media, fetchMediaContent: (async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } })) as typeof fetch } : {}),
     ...(passwordIdentity ? { passwordIdentity } : {}),
     now: () => new Date('2026-08-10T00:00:00.000Z'),
   })
@@ -413,6 +417,36 @@ class FakeCommunityService implements ApiCommunityService {
   listCommand: ListCommentsCommand | null = null
   reportCommand: ReportCommentCommand | null = null
   withdrawCommand: WithdrawCommentCommand | null = null
+  moderateCommand: Parameters<ApiCommunityService['moderateComment']>[0] | null = null
+  async moderateComment(command: { commentId: string; expectedVersion: number; resultingState: 'pending' | 'under_review' | 'visible' | 'collapsed' | 'hidden' | 'rejected'; decisionId: string; actorType: 'system' | 'platform_editor' | 'admin'; reasonCode: string; ruleVersion: string | null }): Promise<CommentProjection> {
+    this.moderateCommand = command
+    return Object.freeze({ comment_id: command.commentId, project_id: '10000000-0000-4000-8000-000000000001',
+      parent_comment_id: null, body: '体验结果', moderation_state: command.resultingState,
+      version: command.expectedVersion + 1, result: 'changed', created_at: '2026-08-10T00:00:00.000Z',
+      updated_at: '2026-08-10T00:00:00.000Z', author_withdrawn_at: null })
+  }
+
+  async listExperiences() {
+    return Object.freeze({ items: Object.freeze([]), next_cursor: null })
+  }
+
+  async createExperience(command: CreateExperienceCommand): Promise<ExperienceProjection> {
+    return Object.freeze({
+      comment_id: '71000000-0000-4000-8000-000000000002', project_id: command.projectId,
+      author_user_id: command.userId, task: command.task, outcome: command.outcome,
+      scenario: command.scenario, limitation: command.limitation,
+      screenshot_media_resource_ids: command.screenshotMediaResourceIds,
+      moderation_state: 'visible', version: 1, result: 'created', created_at: '2026-08-10T00:00:00.000Z',
+    })
+  }
+
+  async replyToExperience(command: ReplyToExperienceCommand): Promise<CommentProjection> {
+    return Object.freeze({
+      comment_id: '71000000-0000-4000-8000-000000000003', project_id: '10000000-0000-4000-8000-000000000001',
+      parent_comment_id: command.experienceId, body: command.body, moderation_state: 'visible',
+      version: 1, result: 'created', created_at: '2026-08-10T00:00:00.000Z', updated_at: '2026-08-10T00:00:00.000Z', author_withdrawn_at: null,
+    })
+  }
 
   async setProjectInteraction(
     command: SetProjectInteractionCommand,
@@ -2372,6 +2406,7 @@ const uploadingMedia: MediaResourceProjection = Object.freeze({
 })
 
 class FakeMediaService implements ApiMediaService {
+  publicContentDenied = false
   prepareCommand: PrepareMediaResourceCommand | null = null
   completeCommand: CompleteMediaResourceCommand | null = null
   getPrepareCommand(): PrepareMediaResourceCommand | null { return this.prepareCommand }
@@ -2394,6 +2429,11 @@ class FakeMediaService implements ApiMediaService {
   async readResourceContent(command: ReadMediaResourceContentCommand): Promise<ReadMediaResourceContentProjection> {
     void command
     return Object.freeze({ redirect_url: 'https://media.example/read' })
+  }
+  async readPublicExperienceContent(command: { experienceId: string; mediaResourceId: string; requestId: string }): Promise<ReadMediaResourceContentProjection> {
+    void command
+    if (this.publicContentDenied) throw new MediaError('MEDIA_RESOURCE_NOT_FOUND', 404)
+    return Object.freeze({ redirect_url: 'https://media.example/public-experience' })
   }
   async getResource(command: GetMediaResourceCommand): Promise<MediaResourceProjection> { void command; return uploadingMedia }
   async createReference(command: CreateMediaReferenceCommand): Promise<MediaReferenceProjection> { void command; throw new Error('not used') }
@@ -2455,6 +2495,19 @@ test('public cover media routes require authenticated CSRF and bind idempotent u
     )
     assert.equal(content.status, 302)
     assert.equal(content.headers.get('location'), 'https://media.example/read')
+    const publicContent = await fetch(
+      `${runtime.baseUrl}/api/v1/experiences/91000000-0000-4000-8000-000000000001/screenshots/${uploadingMedia.media_resource_id}/content`,
+      { redirect: 'manual' },
+    )
+    assert.equal(publicContent.status, 200)
+    assert.equal(publicContent.headers.get('location'), null)
+    assert.equal(publicContent.headers.get('content-type'), 'image/png')
+    assert.deepEqual(new Uint8Array(await publicContent.arrayBuffer()), new Uint8Array([137, 80, 78, 71]))
+    assert.equal(publicContent.headers.get('cache-control'), 'no-store')
+    media.publicContentDenied = true
+    const hiddenContent = await fetch(`${runtime.baseUrl}/api/v1/experiences/91000000-0000-4000-8000-000000000001/screenshots/${uploadingMedia.media_resource_id}/content`)
+    assert.equal(hiddenContent.status, 404)
+    assert.equal(hiddenContent.headers.get('location'), null)
   } finally { await runtime.stop() }
 })
 
@@ -3087,6 +3140,64 @@ test('comment list is public while create, report and withdraw bind the authenti
   } finally {
     await runtime.stop()
   }
+})
+
+test('experience list is public and creation binds the session and structured fields', async () => {
+  const community = new FakeCommunityService()
+  const runtime = await start(async () => undefined, new FakeIdentityService(), undefined, undefined, undefined, undefined, undefined, undefined, community)
+  const projectId = '10000000-0000-4000-8000-000000000001'
+  try {
+    const listed = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectId}/experiences`)
+    assert.equal(listed.status, 200)
+    const baseBody = { task: '测试导出', outcome: '导出成功', scenario: null, limitation: null, screenshot_media_resource_ids: [], client_request_id: 'experience_request_0001' }
+    const blocked = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectId}/experiences`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://web.example', cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters' },
+      body: JSON.stringify(baseBody),
+    })
+    assert.equal(blocked.status, 403)
+    const created = await fetch(`${runtime.baseUrl}/api/v1/projects/${projectId}/experiences`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', origin: 'https://web.example',
+        cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+      },
+      body: JSON.stringify(baseBody),
+    })
+    assert.equal(created.status, 201)
+    const reply = await fetch(`${runtime.baseUrl}/api/v1/experiences/71000000-0000-4000-8000-000000000002/replies`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', origin: 'https://web.example',
+        cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters',
+        'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters',
+      },
+      body: JSON.stringify({ body: '作者已修复该问题', client_request_id: 'experience_reply_0001' }),
+    })
+    assert.equal(reply.status, 201)
+  } finally { await runtime.stop() }
+})
+
+test('community moderation requires staff permissions and CSRF', async () => {
+  const community = new FakeCommunityService()
+  const runtime = await start(async () => undefined, new FakeIdentityService(), undefined, undefined, undefined, undefined, undefined, undefined, community)
+  const path = `${runtime.baseUrl}/api/v1/admin/community/comments/71000000-0000-4000-8000-000000000002/decision`
+  const body = JSON.stringify({ expected_version: 2, resulting_state: 'visible', decision_id: '71000000-0000-4000-8000-000000000004', reason_code: 'report_reviewed', work_item_id: '71000000-0000-4000-8000-000000000005', claim_token: 'a'.repeat(43) })
+  try {
+    const result = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://web.example', cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters', 'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' }, body })
+    assert.equal(result.status, 403)
+    assert.equal(community.moderateCommand, null)
+  } finally { await runtime.stop() }
+  const staffCommunity = new FakeCommunityService()
+  const staffRuntime = await start(async () => undefined, new StaffIdentityService(), undefined, undefined, undefined, undefined, undefined, undefined, staffCommunity)
+  try {
+    const staffPath = `${staffRuntime.baseUrl}/api/v1/admin/community/comments/71000000-0000-4000-8000-000000000002/decision`
+    const rejected = await fetch(staffPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://web.example', cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters' }, body })
+    assert.equal(rejected.status, 403)
+    const accepted = await fetch(staffPath, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://web.example', cookie: 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters', 'x-csrf-token': 'csrf-token-with-at-least-thirty-two-characters' }, body })
+    assert.equal(accepted.status, 200)
+    assert.equal(staffCommunity.moderateCommand?.resultingState, 'visible')
+  } finally { await staffRuntime.stop() }
 })
 
 test('retired comparison merge conflict APIs are not publicly routable', async () => {
