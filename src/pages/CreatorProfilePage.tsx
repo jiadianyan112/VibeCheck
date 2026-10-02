@@ -87,7 +87,7 @@ export function CreatorProfilePage() {
       <section className="stack" aria-labelledby="creator-projects-heading">
         <div className="section-heading"><h2 id="creator-projects-heading">作者作品</h2><p>这里展示已经确认由该作者创作或维护的作品。</p></div>
         {profile.verifiedProjects.length ? <div className="creator-work-grid">{profile.verifiedProjects.map((project) => (
-          <FeedProjectCard key={project.id} project={project} creators={[creator]} />
+          <FeedProjectCard key={project.id} project={project} liked={state.likedProjectIds.includes(project.id)} creators={[creator]} />
         ))}</div> : <EmptyState title="暂无已确认的作者作品" description="这个作者还没有完成作品关联。" action={<Link className="button button--secondary" to="/projects">浏览作品广场</Link>} />}
         {profile.pendingProjects.length ? <aside className="wire-panel stack"><strong>归属待确认</strong>{profile.pendingProjects.map((project) => <p key={project.id}><Link to={`/project/${project.id}`}>{projectName(project)}</Link> · 人工审核中，暂不计入作者作品。</p>)}</aside> : null}
       </section>

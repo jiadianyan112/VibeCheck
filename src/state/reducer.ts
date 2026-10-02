@@ -218,6 +218,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return state
       }
       let nextState = state
+      if (pending.kind === 'like') {
+        nextState = state.likedProjectIds.includes(pending.projectId)
+          ? state
+          : appReducer(state, { type: 'LIKE_TOGGLE', projectId: pending.projectId })
+      }
       if (pending.kind === 'favorite') {
         nextState = state.favoriteProjectIds.includes(pending.projectId)
           ? state

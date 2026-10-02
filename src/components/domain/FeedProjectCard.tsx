@@ -14,8 +14,11 @@ const coverAspects: readonly FeedCoverAspect[] = ['portrait', 'landscape', 'squa
 
 export type FeedProjectCardProps = Pick<
   ProjectCardProps,
-  'project' | 'creators' | 'favorited' | 'selectedForCompare' | 'onToggleFavorite' | 'onToggleCompare'
->
+  'project' | 'creators' | 'selectedForCompare' | 'onToggleCompare'
+> & {
+  liked?: boolean
+  onToggleLike?: (project: ProjectCardProps['project']) => void
+}
 
 function stableHash(value: string) {
   let hash = 2166136261
@@ -60,9 +63,9 @@ function creatorLabel(creator: NonNullable<FeedProjectCardProps['creators']>[num
 export function FeedProjectCard({
   project,
   creators = [],
-  favorited = false,
+  liked = false,
   selectedForCompare = false,
-  onToggleFavorite,
+  onToggleLike,
   onToggleCompare,
 }: FeedProjectCardProps) {
   const name = projectName(project)
@@ -70,6 +73,7 @@ export function FeedProjectCard({
   const media = project.coverMedia[0]
   const realMedia = hasRealMedia(media)
   const tool = firstTool(project)
+  const likeCount = project.interactionSummary.likeCount + (liked ? 1 : 0)
   const creator = creators[0]
   const accessStatus = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const titleId = `feed-card-title-${project.id}`
@@ -125,21 +129,21 @@ export function FeedProjectCard({
       </div>
 
       <footer className="feed-card__footer">
-        {onToggleFavorite ? (
+        {onToggleLike ? (
           <Button
             variant="quiet"
             className="feed-card__action feed-card__favorite"
-            aria-label={favorited ? '取消收藏' : '收藏'}
-            aria-pressed={favorited}
-            onClick={() => onToggleFavorite(project)}
+            aria-label={liked ? '取消点赞' : '点赞'}
+            aria-pressed={liked}
+            onClick={() => onToggleLike(project)}
           >
-            <span className="feed-card__heart" aria-hidden="true">{favorited ? '♥' : '♡'}</span>
-            <span className="feed-card__favorite-count" aria-hidden="true">{project.interactionSummary.favoriteCount}</span>
+            <span className="feed-card__heart" aria-hidden="true">{liked ? '♥' : '♡'}</span>
+            <span className="feed-card__favorite-count" aria-hidden="true">{likeCount}</span>
           </Button>
         ) : (
-          <span className="feed-card__favorite-count-static" aria-label={`收藏 ${project.interactionSummary.favoriteCount}`}>
-            <span className="feed-card__heart" aria-hidden="true">♡</span>
-            <span>{project.interactionSummary.favoriteCount}</span>
+          <span className="feed-card__favorite-count-static" aria-label={`点赞 ${likeCount}`}>
+            <span className="feed-card__heart" aria-hidden="true">{liked ? '♥' : '♡'}</span>
+            <span>{likeCount}</span>
           </span>
         )}
         {onToggleCompare ? (

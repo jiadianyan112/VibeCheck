@@ -55,7 +55,7 @@ export interface PrototypeEvent {
 export type PendingAction =
   | {
       id: string
-      kind: 'favorite' | 'follow'
+      kind: 'favorite' | 'follow' | 'like'
       projectId: ProjectId
       sourcePath: string
     }

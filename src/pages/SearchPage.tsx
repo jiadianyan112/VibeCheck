@@ -53,7 +53,7 @@ export function SearchPage() {
   }, [hits, params])
 
   function setParam(key: string, value: string) { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next, { replace: true }) }
-  function toggleFavorite(project: Project) { requireLogin({ id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath: `/search?${params}` }, () => dispatch({ type: 'FAVORITE_TOGGLE', projectId: project.id })) }
+  function toggleLike(project: Project) { requireLogin({ id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath: `/search?${params}` }, () => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })) }
   function resetFilters() { const next = new URLSearchParams(); if (query) next.set('q', query); if (forceKeywordSearch) next.set('mode', 'works'); setParams(next, { replace: true }) }
 
   if (shouldAnalyzeIdea) return <Navigate to={unifiedSearchPath(query)} replace />
@@ -78,7 +78,7 @@ export function SearchPage() {
 
 
         <div className="stack"><div className="cluster cluster--between"><h2>{loading ? '正在检索' : `${sorted.length} 个结果`}</h2></div>
-          {loading ? <LoadingState label="正在搜索作品" /> : error ? <ErrorPanel message={error.message} /> : sorted.length ? <div className="search-results">{sorted.map((hit) => <article key={hit.project.id} className="search-hit"><MatchExplanation reasons={hit.matchedFields} /><FeedProjectCard project={hit.project} creators={creatorsForProject(hit.project)} favorited={state.favoriteProjectIds.includes(hit.project.id)} selectedForCompare={state.comparisonProjectIds.includes(hit.project.id)} onToggleFavorite={toggleFavorite} onToggleCompare={(project) => state.comparisonProjectIds.includes(project.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: project.id }) : addProject(project.id)} /></article>)}</div> : <EmptyState title="没有找到匹配的公开作品" description={query ? `暂时没有找到与“${query}”匹配的作品，可以换个说法试试。` : '搜作品或功能，也可以直接说说你想做什么。'} action={<div className="cluster"><Button onClick={() => setParams({}, { replace: true })}>清空条件</Button><Link className="button button--primary" to="/submit">发布作品</Link></div>} />}
+          {loading ? <LoadingState label="正在搜索作品" /> : error ? <ErrorPanel message={error.message} /> : sorted.length ? <div className="search-results">{sorted.map((hit) => <article key={hit.project.id} className="search-hit"><MatchExplanation reasons={hit.matchedFields} /><FeedProjectCard project={hit.project} creators={creatorsForProject(hit.project)} liked={state.likedProjectIds.includes(hit.project.id)} selectedForCompare={state.comparisonProjectIds.includes(hit.project.id)} onToggleLike={toggleLike} onToggleCompare={(project) => state.comparisonProjectIds.includes(project.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: project.id }) : addProject(project.id)} /></article>)}</div> : <EmptyState title="没有找到匹配的公开作品" description={query ? `暂时没有找到与“${query}”匹配的作品，可以换个说法试试。` : '搜作品或功能，也可以直接说说你想做什么。'} action={<div className="cluster"><Button onClick={() => setParams({}, { replace: true })}>清空条件</Button><Link className="button button--primary" to="/submit">发布作品</Link></div>} />}
         </div>
       </section>
     </DiscoveryShell>

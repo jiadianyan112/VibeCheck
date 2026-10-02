@@ -70,10 +70,10 @@ export function ProjectsHomePage() {
     setSearchParams(next, { flushSync: true })
   }
 
-  function toggleFavorite(project: Project) {
+  function toggleLike(project: Project) {
     const sourcePath = `/projects${searchParams.size ? `?${searchParams}` : ''}`
-    const action = { id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath } as const
-    requireLogin(action, () => dispatch({ type: 'FAVORITE_TOGGLE', projectId: project.id }))
+    const action = { id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath } as const
+    requireLogin(action, () => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id }))
   }
 
   return (
@@ -92,9 +92,9 @@ export function ProjectsHomePage() {
             key={project.id}
             project={project}
             creators={creatorsForProject(project)}
-            favorited={state.favoriteProjectIds.includes(project.id)}
+            liked={state.likedProjectIds.includes(project.id)}
             selectedForCompare={state.comparisonProjectIds.includes(project.id)}
-            onToggleFavorite={toggleFavorite}
+            onToggleLike={toggleLike}
             onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)}
           />)}
         </section>

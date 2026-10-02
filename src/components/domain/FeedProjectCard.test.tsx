@@ -86,26 +86,26 @@ describe('FeedProjectCard', () => {
     expect(screen.getByText('未知')).toBeInTheDocument()
   })
 
-  it('keeps favorite and compare names, pressed state, and parent callbacks', async () => {
+  it('keeps like and compare names, pressed state, and parent callbacks', async () => {
     const user = userEvent.setup()
-    const onFavorite = vi.fn()
+    const onLike = vi.fn()
     const onCompare = vi.fn()
     const view = renderCard(
       <FeedProjectCard
         project={project}
         creators={creatorsForProject(project)}
-        onToggleFavorite={onFavorite}
+        onToggleLike={onLike}
         onToggleCompare={onCompare}
       />,
     )
 
-    const favorite = screen.getByRole('button', { name: '收藏' })
+    const like = screen.getByRole('button', { name: '点赞' })
     const compare = screen.getByRole('button', { name: '加入比较' })
-    expect(favorite).toHaveAttribute('aria-pressed', 'false')
+    expect(like).toHaveAttribute('aria-pressed', 'false')
     expect(compare).toHaveAttribute('aria-pressed', 'false')
-    await user.click(favorite)
+    await user.click(like)
     await user.click(compare)
-    expect(onFavorite).toHaveBeenCalledWith(project)
+    expect(onLike).toHaveBeenCalledWith(project)
     expect(onCompare).toHaveBeenCalledWith(project)
 
     view.rerender(
@@ -113,14 +113,20 @@ describe('FeedProjectCard', () => {
         <FeedProjectCard
           project={project}
           creators={creatorsForProject(project)}
-          favorited
+          liked
           selectedForCompare
-          onToggleFavorite={onFavorite}
+          onToggleLike={onLike}
           onToggleCompare={onCompare}
         />
       </MemoryRouter>,
     )
-    expect(screen.getByRole('button', { name: '取消收藏' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '取消点赞' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: '移出比较' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows one shared like count when the card has no toggle callback', () => {
+    renderCard(<FeedProjectCard project={project} creators={creatorsForProject(project)} liked />)
+
+    expect(screen.getByLabelText(`点赞 ${project.interactionSummary.likeCount + 1}`)).toBeInTheDocument()
   })
 })

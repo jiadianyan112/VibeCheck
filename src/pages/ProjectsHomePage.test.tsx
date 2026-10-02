@@ -4,7 +4,8 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from '../app/providers'
 import { appRoutes } from '../app/router'
 import { configureServiceRuntime } from '../services'
-import { projects } from '../mocks'
+import { projects, prototypeUsers } from '../mocks'
+import { APP_STORAGE_KEY } from '../state'
 
 function renderHome(path = '/projects') {
   const router = createMemoryRouter(appRoutes, { initialEntries: [path] })
@@ -48,16 +49,48 @@ describe('ProjectsHomePage discovery feed', () => {
     expect(within(feed).getAllByRole('article')).toHaveLength(projects.filter((p) => p.accessStatus.state === 'known' && p.accessStatus.value === 'ended').length)
   })
 
-  it('keeps guest favorites gated and comparison controls functional', async () => {
+  it('keeps guest likes gated and comparison controls functional', async () => {
     const user = userEvent.setup()
     renderHome()
     const feed = await screen.findByRole('region', { name: '作品列表' })
     const card = within(feed).getByRole('link', { name: 'Paper to Practice' }).closest('article')!
-    await user.click(within(card).getByRole('button', { name: '收藏' }))
+    await user.click(within(card).getByRole('button', { name: '点赞' }))
     expect(screen.getByRole('dialog', { name: '登录后继续刚才的操作' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '暂不登录' }))
     await user.click(within(card).getByRole('button', { name: '加入比较' }))
     expect(within(card).getByRole('button', { name: '移出比较' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('keeps the like count when moving from the plaza to detail and back', async () => {
+    const user = userEvent.setup()
+    const project = projects.find((item) => item.id === 'project-quizforge')!
+    const baseLikeCount = project.interactionSummary.likeCount
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      session: { user: prototypeUsers[0], role: 'user' },
+      likedProjectIds: [],
+    }))
+
+    const router = renderHome()
+    const feed = await screen.findByRole('region', { name: '作品列表' })
+    const card = within(feed).getByRole('link', { name: '题练工坊' }).closest('article')!
+    await user.click(within(card).getByRole('button', { name: '点赞' }))
+    expect(within(card).getByRole('button', { name: '取消点赞' })).toHaveTextContent(String(baseLikeCount + 1))
+
+    await user.click(within(card).getByRole('link', { name: '题练工坊' }))
+    expect(await screen.findByRole('heading', { name: '题练工坊' })).toBeInTheDocument()
+    const detailInteractions = screen.getByRole('region', { name: '社区互动' })
+    expect(within(detailInteractions).getByText(String(baseLikeCount + 1))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '已点赞' })).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('link', { name: '作品广场' })[0]!)
+    const returnedFeed = await screen.findByRole('region', { name: '作品列表' })
+    const returnedCard = within(returnedFeed).getByRole('link', { name: '题练工坊' }).closest('article')!
+    const cancelLike = within(returnedCard).getByRole('button', { name: '取消点赞' })
+    expect(cancelLike).toHaveTextContent(String(baseLikeCount + 1))
+    await user.click(cancelLike)
+    expect(within(returnedCard).getByRole('button', { name: '点赞' })).toHaveTextContent(String(baseLikeCount))
+    expect(router.state.location.pathname).toBe('/projects')
   })
 
   it('keeps errors actionable', async () => {

@@ -80,21 +80,22 @@ describe('global state and persistence', () => {
     expect(state.comparisonSessions.find(({ id }) => id === comparisonSessionId('comparison-mia-speaking'))?.projectIds).not.toEqual(guestSelection)
   })
 
-  it('replays a queued login action exactly once', () => {
+  it.each(['favorite', 'like'] as const)('replays a queued %s login action exactly once', (kind) => {
     const queued = appReducer(createInitialAppState(), {
       type: 'PENDING_ACTION_QUEUE',
       action: {
-        id: 'pending-favorite-1',
-        kind: 'favorite',
+        id: `pending-${kind}-1`,
+        kind,
         projectId: projectId('project-quizforge'),
         sourcePath: '/project/project-quizforge',
       },
     })
     const replayed = appReducer(queued, { type: 'PENDING_ACTION_REPLAY' })
     const replayedAgain = appReducer(replayed, { type: 'PENDING_ACTION_REPLAY' })
-    expect(replayed.favoriteProjectIds).toEqual([projectId('project-quizforge')])
+    const idsKey = kind === 'like' ? 'likedProjectIds' : 'favoriteProjectIds'
+    expect(replayed[idsKey]).toEqual([projectId('project-quizforge')])
     expect(replayed.pendingAction).toBeNull()
-    expect(replayedAgain.favoriteProjectIds).toEqual(replayed.favoriteProjectIds)
+    expect(replayedAgain[idsKey]).toEqual(replayed[idsKey])
     expect(replayedAgain.eventLog).toEqual(replayed.eventLog)
   })
 
