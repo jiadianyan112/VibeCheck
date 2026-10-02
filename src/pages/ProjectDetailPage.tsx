@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ExperienceSection } from '../components/ExperienceSection'
 import { useOptionalAuthSession } from '../features/auth'
 import { discussionApi, type DiscussionComment } from '../services/discussionApi'
@@ -48,7 +48,8 @@ const portfolioLabels: Record<string, string> = {
 const aiToolLabels: Record<string, string> = { cursor: 'Cursor', lovable: 'Lovable', bolt: 'Bolt', v0: 'v0', replit: 'Replit', claude_code: 'Claude Code', codex: 'Codex', other: '其他', unknown: '未知' }
 const relationLabels: Record<string, string> = { similar: '相似', alternative: '替代', inspired_by: '启发', fork: 'Fork', remix: 'Remix', migration: '迁移', derivative: '衍生', uses_asset: '复用资产', reference: '参考', based_on_template: '基于模板', uses_component: '使用组件', source_derivative: '源码衍生' }
 const relationStatusLabels: Record<string, string> = { pending: '待确认', one_party_confirmed: '一方确认', both_parties_confirmed: '双方确认', platform_confirmed: '平台确认', disputed: '存在争议' }
-const commentCategoryLabels: Record<CommentCategory, string> = { usage_feedback: '使用反馈', development_question: '开发问题', reuse_feedback: '复用反馈', status_update: '状态补充' }
+type DiscussionCategory = CommentCategory | 'experience'
+const commentCategoryLabels: Record<DiscussionCategory, string> = { usage_feedback: '使用反馈', development_question: '开发问题', reuse_feedback: '复用反馈', status_update: '状态补充', experience: '实际体验' }
 const changeFieldLabels: Record<string, string> = { currentName: '作品名称', coreFeatures: '核心功能', feedbackMethods: '反馈方式', accessStatus: '访问状态', httpCheckStatus: '链接检查', address: '公开地址', version: '版本', product: '产品信息', development: '开发信息', asset: '复用资产', status: '作品状态' }
 const changeValueLabels: Record<string, string> = { ...accessStatusText, ...feedbackMethodLabels, ...inputTypeLabels, ...outputLabels, ...scenarioLabels, ...targetUserLabels, normal: '正常', redirect: '发生跳转', timeout: '访问超时', unavailable: '无法访问' }
 
@@ -87,6 +88,7 @@ function uniqueById<T extends { id: string }>(items: readonly T[]) {
 
 export function ProjectDetailPage() {
   const { id } = useParams()
+  const { hash } = useLocation()
   const [searchParams] = useSearchParams()
   const { state, dispatch } = useAppState()
   const resolvedId = (id ? state.projectAliases[id] ?? id : id) as Project['id']
@@ -99,12 +101,17 @@ export function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [comments, setComments] = useState<ProjectComment[]>([])
   const [commentDraft, setCommentDraft] = useState('')
-  const [commentCategory, setCommentCategory] = useState<CommentCategory>('usage_feedback')
+  const [commentCategory, setCommentCategory] = useState<DiscussionCategory>(hash === '#experiences' ? 'experience' : 'usage_feedback')
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
   const [discussionError, setDiscussionError] = useState<string | null>(null)
   const trackedProjectId = useRef<Project['id'] | null>(null)
   const replayingCommentId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (hash === '#experiences') setCommentCategory('experience')
+    if (hash === '#discussion') setCommentCategory('usage_feedback')
+  }, [hash])
 
   const reloadDiscussion = useCallback(async (projectId: Project['id']) => {
     if (!import.meta.env.PROD) return
@@ -188,7 +195,7 @@ export function ProjectDetailPage() {
       }
       return
     }
-    const newComment: ProjectComment = { id: pendingCommentId, projectId: resolvedId, authorUserId: state.session.user.id, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
+    const newComment: ProjectComment = { id: pendingCommentId, projectId: resolvedId, authorUserId: state.session.user.id, category: commentCategory === 'experience' ? 'usage_feedback' : commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
     setComments((current) => [...current, newComment])
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: newComment.projectId, commentId: newComment.id }) })
     setCommentDraft(''); setReplyTo(null); setPendingCommentId(null)
@@ -227,7 +234,7 @@ export function ProjectDetailPage() {
   }
 
   function appendComment(authorUserId: UserId, commentId: string) {
-    const next: ProjectComment = { id: commentId, projectId: project.id, authorUserId, category: commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
+    const next: ProjectComment = { id: commentId, projectId: project.id, authorUserId, category: commentCategory === 'experience' ? 'usage_feedback' : commentCategory, body: commentDraft.trim(), parentId: replyTo, moderationStatus: 'visible', reportCount: 0, createdAt: new Date().toISOString() }
     setComments((current) => [...current, next])
     dispatch({ type: 'EVENT_LOGGED', event: createPrototypeEvent('comment_created', { projectId: project.id, commentId }) })
     setCommentDraft(''); setReplyTo(null)
@@ -390,13 +397,15 @@ export function ProjectDetailPage() {
 
       <section className="stack" aria-labelledby="relations-heading"><div className="section-heading"><h2 id="relations-heading">相关作品</h2></div>{bundle.relations.length ? <div className="relationship-list">{bundle.relations.map((relation) => { const relatedId = relation.sourceProjectId === project.id ? relation.targetProjectId : relation.sourceProjectId; const related = bundle.relatedProjects.find((item) => item.id === relatedId); return <article key={relation.id} className="relationship-card stack stack--small"><div className="cluster"><Tag tone="strong">{relationLabels[relation.type]}</Tag><Tag tone={relation.confirmationStatus === 'platform_confirmed' ? 'default' : 'dashed'}>{relationStatusLabels[relation.confirmationStatus]}</Tag><span>{relation.direction === 'two_way' ? '双向关系' : '单向关系'}</span></div><p>{relation.summary}</p>{related ? <ProjectCard project={related} creators={creatorsForProject(related)} variant="compact" selectedForCompare={state.comparisonProjectIds.includes(related.id)} onToggleCompare={(item) => state.comparisonProjectIds.includes(item.id) ? dispatch({ type: 'COMPARISON_REMOVE', projectId: item.id }) : addProject(item.id)} /> : <UnknownFact reason="相关作品暂时不可用" />}<EvidenceDrawer label="关系来源" evidences={bundle.evidences.filter((evidence) => relation.evidenceIds.includes(evidence.id))} /></article>})}</div> : <EmptyState title="暂时没有确认的相关作品" />}</section>
 
-      <ExperienceSection key={project.id} projectId={project.id} />
-
       <section id="discussion" className="discussion-section stack" aria-labelledby="discussion-heading">
-        <div className="section-heading"><h2 id="discussion-heading">作品讨论</h2><p>交流使用体验、实现方法和改进建议。</p></div>
-        {discussionError ? <p className="field-error" role="alert">讨论暂时不可用（{discussionError}）。</p> : null}
-        {comments.length ? <ol className="comment-list">{comments.map((comment) => { const author = prototypeUsers.find((user) => user.id === comment.authorUserId); const content = <><div className="cluster cluster--between"><div className="cluster"><Tag>{commentCategoryLabels[comment.category]}</Tag><strong>{author?.displayName ?? '社区用户'}</strong>{comment.parentId ? <span>回复</span> : null}</div><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleDateString('zh-CN')}</time></div><p>{comment.body}</p><div className="cluster"><Button variant="quiet" onClick={() => { setReplyTo(comment.id); document.getElementById('comment-body')?.focus() }}>回复</Button><Button variant="quiet" onClick={() => reportComment(comment.id)}>{comment.moderationStatus === 'under_review' ? '已举报审核中' : '举报'}</Button>{comment.reportCount ? <span>{comment.reportCount} 次举报记录</span> : null}</div></>; return <li key={comment.id} className={`comment-card ${comment.parentId ? 'comment-card--reply' : ''}`}>{comment.moderationStatus === 'collapsed' ? <details><summary>该评论因与作品无关而折叠</summary>{content}</details> : content}</li>})}</ol> : <EmptyState title="还没有人讨论这个作品" description="可以从使用体验、开发过程或复用方式开始聊。" />}
-        <div className="comment-composer stack"><div className="cluster cluster--between"><h3>{replyTo ? '回复评论' : '参与讨论'}</h3>{replyTo ? <Button variant="quiet" onClick={() => setReplyTo(null)}>取消回复</Button> : null}</div><label className="field"><span className="field__label">评论类别</span><select className="input" value={commentCategory} onChange={(event) => setCommentCategory(event.target.value as CommentCategory)}>{Object.entries(commentCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field__label">评论内容</span><textarea id="comment-body" className="input textarea" rows={4} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="分享具体的使用体验、实现方法或复用建议" /></label><Button variant="primary" disabled={!commentDraft.trim()} onClick={submitComment}>发布评论</Button></div>
+        <div className="section-heading"><h2 id="discussion-heading">评论</h2><p>交流使用体验、实现方法和改进建议。</p></div>
+        <label className="field"><span className="field__label">评论类别</span><select className="input" value={commentCategory} onChange={(event) => setCommentCategory(event.target.value as DiscussionCategory)}>{Object.entries(commentCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <div className={commentCategory === 'experience' ? undefined : 'stack'} hidden={commentCategory === 'experience'}>
+          {discussionError ? <p className="field-error" role="alert">讨论暂时不可用（{discussionError}）。</p> : null}
+          {comments.length ? <ol className="comment-list">{comments.map((comment) => { const author = prototypeUsers.find((user) => user.id === comment.authorUserId); const content = <><div className="cluster cluster--between"><div className="cluster"><Tag>{commentCategoryLabels[comment.category]}</Tag><strong>{author?.displayName ?? '社区用户'}</strong>{comment.parentId ? <span>回复</span> : null}</div><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleDateString('zh-CN')}</time></div><p>{comment.body}</p><div className="cluster"><Button variant="quiet" onClick={() => { setReplyTo(comment.id); document.getElementById('comment-body')?.focus() }}>回复</Button><Button variant="quiet" onClick={() => reportComment(comment.id)}>{comment.moderationStatus === 'under_review' ? '已举报审核中' : '举报'}</Button>{comment.reportCount ? <span>{comment.reportCount} 次举报记录</span> : null}</div></>; return <li key={comment.id} className={`comment-card ${comment.parentId ? 'comment-card--reply' : ''}`}>{comment.moderationStatus === 'collapsed' ? <details><summary>该评论因与作品无关而折叠</summary>{content}</details> : content}</li>})}</ol> : <EmptyState title="还没有人评论这个作品" description="可以从使用体验、开发过程或复用方式开始聊。" />}
+          <div className="comment-composer stack"><div className="cluster cluster--between"><h3>{replyTo ? '回复评论' : '发表评论'}</h3>{replyTo ? <Button variant="quiet" onClick={() => setReplyTo(null)}>取消回复</Button> : null}</div><label className="field"><span className="field__label">评论内容</span><textarea id="comment-body" className="input textarea" rows={4} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="分享具体的使用体验、实现方法或复用建议" /></label><Button variant="primary" disabled={!commentDraft.trim()} onClick={submitComment}>发布评论</Button></div>
+        </div>
+        <div hidden={commentCategory !== 'experience'}><ExperienceSection key={project.id} projectId={project.id} embedded /></div>
       </section>
     </main>
   )

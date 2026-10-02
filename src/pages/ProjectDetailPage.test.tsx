@@ -12,8 +12,8 @@ function SessionSyncProbe() {
   return <button onClick={() => { dispatch({ type: 'SESSION_SYNCED', user: prototypeUsers[0]! }); dispatch({ type: 'PENDING_ACTION_REPLAY' }) }}>模拟服务端登录</button>
 }
 
-function renderProject(id: string) {
-  return render(<MemoryRouter initialEntries={[`/project/${id}`]}><AppStateProvider><SessionSyncProbe /><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
+function renderProject(id: string, hash = '') {
+  return render(<MemoryRouter initialEntries={[`/project/${id}${hash}`]}><AppStateProvider><SessionSyncProbe /><ToastProvider><AuthGateProvider><ComparisonProvider><Routes><Route path="/project/:id" element={<ProjectDetailPage />} /></Routes></ComparisonProvider></AuthGateProvider></ToastProvider></AppStateProvider></MemoryRouter>)
 }
 
 describe('ProjectDetailPage hero', () => {
@@ -164,7 +164,7 @@ describe('ProjectDetailPage discussion interactions', () => {
 
   it('only renders comments bound to the current project and treats likes as weak signals', async () => {
     const user = userEvent.setup(); renderProject('project-quizforge')
-    expect(await screen.findByRole('heading', { name: '作品讨论' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '评论' })).toBeInTheDocument()
     expect(screen.getByText('PDF 章节较长时，先拆成小节再生成题目更容易检查。')).toBeInTheDocument()
     expect(screen.queryByText('分项评分在短录音场景下是否也使用相同权重？')).not.toBeInTheDocument()
     expect(screen.getByLabelText('社区互动')).toHaveTextContent('点赞')
@@ -174,8 +174,8 @@ describe('ProjectDetailPage discussion interactions', () => {
 
   it('restores a guest comment body and category after login', async () => {
     const user = userEvent.setup(); renderProject('project-papertopractice')
-    await screen.findByRole('heading', { name: '作品讨论' })
-    expect(screen.getByText('还没有人讨论这个作品')).toBeInTheDocument()
+    await screen.findByRole('heading', { name: '评论' })
+    expect(screen.getByText('还没有人评论这个作品')).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('评论类别'), 'development_question')
     await user.type(screen.getByLabelText('评论内容'), 'OCR 超时时是否会保留已经识别的段落？')
     await user.click(screen.getByRole('button', { name: '发布评论' }))
@@ -185,6 +185,30 @@ describe('ProjectDetailPage discussion interactions', () => {
     const posted = await screen.findByText('OCR 超时时是否会保留已经识别的段落？')
     expect(within(posted.closest('.comment-card') as HTMLElement).getByText('开发问题')).toBeInTheDocument()
     expect(screen.getByLabelText('评论内容')).toHaveValue('')
+  })
+
+  it('places actual experience within comment categories and preserves both drafts when switching', async () => {
+    const user = userEvent.setup(); renderProject('project-papertopractice')
+    await screen.findByRole('heading', { name: '评论' })
+    expect(screen.queryByRole('heading', { name: '作品讨论' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '实际体验' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('评论内容'), '普通评论草稿')
+    await user.selectOptions(screen.getByLabelText('评论类别'), 'experience')
+    expect(screen.getByRole('heading', { name: '实际体验', level: 3 })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '发布评论' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('完成的任务 *'), '具体任务草稿')
+    await user.selectOptions(screen.getByLabelText('评论类别'), 'usage_feedback')
+    expect(screen.getByLabelText('评论内容')).toHaveValue('普通评论草稿')
+    expect(screen.queryByRole('button', { name: '发布实际体验' })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('评论类别'), 'experience')
+    expect(screen.getByLabelText('完成的任务 *')).toHaveValue('具体任务草稿')
+  })
+
+  it('opens the actual experience category for its existing return anchor', async () => {
+    renderProject('project-papertopractice', '#experiences')
+    await screen.findByRole('heading', { name: '评论' })
+    expect(screen.getByLabelText('评论类别')).toHaveValue('experience')
+    expect(screen.getByRole('button', { name: '发布实际体验' })).toBeVisible()
   })
 
   it('keeps reported history visible and allows a structured reply target', async () => {

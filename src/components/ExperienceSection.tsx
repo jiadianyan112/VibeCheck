@@ -21,7 +21,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : '操作暂时无法完成，请稍后重试。'
 }
 
-export function ExperienceSection({ projectId }: { projectId: string }) {
+export function ExperienceSection({ projectId, embedded = false }: { projectId: string; embedded?: boolean }) {
   const auth = useOptionalAuthSession()
   const { requireLogin } = useAuthGate()
   const session = auth?.session ?? null
@@ -165,7 +165,7 @@ export function ExperienceSection({ projectId }: { projectId: string }) {
   }
 
   return <section id="experiences" className="experience-section stack" aria-labelledby="experience-heading">
-    <div className="section-heading"><h2 id="experience-heading">实际体验</h2><p>记录你用这件作品完成的任务和结果；主观判断请写在适用场景与局限中。</p></div>
+    <div className="section-heading">{embedded ? <h3 id="experience-heading">实际体验</h3> : <h2 id="experience-heading">实际体验</h2>}<p>记录你用这件作品完成的任务和结果；主观判断请写在适用场景与局限中。</p></div>
     {error ? <p className="field-error" role="alert">{error}</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {loading && !items.length ? <p role="status">正在读取体验记录…</p> : null}
