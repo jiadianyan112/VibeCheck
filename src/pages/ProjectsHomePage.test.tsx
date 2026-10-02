@@ -42,7 +42,9 @@ describe('ProjectsHomePage discovery feed', () => {
   it('restores reusable and ended filters from a shared URL', async () => {
     renderHome('/projects?channel=ended')
     const feed = await screen.findByRole('region', { name: '作品列表' })
-    expect(screen.getByRole('button', { name: '已结束' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '作品墓地' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('heading', { name: '作品墓地' })).toBeInTheDocument()
+    expect(screen.getByText('记录 Vibe Coding 过程中因各种原因结束的作品，保留它们的尝试、经验与可复用成果。')).toBeInTheDocument()
     expect(within(feed).getAllByRole('article')).toHaveLength(projects.filter((p) => p.accessStatus.state === 'known' && p.accessStatus.value === 'ended').length)
   })
 

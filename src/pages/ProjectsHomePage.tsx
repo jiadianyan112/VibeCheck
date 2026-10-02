@@ -13,7 +13,7 @@ const channels = [
   { id: 'portfolio', label: '个人主页' },
   { id: 'learning', label: 'AI 学习' },
   { id: 'reusable', label: '可复用' },
-  { id: 'ended', label: '已结束' },
+  { id: 'ended', label: '作品墓地' },
 ] as const
 const sorts = ['curated', 'latest', 'updated'] as const
 
@@ -23,6 +23,7 @@ export function ProjectsHomePage() {
   const { addProject } = useComparison()
   const [searchParams, setSearchParams] = useSearchParams()
   const channel = channels.find((item) => item.id === searchParams.get('channel'))?.id ?? 'all'
+  const isGraveyard = channel === 'ended'
   const sort = sorts.find((item) => item === searchParams.get('sort')) ?? 'curated'
   const [projects, setProjects] = useState<Project[]>([])
   const [error, setError] = useState<ServiceError | null>(null)
@@ -82,7 +83,7 @@ export function ProjectsHomePage() {
         <Link to="/categories" className="explore-channels__more">全部分类 <span aria-hidden="true">↗</span></Link>
       </div>
       <header className="explore-heading">
-        <div><h1>发现好作品</h1><p>看看创作者如何把想法变成作品。</p></div>
+        <div><h1>{isGraveyard ? '作品墓地' : '发现好作品'}</h1><p>{isGraveyard ? '记录 Vibe Coding 过程中因各种原因结束的作品，保留它们的尝试、经验与可复用成果。' : '看看创作者如何把想法变成作品。'}</p></div>
         <label className="explore-sort"><span className="sr-only">作品排序</span><select value={sort} onChange={(event) => updateFilter('sort', event.target.value)}><option value="curated">综合浏览</option><option value="latest">最新发布</option><option value="updated">最近更新</option></select></label>
       </header>
       {loading ? <LoadingState label="作品广场加载中" /> : error ? <ErrorPanel message={error.message} onRetry={() => dispatch({ type: 'SCENARIO_SET', scenario: 'default' })} /> : visibleProjects.length ? <>
@@ -99,8 +100,8 @@ export function ProjectsHomePage() {
         </section>
         <p className="explore-end" role="status">已展示 {visibleProjects.length} 个作品 <span aria-hidden="true">·</span> <Link to={state.session.user ? '/submit' : '/auth?return_to=%2Fsubmit'}>分享你的作品</Link></p>
       </> : <section className="explore-empty">
-        <h2>{projects.length ? '这个分类暂时没有作品' : '暂时没有可展示的作品'}</h2>
-        <p>换个分类看看，或分享你的第一个作品。</p>
+        <h2>{isGraveyard ? '作品墓地暂时没有记录' : projects.length ? '这个分类暂时没有作品' : '暂时没有可展示的作品'}</h2>
+        <p>{isGraveyard ? '结束的作品也值得留下记录，分享它的经历与结束原因。' : '换个分类看看，或分享你的第一个作品。'}</p>
         <div className="cluster"><Link className="button" to="/categories">浏览全部分类</Link><Link className="button button--accent" to={state.session.user ? '/submit' : '/auth?return_to=%2Fsubmit'}>发布作品</Link></div>
       </section>}
     </main>
