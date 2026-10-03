@@ -41,3 +41,11 @@ it('approves a database work item without requiring a reason and refreshes the q
   expect(calls.decide).toHaveBeenCalledWith(expect.anything(), 'preview-token', 'confirm-token', expect.anything(), 'approve', 'submission_approved', [], expect.any(String))
   expect(calls.listPending).toHaveBeenCalledTimes(2)
 })
+
+it('shows the frozen publication details supplied by the review queue', async () => {
+  calls.listPending.mockResolvedValue([{ work_item_id: 'frozen-review', target_id: 'frozen-submission', work_item_status: 'queued', version: 1, domain_summary: { status: 'pending_review', current_name: '投稿作品', publication_details: { submitterRelation: 'third_party', detailedDescription: '冻结的详细介绍', acknowledgements: [{ name: '组件库', note: '帮助构建界面', url: '' }] } }, created_at: '2026-10-03T00:00:00.000Z' }])
+  render(<ServerAdminReviewsPage />)
+  expect(await screen.findByText('冻结的详细介绍')).toBeInTheDocument()
+  expect(screen.getByText('帮助构建界面')).toBeInTheDocument()
+  expect(screen.getByText('第三方推荐者')).toBeInTheDocument()
+})

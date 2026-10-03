@@ -23,6 +23,7 @@ async function fillRequiredFields(page: Page, values = requiredFields) {
   await page.locator('#publish-summary').fill(values.summary)
   await page.locator('#publish-url').fill(values.url)
   await page.locator('#publish-category').selectOption(values.category)
+  await page.locator('#publish-submitterRelation').selectOption('third_party')
 }
 
 async function waitForUrlCheck(page: Page, mock: Awaited<ReturnType<typeof installPublishMock>>) {
@@ -34,6 +35,8 @@ async function submitFromFooter(page: Page) {
   const submit = page.locator('.publish-footer button[type="submit"]')
   await expect(submit).toBeEnabled()
   await submit.click()
+  await expect(page.getByRole('dialog', { name: '提交预览' })).toBeVisible()
+  await page.getByRole('button', { name: '确认并提交审核', exact: true }).click()
 }
 
 async function assertSubmitted(page: Page) {
@@ -49,7 +52,7 @@ async function openAuthenticatedPublish(page: Page, options: { checkScenario?: P
 }
 
 for (const width of [390, 1440] as const) {
-  test(`四项基础信息无封面也能提交审核（${width}px）`, async ({ page, isMobile }) => {
+  test(`基础信息与提交者关系无封面也能提交审核（${width}px）`, async ({ page, isMobile }) => {
     skipMobileProject(isMobile)
     await page.setViewportSize({ width, height: 1000 })
     const { mock } = await openAuthenticatedPublish(page)
@@ -101,7 +104,7 @@ for (const scenario of [
   })
 }
 
-test('危险链接在提交前被拦截并保留四项输入', async ({ page, isMobile }) => {
+test('危险链接在提交前被拦截并保留基础信息与提交者关系输入', async ({ page, isMobile }) => {
   skipMobileProject(isMobile)
   await page.setViewportSize({ width: 390, height: 1000 })
   const { mock } = await openAuthenticatedPublish(page, { checkScenario: 'unsafe' })
@@ -141,7 +144,7 @@ test('提交接口失败时显示可重试状态并保留输入', async ({ page,
   await expect(page.locator('#publish-category')).toHaveValue(requiredFields.category)
 })
 
-test('访客提交后登录回来会恢复四项输入', async ({ page, isMobile }) => {
+test('访客提交后登录回来会恢复基础信息与提交者关系输入', async ({ page, isMobile }) => {
   skipMobileProject(isMobile)
   await page.setViewportSize({ width: 390, height: 1000 })
   const auth = await installMockAuth(page)

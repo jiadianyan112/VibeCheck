@@ -68,6 +68,24 @@ export interface FlowStep {
   readonly name: string
 }
 
+export type SubmitterRelation = 'owner' | 'team_member' | 'third_party'
+
+export interface PublicationAcknowledgement {
+  readonly name: string
+  readonly url: string
+  readonly note: string
+}
+
+export interface PublicationDetails {
+  readonly submitterRelation?: SubmitterRelation
+  readonly organizationName?: string
+  readonly detailedDescription?: string
+  readonly logoUrl?: string | null
+  readonly galleryUrls?: readonly string[]
+  readonly videoUrl?: string | null
+  readonly acknowledgements?: readonly PublicationAcknowledgement[]
+}
+
 export interface ProjectCoreSnapshot {
   readonly current_name: string
   readonly public_url: string
@@ -81,6 +99,7 @@ export interface ProjectCoreSnapshot {
   readonly access_status: ProjectAccessStatus
   readonly maintenance_signal: 'repository_updated' | 'page_updated' | 'author_updated' | 'no_public_change' | 'unknown'
   readonly status_note: string | null
+  readonly publication_details?: PublicationDetails
 }
 
 export interface LearningSchemaV1 {

@@ -2,12 +2,11 @@ import { useDialogFocus } from '../components/ui/useDialogFocus'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
-import { cropPublishImage, emptyPublishFields, publishFieldsFromRemote, publishSnapshot, readPublishDraft, savePublishDraft, type PublishFields, type PublishImage } from '../features/submission/publishDraft'
+import { cropPublishImage, emptyPublishFields, mergePublishFields, publishFieldsFromRemote, publishSnapshot, readPublishDraft, savePublishDraft, validatePublishFields, type PublishAcknowledgement, type PublishFieldErrors, type PublishFields, type PublishImage, type SubmitterRelation } from '../features/submission/publishDraft'
 import { makeSubmissionClientRequestId, normalizeSubmissionUrl, remoteDraftToLocalDraft, submissionApi, SubmissionApiError, type RemoteSubmissionDraft, type UrlCheckResult } from '../services/submissionApi'
 import { submissionAssetsApi } from '../services/submissionAssetsApi'
 import { useAppState } from '../state'
 import { userId } from '../types'
-
 function ImagePreview({ file, alt }: { file: File; alt: string }) {
   const [url, setUrl] = useState('')
   useEffect(() => { const next = URL.createObjectURL(file); setUrl(next); return () => URL.revokeObjectURL(next) }, [file])
@@ -17,6 +16,23 @@ function ImagePreview({ file, alt }: { file: File; alt: string }) {
 function errorMessage(error: unknown) {
   if (error instanceof SubmissionApiError && error.fieldErrors.length) return `${error.message} ${error.fieldErrors.map(value => typeof value === 'string' ? value : 'message' in value ? value.message : '').filter(Boolean).join(' ')}`
   return error instanceof Error ? error.message : '操作未完成，当前内容已保留。'
+}
+
+const submitterRelationLabels: Record<Exclude<SubmitterRelation, ''>, string> = {
+  owner: '我是作品负责人',
+  team_member: '我是团队成员',
+  third_party: '我是第三方推荐人',
+}
+
+const publishFieldLabels: Partial<Record<keyof PublishFields, string>> = {
+  name: '基本信息', summary: '基本信息', url: '基本信息', category: '基本信息', submitterRelation: '基本信息', organizationName: '基本信息', logoUrl: '基本信息',
+  description: '详细介绍', detailedDescription: '详细介绍', technologies: '开发与资源', repository: '开发与资源', galleryUrls: '开发与资源', videoUrl: '开发与资源', acknowledgements: '开发与资源',
+}
+
+function sectionIdForPublishField(field: keyof PublishFields): string {
+  if (publishFieldLabels[field] === '详细介绍') return 'publish-description-section'
+  if (publishFieldLabels[field] === '开发与资源') return 'publish-assets'
+  return 'publish-basics'
 }
 
 export function PublishPage() {
@@ -29,6 +45,7 @@ export function PublishPage() {
   const initialDraftId = useRef(params.get('draft'))
   const storageKey = ownerId ? `user:${ownerId}` : 'guest'
   const [fields, setFields] = useState<PublishFields>(emptyPublishFields)
+  const [galleryText, setGalleryText] = useState('')
   const [images, setImages] = useState<PublishImage[]>([])
   const [ready, setReady] = useState(false)
   const [check, setCheck] = useState<UrlCheckResult | null>(null)
@@ -41,6 +58,7 @@ export function PublishPage() {
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [submissionPreviewOpen, setSubmissionPreviewOpen] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
   const [ratio, setRatio] = useState(1)
   const remote = useRef<RemoteSubmissionDraft | null>(null)
@@ -56,14 +74,16 @@ export function PublishPage() {
   const pendingSubmit = useRef<Parameters<typeof submissionApi.submit>[0] | null>(null)
   const cropDialog = useRef<HTMLDivElement>(null)
   const previewDialog = useRef<HTMLElement>(null)
+  const submissionPreviewDialog = useRef<HTMLElement>(null)
 
   useDialogFocus(Boolean(crop), cropDialog, () => setCrop(null))
   useDialogFocus(previewOpen, previewDialog, () => setPreviewOpen(false))
+  useDialogFocus(submissionPreviewOpen, submissionPreviewDialog, () => setSubmissionPreviewOpen(false))
 
   useEffect(() => {
     if (auth?.status === 'loading') { setReady(false); return }
     let alive = true
-    setReady(false); setFields({ ...emptyPublishFields }); setImages([]); setReceipt(null); setError(''); setStatus(''); setBusy(false); setSubmitting(false)
+    setReady(false); setFields(mergePublishFields(emptyPublishFields)); setGalleryText(''); setImages([]); setReceipt(null); setError(''); setStatus(''); setBusy(false); setSubmitting(false); setSubmissionPreviewOpen(false)
     remote.current = null; preserveRemoteCovers.current = false; setRemoteCoverCount(0); pendingSubmit.current = null; submissionKey.current = makeSubmissionClientRequestId()
     void (async () => {
       try {
@@ -80,11 +100,12 @@ export function PublishPage() {
           const category = params.get('category')
           const next = { ...emptyPublishFields, url: params.get('resumeUrl') ?? '' }
           if (category === 'ai_learning_quiz' || category === 'personal_site_portfolio') next.category = category
-          if (alive) setFields(next)
+          if (alive) { setFields(mergePublishFields(next)); setGalleryText(next.galleryUrls?.join('\n') ?? '') }
         }
         if (!alive) return
         if (saved && (!saved.ownerId || saved.ownerId === ownerId)) {
-          setFields(saved.fields); setImages(saved.images); submissionKey.current = saved.submissionKey ?? makeSubmissionClientRequestId()
+          const savedFields = mergePublishFields(saved.fields)
+          setFields(savedFields); setGalleryText(savedFields.galleryUrls.join('\n')); setImages(saved.images); submissionKey.current = saved.submissionKey ?? makeSubmissionClientRequestId()
           setReceipt(saved.submittedId ?? null)
           if (saved.pendingSubmission && session) pendingSubmit.current = { ...saved.pendingSubmission, session }
         }
@@ -96,7 +117,8 @@ export function PublishPage() {
           preserveRemoteCovers.current = saved?.remoteId !== id || !saved?.images.length
           setRemoteCoverCount(preserveRemoteCovers.current ? draft.media_reference_ids.length : 0)
           if (saved?.remoteId !== id) {
-            setFields(publishFieldsFromRemote(draft)); setImages([]); setReceipt(null)
+            const remoteFields = mergePublishFields(publishFieldsFromRemote(draft))
+            setFields(remoteFields); setGalleryText(remoteFields.galleryUrls.join('\n')); setImages([]); setReceipt(null)
             pendingSubmit.current = null; submissionKey.current = makeSubmissionClientRequestId()
           }
           if (draft.status === 'submitted') setReceipt('已提交')
@@ -259,17 +281,26 @@ export function PublishPage() {
     })
   }
 
-  async function submit(event: FormEvent) {
+  function firstInvalidField(invalid: PublishFieldErrors) {
+    const first = Object.keys(invalid)[0] as keyof PublishFields | undefined
+    if (first) document.getElementById(`publish-${first}`)?.focus()
+    return first
+  }
+
+  function openSubmissionPreview(event: FormEvent) {
     event.preventDefault()
-    const invalid: Partial<Record<keyof PublishFields, string>> = {}
-    if (!fields.name.trim()) invalid.name = '请填写作品名称'
-    if (!fields.summary.trim()) invalid.summary = '请填写一句话介绍'
-    if (!fields.category) invalid.category = '请选择作品分类'
-    try { normalizeSubmissionUrl(fields.url.trim()); if (!fields.url.trim()) throw new Error() } catch { invalid.url = '请输入有效的公开链接，例如 example.com' }
-    if (fields.repository.trim()) { try { normalizeSubmissionUrl(fields.repository.trim()) } catch { invalid.repository = '请输入有效的代码仓库链接' } }
+    const invalid = validatePublishFields(current.current.fields)
     setErrors(invalid)
-    const first = Object.keys(invalid)[0]
-    if (first) { document.getElementById(`publish-${first}`)?.focus(); return }
+    setPreviewOpen(false)
+    firstInvalidField(invalid)
+    setError('')
+    setSubmissionPreviewOpen(true)
+  }
+
+  async function submitConfirmed() {
+    const invalid = validatePublishFields(current.current.fields)
+    setErrors(invalid)
+    if (firstInvalidField(invalid)) return
     setBusy(true); setSubmitting(true); setError('')
     await enqueue(async () => {
     setBusy(true); saving.current = true
@@ -312,6 +343,33 @@ export function PublishPage() {
     if (pendingSubmit.current) { pendingSubmit.current = null; submissionKey.current = makeSubmissionClientRequestId() }
   }
 
+  function updateGalleryUrls(value: string) {
+    setGalleryText(value)
+    change('galleryUrls', value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))
+  }
+
+  function addAcknowledgement() {
+    invalidateSubmission()
+    setFields(previous => ({ ...previous, acknowledgements: [...previous.acknowledgements, { name: '', url: '', note: '' }] }))
+    setErrors(previous => ({ ...previous, acknowledgements: undefined }))
+  }
+
+  function updateAcknowledgement(index: number, key: keyof PublishAcknowledgement, value: string) {
+    invalidateSubmission()
+    setFields(previous => ({
+      ...previous,
+      acknowledgements: previous.acknowledgements.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item),
+    }))
+    setErrors(previous => ({ ...previous, acknowledgements: undefined }))
+    setError('')
+  }
+
+  function removeAcknowledgement(index: number) {
+    invalidateSubmission()
+    setFields(previous => ({ ...previous, acknowledgements: previous.acknowledgements.filter((_, itemIndex) => itemIndex !== index) }))
+    setErrors(previous => ({ ...previous, acknowledgements: undefined }))
+  }
+
   function addImages(files: FileList | null) {
     if (!files) return
     const incoming = Array.from(files)
@@ -337,7 +395,7 @@ export function PublishPage() {
       await savePublishDraft(storageKey, { fields: { ...emptyPublishFields }, images: [], ownerId, submissionKey: freshKey })
       remote.current = null; pendingSubmit.current = null; preserveRemoteCovers.current = false
       initialDraftId.current = null; submissionKey.current = freshKey
-      setParams({}, { replace: true }); setFields({ ...emptyPublishFields }); setImages([]); setReceipt(null)
+      setParams({}, { replace: true }); setFields(mergePublishFields(emptyPublishFields)); setGalleryText(''); setImages([]); setReceipt(null)
       setRemoteCoverCount(0); setErrors({}); setError(''); setStatus(''); setCheck(null)
     } catch (cause) { setError(errorMessage(cause)) }
   }
@@ -346,32 +404,40 @@ export function PublishPage() {
 
   const blocked = check?.checks.find(item => item.key === 'safety' && item.status !== 'passed')
   const uncertain = check?.checks.find(item => item.key === 'access' && item.status !== 'passed')
-  const card = <div className="publish-preview-card"><div className="publish-preview-image">{images[0] ? <ImagePreview file={images[0].file} alt="作品封面预览" /> : <div className="publish-preview-placeholder"><span>VibeCheck</span><small>{remoteCoverCount ? '已保存封面，提交时保留' : '暂无封面'}</small></div>}</div><h3>{fields.name || '作品名称'}</h3><p>{fields.summary || '用一句话介绍你的作品'}</p><small>{fields.category === 'ai_learning_quiz' ? 'AI 学习与题库' : fields.category === 'personal_site_portfolio' ? '个人网站与作品集' : '作品分类'}</small></div>
+  const validationEntries = Object.entries(errors).filter(([, message]) => Boolean(message)) as [keyof PublishFields, string][]
+  const card = <div className="publish-preview-card"><div className="publish-preview-image">{images[0] ? <ImagePreview file={images[0].file} alt="作品封面预览" /> : <div className="publish-preview-placeholder"><span>VibeCheck</span><small>{remoteCoverCount ? '已保存封面，提交时保留' : '暂无封面'}</small></div>}</div><h3>{fields.name || '作品名称'}</h3><p>{fields.summary || '用一句话介绍你的作品'}</p><small>{fields.category === 'ai_learning_quiz' ? 'AI 学习与题库' : fields.category === 'personal_site_portfolio' ? '个人网站与作品集' : '未填写分类'}</small></div>
   const field = (key: 'name' | 'url' | 'summary' | 'repository', label: string, placeholder: string, maxLength = 200) => <label className="publish-field" htmlFor={`publish-${key}`}><span>{label}</span><input id={`publish-${key}`} value={fields[key]} onChange={event => change(key, event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-required={key !== 'repository'} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `publish-${key}-error` : undefined} />{errors[key] && <small className="publish-error" id={`publish-${key}-error`}>{errors[key]}</small>}</label>
+  const relation = fields.submitterRelation as Exclude<SubmitterRelation, ''> | ''
 
   return <main className="highfi-scope publish-page">
-    <form onSubmit={event => void submit(event)} noValidate>
-      <header className="publish-header"><div><h1>发布作品</h1><p>分享你的创造，让好作品被看见。</p></div><div className="publish-actions"><button type="button" className="button button--secondary" onClick={() => void save()} disabled={busy || !ready}>存草稿</button><button className="button button--primary" type="submit" disabled={submitting || !ready}>{submitting ? '处理中…' : '提交审核'}</button></div></header>
+    <form onSubmit={event => openSubmissionPreview(event)} noValidate>
+      <header className="publish-header"><div><h1>发布作品</h1><p>分享你的创造，让好作品被看见。</p></div><div className="publish-actions"><button type="button" className="button button--secondary" onClick={() => void save()} disabled={busy || !ready}>存草稿</button><button className="button button--primary" type="submit" disabled={submitting || !ready}>{submitting ? '处理中…' : '查看提交预览'}</button></div></header>
       {error && <div className="publish-error" role="alert">{error}</div>}
       {!ready && <p role="status">正在恢复草稿…</p>}
+      {validationEntries.length > 0 && <section className="publish-validation-summary" role="alert" aria-labelledby="publish-validation-title"><h2 id="publish-validation-title">提交前还需要补充 {validationEntries.length} 项</h2><ul>{validationEntries.map(([key, message]) => <li key={key}><a href={`#${sectionIdForPublishField(key)}`}>跳转到{publishFieldLabels[key] ?? '相关信息'}</a><span>{message}</span></li>)}</ul></section>}
       <div className="publish-layout"><fieldset className="publish-editor" disabled={busy || !ready}>
-        <section className="publish-section" aria-label="作品内容">
+        <nav className="publish-section-nav" aria-label="发布章节"><a href="#publish-basics">基本信息</a><a href="#publish-description-section">详细介绍</a><a href="#publish-assets">开发与资源</a><a href="#publish-final-preview" onClick={event => { event.preventDefault(); setPreviewOpen(false); const invalid = validatePublishFields(current.current.fields); setErrors(invalid); setSubmissionPreviewOpen(true) }}>最终预览</a></nav>
+        <section id="publish-basics" className="publish-section" aria-labelledby="publish-basics-title">
+          <h2 id="publish-basics-title">基本信息</h2>
           <div className="publish-media-grid">{images.map((item, index) => <div className="publish-media-item" key={item.id}><ImagePreview file={item.file} alt={`作品截图 ${index + 1}`} /><span>{index === 0 ? '封面' : index + 1}</span><div className="publish-media-actions"><button type="button" onClick={() => { setCrop(item.id); setRatio(1) }}>裁剪</button><button type="button" disabled={index === 0} aria-label={`将第 ${index + 1} 张图片前移`} onClick={() => { invalidateSubmission(); setImages(previous => { const next = [...previous]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next }) }}>前移</button><button type="button" aria-label={`移除第 ${index + 1} 张图片`} onClick={() => { invalidateSubmission(); setImages(previous => previous.filter(image => image.id !== item.id)) }}>移除</button></div>{item.error && <div className="publish-error"><small>{item.error}</small><button className="button button--secondary publish-retry-button" type="button" onClick={() => void save()}>重试这张图片</button></div>}</div>)}{images.length < 9 && <label className="publish-upload"><span aria-hidden="true">＋</span><strong>添加作品截图</strong><small>{images.length ? `${images.length}/9` : '第一张作为封面'}</small><input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple aria-label="添加作品截图" onChange={event => { addImages(event.target.files); event.target.value = '' }} /></label>}</div>
           {remoteCoverCount > 0 && <p className="publish-hint">已保留 {remoteCoverCount} 张云端截图，添加图片可替换。</p>}
-          <p className="publish-hint">截图选填 · 最多 9 张 · 每张不超过 5 MB</p>
+          <p className="publish-hint">截图选填 · 第 1 张作为封面，后续作为详情图 · 最多 9 张 · 每张不超过 5 MB</p>
           {field('name', '作品名称 *', '给作品起个名字', 80)}
-          {field('summary', '一句话介绍 *', '它能做什么，有什么特别之处？', 200)}
+          {field('summary', '一句话介绍 *', '它能做什么，有什么特别之处？', 80)}
           {field('url', '作品链接 *', 'https:// 或直接粘贴域名', 2048)}
           <div className="publish-link-status" role="status">{checking ? '正在检查链接，不影响继续填写…' : blocked ? blocked.message : check?.duplicateProjectId ? '发现已有或相似作品，请先确认。' : uncertain ? '暂时无法验证链接，可继续填写，提交后核验。' : check ? '链接检查已完成。' : checkMessage || '粘贴链接后自动检查。'}{fields.url && session && <button type="button" onClick={() => { setCheck(null); setChecking(true); void getCheck(current.current.fields, true).catch(cause => setCheckMessage(errorMessage(cause))).finally(() => setChecking(false)) }}>重新检查</button>}</div>
           {check?.duplicateProjectId && <div className="publish-duplicate"><strong>{check.duplicateCandidate?.currentName || '已有作品'}</strong><Link to={`/project/${check.duplicateProjectId}`} target="_blank" rel="noreferrer">查看作品</Link>{check.duplicateResult === 'exact' ? <p>同一作品请在详情页认领或更新，当前输入已保留。</p> : <p>如果是不同作品，可继续填写并提交审核。</p>}</div>}
           <label className="publish-field" htmlFor="publish-category"><span>作品分类 *</span><select id="publish-category" value={fields.category} onChange={event => change('category', event.target.value as PublishFields['category'])} aria-required="true" aria-invalid={Boolean(errors.category)} aria-describedby={errors.category ? 'publish-category-error' : undefined}><option value="">选择一个最合适的分类</option><option value="ai_learning_quiz">AI 学习与题库</option><option value="personal_site_portfolio">个人网站与作品集</option></select>{errors.category && <small id="publish-category-error" className="publish-error">{errors.category}</small>}</label>
+          <label className="publish-field" htmlFor="publish-submitterRelation"><span>你与作品的关系 *</span><select id="publish-submitterRelation" aria-label="你与作品的关系 *" value={relation} onChange={event => change('submitterRelation', event.target.value as SubmitterRelation)} aria-required="true" aria-invalid={Boolean(errors.submitterRelation)} aria-describedby={errors.submitterRelation ? 'publish-submitterRelation-error' : undefined}><option value="">请选择</option>{(Object.keys(submitterRelationLabels) as Exclude<SubmitterRelation, ''>[]).map(value => <option key={value} value={value}>{submitterRelationLabels[value]}</option>)}</select><small>这是你的自述关系，不等同于平台对作者身份的认证。</small>{errors.submitterRelation && <small id="publish-submitterRelation-error" className="publish-error">{errors.submitterRelation}</small>}</label>
+          <label className="publish-field" htmlFor="publish-organizationName"><span>团队或组织</span><input id="publish-organizationName" value={fields.organizationName} onChange={event => change('organizationName', event.target.value)} placeholder="如有可填写，个人发布可留空" maxLength={120} aria-invalid={Boolean(errors.organizationName)} /></label>
+          <label className="publish-field" htmlFor="publish-logoUrl"><span>作品 Logo 地址</span><input id="publish-logoUrl" value={fields.logoUrl} onChange={event => change('logoUrl', event.target.value)} placeholder="公开图片地址，可跳过" maxLength={2048} aria-invalid={Boolean(errors.logoUrl)} aria-describedby={errors.logoUrl ? 'publish-logoUrl-error' : undefined} />{errors.logoUrl && <small id="publish-logoUrl-error" className="publish-error">{errors.logoUrl}</small>}</label>
         </section>
-        {fields.category === 'ai_learning_quiz' && <details className="publish-details"><summary>更多介绍 <small>选填</small></summary><label className="publish-field" htmlFor="publish-description"><span>解决了什么问题</span><textarea id="publish-description" value={fields.description} onChange={event => change('description', event.target.value)} placeholder="介绍使用场景和解决的问题" maxLength={3000} /></label></details>}
-        <details className="publish-details"><summary>开发工具与技术 <small>选填</small></summary><label className="publish-field" htmlFor="publish-technologies"><span>技术栈</span><input id="publish-technologies" value={fields.technologies} onChange={event => change('technologies', event.target.value)} placeholder="例如 React、Python，用逗号分隔" maxLength={500} /></label></details>
-        <details className="publish-details" open={Boolean(errors.repository)}><summary>源码与可复用资源 <small>选填</small></summary>{field('repository', '代码仓库', '公开仓库链接', 2048)}</details>
+        <section id="publish-description-section" className="publish-section" aria-labelledby="publish-description-title"><h2 id="publish-description-title">详细介绍 <small>选填</small></h2><label className="publish-field" htmlFor="publish-detailedDescription"><span>作品详细介绍</span><textarea id="publish-detailedDescription" value={fields.detailedDescription} onChange={event => change('detailedDescription', event.target.value)} placeholder="介绍作品背景、主要内容和使用方式" maxLength={10000} aria-invalid={Boolean(errors.detailedDescription)} /></label>{fields.category === 'ai_learning_quiz' && <label className="publish-field" htmlFor="publish-description"><span>解决了什么问题</span><textarea id="publish-description" value={fields.description} onChange={event => change('description', event.target.value)} placeholder="介绍使用场景和解决的问题" maxLength={500} /></label>}</section>
+        <section id="publish-assets" className="publish-section" aria-labelledby="publish-assets-title"><h2 id="publish-assets-title">开发与资源 <small>选填</small></h2><label className="publish-field" htmlFor="publish-technologies"><span>技术栈</span><input id="publish-technologies" value={fields.technologies} onChange={event => change('technologies', event.target.value)} placeholder="例如 React、Python，用逗号分隔" maxLength={500} /></label>{field('repository', '代码仓库', '公开仓库链接', 2048)}<label className="publish-field" htmlFor="publish-galleryUrls"><span>详情图地址</span><textarea id="publish-galleryUrls" aria-label="详情图地址" value={galleryText} onChange={event => updateGalleryUrls(event.target.value)} placeholder="每行一个公开图片地址，用于补充上传截图" maxLength={2048 * 20} aria-invalid={Boolean(errors.galleryUrls)} aria-describedby={errors.galleryUrls ? 'publish-galleryUrls-error' : undefined} /><small>上传截图用于封面和排序；这里可补充公开可访问的详情图地址。</small>{errors.galleryUrls && <small id="publish-galleryUrls-error" className="publish-error">{errors.galleryUrls}</small>}</label><label className="publish-field" htmlFor="publish-videoUrl"><span>演示视频地址</span><input id="publish-videoUrl" value={fields.videoUrl} onChange={event => change('videoUrl', event.target.value)} placeholder="HTTPS bilibili 或 b23.tv 地址，可跳过" maxLength={2048} aria-invalid={Boolean(errors.videoUrl)} aria-describedby={errors.videoUrl ? 'publish-videoUrl-error' : undefined} />{errors.videoUrl && <small id="publish-videoUrl-error" className="publish-error">{errors.videoUrl}</small>}</label><div className="publish-field"><span>致谢</span>{fields.acknowledgements.map((item, index) => <fieldset className="publish-acknowledgement" key={`acknowledgement-${index}`}><legend>第 {index + 1} 条致谢</legend><label htmlFor={`publish-ack-name-${index}`}><span>名称 *</span><input id={`publish-ack-name-${index}`} value={item.name} onChange={event => updateAcknowledgement(index, 'name', event.target.value)} maxLength={120} aria-invalid={Boolean(errors.acknowledgements)} /></label><label htmlFor={`publish-ack-url-${index}`}><span>链接</span><input id={`publish-ack-url-${index}`} value={item.url} onChange={event => updateAcknowledgement(index, 'url', event.target.value)} maxLength={2048} aria-invalid={Boolean(errors.acknowledgements)} /></label><label htmlFor={`publish-ack-note-${index}`}><span>说明 *</span><textarea id={`publish-ack-note-${index}`} value={item.note} onChange={event => updateAcknowledgement(index, 'note', event.target.value)} maxLength={2000} aria-invalid={Boolean(errors.acknowledgements)} /></label><button type="button" className="button button--secondary" onClick={() => removeAcknowledgement(index)}>移除这条致谢</button></fieldset>)}<button type="button" className="button button--secondary" onClick={addAcknowledgement}>添加致谢</button>{errors.acknowledgements && <small className="publish-error">{errors.acknowledgements}</small>}</div></section>
       </fieldset><aside tabIndex={previewOpen ? -1 : undefined} ref={previewDialog} role={previewOpen ? 'dialog' : undefined} aria-modal={previewOpen || undefined} className={`publish-preview${previewOpen ? ' publish-preview--open' : ''}`} aria-label="广场展示预览"><div className="publish-preview-heading"><h2>广场展示预览</h2><button type="button" onClick={() => setPreviewOpen(false)}>关闭预览</button></div>{card}<p>审核通过后，你的作品会出现在这里。</p></aside></div>
-      <footer className="publish-footer"><span className="publish-status" role="status">{status || '详细信息可在提交后继续完善'}</span><button type="button" className="button button--secondary publish-mobile-preview" onClick={() => setPreviewOpen(true)}>预览</button><button type="submit" className="button button--primary" disabled={submitting || !ready}>{submitting ? '处理中…' : '提交审核'}</button></footer>
+      <footer className="publish-footer"><span className="publish-status" role="status">{status || '详细信息可在提交后继续完善'}</span><button type="button" className="button button--secondary publish-mobile-preview" onClick={() => setPreviewOpen(true)}>预览</button><button type="submit" className="button button--primary" disabled={submitting || !ready}>{submitting ? '处理中…' : '查看提交预览'}</button></footer>
     </form>
+    {submissionPreviewOpen && <aside id="publish-final-preview" ref={submissionPreviewDialog} className="publish-submit-preview" role="dialog" aria-modal="true" aria-label="提交预览"><div className="publish-submit-preview__panel"><div className="publish-preview-heading"><h2>最终提交预览</h2><button type="button" onClick={() => setSubmissionPreviewOpen(false)}>返回修改</button></div>{validationEntries.length > 0 && <section className="publish-validation-summary" role="alert" aria-labelledby="publish-preview-validation-title"><h2 id="publish-preview-validation-title">提交前还需要补充 {validationEntries.length} 项</h2><ul>{validationEntries.map(([key, message]) => <li key={key}><a href={`#${sectionIdForPublishField(key)}`} onClick={() => setSubmissionPreviewOpen(false)}>跳转到{publishFieldLabels[key] ?? '相关信息'}</a><span>{message}</span></li>)}</ul></section>}<p className="publish-hint">确认信息后提交审核。保存草稿和查看预览不会提交。链接状态会在提交时重新确认。</p><section className="publish-submit-preview__media" aria-label="作品封面">{images[0] ? <ImagePreview file={images[0].file} alt="最终提交封面预览" /> : <div className="publish-preview-placeholder"><span>VibeCheck</span><small>{remoteCoverCount ? '已保存封面，提交时保留' : '未上传封面'}</small></div>}</section>{images.length > 0 && <section className="publish-submit-preview__uploads" aria-label="已上传截图"><h3>已上传截图</h3><div>{images.map((item, index) => <figure key={item.id}><ImagePreview file={item.file} alt={`已上传截图 ${index + 1}`} /><figcaption>{index === 0 ? '封面' : `详情图 ${index}`}</figcaption></figure>)}</div></section>}<dl className="publish-submit-preview__facts"><div><dt>作品名称</dt><dd>{fields.name}</dd></div><div><dt>一句话介绍</dt><dd>{fields.summary}</dd></div><div><dt>作品链接</dt><dd>{fields.url}</dd></div><div><dt>分类</dt><dd>{fields.category === 'ai_learning_quiz' ? 'AI 学习与题库' : fields.category === 'personal_site_portfolio' ? '个人网站与作品集' : '未填写分类'}</dd></div><div><dt>提交者关系</dt><dd>{relation ? submitterRelationLabels[relation] : '未填写'}</dd></div>{fields.organizationName && <div><dt>团队或组织</dt><dd>{fields.organizationName}</dd></div>}{fields.detailedDescription && <div><dt>详细介绍</dt><dd>{fields.detailedDescription}</dd></div>}{fields.description && <div><dt>解决的问题</dt><dd>{fields.description}</dd></div>}{fields.technologies && <div><dt>技术栈</dt><dd>{fields.technologies}</dd></div>}{fields.repository && <div><dt>代码仓库</dt><dd>{fields.repository}</dd></div>}{fields.logoUrl && <div><dt>Logo 地址</dt><dd>{fields.logoUrl}</dd></div>}{fields.galleryUrls.length > 0 && <div><dt>详情图地址</dt><dd><ul>{fields.galleryUrls.map(url => <li key={url}>{url}</li>)}</ul></dd></div>}{fields.videoUrl && <div><dt>演示视频</dt><dd>{fields.videoUrl}</dd></div>}{fields.acknowledgements.length > 0 && <div><dt>致谢</dt><dd><ul>{fields.acknowledgements.map((item, index) => <li key={`${index}-${item.name}`}><strong>{item.name}</strong>{item.url && <> · {item.url}</>}<br />{item.note}</li>)}</ul></dd></div>}</dl><p className="publish-link-status">{check?.duplicateProjectId ? '已显示当前链接检查提示；提交时会重新确认链接状态。' : '提交时会重新确认链接状态。'}</p><div className="publish-submit-preview__actions"><button type="button" className="button button--secondary" onClick={() => setSubmissionPreviewOpen(false)}>返回修改</button><button type="button" className="button button--primary" onClick={() => void submitConfirmed()} disabled={busy || !ready || validationEntries.length > 0}>确认并提交审核</button></div></div></aside>}
     {crop && <div tabIndex={-1} ref={cropDialog} className="publish-crop" role="dialog" aria-modal="true" aria-labelledby="publish-crop-title"><div><h2 id="publish-crop-title">裁剪图片</h2><p>以图片中心裁剪，应用后可移除并重新上传原图。</p><label>画面比例<select value={ratio} onChange={event => setRatio(Number(event.target.value))}><option value={1}>正方形 1:1</option><option value={4 / 3}>横图 4:3</option><option value={3 / 4}>竖图 3:4</option></select></label><div className="publish-crop-preview" style={{ aspectRatio: ratio }}>{images.find(item => item.id === crop) && <ImagePreview file={images.find(item => item.id === crop)!.file} alt="居中裁剪预览" />}</div><button type="button" className="button button--secondary" onClick={() => setCrop(null)}>取消</button><button type="button" className="button button--primary" onClick={() => void applyCrop()}>应用裁剪</button></div></div>}
   </main>
 }

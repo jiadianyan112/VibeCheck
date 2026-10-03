@@ -66,6 +66,7 @@ import {
   versionId as makeVersionId,
 } from '../types'
 import { knownFact, unknownFact } from '../mocks/factories'
+import { readPublicationDetails } from '../features/submission/publicationDetails'
 
 /**
  * The catalog is a JSON boundary.  The published projection types describe
@@ -453,6 +454,7 @@ function toProject(input: unknown): Project {
   const recordSourceValue = firstDefined(valueAt(card, 'record_source'), valueAt(core, 'record_source'))
   const reviewStatusValue = valueAt(card, 'review_status')
   const projectCore = {
+    publicationDetails: readPublicationDetails(valueAt(core, 'publication_details')),
     id: projectId(key),
     currentName: name === null ? unknown<string>(card, key, '作品名称') : known(name, card, key, '作品名称'),
     historicalNames: [],

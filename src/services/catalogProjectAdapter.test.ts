@@ -45,6 +45,15 @@ const card = {
 } as const
 
 describe('catalogProjectAdapter', () => {
+  it('retains publication metadata without granting ownership to a submitter', () => {
+    const details = { submitterRelation: 'third_party' as const, detailedDescription: '公开功能介绍', galleryUrls: ['https://example.test/detail.png'], acknowledgements: [{ name: '工具', url: '', note: '帮助实现' }] }
+    const project = mapCatalogProject({ project_id: projectUuid, project_core: { publication_details: details } } as never)
+    expect(project.publicationDetails).toEqual(details)
+    expect(project.creatorIds).toEqual([])
+    expect(project.authorLinkStatus).toBe('unlinked')
+    details.galleryUrls.push('https://example.test/later.png')
+    expect(project.publicationDetails?.galleryUrls).toHaveLength(1)
+  })
   it('maps a list card while preserving ids, creator facts, status, and safe unknowns', () => {
     const project = mapCatalogCard(card)
 

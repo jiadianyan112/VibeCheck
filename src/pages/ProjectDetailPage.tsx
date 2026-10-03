@@ -1,6 +1,7 @@
 import { useProjectInteractions } from '../features/interactions/ProjectInteractionContext'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { PublicationSummary } from '../features/submission/PublicationSummary'
 import { ExperienceSection } from '../components/ExperienceSection'
 import { useOptionalAuthSession } from '../features/auth'
 import { discussionApi, type DiscussionComment } from '../services/discussionApi'
@@ -374,6 +375,7 @@ export function ProjectDetailPage() {
         <section className="core-flow stack"><h3>核心流程</h3>{project.coreFlow.state === 'known' ? <ol>{orderedFlow.map((node) => <li key={node.id}><span>{node.order}</span><div><strong>{node.label}</strong><p>{node.description}</p></div></li>)}</ol> : <UnknownFact reason={project.coreFlow.reason} />}</section>
       </section>}
 
+      {project.publicationDetails ? <section className="project-profile stack" aria-labelledby="publication-heading"><h2 id="publication-heading">作品介绍与致谢</h2><PublicationSummary fields={project.publicationDetails} /></section> : null}
       <section className="development-profile stack" aria-labelledby="development-heading">
         <div className="section-heading"><h2 id="development-heading">开发信息</h2><p>查看构建工具、技术栈和公开的实现信息。</p></div>
         <dl className="profile-field-grid">

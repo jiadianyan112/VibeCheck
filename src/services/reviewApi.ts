@@ -11,6 +11,7 @@ export interface SubmissionWorkItem {
     readonly current_name?: string
     readonly public_url?: string
     readonly one_line_definition?: string
+    readonly publication_details?: Readonly<Record<string, unknown>>
   }
   readonly created_at: string
 }

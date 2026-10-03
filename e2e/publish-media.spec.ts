@@ -10,6 +10,7 @@ for (const width of [390, 1440]) {
     await page.goto('/submit')
     await expect(page.getByLabel('作品名称 *')).toBeEditable()
     await page.getByLabel('作品名称 *').fill('Image draft')
+    await page.locator('#publish-submitterRelation').selectOption('third_party')
     const dataUrl = await page.evaluate(() => {
       const canvas = document.createElement('canvas')
       canvas.width = 320; canvas.height = 240

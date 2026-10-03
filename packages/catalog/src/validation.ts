@@ -5,8 +5,11 @@ import type {
   KnowledgeState,
   LearningSchemaV1,
   PortfolioSchemaV1,
+  PublicationAcknowledgement,
+  PublicationDetails,
   ProjectCoreSnapshot,
   ProjectSnapshot,
+  SubmitterRelation,
 } from './types.js'
 
 type JsonObject = Record<string, unknown>
@@ -30,6 +33,97 @@ function text(value: unknown, minimum: number, maximum: number, code: string): s
 
 function nullableText(value: unknown, maximum: number, code: string): string | null {
   return value === null ? null : text(value, 1, maximum, code)
+}
+
+function safeWebUrl(value: unknown, maximum: number, code: string): string {
+  const candidate = text(value, 1, maximum, code)
+  let parsed: URL
+  try {
+    parsed = new URL(candidate)
+  } catch {
+    throw catalogError(code, 500)
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || !parsed.hostname.includes('.') || parsed.username || parsed.password) {
+    throw catalogError(code, 500)
+  }
+  return candidate
+}
+
+function videoUrl(value: unknown, code: string): string | null {
+  if (value === null) return null
+  const candidate = safeWebUrl(value, 2_048, code)
+  let parsed: URL
+  try {
+    parsed = new URL(candidate)
+  } catch {
+    throw catalogError(code, 500)
+  }
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '')
+  if (parsed.protocol !== 'https:' || !(
+    hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com') ||
+    hostname === 'b23.tv' || hostname.endsWith('.b23.tv')
+  )) throw catalogError(code, 500)
+  return candidate
+}
+
+function publicationDetails(value: unknown): PublicationDetails {
+  const record = object(value, 'CATALOG_SNAPSHOT_INVALID')
+  exact(record, [
+    'submitterRelation', 'organizationName', 'detailedDescription', 'logoUrl',
+    'galleryUrls', 'videoUrl', 'acknowledgements',
+  ], 'CATALOG_SNAPSHOT_INVALID')
+  const result: {
+    submitterRelation?: SubmitterRelation
+    organizationName?: string
+    detailedDescription?: string
+    logoUrl?: string | null
+    galleryUrls?: readonly string[]
+    videoUrl?: string | null
+    acknowledgements?: readonly PublicationAcknowledgement[]
+  } = {}
+  if (record.submitterRelation !== undefined) {
+    result.submitterRelation = oneOf(record.submitterRelation, ['owner', 'team_member', 'third_party'], 'CATALOG_SNAPSHOT_INVALID')
+  }
+  if (record.organizationName !== undefined) {
+    result.organizationName = text(record.organizationName, 0, 120, 'CATALOG_SNAPSHOT_INVALID')
+  }
+  if (record.detailedDescription !== undefined) {
+    result.detailedDescription = text(record.detailedDescription, 0, 10_000, 'CATALOG_SNAPSHOT_INVALID')
+  }
+  if (record.logoUrl !== undefined) {
+    result.logoUrl = record.logoUrl === null
+      ? null
+      : safeWebUrl(record.logoUrl, 2_048, 'CATALOG_SNAPSHOT_INVALID')
+  }
+  if (record.galleryUrls !== undefined) {
+    if (!Array.isArray(record.galleryUrls) || record.galleryUrls.length > 20) {
+      throw catalogError('CATALOG_SNAPSHOT_INVALID', 500)
+    }
+    const gallery = record.galleryUrls.map((url) => safeWebUrl(url, 2_048, 'CATALOG_SNAPSHOT_INVALID'))
+    if (new Set(gallery).size !== gallery.length) throw catalogError('CATALOG_SNAPSHOT_INVALID', 500)
+    result.galleryUrls = Object.freeze(gallery)
+  }
+  if (record.videoUrl !== undefined) {
+    result.videoUrl = videoUrl(record.videoUrl, 'CATALOG_SNAPSHOT_INVALID')
+  }
+  if (record.acknowledgements !== undefined) {
+    if (!Array.isArray(record.acknowledgements) || record.acknowledgements.length > 20) {
+      throw catalogError('CATALOG_SNAPSHOT_INVALID', 500)
+    }
+    const acknowledgements = record.acknowledgements.map((item) => {
+      const acknowledgement = object(item, 'CATALOG_SNAPSHOT_INVALID')
+      exact(acknowledgement, ['name', 'url', 'note'], 'CATALOG_SNAPSHOT_INVALID')
+      return Object.freeze({
+        name: text(acknowledgement.name, 1, 120, 'CATALOG_SNAPSHOT_INVALID'),
+        url: acknowledgement.url === ''
+          ? ''
+          : safeWebUrl(acknowledgement.url, 2_048, 'CATALOG_SNAPSHOT_INVALID'),
+        note: text(acknowledgement.note, 1, 2_000, 'CATALOG_SNAPSHOT_INVALID'),
+      })
+    })
+    result.acknowledgements = Object.freeze(acknowledgements)
+  }
+  return Object.freeze(result)
 }
 
 function oneOf<T extends string>(value: unknown, values: readonly T[], code: string): T {
@@ -65,8 +159,9 @@ function projectCore(value: unknown): ProjectCoreSnapshot {
     'current_name', 'public_url', 'repository_url', 'original_platform',
     'cover_media_reference_ids', 'one_line_definition', 'ai_coding_tools',
     'tech_stack', 'deployment_platform', 'access_status', 'maintenance_signal', 'status_note',
+    'publication_details',
   ], 'CATALOG_SNAPSHOT_INVALID')
-  return Object.freeze({
+  const core = {
     current_name: text(record.current_name, 1, 80, 'CATALOG_SNAPSHOT_INVALID'),
     public_url: text(record.public_url, 1, 2_048, 'CATALOG_SNAPSHOT_INVALID'),
     repository_url: nullableText(record.repository_url, 2_048, 'CATALOG_SNAPSHOT_INVALID'),
@@ -82,7 +177,9 @@ function projectCore(value: unknown): ProjectCoreSnapshot {
     ], 'CATALOG_SNAPSHOT_INVALID'),
     maintenance_signal: oneOf(record.maintenance_signal, ['repository_updated', 'page_updated', 'author_updated', 'no_public_change', 'unknown'], 'CATALOG_SNAPSHOT_INVALID'),
     status_note: nullableText(record.status_note, 500, 'CATALOG_SNAPSHOT_INVALID'),
-  })
+    ...(record.publication_details === undefined ? {} : { publication_details: publicationDetails(record.publication_details) }),
+  }
+  return Object.freeze(core)
 }
 
 function learning(value: unknown): LearningSchemaV1 {

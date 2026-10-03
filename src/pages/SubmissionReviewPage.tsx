@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Button, ConfirmDialog, ErrorPanel, Tag, useToast } from '../components'
 import { LivePreview, StatusBeacon, TaskPreview, TaskShell } from '../components/task'
 import { useOptionalAuthSession } from '../features/auth/AuthSessionContext'
+import { PublicationSummary } from '../features/submission/PublicationSummary'
 import {
   resumeSubmission,
   reviewFieldSteps,
@@ -142,6 +143,7 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
           <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
         </>}
       </dl>
+      <PublicationSummary fields={fields} />
       <p><small>提交时间：{draft.submittedAt ? new Date(draft.submittedAt).toLocaleString('zh-CN') : '未记录'}</small></p>
     </details>
   )
@@ -176,6 +178,7 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
           <div><dt>AI 编程工具</dt><dd>{list(fields.aiCodingTools, aiCodingToolLabels)}</dd></div>
           {portfolio ? <div><dt>作者公开资产</dt><dd>发布后可在“管理作品”中添加；不会把其他作品的资产记到这里。</dd></div> : <div><dt>复用资产</dt><dd>{draft.assetIds.length ? `${draft.assetIds.length} 项` : '未关联'}</dd></div>}
         </dl>
+        <PublicationSummary fields={fields} />
       </section>
     </div>
   )

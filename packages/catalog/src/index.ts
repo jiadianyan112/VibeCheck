@@ -79,6 +79,8 @@ export {
   type ListPublicEventsInput,
   type ListProjectsInput,
   type PortfolioSchemaV1,
+  type PublicationAcknowledgement,
+  type PublicationDetails,
   type ProjectCardProjection,
   type ProjectAccessStatus,
   type ProjectCoreSnapshot,
@@ -88,6 +90,7 @@ export {
   type ProjectSummary,
   type PublicFeedEventProjection,
   type RelationPublicProjection,
+  type SubmitterRelation,
   type TimePrecision,
   type TopicProjection,
 } from './types.js'

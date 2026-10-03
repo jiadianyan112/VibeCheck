@@ -19,12 +19,51 @@ const input = {
   checkedAt: now.toISOString(), accessResult: 'uncertain' as const,
   payloadSnapshot: {
     category_id: 'personal_site_portfolio', category_schema_version: 'portfolio.v1',
-    project_core: { current_name: 'My work', public_url: 'https://example.com', one_line_definition: 'A personal collection' },
+    project_core: {
+      current_name: 'My work', public_url: 'https://example.com', one_line_definition: 'A personal collection',
+      publication_details: { submitterRelation: 'owner' },
+    },
     category_data: {},
   },
 }
 
+const coreWithoutRelation = Object.fromEntries(
+  Object.entries(input.payloadSnapshot.project_core).filter(([key]) => key !== 'publication_details'),
+)
+const inputWithoutRelation = {
+  ...input,
+  payloadSnapshot: { ...input.payloadSnapshot, project_core: coreWithoutRelation },
+}
+
 describe('compact submission snapshots', () => {
+  it('requires a valid submitter relation when a new snapshot is made ready', () => {
+    assert.throws(
+      () => validateSubmissionReadySnapshot(inputWithoutRelation),
+      (error: unknown) => error instanceof SubmissionError && error.code === 'SUBMISSION_RELATION_REQUIRED',
+    )
+    const ready = validateSubmissionReadySnapshot(input)
+    assert.equal(ready.projectSnapshot.project_core.publication_details?.submitterRelation, 'owner')
+  })
+
+  it('keeps draft metadata flexible while rejecting incomplete acknowledgements at readiness', () => {
+    assert.throws(
+      () => validateSubmissionReadySnapshot({
+        ...input,
+        payloadSnapshot: {
+          ...input.payloadSnapshot,
+          project_core: {
+            ...input.payloadSnapshot.project_core,
+            publication_details: {
+              submitterRelation: 'owner',
+              acknowledgements: [{ name: '', url: 'temporarily-invalid', note: '' }],
+            },
+          },
+        },
+      }),
+      (error: unknown) => error instanceof SubmissionError && error.code === 'SUBMISSION_SCHEMA_INVALID',
+    )
+  })
+
   it('accepts four fields without media or evidence and preserves unknowns through catalog parsing', () => {
     const ready = validateSubmissionReadySnapshot(input)
     const published = parseProjectSnapshot(ready.payloadSnapshot, 'personal_site_portfolio', 'portfolio.v1')
@@ -105,6 +144,7 @@ describe('compact submission publication', () => {
     assert.equal(snapshot.project_core.access_status, 'unknown')
     assert.deepEqual(snapshot.project_core.cover_media_reference_ids, [])
     assert.deepEqual(snapshot.project_core.tech_stack, [])
+    assert.equal(snapshot.project_core.publication_details?.submitterRelation, 'owner')
   })
 
   it('does not let the compact payload bypass the review approval gate', async () => {
