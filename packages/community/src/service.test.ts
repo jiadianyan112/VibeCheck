@@ -57,6 +57,7 @@ const reportProjection: CommentReportProjection = Object.freeze({
 class FakeStore implements CommunityStore {
   input: Parameters<ProjectInteractionStore['setProjectInteraction']>[0] | null = null
   readInput: Parameters<NonNullable<ProjectInteractionStore['getProjectInteractions']>>[0] | null = null
+  favoriteReadInput: Parameters<NonNullable<ProjectInteractionStore['getFavoriteProjectInteractions']>>[0] | null = null
   createInput: Parameters<CommunityStore['createComment']>[0] | null = null
   reportInput: Parameters<CommunityStore['reportComment']>[0] | null = null
   experienceInput: Parameters<CommunityStore['createExperience']>[0] | null = null
@@ -79,6 +80,22 @@ class FakeStore implements CommunityStore {
         states: Object.freeze({ favorite: false, like: true, follow: false }),
         counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
       }))),
+    })
+  }
+
+  async getFavoriteProjectInteractions(
+    input: Parameters<NonNullable<ProjectInteractionStore['getFavoriteProjectInteractions']>>[0],
+  ) {
+    this.favoriteReadInput = input
+    return Object.freeze({
+      items: Object.freeze([Object.freeze({
+        project_id: projectId,
+        states: Object.freeze({ favorite: true, like: false, follow: false }),
+        counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
+      })]),
+      nextAnchor: input.after === null
+        ? Object.freeze({ updatedAt: '2026-08-13T00:00:00.123456Z', projectId })
+        : null,
     })
   }
 
@@ -289,6 +306,51 @@ describe('CommunityService interactions', () => {
       'COMMUNITY_INTERACTION_READ_STORE_UNAVAILABLE',
       503,
     )
+  })
+
+  it('lists the authenticated user\'s favorites with a user-bound signed cursor', async () => {
+    const store = new FakeStore()
+    const service = new CommunityService({ store, config: communityConfig })
+    const first = await service.listFavoriteProjectInteractions({ userId, limit: 20, cursor: null })
+    assert.deepEqual(store.favoriteReadInput, { userId, after: null, limit: 20 })
+    assert.deepEqual(first.items.map((item) => item.project_id), [projectId])
+    assert.match(first.next_cursor ?? '', /^[^.]+\.[^.]+$/)
+
+    const second = await service.listFavoriteProjectInteractions({
+      userId, limit: 20, cursor: first.next_cursor,
+    })
+    assert.equal(second.next_cursor, null)
+    assert.ok(store.favoriteReadInput?.after)
+    assert.equal(store.favoriteReadInput?.after?.projectId, projectId)
+    assert.equal(store.favoriteReadInput?.after?.updatedAt, '2026-08-13T00:00:00.123456Z')
+    await failure(
+      () => service.listFavoriteProjectInteractions({ userId, limit: 20, cursor: `${first.next_cursor}tampered` }),
+      'FAVORITE_CURSOR_INVALID',
+      400,
+    )
+    await failure(
+      () => service.listFavoriteProjectInteractions({
+        userId: secondProjectId, limit: 20, cursor: first.next_cursor,
+      }),
+      'FAVORITE_CURSOR_INVALID',
+      400,
+    )
+  })
+
+  it('validates the favorite collection page size before storage', async () => {
+    const store = new FakeStore()
+    const service = new CommunityService({ store, config: communityConfig })
+    await failure(
+      () => service.listFavoriteProjectInteractions({ userId, limit: 0, cursor: null }),
+      'FAVORITE_LIMIT_INVALID',
+      422,
+    )
+    await failure(
+      () => service.listFavoriteProjectInteractions({ userId, limit: 101, cursor: null }),
+      'FAVORITE_LIMIT_INVALID',
+      422,
+    )
+    assert.equal(store.favoriteReadInput, null)
   })
 })
 

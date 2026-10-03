@@ -40,9 +40,20 @@ export interface ProjectInteractionsProjection {
   readonly items: readonly ProjectInteractionReadProjection[]
 }
 
+export interface FavoriteProjectInteractionsPage {
+  readonly items: readonly ProjectInteractionReadProjection[]
+  readonly next_cursor: string | null
+}
+
 export interface GetProjectInteractionsCommand {
   readonly userId: string
   readonly projectIds: readonly string[]
+}
+
+export interface ListFavoriteProjectInteractionsCommand {
+  readonly userId: string
+  readonly limit: number
+  readonly cursor: string | null
 }
 
 export interface SetProjectInteractionCommand {

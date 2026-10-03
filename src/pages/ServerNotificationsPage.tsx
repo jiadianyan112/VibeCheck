@@ -34,7 +34,7 @@ export function ServerNotificationsPage() {
       setActionError(null)
       try { await markRead(item.notification_id) } catch { setActionError('已读状态暂时未保存，仍可查看作品。') }
     }
-    if (item.target_type === 'project' && item.target_id) navigate(`/project/${encodeURIComponent(item.target_id)}`)
+    if (item.target_type === 'project' && item.target_id) navigate(`/project/${encodeURIComponent(item.target_id)}${item.event_id ? `#${encodeURIComponent(item.event_id)}` : ''}`)
   }
 
   return <main className="page-container page-with-bottom-space stack">

@@ -11,7 +11,7 @@ vi.mock('../../services/authService', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/authService')>(),
   getAuthSession: vi.fn(async () => session),
 }))
-vi.mock('../../services/interactionApi', () => ({ interactionApi: { list: vi.fn(), setLike: vi.fn() } }))
+vi.mock('../../services/interactionApi', () => ({ interactionApi: { list: vi.fn(), setLike: vi.fn(), setState: vi.fn() } }))
 const id = '11111111-1111-4111-8111-111111111111'
 const project = { ...projects[0]!, id: id as typeof projects[number]['id'] }
 const session: AuthSessionDto = {
@@ -28,6 +28,9 @@ function Probe() {
   return <>
     <output aria-label="点赞数">{interactions.likeCount(project)}</output>
     <button disabled={interactions.busy(project)} onClick={() => interactions.toggleLike(project)}>{interactions.liked(project) ? '取消点赞' : '点赞'}</button>
+    <output aria-label="收藏数">{interactions.favoriteCount(project)}</output>
+    <button disabled={interactions.busy(project)} onClick={() => interactions.toggleFavorite(project)}>{interactions.favorited(project) ? '取消收藏' : '收藏'}</button>
+    <button disabled={interactions.busy(project)} onClick={() => interactions.toggleFollow(project)}>{interactions.followed(project) ? '取消关注' : '关注'}</button>
     <button onClick={() => auth.acceptSession({ ...session, user_id: '33333333-3333-4333-8333-333333333333' })}>切换账号</button>
   </>
 }
@@ -38,8 +41,30 @@ describe('server-backed project likes', () => {
     vi.stubEnv('MODE', 'production')
     vi.mocked(interactionApi.list).mockReset().mockResolvedValue([snapshot(false, 7)])
     vi.mocked(interactionApi.setLike).mockReset()
+    vi.mocked(interactionApi.setState).mockReset()
   })
   afterEach(() => vi.unstubAllEnvs())
+
+  it('applies server follow/favorite cascades and retains confirmed state when saving fails', async () => {
+    const user = userEvent.setup()
+    render(<AppProviders><Probe /></AppProviders>)
+    await waitFor(() => expect(interactionApi.list).toHaveBeenCalled())
+    const followed = { ...snapshot(false, 7), states: { like: false, favorite: true, follow: true }, counts: { like_count: 7, favorite_count: 4, follower_count: 2 } }
+    vi.mocked(interactionApi.setState).mockResolvedValueOnce(followed)
+    await user.click(screen.getByRole('button', { name: '关注' }))
+    await screen.findByRole('button', { name: '取消收藏' })
+    expect(screen.getByRole('button', { name: '取消关注' })).toBeInTheDocument()
+    expect(screen.getByLabelText('收藏数')).toHaveTextContent('4')
+    expect(interactionApi.setState).toHaveBeenCalledWith('follow', id, true, session)
+    vi.mocked(interactionApi.setState).mockRejectedValueOnce(new Error('network'))
+    await user.click(screen.getByRole('button', { name: '取消收藏' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('收藏未保存')
+    expect(screen.getByRole('button', { name: '取消关注' })).toBeInTheDocument()
+    vi.mocked(interactionApi.setState).mockResolvedValueOnce({ ...followed, states: { like: false, favorite: false, follow: false }, counts: { like_count: 7, favorite_count: 3, follower_count: 1 } })
+    await user.click(screen.getByRole('button', { name: '取消收藏' }))
+    await screen.findByRole('button', { name: '收藏' })
+    expect(screen.getByRole('button', { name: '关注' })).toBeInTheDocument()
+  })
 
   it('restores account likes on another device and refreshes another device change on focus', async () => {
     vi.mocked(interactionApi.list).mockResolvedValue([snapshot(true, 8)])

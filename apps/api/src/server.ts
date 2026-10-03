@@ -63,6 +63,8 @@ import {
   type ProjectInteractionProjection,
   type ProjectInteractionsProjection,
   type GetProjectInteractionsCommand,
+  type FavoriteProjectInteractionsPage,
+  type ListFavoriteProjectInteractionsCommand,
   type ReportCommentCommand,
   type SetProjectInteractionCommand,
   type WithdrawCommentCommand,
@@ -336,6 +338,9 @@ export interface ApiCommunityService {
   getProjectInteractions?(
     command: GetProjectInteractionsCommand,
   ): Promise<ProjectInteractionsProjection>
+  listFavoriteProjectInteractions?(
+    command: ListFavoriteProjectInteractionsCommand,
+  ): Promise<FavoriteProjectInteractionsPage>
   createComment(command: CreateCommentCommand): Promise<CommentProjection>
   listComments(command: ListCommentsCommand): Promise<CommentPage>
   createExperience(command: CreateExperienceCommand): Promise<ExperienceProjection>
@@ -3171,6 +3176,7 @@ async function handleCommunityRequest(
 ): Promise<number | null> {
   const interactionMatch = path.match(/^\/api\/v1\/interactions\/([^/]+)\/([^/]+)\/([^/]+)$/)
   const projectInteractionsReadPath = path === '/api/v1/interactions/projects'
+  const favoriteInteractionsReadPath = path === '/api/v1/interactions/favorites'
   const projectCommentsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/comments$/)
   const projectExperiencesMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/experiences$/)
   const experienceReplyMatch = path.match(/^\/api\/v1\/experiences\/([^/]+)\/replies$/)
@@ -3178,11 +3184,12 @@ async function handleCommunityRequest(
   const reportMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/reports$/)
   const withdrawMatch = path.match(/^\/api\/v1\/comments\/([^/]+)\/withdraw$/)
   if (
-    !projectInteractionsReadPath && interactionMatch === null && projectCommentsMatch === null && projectExperiencesMatch === null && experienceReplyMatch === null && adminCommentDecisionMatch === null &&
+    !projectInteractionsReadPath && !favoriteInteractionsReadPath && interactionMatch === null && projectCommentsMatch === null && projectExperiencesMatch === null && experienceReplyMatch === null && adminCommentDecisionMatch === null &&
     reportMatch === null && withdrawMatch === null
   ) return null
   if (
     (projectInteractionsReadPath && method !== 'GET') ||
+    (favoriteInteractionsReadPath && method !== 'GET') ||
     (interactionMatch !== null && method !== 'PUT') ||
     (projectCommentsMatch !== null && method !== 'GET' && method !== 'POST') ||
     (projectExperiencesMatch !== null && method !== 'GET' && method !== 'POST') ||
@@ -3205,6 +3212,29 @@ async function handleCommunityRequest(
     const projection = await dependencies.community.getProjectInteractions({
       userId: session.userId,
       projectIds: projectInteractionIds(rawProjectIds),
+    })
+    writeJson(response, 200, projection, requestId)
+    return 200
+  }
+
+  if (favoriteInteractionsReadPath && method === 'GET') {
+    if (typeof dependencies.community.listFavoriteProjectInteractions !== 'function') {
+      throw new CommunityError('COMMUNITY_INTERACTION_COLLECTION_UNAVAILABLE', 503, true)
+    }
+    const session = await resolveAuthenticatedSession(request, dependencies)
+    exactQueryKeys(url.searchParams, ['limit', 'cursor'])
+    const rawLimit = url.searchParams.get('limit')
+    const limit = rawLimit === null ? 20 : Number(rawLimit)
+    if (rawLimit !== null && !/^\d{1,3}$/.test(rawLimit)) {
+      throw new CommunityError('FAVORITE_LIMIT_INVALID', 400)
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new CommunityError('FAVORITE_LIMIT_INVALID', 400)
+    }
+    const projection = await dependencies.community.listFavoriteProjectInteractions({
+      userId: session.userId,
+      limit,
+      cursor: url.searchParams.get('cursor'),
     })
     writeJson(response, 200, projection, requestId)
     return 200

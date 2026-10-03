@@ -65,7 +65,7 @@ export class PostgresNotificationStore {
       readonly inserted_count: number
     } & QueryResultRow>(
       `WITH source AS (
-         SELECT project.current_name
+         SELECT project.current_name,event.created_at AS event_created_at
          FROM workflow.project_update_application_receipts receipt
          JOIN catalog.project_updates update_record ON update_record.update_id=receipt.update_id
          JOIN catalog.projects project ON project.project_id=receipt.project_id
@@ -77,11 +77,20 @@ export class PostgresNotificationStore {
            AND version.project_id=project.project_id
            AND event.project_id=project.project_id AND event.version_id=version.version_id
            AND event.source_object_type='project_update' AND event.source_object_id=update_record.update_id
+           AND project.review_status IN ('published_platform','published_author')
+           AND project.current_version_id IS NOT NULL
        ), recipients AS (
-         SELECT DISTINCT interaction.user_id,source.current_name
+         SELECT history.user_id,source.current_name
          FROM source
-         JOIN community.project_interactions interaction ON interaction.project_id=$1
-          AND interaction.interaction_type='follow' AND interaction.state=true
+         CROSS JOIN LATERAL (
+           SELECT DISTINCT ON (change.user_id) change.user_id,change.state
+           FROM community.project_follow_history change
+           WHERE change.project_id=$1 AND change.changed_at<=source.event_created_at
+           ORDER BY change.user_id,change.changed_at DESC,change.change_id DESC
+         ) history
+         JOIN iam.users recipient_account ON recipient_account.user_id=history.user_id
+           AND recipient_account.status='active' AND recipient_account.privacy_state='active'
+         WHERE history.state=true
        ), inserted AS (
          INSERT INTO community.notifications (
            notification_id,recipient_user_id,notification_type,title,body_summary,

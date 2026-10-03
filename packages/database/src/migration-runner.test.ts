@@ -55,6 +55,7 @@ describe('discoverMigrations', () => {
       '000044_password_change_and_reset.sql',
       '000045_structured_experiences.sql',
       '000046_community_rate_limit_defaults.sql',
+      '000047_project_follow_history.sql',
       ],
     )
     for (const migration of migrations) {

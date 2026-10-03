@@ -1,3 +1,4 @@
+import { AccountFavorites } from '../features/interactions/AccountFavorites'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, EmptyState, Input, Tag, useToast } from '../components'
@@ -138,7 +139,7 @@ export function PersonalCenterPage() {
   return (
     <main className="page-container page-with-bottom-space stack">
       <header className="personal-summary">
-        <div className="stack stack--small"><h1>{user.displayName}的个人中心</h1><div className="cluster"><Tag tone="strong">{roleLabels[state.session.role]}</Tag><span>{summaryCount} 项收藏、草稿和创作记录</span></div></div>
+        <div className="stack stack--small"><h1>{user.displayName}的个人中心</h1><div className="cluster"><Tag tone="strong">{roleLabels[state.session.role]}</Tag><span>{import.meta.env.PROD ? '管理我的作品、收藏和创作记录' : `${summaryCount} 项收藏、草稿和创作记录`}</span></div></div>
         <div className="cluster"><Link className="button button--secondary" to="/auth?return_to=%2Fme">切换账号</Link>{user.creatorId ? <Link className="button button--primary" to={`/creator/${user.creatorId}`}>查看我的作者主页</Link> : null}{isStaffRole(state.session.role) ? <Link className="button button--primary" to="/admin">进入管理后台</Link> : null}</div>
       </header>
 
@@ -192,7 +193,7 @@ export function PersonalCenterPage() {
         </div>
       </section>
 
-      <section id="favorites" className="personal-section stack" aria-labelledby="favorites-heading"><div className="section-heading"><h2 id="favorites-heading">收藏</h2><p>在这里选择需要关注更新的作品，新版本或状态变化会进入通知。</p></div><ProjectItems values={data.favoriteProjects} followedProjectIds={state.followedProjectIds} onToggleFollow={(project) => dispatch({ type: 'FOLLOW_TOGGLE', projectId: project.id })} emptyTitle="还没有收藏作品" emptyDescription="收藏后可以从这里快速返回作品，并按需关注更新。" emptyTo="/projects" emptyAction="浏览作品广场" /></section>
+      <section id="favorites" className="personal-section stack" aria-labelledby="favorites-heading"><div className="section-heading"><h2 id="favorites-heading">收藏</h2><p>在这里选择需要关注更新的作品，新版本或状态变化会进入通知。</p></div><>{import.meta.env.PROD ? <AccountFavorites /> : <ProjectItems values={data.favoriteProjects} followedProjectIds={state.followedProjectIds} onToggleFollow={(project) => dispatch({ type: 'FOLLOW_TOGGLE', projectId: project.id })} emptyTitle="还没有收藏作品" emptyDescription="收藏后可以从这里快速返回作品，并按需关注更新。" emptyTo="/projects" emptyAction="浏览作品广场" />}</></section>
 
       <section id="comparisons" className="personal-section stack" aria-labelledby="comparisons-heading"><div className="section-heading"><h2 id="comparisons-heading">比较记录</h2></div>{data.comparisonSessions.length ? <ul className="personal-item-list">{data.comparisonSessions.map((session) => <li key={session.id}><div><strong>{session.projectIds.length} 个作品的比较</strong><p>更新于 {new Date(session.updatedAt).toLocaleString('zh-CN')} · {session.savedAt ? '已保存' : '会话中'}</p></div><Link className="button button--primary" to={`/compare/${session.id}${session.projectIds.length >= 2 ? '#structured-comparison-heading' : ''}`}>继续比较</Link></li>)}</ul> : <EmptyState title="还没有比较记录" description="选择两个或更多作品，就可以逐项查看差异。" action={<Link className="button button--secondary" to="/projects">选择作品比较</Link>} />}</section>
 

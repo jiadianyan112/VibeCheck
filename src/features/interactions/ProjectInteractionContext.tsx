@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 import { useToast } from '../../components'
-import { interactionApi, type InteractionSnapshot } from '../../services/interactionApi'
+import { interactionApi, type InteractionSnapshot, type InteractionType } from '../../services/interactionApi'
 import { useAppState } from '../../state'
 import type { Project } from '../../types'
 import { useAuthSession } from '../auth/AuthSessionContext'
@@ -10,6 +10,9 @@ interface InteractionContextValue {
   busy: ReadonlySet<string>
   register: (ids: readonly string[]) => () => void
   toggleLike: (id: string) => Promise<void>
+  toggleState: (type: InteractionType, id: string, desired?: boolean) => Promise<void>
+  collectionVersion: number
+  userId: string | null
 }
 const InteractionContext = createContext<InteractionContextValue | null>(null)
 const serverId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -21,6 +24,7 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
   const [snapshots, setSnapshots] = useState<Record<string, InteractionSnapshot>>({})
   const [busy, setBusy] = useState<Set<string>>(new Set())
   const [registrationVersion, setRegistrationVersion] = useState(0)
+  const [collectionVersion, setCollectionVersion] = useState(0)
   const registrations = useRef(new Map<string, number>())
   const snapshotRef = useRef(snapshots)
   const inFlight = useRef(new Set<string>())
@@ -29,7 +33,8 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
   if (identity.current.userId !== (session?.user_id ?? null)) {
     identity.current = { userId: session?.user_id ?? null, epoch: identity.current.epoch + 1 }
   }
-  const pendingLike = useRef<{ id: string; projectId: string } | null>(null)
+  const snapshotEpoch = useRef(identity.current.epoch)
+  const pendingInteraction = useRef<{ id: string; projectId: string; kind: InteractionType } | null>(null)
   const enabled = import.meta.env.PROD
 
   const register = useCallback((ids: readonly string[]) => {
@@ -46,6 +51,7 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
   }, [])
 
   useEffect(() => {
+    snapshotEpoch.current = identity.current.epoch
     snapshotRef.current = {}
     setSnapshots({})
     inFlight.current.clear()
@@ -91,7 +97,7 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
     }
   }, [enabled, registrationVersion, session])
 
-  const saveLike = useCallback(async (id: string, desired?: boolean) => {
+  const saveState = useCallback(async (type: InteractionType, id: string, desired: boolean) => {
     if (!session || inFlight.current.has(id)) return
     const ownerEpoch = identity.current.epoch
     inFlight.current.add(id)
@@ -101,13 +107,14 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
       const current = snapshotRef.current[id] ?? (await interactionApi.list([id])).find(item => item.project_id === id)
       if (!current) throw new Error('PROJECT_UNAVAILABLE')
       if (identity.current.epoch !== ownerEpoch) return
-      const saved = await interactionApi.setLike(id, desired ?? !current.states.like, session)
+      const saved = await (type === 'like' ? interactionApi.setLike(id, desired, session) : interactionApi.setState(type, id, desired, session))
       if (identity.current.epoch !== ownerEpoch) return
       const next = { ...snapshotRef.current, [id]: saved }
       snapshotRef.current = next
       setSnapshots(next)
+      if (type !== 'like') setCollectionVersion(value => value + 1)
     } catch {
-      if (identity.current.epoch === ownerEpoch) pushToast('点赞未保存，请检查网络后重试。', 'error')
+      if (identity.current.epoch === ownerEpoch) pushToast(`${{ like: '点赞', favorite: '收藏', follow: '关注' }[type]}未保存，请检查网络后重试。`, 'error')
     } finally {
       if (identity.current.epoch === ownerEpoch) {
         inFlight.current.delete(id)
@@ -115,20 +122,21 @@ export function ProjectInteractionProvider({ children }: PropsWithChildren) {
       }
     }
   }, [pushToast, session])
-  const toggleLike = useCallback((id: string) => saveLike(id, !(snapshotRef.current[id]?.states.like ?? false)), [saveLike])
+  const toggleState = useCallback((type: InteractionType, id: string, desired?: boolean) => saveState(type, id, desired ?? !(snapshotRef.current[id]?.states[type] ?? false)), [saveState])
+  const toggleLike = useCallback((id: string) => toggleState('like', id), [toggleState])
 
   useEffect(() => {
     if (!enabled) return
     const queued = state.pendingAction
-    if (queued?.kind === 'like') pendingLike.current = { id: queued.id, projectId: queued.projectId }
-    const pending = pendingLike.current
+    if (queued && (queued.kind === 'like' || queued.kind === 'favorite' || queued.kind === 'follow')) pendingInteraction.current = { id: queued.id, projectId: queued.projectId, kind: queued.kind }
+    const pending = pendingInteraction.current
     if (session && pending && state.lastReplayedActionId === pending.id) {
-      pendingLike.current = null
-      void saveLike(pending.projectId, true)
+      pendingInteraction.current = null
+      void saveState(pending.kind, pending.projectId, true)
     }
-  }, [enabled, saveLike, session, state.lastReplayedActionId, state.pendingAction])
+  }, [enabled, saveState, session, state.lastReplayedActionId, state.pendingAction])
 
-  const value = useMemo(() => ({ snapshots, busy, register, toggleLike }), [busy, register, snapshots, toggleLike])
+  const value = useMemo(() => ({ snapshots: snapshotEpoch.current === identity.current.epoch ? snapshots : {}, busy, register, toggleLike, toggleState, collectionVersion, userId: session?.user_id ?? null }), [busy, register, snapshots, toggleLike, toggleState, collectionVersion, session?.user_id])
   return <InteractionContext.Provider value={value}>{children}</InteractionContext.Provider>
 }
 
@@ -143,16 +151,39 @@ export function useProjectInteractions(projects: readonly Project[]) {
     return register(idsKey.split(','))
   }, [idsKey, register])
   return {
+    favorited(project: Project) {
+      return import.meta.env.PROD ? context?.snapshots[project.id]?.states.favorite ?? false : state.favoriteProjectIds.includes(project.id)
+    },
+    followed(project: Project) {
+      return import.meta.env.PROD ? context?.snapshots[project.id]?.states.follow ?? false : state.followedProjectIds.includes(project.id)
+    },
+    favoriteCount(project: Project) {
+      return import.meta.env.PROD ? context?.snapshots[project.id]?.counts.favorite_count ?? project.interactionSummary.favoriteCount : project.interactionSummary.favoriteCount + (state.favoriteProjectIds.includes(project.id) ? 1 : 0)
+    },
+    toggleFavorite(project: Project, desired?: boolean) {
+      if (import.meta.env.PROD) void context?.toggleState('favorite', project.id, desired)
+      else dispatch({ type: 'FAVORITE_TOGGLE', projectId: project.id })
+    },
+    toggleFollow(project: Project) {
+      if (import.meta.env.PROD) void context?.toggleState('follow', project.id)
+      else dispatch({ type: 'FOLLOW_TOGGLE', projectId: project.id })
+    },
     liked(project: Project) {
       return import.meta.env.PROD ? context?.snapshots[project.id]?.states.like ?? false : state.likedProjectIds.includes(project.id)
     },
     likeCount(project: Project) {
       return import.meta.env.PROD ? context?.snapshots[project.id]?.counts.like_count ?? project.interactionSummary.likeCount : project.interactionSummary.likeCount + (state.likedProjectIds.includes(project.id) ? 1 : 0)
     },
+    ready(project: Project) { return !import.meta.env.PROD || !context?.userId || Boolean(context.snapshots[project.id]) },
     busy(project: Project) { return context?.busy.has(project.id) ?? false },
     toggleLike(project: Project) {
       if (import.meta.env.PROD) void context?.toggleLike(project.id)
       else dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })
     },
   }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useInteractionCollectionVersion() {
+  return useContext(InteractionContext)?.collectionVersion ?? 0
 }

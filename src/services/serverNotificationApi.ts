@@ -44,6 +44,7 @@ async function request<T>(path: string, session?: AuthSessionDto, body?: object)
     response = await fetch(`${apiBase}${path}`, {
       method: body ? 'PUT' : 'GET',
       credentials: 'include',
+      cache: 'no-store',
       headers: {
         accept: 'application/json',
         'x-request-id': requestId(),

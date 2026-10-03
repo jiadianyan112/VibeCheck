@@ -15,7 +15,9 @@ import {
   type CreateExperienceCommand,
   type ExperiencePage,
   type ExperienceProjection,
+  type FavoriteProjectInteractionsPage,
   type GetProjectInteractionsCommand,
+  type ListFavoriteProjectInteractionsCommand,
   type ListExperiencesCommand,
   type ReplyToExperienceCommand,
   type ListCommentsCommand,
@@ -259,6 +261,34 @@ export class CommunityService {
     })
   }
 
+  async listFavoriteProjectInteractions(
+    command: ListFavoriteProjectInteractionsCommand,
+  ): Promise<FavoriteProjectInteractionsPage> {
+    const userId = this.uuid(command.userId, 'USER_ID_INVALID')
+    if (!Number.isSafeInteger(command.limit) || command.limit < 1 || command.limit > 100) {
+      throw communityError('FAVORITE_LIMIT_INVALID', 422)
+    }
+    const config = this.commentConfig()
+    const store = this.dependencies.store as Partial<ProjectInteractionStore>
+    if (typeof store.getFavoriteProjectInteractions !== 'function') {
+      throw communityError('COMMUNITY_INTERACTION_COLLECTION_STORE_UNAVAILABLE', 503, true)
+    }
+    const after = command.cursor === null
+      ? null
+      : this.decodeFavoriteCursor(command.cursor, userId, config.cursorSecret)
+    const page = await store.getFavoriteProjectInteractions({
+      userId,
+      after,
+      limit: command.limit,
+    })
+    return Object.freeze({
+      items: page.items,
+      next_cursor: page.nextAnchor === null
+        ? null
+        : this.encodeFavoriteCursor(page.nextAnchor, userId, config.cursorSecret),
+    })
+  }
+
   private uuid(value: string, code: string): string {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
       throw communityError(code, 422)
@@ -327,6 +357,57 @@ export class CommunityService {
       comment_id: anchor.commentId,
     }), 'utf8').toString('base64url')
     return `${payload}.${createHmac('sha256', secret).update(payload).digest('base64url')}`
+  }
+
+  private encodeFavoriteCursor(
+    anchor: { readonly updatedAt: string; readonly projectId: string },
+    userId: string,
+    secret: string,
+  ): string {
+    const payload = Buffer.from(JSON.stringify({
+      scope: 'favorite_projects',
+      user_id: userId,
+      updated_at: anchor.updatedAt,
+      project_id: anchor.projectId,
+    }), 'utf8').toString('base64url')
+    return `${payload}.${createHmac('sha256', secret).update(payload).digest('base64url')}`
+  }
+
+  private decodeFavoriteCursor(
+    cursor: string,
+    userId: string,
+    secret: string,
+  ): { readonly updatedAt: string; readonly projectId: string } {
+    const [payload, suppliedSignature, ...rest] = cursor.split('.')
+    if (!payload || !suppliedSignature || rest.length > 0 || cursor.length > 1_024) {
+      throw communityError('FAVORITE_CURSOR_INVALID', 400)
+    }
+    const expected = Buffer.from(
+      createHmac('sha256', secret).update(payload).digest('base64url'), 'utf8',
+    )
+    const supplied = Buffer.from(suppliedSignature, 'utf8')
+    if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+      throw communityError('FAVORITE_CURSOR_INVALID', 400)
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+    } catch {
+      throw communityError('FAVORITE_CURSOR_INVALID', 400)
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw communityError('FAVORITE_CURSOR_INVALID', 400)
+    }
+    const record = parsed as Record<string, unknown>
+    const updatedAt = new Date(String(record.updated_at))
+    if (
+      record.scope !== 'favorite_projects' || record.user_id !== userId ||
+      typeof record.updated_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3,6}Z$/.test(record.updated_at) || Number.isNaN(updatedAt.getTime()) || typeof record.project_id !== 'string'
+    ) throw communityError('FAVORITE_CURSOR_INVALID', 400)
+    return Object.freeze({
+      updatedAt: record.updated_at as string,
+      projectId: this.uuid(record.project_id, 'FAVORITE_CURSOR_INVALID'),
+    })
   }
 
   private decodeCursor(cursor: string, projectId: string, secret: string) {

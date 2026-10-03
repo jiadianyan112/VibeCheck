@@ -18,7 +18,7 @@ import type {
 import { notFound, runService, type ServiceOptions } from './runtime'
 import type { ServiceResult } from './result'
 import { mapCatalogCard, mapCatalogProject } from './catalogProjectAdapter'
-import type { ProjectCardProjection, ProjectProjection } from '@vibecheck/catalog'
+import type { EventPage, ProjectCardProjection, ProjectProjection } from '@vibecheck/catalog'
 
 export interface ProjectBundle {
   project: Project
@@ -57,6 +57,26 @@ async function listPublishedProjects(signal?: AbortSignal): Promise<ServiceResul
     cursor = page.data.next_cursor
   } while (cursor)
   return { ok: true, data: items }
+}
+
+async function projectTimeline(id: ProjectId, signal?: AbortSignal): Promise<ServiceResult<LifecycleEvent[]>> {
+  const events: LifecycleEvent[] = []
+  let cursor: string | null = null
+  do {
+    const params = new URLSearchParams({ include_superseded: 'true' })
+    if (cursor) params.set('cursor', cursor)
+    const page: ServiceResult<EventPage> = await catalogGet(`/api/v1/projects/${encodeURIComponent(id)}/events?${params}`, signal)
+    if (!page.ok) return page
+    events.push(...page.data.items.map(event => ({
+      id: event.event_id as LifecycleEvent['id'], projectId: id, type: event.event_type,
+      happenedAt: event.event_sort_at, isEstimatedDate: event.time_precision !== 'day', summary: event.event_summary,
+      sourceType: event.source_actor === 'verified_author' ? 'verified_author_statement' as const : event.source_actor === 'platform_editor' ? 'platform_verified_fact' as const : 'system_inference' as const,
+      evidenceIds: [], changes: [],
+      disputeStatus: event.evidence_dispute_summary === 'has_in_review' ? 'in_review' as const : event.evidence_dispute_summary === 'has_resolved' ? 'resolved' as const : event.evidence_dispute_summary === 'has_insufficient_evidence' ? 'insufficient_evidence' as const : 'none' as const,
+    })))
+    cursor = page.data.next_cursor
+  } while (cursor)
+  return { ok: true, data: events }
 }
 
 export const projectService = {
@@ -100,8 +120,10 @@ export const projectService = {
     if (import.meta.env.PROD && serverProjectId.test(id) && (!options?.scenario || options.scenario === 'default')) {
       const response = await catalogGet<ProjectProjection>(`/api/v1/projects/${encodeURIComponent(id)}`, options?.signal)
       if (!response.ok) return response
+      const timeline = await projectTimeline(id, options?.signal)
+      if (!timeline.ok) return timeline
       return { ok: true, data: {
-        project: mapCatalogProject(response.data), relatedProjects: [], creators: [], events: [], assets: [], relations: [], evidences: [],
+        project: mapCatalogProject(response.data), relatedProjects: [], creators: [], events: timeline.data, assets: [], relations: [], evidences: [],
       } }
     }
     const result = await runService(options, () => {

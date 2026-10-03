@@ -5,9 +5,11 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg'
 import { communityError } from './errors.js'
 import type {
   GetStoredProjectInteractionsInput,
+  GetStoredFavoriteProjectInteractionsInput,
   ProjectInteractionFactChange,
   ProjectInteractionStore,
   SetStoredProjectInteractionInput,
+  StoredFavoriteProjectInteractionsPage,
 } from './store-port.js'
 import type {
   CommentModerationState,
@@ -43,6 +45,10 @@ interface ProjectInteractionReadRow extends CounterRow {
   readonly favorite_state: boolean
   readonly like_state: boolean
   readonly follow_state: boolean
+}
+
+interface FavoriteProjectInteractionReadRow extends ProjectInteractionReadRow {
+  readonly favorite_updated_at: string
 }
 
 interface ReceiptRow extends QueryResultRow {
@@ -141,6 +147,64 @@ export class PostgresCommunityStore implements ProjectInteractionStore {
         }),
         counts: this.counts(row),
       }))),
+    })
+  }
+
+  async getFavoriteProjectInteractions(
+    input: GetStoredFavoriteProjectInteractionsInput,
+  ): Promise<StoredFavoriteProjectInteractionsPage> {
+    const result = await this.pool.query<FavoriteProjectInteractionReadRow>(
+      `SELECT p.project_id,
+         to_char(favorite.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS favorite_updated_at,
+         COALESCE(bool_or(interaction.interaction_type='favorite' AND interaction.state),false) AS favorite_state,
+         COALESCE(bool_or(interaction.interaction_type='like' AND interaction.state),false) AS like_state,
+         COALESCE(bool_or(interaction.interaction_type='follow' AND interaction.state),false) AS follow_state,
+         COALESCE(counter.favorite_count,0)::text AS favorite_count,
+         COALESCE(counter.like_count,0)::text AS like_count,
+         COALESCE(counter.follower_count,0)::text AS follower_count
+       FROM catalog.projects p
+       JOIN community.project_interactions favorite
+         ON favorite.project_id=p.project_id
+        AND favorite.user_id=$1
+        AND favorite.interaction_type='favorite'
+        AND favorite.state=true
+       LEFT JOIN community.project_interactions interaction
+         ON interaction.project_id=p.project_id AND interaction.user_id=$1
+       LEFT JOIN catalog.project_interaction_counters counter
+         ON counter.project_id=p.project_id
+       WHERE p.review_status IN ('published_platform','published_author')
+         AND p.current_version_id IS NOT NULL
+         AND ($2::timestamptz IS NULL OR favorite.updated_at < $2::timestamptz
+           OR (favorite.updated_at = $2::timestamptz AND favorite.project_id < $3::uuid))
+       GROUP BY p.project_id,favorite.updated_at,counter.favorite_count,counter.like_count,counter.follower_count
+       ORDER BY favorite.updated_at DESC,p.project_id DESC
+       LIMIT $4::int`,
+      [
+        input.userId,
+        input.after?.updatedAt ?? null,
+        input.after?.projectId ?? null,
+        input.limit + 1,
+      ],
+    )
+    const hasNext = result.rows.length > input.limit
+    const rows = hasNext ? result.rows.slice(0, input.limit) : result.rows
+    const last = rows.at(-1)
+    return Object.freeze({
+      items: Object.freeze(rows.map((row) => Object.freeze({
+        project_id: row.project_id,
+        states: Object.freeze({
+          favorite: row.favorite_state,
+          like: row.like_state,
+          follow: row.follow_state,
+        }),
+        counts: this.counts(row),
+      }))),
+      nextAnchor: hasNext && last
+        ? Object.freeze({
+            updatedAt: last.favorite_updated_at,
+            projectId: last.project_id,
+          })
+        : null,
     })
   }
 

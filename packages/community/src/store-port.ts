@@ -9,6 +9,7 @@ import type {
   ProjectInteractionProjection,
   ProjectInteractionsProjection,
   ProjectInteractionType,
+  ProjectInteractionReadProjection,
 } from './types.js'
 
 export interface SetStoredProjectInteractionInput {
@@ -26,6 +27,22 @@ export interface GetStoredProjectInteractionsInput {
   readonly projectIds: readonly string[]
 }
 
+export interface FavoriteProjectPageAnchor {
+  readonly updatedAt: string
+  readonly projectId: string
+}
+
+export interface GetStoredFavoriteProjectInteractionsInput {
+  readonly userId: string
+  readonly after: FavoriteProjectPageAnchor | null
+  readonly limit: number
+}
+
+export interface StoredFavoriteProjectInteractionsPage {
+  readonly items: readonly ProjectInteractionReadProjection[]
+  readonly nextAnchor: FavoriteProjectPageAnchor | null
+}
+
 export interface ProjectInteractionStore {
   setProjectInteraction(
     input: SetStoredProjectInteractionInput,
@@ -33,6 +50,9 @@ export interface ProjectInteractionStore {
   getProjectInteractions?(
     input: GetStoredProjectInteractionsInput,
   ): Promise<ProjectInteractionsProjection>
+  getFavoriteProjectInteractions?(
+    input: GetStoredFavoriteProjectInteractionsInput,
+  ): Promise<StoredFavoriteProjectInteractionsPage>
 }
 
 export interface PublicCommentPageAnchor {

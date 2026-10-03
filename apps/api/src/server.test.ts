@@ -47,7 +47,9 @@ import type {
   CreateCommentCommand,
   CreateExperienceCommand,
   ExperienceProjection,
+  FavoriteProjectInteractionsPage,
   GetProjectInteractionsCommand,
+  ListFavoriteProjectInteractionsCommand,
   ReplyToExperienceCommand,
   ListCommentsCommand,
   NotificationPage,
@@ -416,6 +418,7 @@ class FakeComparisonService implements ApiComparisonService {
 class FakeCommunityService implements ApiCommunityService {
   command: SetProjectInteractionCommand | null = null
   readCommand: GetProjectInteractionsCommand | null = null
+  favoriteReadCommand: ListFavoriteProjectInteractionsCommand | null = null
   createCommand: CreateCommentCommand | null = null
   listCommand: ListCommentsCommand | null = null
   reportCommand: ReportCommentCommand | null = null
@@ -478,6 +481,20 @@ class FakeCommunityService implements ApiCommunityService {
         states: Object.freeze({ favorite: false, like: true, follow: false }),
         counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
       }))),
+    })
+  }
+
+  async listFavoriteProjectInteractions(
+    command: ListFavoriteProjectInteractionsCommand,
+  ): Promise<FavoriteProjectInteractionsPage> {
+    this.favoriteReadCommand = command
+    return Object.freeze({
+      items: Object.freeze([Object.freeze({
+        project_id: '10000000-0000-4000-8000-000000000001',
+        states: Object.freeze({ favorite: true, like: false, follow: false }),
+        counts: Object.freeze({ favorite_count: 2, like_count: 3, follower_count: 4 }),
+      })]),
+      next_cursor: null,
     })
   }
 
@@ -3062,6 +3079,67 @@ test('project interaction reads require login, bind the session user, and are no
       projectIds: [firstProjectId, secondProjectId],
     })
     assert.deepEqual((await read.json() as ProjectInteractionsProjection).items.map((item) => item.project_id), [firstProjectId, secondProjectId])
+  } finally {
+    await runtime.stop()
+  }
+})
+
+test('favorite collection reads are authenticated, paginated, and bound to the session user', async () => {
+  const sessionCookie = 'vc_session=session-token-with-at-least-thirty-two-characters; vc_csrf=csrf-token-with-at-least-thirty-two-characters'
+  const anonymousCommunity = new FakeCommunityService()
+  const anonymousRuntime = await start(
+    async () => undefined,
+    new RejectingIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    anonymousCommunity,
+  )
+  try {
+    const rejected = await fetch(`${anonymousRuntime.baseUrl}/api/v1/interactions/favorites`)
+    assert.equal(rejected.status, 401)
+    assert.equal(anonymousCommunity.favoriteReadCommand, null)
+  } finally {
+    await anonymousRuntime.stop()
+  }
+
+  const community = new FakeCommunityService()
+  const runtime = await start(
+    async () => undefined,
+    new FakeIdentityService(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    community,
+  )
+  try {
+    const invalid = await fetch(
+      `${runtime.baseUrl}/api/v1/interactions/favorites?limit=101`,
+      { headers: { cookie: sessionCookie } },
+    )
+    assert.equal(invalid.status, 400)
+    assert.equal(community.favoriteReadCommand, null)
+
+    const listed = await fetch(
+      `${runtime.baseUrl}/api/v1/interactions/favorites?limit=20&cursor=cursor-token`,
+      { headers: { cookie: sessionCookie, origin: 'https://attacker.example' } },
+    )
+    assert.equal(listed.status, 200)
+    assert.equal(listed.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(community.favoriteReadCommand, {
+      userId: session.userId,
+      limit: 20,
+      cursor: 'cursor-token',
+    })
+    assert.deepEqual((await listed.json() as FavoriteProjectInteractionsPage).items.map((item) => item.project_id), [
+      '10000000-0000-4000-8000-000000000001',
+    ])
   } finally {
     await runtime.stop()
   }

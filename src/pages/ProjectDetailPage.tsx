@@ -115,6 +115,13 @@ export function ProjectDetailPage() {
     if (hash === '#discussion') setCommentCategory('usage_feedback')
   }, [hash])
 
+  useEffect(() => {
+    if (!bundle || !hash) return
+    // The server timeline can arrive after the route scroll observer expires.
+    const target = bundle.events.find(event => `#${encodeURIComponent(event.id)}` === hash)
+    if (target) document.getElementById(target.id)?.scrollIntoView?.({ block: 'start' })
+  }, [bundle, hash])
+
   const reloadDiscussion = useCallback(async (projectId: Project['id']) => {
     if (!import.meta.env.PROD) return
     try {
@@ -210,7 +217,7 @@ export function ProjectDetailPage() {
   const name = factText(project.currentName, '名称未知的作品')
   const status = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const selected = state.comparisonProjectIds.includes(project.id)
-  const favorited = state.favoriteProjectIds.includes(project.id)
+  const favorited = interactions.favorited(project)
   const liked = interactions.liked(project)
   const portfolio = project.categoryId === 'personal_site_portfolio' ? project.categoryData : null
   const trustVariant = searchParams.get('variant')
@@ -226,7 +233,7 @@ export function ProjectDetailPage() {
   const effectiveAuthorLinkStatus = management.linked ? 'linked' : management.highRiskEditingFrozen ? 'disputed' : ownVerification ? 'pending' : project.authorLinkStatus
 
   function toggleFavorite() {
-    requireLogin({ id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath: `/project/${project.id}` }, () => dispatch({ type: 'FAVORITE_TOGGLE', projectId: project.id }))
+    requireLogin({ id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleFavorite(project))
   }
 
   async function shareProject() {
@@ -311,14 +318,15 @@ export function ProjectDetailPage() {
 
           <div className="project-primary-actions" aria-label="作品核心操作">
             {project.reviewStatus === 'restricted' ? <Button variant="primary" disabled>展示已限制</Button> : project.publicUrl.state === 'known' ? <ExternalLinkGuard href={project.publicUrl.value}>立即体验</ExternalLinkGuard> : <Button variant="primary" disabled>体验地址未知</Button>}
-            <Button aria-pressed={favorited} onClick={toggleFavorite}>{favorited ? '取消收藏' : '收藏'}</Button>
+            <Button aria-pressed={favorited} disabled={interactions.busy(project) || !interactions.ready(project)} onClick={toggleFavorite}>{favorited ? '取消收藏' : '收藏'}</Button>
+            {import.meta.env.PROD ? <Button aria-pressed={interactions.followed(project)} disabled={interactions.busy(project) || !interactions.ready(project)} onClick={() => requireLogin({ id: `follow-${project.id}`, kind: 'follow', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleFollow(project))}>{interactions.followed(project) ? '取消关注更新' : '关注更新'}</Button> : null}
             <Button onClick={shareProject}>分享</Button>
             <Button aria-pressed={selected} onClick={() => selected ? dispatch({ type: 'COMPARISON_REMOVE', projectId: project.id }) : addProject(project.id)}>{selected ? '移出比较' : '加入比较'}</Button>
           </div>
         </div>
       </section>
 
-      <section className="interaction-strip" aria-label="社区互动"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{interactions.likeCount(project)}</strong><span>点赞</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} disabled={interactions.busy(project)} onClick={() => requireLogin({ id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleLike(project))}>{liked ? '已点赞' : '点赞'}</Button></section>
+      <section className="interaction-strip" aria-label="社区互动"><div><strong>{interactions.favoriteCount(project)}</strong><span>收藏</span></div><div><strong>{interactions.likeCount(project)}</strong><span>点赞</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} disabled={interactions.busy(project)} onClick={() => requireLogin({ id: `like-${project.id}`, kind: 'like', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleLike(project))}>{liked ? '已点赞' : '点赞'}</Button></section>
 
       <section className="trust-variants stack" aria-labelledby="trust-variants-heading">
         <div className="section-heading cluster cluster--between"><div><h2 id="trust-variants-heading">作品信息与状态</h2></div><div className="cluster"><Link className="button button--quiet" to={`/submit?mode=supplement&project=${project.id}`}>补充作品信息</Link><details className="status-report-placeholder"><summary>状态说明</summary><p>这里仅说明当前状态，不会发起变更。需要补充或纠正信息时，请使用“补充作品信息”。</p></details></div></div>

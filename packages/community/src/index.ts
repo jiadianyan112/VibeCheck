@@ -14,6 +14,9 @@ export type {
   ProjectInteractionFactChange,
   ProjectInteractionStore,
   GetStoredProjectInteractionsInput,
+  FavoriteProjectPageAnchor,
+  GetStoredFavoriteProjectInteractionsInput,
+  StoredFavoriteProjectInteractionsPage,
   SetStoredProjectInteractionInput,
 } from './store-port.js'
 export {
@@ -25,7 +28,9 @@ export {
   type ProjectInteractionProjection,
   type ProjectInteractionReadProjection,
   type ProjectInteractionsProjection,
+  type FavoriteProjectInteractionsPage,
   type GetProjectInteractionsCommand,
+  type ListFavoriteProjectInteractionsCommand,
   type ProjectInteractionType,
   type SetProjectInteractionCommand,
   commentModerationStates,

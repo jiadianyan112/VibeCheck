@@ -23,6 +23,24 @@ afterEach(() => {
 })
 
 describe('interactionApi', () => {
+  it.each(['favorite', 'follow'] as const)('saves final %s state with CSRF', async type => {
+    const item = { ...snapshot('project-1'), states: { like: false, favorite: true, follow: type === 'follow' } }
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(item))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(interactionApi.setState(type, 'project-1', true, session)).resolves.toEqual(item)
+    expect(fetchMock.mock.calls[0]![0]).toContain(`/interactions/${type}/project/project-1`)
+    expect(new Headers(fetchMock.mock.calls[0]![1].headers).get('x-csrf-token')).toBe('csrf-test')
+  })
+
+  it('reads paginated favorites without importing local IDs', async () => {
+    const item = { ...snapshot('project-1'), states: { like: false, favorite: true, follow: false } }
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ items: [item], next_cursor: 'signed-next' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(interactionApi.favorites('signed-first')).resolves.toEqual({ items: [item], next_cursor: 'signed-next' })
+    expect(fetchMock.mock.calls[0]![0]).toContain('cursor=signed-first')
+    fetchMock.mockResolvedValue(Response.json({ items: [snapshot('project-1')], next_cursor: null }))
+    await expect(interactionApi.favorites()).rejects.toBeInstanceOf(InteractionApiError)
+  })
   it('returns no items without requesting when the project list is empty', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

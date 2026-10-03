@@ -30,6 +30,7 @@ it('reads published works from the database catalog and resolves their detail by
   const fetchMock = vi.fn().mockImplementation((url: string) => Promise.resolve(Response.json(
     url.includes('/api/v1/projects?')
       ? { items: [card], next_cursor: null, result_version: '1' }
+      : url.includes('/events') ? { items: [], next_cursor: null }
       : { ...card, project_core: { current_name: card.current_name, one_line_definition: card.one_line_definition, public_url: 'https://example.test/work' }, category_data: {}, first_seen_at: card.last_verified_at, created_at: card.last_verified_at },
   )))
   vi.stubGlobal('fetch', fetchMock)
@@ -45,6 +46,14 @@ it('reads published works from the database catalog and resolves their detail by
   if (!detail.ok) return
   expect(detail.data.project.currentName).toMatchObject({ state: 'known', value: card.current_name })
   expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/projects/${publishedId}`), expect.any(Object))
+})
+
+it('loads server timeline pages so update notifications can locate their event', async () => {
+  vi.stubEnv('PROD', true)
+  const event = { event_id: 'event-1', project_id: publishedId, event_type: 'version_updated', event_sort_at: '2026-10-03T00:00:00Z', event_summary: '新版上线', time_precision: 'day', source_actor: 'verified_author', evidence_summaries: [], evidence_dispute_summary: 'none' }
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => Promise.resolve(Response.json(url.includes('/events') ? { items: [event], next_cursor: null } : { ...card, project_core: { current_name: card.current_name, one_line_definition: card.one_line_definition, public_url: 'https://example.test' }, category_data: {} }))))
+  const result = await projectService.getBundle(projectId(publishedId))
+  expect(result.ok && result.data.events).toMatchObject([{ id: 'event-1', projectId: publishedId, summary: '新版上线', sourceType: 'verified_author_statement' }])
 })
 
 it('shows catalog failures instead of displaying sample works as published content', async () => {

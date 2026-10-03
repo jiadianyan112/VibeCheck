@@ -14,6 +14,12 @@ export interface InteractionSnapshot {
   }
 }
 
+export type InteractionType = 'like' | 'favorite' | 'follow'
+export interface FavoritePage {
+  readonly items: InteractionSnapshot[]
+  readonly next_cursor: string | null
+}
+
 export class InteractionApiError extends Error {
   constructor(readonly code: string, readonly status: number) {
     super(code)
@@ -127,8 +133,26 @@ export const interactionApi = {
     return items
   },
 
+  async favorites(cursor?: string | null, signal?: AbortSignal): Promise<FavoritePage> {
+    const params = new URLSearchParams({ limit: '20' })
+    if (cursor) params.set('cursor', cursor)
+    const { payload, status } = await request(`/api/v1/interactions/favorites?${params}`, { method: 'GET', signal })
+    if (!isRecord(payload) || !Array.isArray(payload.items) || !(payload.next_cursor === null || typeof payload.next_cursor === 'string')) {
+      throw new InteractionApiError('INTERACTION_INVALID_RESPONSE', status)
+    }
+    const items = payload.items.map(item => snapshotFrom(item, status))
+    if (items.some(item => !item.states.favorite) || new Set(items.map(item => item.project_id)).size !== items.length) {
+      throw new InteractionApiError('INTERACTION_INVALID_RESPONSE', status)
+    }
+    return { items, next_cursor: payload.next_cursor }
+  },
+
   async setLike(projectId: string, state: boolean, session: AuthSessionDto): Promise<InteractionSnapshot> {
-    const { payload, status } = await request(`/api/v1/interactions/like/project/${encodeURIComponent(projectId)}`, {
+    return interactionApi.setState('like', projectId, state, session)
+  },
+
+  async setState(type: InteractionType, projectId: string, state: boolean, session: AuthSessionDto): Promise<InteractionSnapshot> {
+    const { payload, status } = await request(`/api/v1/interactions/${type}/project/${encodeURIComponent(projectId)}`, {
       method: 'PUT',
       headers: {
         'content-type': 'application/json',

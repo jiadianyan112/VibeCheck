@@ -751,6 +751,41 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /api/v1/interactions/favorites:
+    get:
+      tags: [Community]
+      operationId: OP-INTERACTIONS-FAVORITES-GET
+      summary: List the authenticated user's public favorite projects
+      description: >-
+        Returns only projects that are currently public and favorited by the
+        authenticated user. Results use a user-bound signed keyset cursor ordered
+        by the favorite interaction update time and project ID, newest first. The
+        cursor cannot be reused by another account.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          description: Number of favorites to return, default 20 and at most 100.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: cursor
+          required: false
+          description: Opaque signed cursor returned by the previous page.
+          schema: { type: string, minLength: 1, maxLength: 1024 }
+      responses:
+        '200':
+          description: Public favorite projects and current interaction snapshots.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FavoriteProjectInteractionsPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/projects/{project_id}/comments:
     get:
       tags: [Community]
@@ -3782,6 +3817,18 @@ components:
           type: array
           maxItems: 100
           items: { $ref: '#/components/schemas/ProjectInteractionReadProjection' }
+    FavoriteProjectInteractionsPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProjectInteractionReadProjection' }
+        next_cursor:
+          type: [string, 'null']
+          maxLength: 1024
     NotificationType:
       type: string
       enum: [submission_published, project_updated]
