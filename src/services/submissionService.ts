@@ -1,4 +1,5 @@
 import { projects, submissionDrafts } from '../mocks'
+import { validateSubmission } from '../features/submission/form'
 import { applySubmissionReview } from '../features/submission/review'
 import {
   projectId,
@@ -123,6 +124,11 @@ export const submissionService = {
   },
 
   submit(draft: SubmissionDraft, options?: ServiceOptions) {
+    if (draft.status === 'draft' || draft.status === 'changes_requested') {
+      if (Object.keys(validateSubmission(draft)).length > 0) {
+        return Promise.resolve(validationFailure('VC_SUBMISSION_INCOMPLETE', '请补齐发布信息后再提交审核。'))
+      }
+    }
     return runService(options, () => {
       let status: ReviewStatus = 'pending_review'
       if (options?.scenario === 'review_changes_requested') status = 'changes_requested'

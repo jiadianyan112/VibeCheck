@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice, EmptyState, ErrorPanel, EvidenceDrawer, ExternalLinkGuard, FreshnessLabel, LoadingState, ProjectCard, Tag, UnknownFact, evidenceTypeLabels, useToast } from '../components'
 import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
+import { PublicationSummary } from '../features/submission/PublicationSummary'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
 import { creatorsForProject, prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
@@ -250,6 +251,8 @@ export function ProjectDetailPage() {
           </div>
         </div>
       </section>
+
+      {project.publicationDetails ? <section className="stack" aria-labelledby="project-publication-heading"><h2 id="project-publication-heading">作品介绍与致谢</h2><PublicationSummary fields={project.publicationDetails} coverUrl={project.coverMedia.find((item) => item.kind === 'image')?.url} /></section> : null}
 
       <section className="interaction-strip" aria-label="社区互动"><div><strong>{project.interactionSummary.favoriteCount + (favorited ? 1 : 0)}</strong><span>收藏</span></div><div><strong>{project.interactionSummary.likeCount + (liked ? 1 : 0)}</strong><span>点赞</span></div><div><strong>{project.interactionSummary.commentCount + comments.filter((comment) => !comment.id.startsWith('comment-') || !['comment-quizforge-usage', 'comment-speakmirror-development', 'comment-echoscore-reuse', 'comment-promo-collapsed'].includes(comment.id)).length}</strong><span>讨论</span></div><Button aria-pressed={liked} onClick={() => dispatch({ type: 'LIKE_TOGGLE', projectId: project.id })}>{liked ? '已点赞' : '点赞'}</Button></section>
 

@@ -1,5 +1,5 @@
 import { assetId, submissionDraftId, userId, type SubmissionDraft } from '../../types'
-import { applySubmissionReview, publishedEventFromSubmission, publishedProjectFromSubmission, resumeSubmission, withdrawSubmission } from './review'
+import { applySubmissionReview, publishedEventFromSubmission, publishedProjectFromSubmission, resumeSubmission, reviewFieldSteps, withdrawSubmission } from './review'
 
 const draft: SubmissionDraft = {
   id: submissionDraftId('draft-review-stable'),
@@ -13,6 +13,7 @@ const draft: SubmissionDraft = {
     accessStatus: 'normal',
     repositoryUrl: null,
     oneLineDefinition: '验证审核单与发布事件保持稳定。',
+    submitterRelation: 'third_party',
     targetUsers: ['university_students'],
     coreProblem: '避免重复发布记录',
     useScenarios: ['daily_practice'],
@@ -55,7 +56,7 @@ describe('submission review lifecycle', () => {
     const requested = applySubmissionReview(draft, 'changes_requested')
     expect(requested.reviewMessages.oneLineDefinition).toMatch(/目标用户/)
     expect(requested.reviewMessages.repositoryUrl).toMatch(/公开仓库/)
-    expect(applySubmissionReview(draft, 'rejected').reviewMessages.submission).toMatch(/无法收录/)
+    expect(applySubmissionReview(draft, 'rejected').reviewMessages.submission).toMatch(/品类|范围/)
 
     const withdrawn = withdrawSubmission(requested)
     expect(withdrawn.status).toBe('withdrawn')
@@ -73,6 +74,7 @@ describe('submission review lifecycle', () => {
         publicUrl: 'https://example.test/portfolio',
         oneLineDefinition: '展示开发项目与公开联系方式。',
         categoryId: 'personal_site_portfolio',
+        submitterRelation: 'third_party',
         creatorRoles: ['developer'],
         primaryGoals: ['showcase_projects'],
         coreModules: ['hero', 'projects', 'contact'],
@@ -86,5 +88,47 @@ describe('submission review lifecycle', () => {
     expect(published?.categoryData?.siteType.state).toBe('unknown')
     expect(published?.categoryData?.visualStyles.state).toBe('unknown')
     expect(published?.assetIds).toEqual([])
+  })
+
+  it('preserves publication details and media from the frozen submitted version without linking an author', () => {
+    const portfolioDraft: SubmissionDraft = {
+      ...draft,
+      id: submissionDraftId('draft-review-publication-details'),
+      fields: {
+        ...draft.fields,
+        categoryId: 'personal_site_portfolio',
+        currentName: '带出版详情的作品集',
+        publicUrl: 'https://example.test/publication-details',
+        screenshotUrl: 'https://example.test/cover.png',
+        submitterRelation: 'owner',
+        oneLineDefinition: '展示个人作品与联系方式。',
+        creatorRoles: ['developer'],
+        primaryGoals: ['showcase_projects'],
+        coreModules: ['hero', 'projects'],
+        detailedDescription: '更完整的公开作品说明。',
+        logoUrl: 'https://example.test/logo.svg',
+        galleryUrls: ['https://example.test/gallery-1.png', 'https://example.test/gallery-2.png'],
+        videoUrl: 'https://www.bilibili.com/video/BV1xx',
+        acknowledgements: [{ name: '素材作者', url: '', note: '感谢公开素材。' }],
+      },
+    }
+    const approved = applySubmissionReview(portfolioDraft, 'approved')
+    const published = publishedProjectFromSubmission(approved)
+
+    expect(published?.publicationDetails).toEqual({
+      submitterRelation: 'owner',
+      detailedDescription: '更完整的公开作品说明。',
+      logoUrl: 'https://example.test/logo.svg',
+      galleryUrls: ['https://example.test/gallery-1.png', 'https://example.test/gallery-2.png'],
+      videoUrl: 'https://www.bilibili.com/video/BV1xx',
+      acknowledgements: [{ name: '素材作者', url: '', note: '感谢公开素材。' }],
+    })
+    expect(published?.coverMedia[0]?.url).toBe('https://example.test/cover.png')
+    expect(published?.creatorIds).toEqual([])
+    expect(published?.authorLinkStatus).toBe('unlinked')
+    expect(reviewFieldSteps.detailedDescription).toBe('definition')
+    expect(reviewFieldSteps.organizationName).toBe('prefill')
+    expect(reviewFieldSteps.logoUrl).toBe('prefill')
+    expect(reviewFieldSteps.acknowledgements).toBe('development')
   })
 })

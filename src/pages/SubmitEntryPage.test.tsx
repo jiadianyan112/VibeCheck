@@ -78,6 +78,42 @@ describe('submission entry and URL checks', () => {
     expect(persistedDrafts()).toHaveLength(0)
   })
 
+  it('retains filled publication fields when the author returns to recheck the same address', async () => {
+    loginInStorage()
+    const user = userEvent.setup()
+    renderRoute('/submit')
+    await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), 'example.test/recheck-keep')
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    await user.click(await screen.findByRole('button', { name: '继续补充作品信息' }))
+    const name = await screen.findByRole('textbox', { name: '作品名称' })
+    await user.clear(name)
+    await user.type(name, '不能丢失的名称')
+    await user.click(screen.getByRole('link', { name: '返回地址检查' }))
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    await user.click(await screen.findByRole('button', { name: '继续补充作品信息' }))
+    expect(await screen.findByRole('textbox', { name: '作品名称' })).toHaveValue('不能丢失的名称')
+    expect(persistedDrafts()).toHaveLength(1)
+  })
+
+  it('updates an existing draft when the latest check finds or clears a duplicate', async () => {
+    loginInStorage()
+    const user = userEvent.setup()
+    const { router } = renderRoute('/submit')
+    const url = 'https://example.test/latest-duplicate-check'
+    await user.type(screen.getByRole('textbox', { name: /^作品地址/ }), url)
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    await user.click(await screen.findByRole('button', { name: '保存地址草稿' }))
+    const id = persistedDrafts()[0].id
+    await act(async () => { await router.navigate(`/submit?resumeUrl=${encodeURIComponent(url)}&scenario=duplicate_project`) })
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    await screen.findByText('发现已有作品档案。')
+    expect(persistedDrafts()[0]).toMatchObject({ id, urlCheckPassed: false, duplicateProjectId: projects[1]!.id })
+    await act(async () => { await router.navigate(`/submit?resumeUrl=${encodeURIComponent(url)}`) })
+    await user.click(screen.getByRole('button', { name: '检查地址' }))
+    await screen.findByText('地址检查通过')
+    expect(persistedDrafts()[0]).toMatchObject({ id, urlCheckPassed: true, duplicateProjectId: null })
+  })
+
   it('preserves the URL across a network failure and cross-page remount with a retryable code', async () => {
     loginInStorage()
     const user = userEvent.setup()

@@ -24,6 +24,7 @@ describe('submission URL check draft', () => {
       userId: userId('user-mia'),
       step: 'url',
       status: 'draft',
+      urlCheckPassed: true,
       fields: { publicUrl: passingResult.normalizedUrl },
       duplicateProjectId: null,
     })
@@ -41,6 +42,7 @@ describe('submission URL check draft', () => {
       duplicateProjectId: projectId('project-existing'),
     }
     const draft = createUrlCheckDraft(timeoutResult, userId('user-mia'))
+    expect(draft.urlCheckPassed).toBe(false)
     expect(draft.validationErrors.publicUrl).toContain('超时')
     expect(canContinueAfterUrlCheck(timeoutResult)).toBe(false)
   })

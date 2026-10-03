@@ -9,6 +9,7 @@ async function loginAs(page: Page, displayName: '米娅' | '周可', returnPath:
 async function completeRequiredSubmissionFields(page: Page) {
   await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
   await expect(page.getByRole('textbox', { name: '作品名称' })).toHaveValue('自动提取的作品名称')
+  await page.getByLabel('提交者关系（必填）').selectOption('third_party')
   await page.getByRole('button', { name: '保存并继续' }).click()
 
   await expect(page.getByRole('heading', { name: '产品定义' })).toBeVisible()

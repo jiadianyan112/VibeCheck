@@ -6,7 +6,10 @@ import {
   reviewFieldSteps,
   submissionReviewStatusLabels,
   withdrawSubmission,
+  validateSubmission,
+  submissionFieldStep,
 } from '../features'
+import { PublicationSummary } from '../features/submission/PublicationSummary'
 import { resolveServiceScenario } from '../mocks'
 import { submissionService, type ServiceError } from '../services'
 import { createPrototypeEvent, useAppState } from '../state'
@@ -23,7 +26,8 @@ import {
 } from '../utils'
 
 const reviewFieldLabels: Partial<Record<keyof SubmissionProjectFields, string>> = {
-  currentName: '作品名称', publicUrl: '公开地址', screenshotUrl: '截图地址', accessStatus: '访问状态', repositoryUrl: '代码仓库', oneLineDefinition: '一句话介绍', targetUsers: '目标用户', coreProblem: '核心问题', useScenarios: '使用场景', mainInputs: '主要输入', mainOutputs: '主要输出', coreFlow: '核心流程', practiceFormats: '练习形式', feedbackMethods: '反馈方式', differentiation: '差异化说明', aiCodingTools: 'AI 编程工具', creatorRoles: '创作者身份', primaryGoals: '建站目的', coreModules: '核心内容',
+  submitterRelation: '提交者关系', organizationName: '所属团队或开发者', detailedDescription: '详细介绍', logoUrl: 'Logo 地址', galleryUrls: '图集地址', videoUrl: '产品视频', acknowledgements: '致谢产品与工具',
+  currentName: '作品名称', publicUrl: '公开地址', screenshotUrl: '作品封面', accessStatus: '访问状态', repositoryUrl: '代码仓库', oneLineDefinition: '一句话介绍', targetUsers: '目标用户', coreProblem: '核心问题', useScenarios: '使用场景', mainInputs: '主要输入', mainOutputs: '主要输出', coreFlow: '核心流程', practiceFormats: '练习形式', feedbackMethods: '反馈方式', differentiation: '差异化说明', aiCodingTools: 'AI 编程工具', creatorRoles: '创作者身份', primaryGoals: '建站目的', coreModules: '核心内容',
 }
 
 const creatorRoleLabels: Record<CreatorRole, string> = { developer: '开发者', designer: '设计师', product_manager: '产品经理', creator: '创作者', freelancer: '自由职业者', student_recruit: '学生/应届生', researcher_academic: '研究者/学者', multidisciplinary: '跨领域创作者', other: '其他' }
@@ -46,6 +50,7 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
         <div><dt>作品名称</dt><dd>{fields.currentName ?? '未填写'}</dd></div>
         <div><dt>一句话介绍</dt><dd>{fields.oneLineDefinition ?? '未填写'}</dd></div>
         <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
+        <div><dt>代码仓库</dt><dd>{fields.repositoryUrl || '未填写'}</dd></div>
         {portfolio ? <>
           <div><dt>创作者身份</dt><dd>{list(fields.creatorRoles, creatorRoleLabels)}</dd></div>
           <div><dt>建站目的</dt><dd>{list(fields.primaryGoals, primaryGoalLabels)}</dd></div>
@@ -57,6 +62,7 @@ function SubmittedVersion({ draft }: { draft: SubmissionDraft }) {
           <div><dt>使用场景</dt><dd>{list(fields.useScenarios, scenarioLabels)}</dd></div>
         </>}
       </dl>
+      <PublicationSummary fields={fields} coverUrl={fields.screenshotUrl} showEmpty />
       <p><small>提交时间：{draft.submittedAt ? new Date(draft.submittedAt).toLocaleString('zh-CN') : '未记录'}</small></p>
     </details>
   )
@@ -77,8 +83,9 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
       <section className="wire-panel stack" aria-labelledby="submission-detail-summary">
         <div><h2 id="submission-detail-summary">作品预览</h2></div>
         <dl className="submission-summary-grid">
+          <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
+          <div><dt>代码仓库</dt><dd>{fields.repositoryUrl || '未填写'}</dd></div>
           {portfolio ? <>
-            <div><dt>公开地址</dt><dd>{fields.publicUrl ?? '未填写'}</dd></div>
             <div><dt>创作者身份</dt><dd>{list(fields.creatorRoles, creatorRoleLabels)}</dd></div>
             <div><dt>建站目的</dt><dd>{list(fields.primaryGoals, primaryGoalLabels)}</dd></div>
             <div><dt>核心内容</dt><dd>{list(fields.coreModules, coreModuleLabels)}</dd></div>
@@ -95,6 +102,7 @@ function PreviewSummary({ draft }: { draft: SubmissionDraft }) {
           <div><dt>AI 编程工具</dt><dd>{list(fields.aiCodingTools, aiCodingToolLabels)}</dd></div>
           {portfolio ? <div><dt>作者公开资产</dt><dd>发布后可在“管理作品”中添加；不会把其他作品的资产记到这里。</dd></div> : <div><dt>复用资产</dt><dd>{draft.assetIds.length ? `${draft.assetIds.length} 项` : '未关联'}</dd></div>}
         </dl>
+        <PublicationSummary fields={fields} coverUrl={fields.screenshotUrl} showEmpty />
       </section>
     </div>
   )
@@ -111,9 +119,28 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   const [material, setMaterial] = useState(draft.supplementalMaterial)
   const scenario = resolveServiceScenario(params, state.serviceScenario)
   const isEditableSubmission = draft.status === 'draft' || draft.status === 'changes_requested'
+  const validationErrors = isEditableSubmission ? validateSubmission(draft) : {}
+  const hasErrors = Object.keys(validationErrors).length > 0
+  const editPath = (field: string) => {
+    const next = new URLSearchParams(params)
+    next.set('draft', draft.id)
+    next.set('step', submissionFieldStep(field))
+    return `/submit/new?${next}`
+  }
+  const validationNotice = hasErrors ? <section className="submission-guidance stack" role="alert" aria-labelledby="submission-validation-heading">
+    <h2 id="submission-validation-heading">请先补齐发布信息</h2>
+    <ul className="submission-error-list">{Object.entries(validationErrors).map(([field, message]) => <li key={field}><span>{message}</span><Link to={editPath(field)} onClick={() => dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors } })}>修改{reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '发布信息'}</Link></li>)}</ul>
+  </section> : null
 
   async function submit() {
     if (!isEditableSubmission || busy) return
+    const errors = validateSubmission(draft)
+    if (Object.keys(errors).length) {
+      setConfirming(false)
+      dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, validationErrors: errors } })
+      pushToast('请先补齐发布信息，再提交审核。', 'error')
+      return
+    }
     setConfirming(false)
     setBusy(true)
     const result = await submissionService.submit(draft, { scenario })
@@ -126,7 +153,7 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
   }
 
   async function refreshStatus() {
-    if (busy || draft.status === 'approved' || draft.status === 'rejected' || draft.status === 'withdrawn') return
+    if (busy || draft.status !== 'pending_review') return
     setBusy(true)
     const result = await submissionService.submit(draft, { scenario })
     setBusy(false)
@@ -151,9 +178,10 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
       <PageFrame title="发布预览" description="确认社区卡片、详情摘要与来源说明；只有点击确认提交后才会创建审核状态。">
         <div className="stack">
           <PreviewSummary draft={draft} />
-          <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请核对从公开页面整理的内容。作品通过收录审核后，如需管理档案，还需要单独完成作者身份验证。</p></aside>
+          {validationNotice}
+          <aside className="submission-guidance stack stack--small"><strong>提交前请确认</strong><p>请确认核心功能可体验、介绍真实完整，测试版本已说明体验范围。作品通过收录审核后，如需管理档案，还需要单独完成作者身份验证。</p></aside>
           {error ? <ErrorPanel title="提交未完成" message={error.message} onRetry={error.retryable ? submit : undefined} /> : null}
-          <div className="cluster cluster--between"><Link className="button" to={`/submit/new?draft=${draft.id}&step=development`}>返回修改</Link><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>{busy ? '提交中…' : '确认并提交审核'}</Button></div>
+          <div className="cluster cluster--between"><Link className="button" to={editPath('currentName')}>返回修改</Link><Button variant="primary" disabled={busy || hasErrors} onClick={() => setConfirming(true)}>{busy ? '提交中…' : '确认并提交审核'}</Button></div>
         </div>
         <ConfirmDialog open={confirming} title="提交当前内容？" description="提交后会进入审核，你可以在个人中心查看进度。" confirmLabel="确认提交" onConfirm={submit} onCancel={() => setConfirming(false)} />
       </PageFrame>
@@ -173,12 +201,14 @@ export function SubmissionReviewPage({ draft }: { draft: SubmissionDraft }) {
           {draft.status === 'withdrawn' ? <><h2>审核已撤回</h2><p>提交历史没有删除；你可以继续修改后重新提交。</p><Button onClick={() => dispatch({ type: 'DRAFT_UPSERT', draft: resumeSubmission(draft) })}>恢复为可编辑草稿</Button></> : null}
         </section>
 
-        {draft.status === 'changes_requested' ? <section className="wire-panel stack"><h2>修改意见</h2><ul className="review-message-list">{Object.entries(draft.reviewMessages).map(([field, message]) => { const step = reviewFieldSteps[field as keyof SubmissionProjectFields]; return <li key={field}><div><strong>{reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '需要修改'}</strong><p>{message}</p></div>{step ? <Link className="button" to={`/submit/new?draft=${draft.id}&step=${step}`}>前往修改</Link> : null}</li> })}</ul><Button variant="primary" disabled={busy} onClick={() => setConfirming(true)}>修改后重新提交</Button></section> : null}
+        {validationNotice}
 
-        {(draft.status === 'pending_review' || draft.status === 'changes_requested') ? <section className="wire-panel stack"><h2>补充材料</h2><p>补充内容只提供给审核人员，不会修改已经提交的作品介绍。</p><label className="field"><span className="field__label">补充说明或公开材料地址</span><textarea className="input textarea" rows={4} value={material} onChange={(event) => setMaterial(event.target.value)} /></label><div className="cluster"><Button onClick={saveMaterial}>保存补充材料</Button><Button disabled={busy} onClick={refreshStatus}>刷新审核状态</Button><Button variant="danger" onClick={() => setWithdrawing(true)}>撤回审核</Button></div></section> : null}
+        {draft.status === 'changes_requested' ? <section className="wire-panel stack"><h2>修改意见</h2><ul className="review-message-list">{Object.entries(draft.reviewMessages).map(([field, message]) => { const step = reviewFieldSteps[field as keyof SubmissionProjectFields]; return <li key={field}><div><strong>{reviewFieldLabels[field as keyof SubmissionProjectFields] ?? '需要修改'}</strong><p>{message}</p></div>{step ? <Link className="button" to={editPath(field)}>前往修改</Link> : null}</li> })}</ul><Button variant="primary" disabled={busy || hasErrors} onClick={() => setConfirming(true)}>修改后重新提交</Button></section> : null}
+
+        {(draft.status === 'pending_review' || draft.status === 'changes_requested') ? <section className="wire-panel stack"><h2>补充材料</h2><p>补充内容只提供给审核人员，不会修改已经提交的作品介绍。</p><label className="field"><span className="field__label">补充说明或公开材料地址</span><textarea className="input textarea" rows={4} value={material} onChange={(event) => setMaterial(event.target.value)} /></label><div className="cluster"><Button onClick={saveMaterial}>保存补充材料</Button>{draft.status === 'pending_review' ? <Button disabled={busy} onClick={refreshStatus}>刷新审核状态</Button> : null}<Button variant="danger" onClick={() => setWithdrawing(true)}>撤回审核</Button></div></section> : null}
 
         <SubmittedVersion draft={draft} />
-        {error ? <ErrorPanel title="审核状态操作未完成" message={error.message} onRetry={error.retryable ? refreshStatus : undefined} /> : null}
+        {error ? <ErrorPanel title="审核状态操作未完成" message={error.message} onRetry={error.retryable ? (draft.status === 'pending_review' ? refreshStatus : submit) : undefined} /> : null}
       </div>
       <ConfirmDialog open={confirming} title="重新提交当前修改？" description="审核会以这次修改后的内容为准，之前的提交记录仍会保留。" confirmLabel="重新提交" onConfirm={submit} onCancel={() => setConfirming(false)} />
       <ConfirmDialog open={withdrawing} title="撤回当前审核？" description="审核会停止，已提交版本仍保留并可查看。" confirmLabel="确认撤回" danger onConfirm={withdraw} onCancel={() => setWithdrawing(false)} />

@@ -17,7 +17,7 @@ function seedDraft(categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 
     userId: prototypeUsers[0]!.id,
     status: 'draft',
     step: 'prefill',
-    fields: { publicUrl: 'https://example.test/t38-tool', categoryId },
+    fields: { publicUrl: 'https://example.test/t38-tool', categoryId, submitterRelation: 'third_party' },
     originalExtraction: { publicUrl: 'https://example.test/t38-tool', categoryId },
     assetIds: [],
     duplicateProjectId: null,
@@ -62,8 +62,8 @@ describe('new project multi-step submission form', () => {
     expect(screen.getByText(/页面中识别到的名称：/).closest('p')).toHaveTextContent('自动提取的作品名称')
     await user.clear(name)
     await user.type(name, '五分钟发布测试')
-    await user.clear(screen.getByRole('textbox', { name: '截图地址（可跳过）' }))
-    await user.type(screen.getByRole('textbox', { name: '截图地址（可跳过）' }), 'https://example.test/changed-cover.png')
+    await user.clear(screen.getByRole('textbox', { name: '作品封面地址（可跳过）' }))
+    await user.type(screen.getByRole('textbox', { name: '作品封面地址（可跳过）' }), 'https://example.test/changed-cover.png')
     await user.selectOptions(screen.getByRole('combobox', { name: '基础访问状态（必填）' }), 'login_required')
     await user.click(screen.getByRole('button', { name: '保存并继续' }))
 
@@ -121,7 +121,31 @@ describe('new project multi-step submission form', () => {
     expect(screen.getByText(/页面中识别到的名称：/).closest('p')).toHaveTextContent('自动提取的作品名称')
   })
 
-  it('publishes a portfolio with six essential facts and no borrowed asset ownership', async () => {
+  it('lets an incomplete draft change sections and preserves its edits across reloads', async () => {
+    const user = userEvent.setup()
+    const first = renderForm()
+    await screen.findByRole('textbox', { name: '作品名称' })
+    await user.selectOptions(screen.getByLabelText('提交者关系（必填）'), 'team_member')
+    await user.type(screen.getByRole('textbox', { name: '所属团队或开发者（可跳过）' }), '小岛团队')
+    await user.click(screen.getByRole('link', { name: '2 产品定义' }))
+    await user.type(screen.getByRole('textbox', { name: '详细介绍（可跳过）' }), '公开页面提供练习与反馈。')
+    await user.type(screen.getByRole('textbox', { name: '图集地址（可跳过，每行一张）' }), 'https://example.test/detail.png')
+    await user.click(screen.getByRole('link', { name: '4 开发与资产' }))
+    await user.click(screen.getByRole('button', { name: '添加致谢' }))
+    await user.type(screen.getByRole('textbox', { name: '致谢 1 名称' }), '开源组件库')
+    await user.type(screen.getByRole('textbox', { name: '致谢 1 说明' }), '使用了表单组件。')
+    await waitFor(() => expect(persistedDraft().fields).toMatchObject({
+      submitterRelation: 'team_member', organizationName: '小岛团队',
+      detailedDescription: '公开页面提供练习与反馈。', galleryUrls: ['https://example.test/detail.png'],
+      acknowledgements: [{ name: '开源组件库', url: '', note: '使用了表单组件。' }],
+    }))
+    first.unmount()
+    renderForm('definition')
+    expect(await screen.findByRole('textbox', { name: '详细介绍（可跳过）' })).toHaveValue('公开页面提供练习与反馈。')
+    expect(screen.getByRole('textbox', { name: '图集地址（可跳过，每行一张）' })).toHaveValue('https://example.test/detail.png')
+  })
+
+  it('publishes a portfolio with its essential facts and an explicit submitter relation without borrowed asset ownership', async () => {
     localStorage.clear()
     seedDraft('personal_site_portfolio')
     const user = userEvent.setup()

@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { AppProviders } from '../app/providers'
 import { appRoutes } from '../app/router'
 import { createLoginAction } from '../features/auth/session'
-import { prototypeUsers } from '../mocks'
+import { adminReviewDrafts, prototypeUsers } from '../mocks'
 import { APP_STORAGE_KEY, appReducer, createInitialAppState, persistAppState, type AppState } from '../state'
 
 function renderAdmin(path: string, userIndex = 3) {
@@ -20,6 +20,21 @@ function storedState() {
 
 describe('T50 admin workflow pages', () => {
   beforeEach(() => localStorage.clear())
+
+  it('reviews frozen publication metadata instead of later local edits', async () => {
+    const state = appReducer(createInitialAppState(), createLoginAction(prototypeUsers[3]!))
+    const draft = structuredClone(adminReviewDrafts[0]!)
+    draft.fields = { ...draft.fields, currentName: '未送审的改名', detailedDescription: '未送审说明' }
+    draft.submittedFields = { ...draft.submittedFields, currentName: '冻结的作品名称', detailedDescription: '送审的详细介绍', submitterRelation: 'team_member', acknowledgements: [{ name: '组件库', url: '', note: '帮助实现编辑器。' }] }
+    persistAppState({ ...state, submissionDrafts: [draft] })
+    const router = createMemoryRouter(appRoutes, { initialEntries: ['/admin/reviews'] })
+    render(<AppProviders><RouterProvider router={router} /></AppProviders>)
+    expect(await screen.findByText('冻结的作品名称')).toBeInTheDocument()
+    expect(screen.getByText('送审的详细介绍')).toBeInTheDocument()
+    expect(screen.getByText('帮助实现编辑器。')).toBeInTheDocument()
+    expect(screen.queryByText('未送审的改名')).not.toBeInTheDocument()
+    expect(screen.queryByText('未送审说明')).not.toBeInTheDocument()
+  })
 
   it('approves publication with confirmation and syncs the public project', async () => {
     const user = userEvent.setup()

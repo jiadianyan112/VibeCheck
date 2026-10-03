@@ -95,13 +95,29 @@ export function SubmitEntryPage() {
     setUrl(response.data.normalizedUrl)
     dispatch({ type: 'SUBMISSION_ENTRY_VALUE_SET', value: response.data.normalizedUrl })
     setResult(response.data)
+    if (state.session.user) {
+      const fresh = createUrlCheckDraft(response.data, state.session.user.id, undefined, categoryId)
+      const existing = state.submissionDrafts.find((draft) => draft.id === fresh.id && draft.userId === fresh.userId)
+      if (existing && (existing.status === 'draft' || existing.status === 'changes_requested')) {
+        const errors = { ...existing.validationErrors }
+        if (fresh.urlCheckPassed) delete errors.publicUrl
+        else errors.publicUrl = fresh.validationErrors.publicUrl ?? '地址检查尚未通过，请重试。'
+        dispatch({ type: 'DRAFT_UPSERT', draft: {
+          ...existing,
+          urlCheckPassed: fresh.urlCheckPassed,
+          duplicateProjectId: fresh.duplicateProjectId,
+          validationErrors: errors,
+          updatedAt: new Date().toISOString(),
+        } })
+      }
+    }
     if (response.data.duplicateProjectId) {
       const nextParams = new URLSearchParams(searchParams)
       nextParams.set('resumeUrl', response.data.normalizedUrl)
       nextParams.set('scenario', scenario)
       setSearchParams(nextParams, { replace: true })
     }
-  }, [checking, dispatch, scenario, searchParams, setSearchParams, url])
+  }, [categoryId, checking, dispatch, scenario, searchParams, setSearchParams, state.session.user, state.submissionDrafts, url])
 
   useEffect(() => {
     if (!state.session.user || searchParams.get('autoCheck') !== '1') return
@@ -120,9 +136,31 @@ export function SubmitEntryPage() {
     controllerRef.current?.abort()
   }
 
+  const checkedDraft = (continueEditing: boolean) => {
+    if (!result || !state.session.user) return null
+    const fresh = createUrlCheckDraft(result, state.session.user.id, undefined, categoryId)
+    const existing = state.submissionDrafts.find((draft) => draft.id === fresh.id && draft.userId === fresh.userId)
+    if (!existing) return { ...fresh, step: continueEditing ? 'prefill' as const : fresh.step }
+    // Rechecking an address must not replace an edited draft or a frozen review.
+    if (existing.status !== 'draft' && existing.status !== 'changes_requested') return existing
+    const errors = { ...existing.validationErrors }
+    if (fresh.urlCheckPassed) delete errors.publicUrl
+    else errors.publicUrl = fresh.validationErrors.publicUrl ?? '地址检查尚未通过，请重试。'
+    return {
+      ...existing,
+      fields: { ...existing.fields, publicUrl: fresh.fields.publicUrl, categoryId, ...(existing.urlCheckPassed === false && fresh.urlCheckPassed ? { accessStatus: 'normal' as const } : {}) },
+      urlCheckPassed: fresh.urlCheckPassed,
+      duplicateProjectId: fresh.duplicateProjectId,
+      validationErrors: errors,
+      step: continueEditing ? 'prefill' as const : existing.step,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
   const saveDraft = () => {
     if (!result?.canCreateDraft || !state.session.user) return
-    const draft = createUrlCheckDraft(result, state.session.user.id, undefined, categoryId)
+    const draft = checkedDraft(false)
+    if (!draft) return
     dispatch({ type: 'DRAFT_UPSERT', draft })
     setSavedDraftId(draft.id)
     pushToast('地址检查草稿已保存。', 'success')
@@ -130,9 +168,12 @@ export function SubmitEntryPage() {
 
   const continueNewSubmission = () => {
     if (!result || !allPassed || !state.session.user) return
-    const draft = { ...createUrlCheckDraft(result, state.session.user.id, undefined, categoryId), step: 'prefill' as const }
+    const draft = checkedDraft(true)
+    if (!draft) return
     dispatch({ type: 'DRAFT_UPSERT', draft })
-    navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: 'prefill' })}`)
+    const next = new URLSearchParams({ draft: draft.id, step: 'prefill' })
+    if (searchParams.has('scenario')) next.set('scenario', scenario)
+    navigate(`/submit/new?${next}`)
   }
 
   const allPassed = result ? canContinueAfterUrlCheck(result) : false

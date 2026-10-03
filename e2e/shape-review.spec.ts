@@ -44,7 +44,7 @@ test.describe('低保真评审修复验收', () => {
     await expect(desktopFilters.getByLabel('当前状态')).toBeVisible()
   })
 
-  test('作品集仅需六项核心事实，专注发布流不显示比较栏', async ({ page, isMobile }) => {
+  test('作品集保留最小核心信息并声明提交关系，专注发布流不显示比较栏', async ({ page, isMobile }) => {
     test.skip(isMobile, '桌面表单完整流程；移动入口由响应式套件覆盖')
     await loginAsMia(page, '/submit?category=personal_site_portfolio')
     await expect(page.locator('.compare-bar')).toHaveCount(0)
@@ -57,6 +57,7 @@ test.describe('低保真评审修复验收', () => {
     await expect(page.locator('.compare-bar')).toHaveCount(0)
     await expect(page.getByRole('textbox', { name: '作品名称' })).toHaveValue('自动提取的作品名称')
     await expect(page.getByRole('textbox', { name: '一句话简介' })).not.toHaveValue('')
+    await page.getByLabel('提交者关系（必填）').selectOption('third_party')
     await expect(page.getByRole('combobox', { name: '基础访问状态（必填）' })).toHaveCount(0)
     await page.getByRole('button', { name: '保存并继续' }).click()
 

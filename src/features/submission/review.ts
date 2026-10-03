@@ -3,6 +3,7 @@ import {
   projectId,
   type FieldFact,
   type LifecycleEvent,
+  type PublicationDetails,
   type Project,
   type ReviewStatus,
   type SubmissionDraft,
@@ -28,10 +29,16 @@ export const submissionReviewStatusLabels: Partial<Record<ReviewStatus, string>>
 export const reviewFieldSteps: Partial<Record<keyof SubmissionProjectFields, string>> = {
   currentName: 'prefill',
   publicUrl: 'prefill',
+  submitterRelation: 'prefill',
   screenshotUrl: 'prefill',
   accessStatus: 'prefill',
   repositoryUrl: 'prefill',
   oneLineDefinition: 'prefill',
+  organizationName: 'prefill',
+  detailedDescription: 'definition',
+  logoUrl: 'prefill',
+  galleryUrls: 'definition',
+  videoUrl: 'definition',
   targetUsers: 'definition',
   coreProblem: 'definition',
   useScenarios: 'definition',
@@ -42,6 +49,23 @@ export const reviewFieldSteps: Partial<Record<keyof SubmissionProjectFields, str
   feedbackMethods: 'solution',
   differentiation: 'solution',
   aiCodingTools: 'development',
+  acknowledgements: 'development',
+  siteType: 'definition',
+  creatorRoles: 'definition',
+  primaryGoals: 'definition',
+  pageModel: 'definition',
+  navigationPattern: 'definition',
+  coreModules: 'solution',
+  projectShowcaseFormat: 'solution',
+  caseStudyDepth: 'solution',
+  visualStyles: 'definition',
+  layoutPatterns: 'definition',
+  colorCharacter: 'definition',
+  themeMode: 'definition',
+  interactionLevel: 'definition',
+  interactionPatterns: 'definition',
+  responsiveSupport: 'definition',
+  blogSupport: 'definition',
 }
 
 const reviewMessagesByStatus: Partial<Record<ReviewStatus, Record<string, string>>> = {
@@ -50,7 +74,7 @@ const reviewMessagesByStatus: Partial<Record<ReviewStatus, Record<string, string
     repositoryUrl: '如有公开仓库，请补充可访问地址；没有可保留为空。',
   },
   rejected: {
-    submission: '公开页面内容与首期学习、题库产品范围不符，当前版本无法收录。',
+    submission: '公开页面内容与提交的作品品类或公开范围不符，当前版本无法收录。',
   },
 }
 
@@ -112,6 +136,20 @@ function submittedFact<T>(value: T | undefined, label: string, at: string): Fiel
   return known(value, at)
 }
 
+function publicationDetailsFromSubmission(fields: Partial<SubmissionProjectFields>): PublicationDetails | undefined {
+  const details: PublicationDetails = {}
+  if (fields.submitterRelation !== undefined) details.submitterRelation = fields.submitterRelation
+  if (fields.organizationName !== undefined) details.organizationName = fields.organizationName
+  if (fields.detailedDescription !== undefined) details.detailedDescription = fields.detailedDescription
+  if (fields.logoUrl !== undefined) details.logoUrl = fields.logoUrl
+  if (fields.galleryUrls !== undefined) details.galleryUrls = [...fields.galleryUrls]
+  if (fields.videoUrl !== undefined) details.videoUrl = fields.videoUrl
+  if (fields.acknowledgements !== undefined) {
+    details.acknowledgements = fields.acknowledgements.map((acknowledgement) => ({ ...acknowledgement }))
+  }
+  return Object.keys(details).length > 0 ? details : undefined
+}
+
 export function publishedProjectFromSubmission(draft: SubmissionDraft): Project | null {
   if (draft.status !== 'approved' || !draft.publishedProjectId || !draft.publishedEventId || !draft.submittedFields || !draft.submittedAt) return null
   const fields = draft.submittedFields
@@ -119,6 +157,7 @@ export function publishedProjectFromSubmission(draft: SubmissionDraft): Project 
   const screenshot = fields.screenshotUrl
   const isPortfolio = fields.categoryId === 'personal_site_portfolio'
   const legacyReason = '该字段属于 AI 学习与题库 Schema，不适用于个人主页与作品集。'
+  const publicationDetails = publicationDetailsFromSubmission(fields)
   return {
     id: draft.publishedProjectId,
     currentName: known(fields.currentName ?? '名称待补充', at),
@@ -133,6 +172,7 @@ export function publishedProjectFromSubmission(draft: SubmissionDraft): Project 
     categoryId: isPortfolio ? 'personal_site_portfolio' : 'ai_learning_quiz',
     categorySchemaVersion: isPortfolio ? 'portfolio.v1' : 'learning.v1',
     categoryGroup: isPortfolio ? '用户发布' : 'AI 学习与题库',
+    publicationDetails,
     summary: known(fields.oneLineDefinition ?? '', at),
     categoryData: isPortfolio ? {
       siteType: submittedFact(fields.siteType, '网站类型', at),

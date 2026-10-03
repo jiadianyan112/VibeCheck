@@ -14,6 +14,7 @@ import { projects, resolveServiceScenario, reusableAssets } from '../mocks'
 import { submissionService, type ServiceError } from '../services'
 import { useAppState } from '../state'
 import { SubmissionReviewPage } from './SubmissionReviewPage'
+import { PublicationAcknowledgements, PublicationBasics, PublicationDescription } from '../features/submission/PublicationFields'
 import {
   accessStatuses,
   aiCodingTools,
@@ -108,8 +109,11 @@ function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K ext
   return (
     <div className="submission-step-fields stack">
       <section className="submission-guidance"><strong>先核对页面信息</strong><p>我们从公开页面整理了部分内容，你可以直接修改或补充。</p></section>
+      <Input label="公开地址" aria-label="公开地址" value={fields.publicUrl ?? ''} readOnly error={draft.validationErrors.publicUrl} hint="地址需经过检查与查重。返回地址检查可重新确认。" />
+      <Link className="weak-link" to={`/submit?${new URLSearchParams({ resumeUrl: fields.publicUrl ?? '', category: fields.categoryId ?? 'ai_learning_quiz' })}`}>返回地址检查</Link>
+      <PublicationBasics draft={draft} update={update} />
       <div>
-        <Input label="作品名称" value={fields.currentName ?? ''} error={draft.validationErrors.currentName} onChange={(event) => update('currentName', event.target.value)} />
+        <Input label="作品名称" aria-label="作品名称" value={fields.currentName ?? ''} error={draft.validationErrors.currentName} onChange={(event) => update('currentName', event.target.value)} />
         <OriginalValue label="名称" value={original.currentName} />
       </div>
       <div>
@@ -118,11 +122,11 @@ function PrefillStep({ draft, update }: { draft: SubmissionDraft; update: <K ext
         <OriginalValue label="定义" value={original.oneLineDefinition} />
       </div>
       <div>
-        <Input label="截图地址（可跳过）" value={fields.screenshotUrl ?? ''} error={draft.validationErrors.screenshotUrl} onChange={(event) => update('screenshotUrl', event.target.value || null)} />
+        <Input label="作品封面地址（可跳过）" aria-label="作品封面地址（可跳过）" value={fields.screenshotUrl ?? ''} error={draft.validationErrors.screenshotUrl} hint="封面用于社区卡片和作品主视觉；详情截图在产品详情中填写。" onChange={(event) => update('screenshotUrl', event.target.value || null)} />
         <OriginalValue label="截图" value={original.screenshotUrl} />
       </div>
       <div>
-        <Input label="代码仓库（可跳过）" value={fields.repositoryUrl ?? ''} error={draft.validationErrors.repositoryUrl} onChange={(event) => update('repositoryUrl', event.target.value || null)} />
+        <Input label="代码仓库（可跳过）" aria-label="代码仓库（可跳过）" value={fields.repositoryUrl ?? ''} error={draft.validationErrors.repositoryUrl} onChange={(event) => update('repositoryUrl', event.target.value || null)} />
         <OriginalValue label="仓库" value={original.repositoryUrl} />
       </div>
       <div>
@@ -166,6 +170,7 @@ function DevelopmentStep({ draft, update, updateAssets }: { draft: SubmissionDra
       <CheckboxField legend="AI 编程工具" values={aiCodingTools} selected={draft.fields.aiCodingTools ?? []} labels={aiCodingToolLabels} optional onChange={(value) => update('aiCodingTools', value)} />
       {draft.fields.categoryId === 'personal_site_portfolio' ? <section className="submission-guidance"><strong>资产归属会单独确认</strong><p>发布后可在“管理作品”中添加你公开提供的源码、模板或组件。复用其他作品的资产应在比较行动中记录，不会显示成你的作品资产。</p></section> : <fieldset className="submission-choice-field"><legend>关联可复用资产（可跳过）</legend><div className="submission-asset-grid">{relevantAssets.map((asset) => <label className="choice-card" key={asset.id}><input type="checkbox" checked={draft.assetIds.includes(asset.id)} onChange={(event) => updateAssets(event.target.checked ? [...draft.assetIds, asset.id] : draft.assetIds.filter((id) => id !== asset.id))} /><span><strong>{asset.name}</strong><small>{asset.type} · {asset.license}</small></span></label>)}</div></fieldset>}
       <section className="submission-guidance"><strong>这些内容可以稍后补充</strong><p>截图、代码仓库、开发工具和公开资产都可以在发布后继续更新。</p></section>
+      <PublicationAcknowledgements draft={draft} update={update} />
     </div>
   )
 }
@@ -217,6 +222,13 @@ export function SubmitFormPage() {
   const update = <K extends keyof SubmissionProjectFields>(field: K, value: SubmissionProjectFields[K]) => dispatch({ type: 'DRAFT_UPSERT', draft: updateDraftField(draft, field, value) })
   const updateAssets = (assetIds: AssetId[]) => dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, assetIds, updatedAt: '2026-07-31T10:15:00+08:00' } })
   const index = submissionFormSteps.indexOf(step)
+  const formPath = (target: SubmissionDraft['step']) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('draft', draft.id)
+    params.set('step', target)
+    return `/submit/new?${params}`
+  }
+  const saveStep = (target: SubmissionDraft['step']) => dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: target, updatedAt: new Date().toISOString() } })
 
   const goNext = () => {
     const errors = validateSubmissionStep(draft, step)
@@ -228,25 +240,25 @@ export function SubmitFormPage() {
     }
     if (index === submissionFormSteps.length - 1) {
       dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: 'preview', validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
-      pushToast('完整发布草稿已保存，请确认预览。', 'success')
-      navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: 'preview' })}`)
+      pushToast('发布草稿已保存，请在预览中确认信息。', 'success')
+      navigate(formPath('preview'))
       return
     }
     const next = submissionFormSteps[index + 1]!
     dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: next, validationErrors: {}, updatedAt: '2026-07-31T10:20:00+08:00' } })
-    navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: next })}`)
+    navigate(formPath(next))
   }
 
   const goBack = () => {
     if (index === 0) { navigate(`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`); return }
     const previous = submissionFormSteps[index - 1]!
     dispatch({ type: 'DRAFT_UPSERT', draft: { ...draft, step: previous, updatedAt: '2026-07-31T10:20:00+08:00' } })
-    navigate(`/submit/new?${new URLSearchParams({ draft: draft.id, step: previous })}`)
+    navigate(formPath(previous))
   }
 
   let body: ReactNode
   if (step === 'prefill') body = extracting ? <LoadingState label="正在读取公开页面信息" /> : <PrefillStep draft={draft} update={update} />
-  else if (step === 'definition') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioDefinitionStep draft={draft} update={update} /> : <DefinitionStep draft={draft} update={update} />
+  else if (step === 'definition') body = <><PublicationDescription draft={draft} update={update} />{draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioDefinitionStep draft={draft} update={update} /> : <DefinitionStep draft={draft} update={update} />}</>
   else if (step === 'solution') body = draft.fields.categoryId === 'personal_site_portfolio' ? <PortfolioStructureStep draft={draft} update={update} /> : <SolutionStep draft={draft} update={update} />
   else body = <DevelopmentStep draft={draft} update={update} updateAssets={updateAssets} />
 
@@ -257,12 +269,13 @@ export function SubmitFormPage() {
           <p className="eyebrow">填写进度</p>
           <strong className="submission-percent">{completion?.percent ?? 0}%</strong>
           <progress value={completion?.completed ?? 0} max={completion?.total ?? 10}>{completion?.percent ?? 0}%</progress>
-          <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item, itemIndex) => <li key={item} aria-current={item === step ? 'step' : undefined} className={itemIndex < index ? 'is-complete' : ''}>{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '1 基础信息', definition: '2 定位与用途', solution: '3 核心内容', development: '4 开发与资产' } as const)[item] : submissionFormStepLabels[item]}</li>)}</ol>
-          <p>内容会自动保存</p>
+          <ol tabIndex={0} aria-label="发布步骤，可横向滚动">{submissionFormSteps.map((item) => <li key={item} aria-current={item === step ? 'step' : undefined}><Link to={formPath(item)} aria-current={item === step ? 'step' : undefined} onClick={() => saveStep(item)}>{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '1 基础信息', definition: '2 定位与用途', solution: '3 核心内容', development: '4 开发与资产' } as const)[item] : submissionFormStepLabels[item]}</Link></li>)}<li><Link to={formPath('preview')} onClick={() => saveStep('preview')}>最终预览</Link></li></ol>
+          <p>可自由切换步骤，内容会自动保存。提交时统一核对必填项。</p>
         </aside>
         <section className="submission-form-panel stack" aria-labelledby="submission-step-heading">
           <div className="cluster cluster--between"><div><p className="eyebrow">步骤 {index + 1} / 4</p><h2 id="submission-step-heading">{draft.fields.categoryId === 'personal_site_portfolio' ? ({ prefill: '基础信息', definition: '定位与用途', solution: '核心内容', development: '开发与资产' } as const)[step] : submissionFormStepLabels[step].replace(/^\d\s/, '')}</h2></div><div className="cluster"><Tag tone="dashed">{draft.fields.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag><Tag tone="dashed">自动保存</Tag></div></div>
           {extractionError ? <ErrorPanel title="自动提取未完成" message={extractionError.message} onRetry={() => setExtractionError(null)} /> : null}
+          {draft.urlCheckPassed === false ? <aside className="submission-guidance" role="alert"><strong>地址检查尚未通过</strong><p>你可以先保存介绍和材料，通过地址检查后才能提交审核。</p><Link to={`/submit?resumeUrl=${encodeURIComponent(draft.fields.publicUrl ?? '')}`}>重新检查地址</Link></aside> : null}
           {body}
           <footer className="submission-step-actions cluster cluster--between"><Button type="button" onClick={goBack}>上一步</Button><Button type="button" variant="primary" onClick={goNext}>{index === submissionFormSteps.length - 1 ? '保存并预览' : '保存并继续'}</Button></footer>
         </section>

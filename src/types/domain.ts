@@ -39,6 +39,8 @@ export const learningSchemaVersion = 'learning.v1' as const
 export const portfolioSchemaVersion = 'portfolio.v1' as const
 export type CategorySchemaVersion = typeof learningSchemaVersion | typeof portfolioSchemaVersion
 
+export type SubmitterRelation = 'owner' | 'team_member' | 'third_party'
+
 export const accessStatuses = [
   'normal',
   'login_required',
@@ -613,6 +615,7 @@ export interface ProjectCore {
   categoryId: ProjectCategoryId
   categorySchemaVersion: CategorySchemaVersion
   categoryData: PortfolioSchemaV1 | null
+  publicationDetails?: PublicationDetails
   categoryGroup: string | null
   summary: FieldFact<string>
   aiCodingTools: FieldFact<AiCodingTool[]>
@@ -738,7 +741,23 @@ export interface ComparisonSession {
   savedAt: string | null
 }
 
-export interface SubmissionProjectFields {
+export interface SubmissionAcknowledgement {
+  name: string
+  url: string
+  note: string
+}
+
+export interface PublicationDetails {
+  submitterRelation?: SubmitterRelation
+  organizationName?: string
+  detailedDescription?: string
+  logoUrl?: string | null
+  galleryUrls?: string[]
+  videoUrl?: string | null
+  acknowledgements?: SubmissionAcknowledgement[]
+}
+
+export interface SubmissionProjectFields extends PublicationDetails {
   categoryId?: ProjectCategoryId
   currentName: string
   publicUrl: string
@@ -795,6 +814,8 @@ export interface SubmissionDraft {
   updatedAt: string
   submittedAt: string | null
   withdrawnAt: string | null
+  /** False means the public URL check must be repeated before publishing. */
+  urlCheckPassed?: boolean
 }
 
 export interface AuthorVerificationRequest {

@@ -28,6 +28,7 @@ const extraction: ExtractionResult = {
   fields: {
     currentName: '自动名称',
     oneLineDefinition: '自动定义',
+    submitterRelation: 'third_party',
     screenshotUrl: 'https://example.test/screenshot.png',
     repositoryUrl: 'https://example.test/repo',
     accessStatus: 'normal',
@@ -55,7 +56,7 @@ describe('multi-step submission helpers', () => {
     expect(validateSubmissionStep(extracted, 'development')).toEqual({})
   })
 
-  it('calculates completeness from the same ten core fields used by the form', () => {
+  it('calculates completeness from the same eleven core fields used by the learning form', () => {
     const complete: SubmissionDraft = {
       ...applyExtraction(baseDraft, extraction),
       fields: {
@@ -68,6 +69,18 @@ describe('multi-step submission helpers', () => {
         coreFlow: [{ id: 'one', order: 1, label: '上传材料', description: '' }],
       },
     }
-    expect(submissionCompleteness(complete)).toEqual({ completed: 10, total: 10, percent: 100 })
+    expect(submissionCompleteness(complete)).toEqual({ completed: 11, total: 11, percent: 100 })
+
+    const portfolio: SubmissionDraft = {
+      ...complete,
+      fields: {
+        ...complete.fields,
+        categoryId: 'personal_site_portfolio',
+        creatorRoles: ['developer'],
+        primaryGoals: ['showcase_projects'],
+        coreModules: ['hero'],
+      },
+    }
+    expect(submissionCompleteness(portfolio)).toEqual({ completed: 7, total: 7, percent: 100 })
   })
 })

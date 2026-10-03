@@ -32,6 +32,7 @@ export function createUrlCheckDraft(
     userId,
     status: 'draft',
     step: 'url',
+    urlCheckPassed: result.checks.every((check) => check.status === 'passed'),
     fields: { publicUrl: result.normalizedUrl, categoryId },
     originalExtraction: { publicUrl: result.normalizedUrl, categoryId },
     assetIds: [],

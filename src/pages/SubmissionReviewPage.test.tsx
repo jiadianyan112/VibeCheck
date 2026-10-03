@@ -18,7 +18,7 @@ function seedDraft(categoryId: 'ai_learning_quiz' | 'personal_site_portfolio' = 
     status: 'draft',
     step: 'preview',
     fields: {
-      categoryId, currentName: '审核状态演示', publicUrl: 'https://example.test/review', screenshotUrl: null, accessStatus: 'normal', repositoryUrl: null,
+      categoryId, submitterRelation: 'third_party', currentName: '审核状态演示', publicUrl: 'https://example.test/review', screenshotUrl: null, accessStatus: 'normal', repositoryUrl: null,
       oneLineDefinition: '演示从提交到首次发布的完整状态。', targetUsers: ['university_students'], coreProblem: '审核状态不透明', useScenarios: ['daily_practice'], mainInputs: ['plain_text'], mainOutputs: ['practice_set'], coreFlow: [{ id: 'one', order: 1, label: '提交材料', description: '' }], practiceFormats: [], feedbackMethods: [], differentiation: '', aiCodingTools: ['codex'],
       creatorRoles: categoryId === 'personal_site_portfolio' ? ['developer'] : undefined,
       primaryGoals: categoryId === 'personal_site_portfolio' ? ['showcase_projects'] : undefined,
@@ -63,6 +63,13 @@ describe('submission preview and review status', () => {
   })
 
   it('creates a stable project and public first-published event after approval', async () => {
+    const stored = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!)
+    Object.assign(stored.submissionDrafts[0].fields, {
+      detailedDescription: '审核通过后仍保留的作品说明。', organizationName: '练习团队',
+      galleryUrls: ['https://example.test/screenshot.png'],
+      acknowledgements: [{ name: '测试工具', url: 'https://example.test/tool', note: '提供编辑器组件。' }],
+    })
+    persistAppState(stored)
     const user = userEvent.setup()
     const { router } = renderReview('review_approved')
     await user.click(await screen.findByRole('button', { name: '确认并提交审核' }))
@@ -73,6 +80,8 @@ describe('submission preview and review status', () => {
     expect(approved.publishedEventId).toMatch(/^event-submission-/)
     await user.click(screen.getByRole('link', { name: '进入作品详情' }))
     expect(await screen.findByRole('heading', { name: '审核状态演示', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('审核通过后仍保留的作品说明。')).toBeInTheDocument()
+    expect(screen.getByText('提供编辑器组件。')).toBeInTheDocument()
     await act(async () => { await router.navigate('/activity') })
     expect(await screen.findByText('审核状态演示通过审核并首次发布。')).toBeInTheDocument()
   })
@@ -109,5 +118,40 @@ describe('submission preview and review status', () => {
     expect(screen.queryByText('VC_SERVICE_UNAVAILABLE')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
     expect(persistedDraft()).toMatchObject({ status: 'pending_review', submittedAt, submittedFields: { currentName: submittedName } })
+  })
+
+  it('blocks a direct preview with missing facts and links to the field that needs correction', async () => {
+    const stored = JSON.parse(localStorage.getItem(APP_STORAGE_KEY)!)
+    stored.submissionDrafts[0].fields.currentName = ''
+    persistAppState(stored)
+    const user = userEvent.setup()
+    renderReview('review_approved')
+    expect(await screen.findByRole('heading', { name: '发布预览' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认并提交审核' })).toBeDisabled()
+    await user.click(screen.getByRole('link', { name: '修改作品名称' }))
+    expect(await screen.findByRole('textbox', { name: '作品名称' })).toBeInTheDocument()
+    expect(persistedDraft().status).toBe('draft')
+    expect(persistedDraft().publishedProjectId).toBeNull()
+  })
+
+  it('requires an explicit resubmission to replace a returned review snapshot', async () => {
+    const user = userEvent.setup()
+    renderReview('review_changes_requested')
+    await user.click(await screen.findByRole('button', { name: '确认并提交审核' }))
+    await user.click(screen.getByRole('button', { name: '确认提交' }))
+    await screen.findByRole('heading', { name: '审核状态：需修改' })
+    expect(screen.queryByRole('button', { name: '刷新审核状态' })).not.toBeInTheDocument()
+    const submittedDefinition = persistedDraft().submittedFields?.oneLineDefinition
+    await user.click(screen.getAllByRole('link', { name: '前往修改' })[0]!)
+    const definition = await screen.findByRole('textbox', { name: '一句话定义' })
+    await user.clear(definition)
+    await user.type(definition, '通过反馈帮助用户生成后续复习计划。')
+    await user.click(screen.getByRole('link', { name: '最终预览' }))
+    expect(persistedDraft().submittedFields?.oneLineDefinition).toBe(submittedDefinition)
+    expect(persistedDraft().status).toBe('changes_requested')
+    await user.click(screen.getByRole('button', { name: '修改后重新提交' }))
+    expect(persistedDraft().submittedFields?.oneLineDefinition).toBe(submittedDefinition)
+    await user.click(screen.getByRole('button', { name: /^重新提交$/ }))
+    await waitFor(() => expect(persistedDraft().submittedFields?.oneLineDefinition).toBe('通过反馈帮助用户生成后续复习计划。'))
   })
 })

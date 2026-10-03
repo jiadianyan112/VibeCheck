@@ -83,6 +83,7 @@ test.describe('T55 键盘与焦点', () => {
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: '发布新作品' })).toBeVisible()
     await expect(page.getByRole('button', { name: '保存并继续' })).toBeVisible()
+    await page.getByLabel('提交者关系（必填）').selectOption('third_party')
 
     const definition = page.getByLabel('一句话定义')
     await definition.fill('')

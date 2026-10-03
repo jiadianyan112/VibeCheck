@@ -3,6 +3,7 @@ import {
   projectId,
   submissionDraftId,
   userId,
+  type SubmissionDraft,
 } from '../types'
 import { adminService } from './adminService'
 import { comparisonService } from './comparisonService'
@@ -87,7 +88,14 @@ describe('typed prototype services', () => {
     )
     expect(draft.ok && draft.data).toBeTruthy()
     if (draft.ok && draft.data) {
-      const reviewed = await submissionService.submit(draft.data, {
+      // The saved example is intentionally partial. Complete it before reviewing.
+      const readyDraft: SubmissionDraft = { ...draft.data, fields: {
+        ...draft.data.fields, submitterRelation: 'third_party', accessStatus: 'normal',
+        coreProblem: '把练习反馈整理成复习计划', useScenarios: ['daily_practice'],
+        mainInputs: ['plain_text'], mainOutputs: ['practice_set'],
+        coreFlow: [{ id: 'one', order: 1, label: '整理练习反馈', description: '' }],
+      } }
+      const reviewed = await submissionService.submit(readyDraft, {
         scenario: 'review_changes_requested',
       })
       expect(reviewed).toMatchObject({ ok: true, data: { status: 'changes_requested' } })

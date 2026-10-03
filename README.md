@@ -47,7 +47,7 @@ npm run test:e2e
 npm run build
 ```
 
-- 单元／组件测试：60 个文件、273 项测试。
+- 单元／组件测试：61 个文件、301 项测试；发布流程本次验证结果见 [发布流程验收记录](docs/acceptance/submission-flow-report.md)。
 - Playwright：四条核心流程、U01–U06、响应式、固定场景、axe 和键盘回归。
 - E2E 启动 preview 前会自动生产构建；失败时在 `test-results/` 保留截图和 trace，并生成 `playwright-report/`。
 - 单独运行六个原型任务：`npx playwright test e2e/prototype-tasks.spec.ts --project=desktop-chromium`。
@@ -94,6 +94,7 @@ npm run build
 
 - 作品广场、分类、动态、搜索、查同类、详情、比较、行动记录。
 - 发布前地址检查、重复分流、四步结构化发布、审核状态和首次发布事件。
+- 发布步骤自由切换，最终提交统一校验；提交者关系、团队、详细介绍、Logo、封面、图集、视频和致谢保留在审核快照及公开档案中。
 - 低频作者身份材料、已验证作者更新、详情时间线、动态和通知同步。
 - 收藏、关注、匿名比较、登录续办、草稿和个人中心。
 - 后台作品维护、证据核对、追加日志、发布／身份审核、重复合并和状态复核。
@@ -119,6 +120,7 @@ npm run build
 - 产品运行上下文：`PRODUCT.md`
 - 需求追踪：`docs/requirements-map.md`
 - 固定场景：`docs/scenario-matrix.md`
+- 发布流程对照与作品墓地下一阶段约定：`docs/submission-graveyard-readiness.md`
 - 逐任务报告：`docs/task-reports/T00.md` 至 `docs/task-reports/T57.md`
 - 最终验收：`docs/acceptance/final-report.md`
 - 只读产品源文件副本：`docs/source/`

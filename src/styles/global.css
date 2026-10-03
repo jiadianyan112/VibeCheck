@@ -1680,7 +1680,18 @@ textarea {
 
 .submission-progress li {
   border: 1px solid var(--color-line);
+  padding: 0;
+}
+
+.submission-progress li a {
+  display: block;
+  min-height: 44px;
   padding: var(--space-2) var(--space-3);
+  text-decoration: none;
+}
+
+.submission-progress li a:hover {
+  background: var(--color-canvas);
 }
 
 .submission-progress li[aria-current='step'] {
@@ -1797,6 +1808,37 @@ textarea {
 .submission-summary-grid dd {
   margin: var(--space-1) 0 0;
   overflow-wrap: anywhere;
+}
+
+.publication-summary {
+  min-width: 0;
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-4);
+}
+
+.publication-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 70ch;
+}
+
+.publication-media-list, .publication-thanks-list, .submission-error-list {
+  display: grid;
+  gap: var(--space-3);
+  padding-left: var(--space-6);
+  overflow-wrap: anywhere;
+}
+
+.publication-address {
+  display: block;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.submission-error-list li a {
+  display: inline-block;
+  margin-inline-start: var(--space-3);
+  padding-block: var(--space-2);
 }
 
 .submission-review-state {
