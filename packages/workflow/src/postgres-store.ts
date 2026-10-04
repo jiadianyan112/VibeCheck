@@ -554,6 +554,7 @@ export class PostgresWorkflowStore implements WorkflowStore {
         ...(typeof fields.current_name === 'string' ? { current_name: fields.current_name } : {}),
         ...(typeof fields.public_url === 'string' ? { public_url: fields.public_url } : {}),
         ...(typeof fields.one_line_definition === 'string' ? { one_line_definition: fields.one_line_definition } : {}),
+        ...(fields.publication_details && typeof fields.publication_details === 'object' && !Array.isArray(fields.publication_details) ? { publication_details: fields.publication_details as Readonly<Record<string, unknown>> } : {}),
       })
     }
     if (row.target_type === 'comment') {

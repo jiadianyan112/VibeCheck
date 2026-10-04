@@ -4875,6 +4875,60 @@ components:
         status_note:
           type: [string, 'null']
           maxLength: 500
+        publication_details:
+          $ref: '#/components/schemas/PublicationDetails'
+    PublicationDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        submitterRelation:
+          type: string
+          enum: [owner, team_member, third_party]
+        organizationName:
+          type: string
+          maxLength: 120
+        detailedDescription:
+          type: string
+          maxLength: 10000
+        logoUrl:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: HTTP(S) URL with a dotted hostname and no credentials; runtime validation is authoritative.
+        galleryUrls:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+            maxLength: 2048
+            description: HTTP(S) URL with a dotted hostname and no credentials; runtime validation is authoritative.
+        videoUrl:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: HTTPS URL on bilibili.com, b23.tv, or one of their subdomains; runtime validation also rejects credentials.
+        acknowledgements:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, url, note]
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 120
+              url:
+                type: string
+                maxLength: 2048
+                description: Empty string for no link, otherwise an HTTP(S) URL with a dotted hostname and no credentials; runtime validation is authoritative.
+              note:
+                type: string
+                minLength: 1
+                maxLength: 2000
     LearningSchemaV1:
       type: object
       additionalProperties: false

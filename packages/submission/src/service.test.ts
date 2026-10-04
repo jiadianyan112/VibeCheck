@@ -338,6 +338,25 @@ describe('SubmissionService drafts', () => {
     assert.match(store.patchedDraft?.requestHash ?? '', /^[a-f0-9]{64}$/)
   })
 
+  it('allows a half-complete publication metadata patch before preview readiness', async () => {
+    const store = new FakeStore()
+    await service(store).patchDraft({
+      userId,
+      draftId,
+      expectedVersion: 1,
+      patch: Object.freeze({
+        project_core: Object.freeze({
+          publication_details: Object.freeze({ detailedDescription: 'Still being written' }),
+        }),
+      }),
+      operationId: 'draft-patch-publication-0001',
+      requestId: 'http-request-draft-publication',
+    })
+    assert.deepEqual(store.patchedDraft?.patch, {
+      project_core: { publication_details: { detailedDescription: 'Still being written' } },
+    })
+  })
+
   it('rejects unsafe object keys and stale/non-positive client versions before storage', async () => {
     const store = new FakeStore()
     await failure(() => service(store).patchDraft({

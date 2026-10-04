@@ -150,6 +150,11 @@ export async function installPublishMock(page: Page, options: PublishMockOptions
     }
     const body = readBody(route)
     categoryId = body.category_id === 'personal_site_portfolio' ? 'personal_site_portfolio' : 'ai_learning_quiz'
+    payloadSnapshot = {
+      ...payloadSnapshot,
+      category_id: categoryId,
+      category_schema_version: categoryId === 'personal_site_portfolio' ? 'portfolio.v1' : 'learning.v1',
+    }
     addRequest('draft-create', route, body)
     await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(draftProjection()) })
   })

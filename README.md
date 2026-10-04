@@ -124,6 +124,8 @@ npm run build
 
 ## 文档索引
 
+- 正式版发布指南迁移验收：`docs/acceptance/submission-guide-production.md`
+- 下一步作品墓地输入与权限准备：`docs/submission-graveyard-readiness.md`
 - 产品运行上下文：`PRODUCT.md`
 - 需求追踪：`docs/requirements-map.md`
 - 固定场景：`docs/scenario-matrix.md`

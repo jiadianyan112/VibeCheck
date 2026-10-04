@@ -1,0 +1,7 @@
+.publication-summary { min-width: 0; }
+.publication-summary p, .publication-summary dd, .publication-address { overflow-wrap: anywhere; }
+.publication-prose { white-space: pre-wrap; }
+.publication-media-list, .publication-thanks-list { display: grid; gap: .75rem; padding-left: 1.5rem; }
+.publication-address { display: block; font-size: .75rem; color: var(--color-muted); }
+.publication-summary .submission-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media(max-width: 640px) { .publication-summary .submission-summary-grid { grid-template-columns: 1fr; } }

@@ -52,6 +52,7 @@ export interface ReviewDomainSummary {
   readonly current_name?: string
   readonly public_url?: string
   readonly one_line_definition?: string
+  readonly publication_details?: Readonly<Record<string, unknown>>
   readonly entry_type?: string
   readonly body?: string
   readonly experience_task?: string | null

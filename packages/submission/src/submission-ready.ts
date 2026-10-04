@@ -79,6 +79,9 @@ export function validateSubmissionReadySnapshot(input: Readonly<{
   if (projectSnapshot.project_core.public_url !== input.canonicalUrl) {
     throw submissionError('SUBMISSION_PUBLIC_URL_MISMATCH', 409)
   }
+  if (!projectSnapshot.project_core.publication_details?.submitterRelation) {
+    throw submissionError('SUBMISSION_RELATION_REQUIRED', 422)
+  }
   if (input.mediaReferenceIds.length > 20) {
     throw submissionError('SUBMISSION_MEDIA_REQUIRED', 422)
   }

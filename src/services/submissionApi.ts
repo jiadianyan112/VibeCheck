@@ -11,12 +11,14 @@ import {
   type SubmissionUrlCheckFieldErrorValue,
 } from '@vibecheck/contracts'
 import type { AuthSessionDto } from './authService'
+import { readPublicationDetails } from '../features/submission/publicationDetails'
 import type { LearningV1Snapshot, PortfolioV1Snapshot } from '../features/submission/form'
 import {
   projectId,
   submissionDraftId,
   type CategorySchemaVersion,
   type ProjectCategoryId,
+  type PublicationDetails,
   type SubmissionDraft,
   type SubmissionProjectFields,
   type UserId,
@@ -342,6 +344,7 @@ function payloadFields(payload: Readonly<Record<string, unknown>>): Partial<Subm
     if (typeof source.current_name === 'string') setIfDefined(fields, 'currentName', source.current_name)
   }
   if (typeof projectCore.public_url === 'string') setIfDefined(fields, 'publicUrl', projectCore.public_url)
+  Object.assign(fields, readPublicationDetails(projectCore.publication_details, true))
   return fields
 }
 
@@ -442,6 +445,11 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => keys.includes(key))
 }
 
+function hasCanonicalCoreKeys(value: Record<string, unknown>): boolean {
+  const { publication_details, ...required } = value
+  return hasExactKeys(required, projectCoreSnapshotKeys) && (publication_details === undefined || readPublicationDetails(publication_details, true) !== undefined)
+}
+
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -471,7 +479,7 @@ function isCanonicalLearningSnapshot(value: unknown): value is LearningV1Snapsho
   if (!isRecord(value) || !hasExactKeys(value, canonicalSnapshotKeys) ||
       value.category_id !== 'ai_learning_quiz' || value.category_schema_version !== 'learning.v1') return false
   const projectCore = value.project_core
-  if (!isRecord(projectCore) || !hasExactKeys(projectCore, projectCoreSnapshotKeys) ||
+  if (!isRecord(projectCore) || !hasCanonicalCoreKeys(projectCore) ||
       !isText(projectCore.current_name) || !isText(projectCore.public_url) ||
       !isNullableText(projectCore.repository_url) || !isNullableText(projectCore.original_platform) ||
       !isStringList(projectCore.cover_media_reference_ids, 0, 20) ||
@@ -502,7 +510,7 @@ function isCanonicalPortfolioSnapshot(value: unknown): value is PortfolioV1Snaps
   if (!isRecord(value) || !hasExactKeys(value, canonicalSnapshotKeys) ||
       value.category_id !== 'personal_site_portfolio' || value.category_schema_version !== 'portfolio.v1') return false
   const projectCore = value.project_core
-  if (!isRecord(projectCore) || !hasExactKeys(projectCore, projectCoreSnapshotKeys) ||
+  if (!isRecord(projectCore) || !hasCanonicalCoreKeys(projectCore) ||
       !isText(projectCore.current_name) || !isText(projectCore.public_url) ||
       !isNullableText(projectCore.repository_url) || !isNullableText(projectCore.original_platform) ||
       !isStringList(projectCore.cover_media_reference_ids, 0, 20) ||
@@ -554,6 +562,7 @@ export interface CompactSubmissionSnapshot {
     readonly repository_url?: string | null
     readonly tech_stack?: readonly string[]
     readonly cover_media_reference_ids?: readonly string[]
+    readonly publication_details?: PublicationDetails
   }
   readonly category_data: Readonly<Record<string, unknown>>
 }
@@ -565,7 +574,8 @@ function isCompactSnapshot(value: unknown): value is CompactSubmissionSnapshot {
   if (!((value.category_id === 'ai_learning_quiz' && value.category_schema_version === 'learning.v1') ||
     (value.category_id === 'personal_site_portfolio' && value.category_schema_version === 'portfolio.v1'))) return false
   const core = value.project_core
-  return isRecord(core) && hasOnlyKeys(core, ['current_name', 'public_url', 'one_line_definition', 'repository_url', 'tech_stack', 'cover_media_reference_ids']) &&
+  return isRecord(core) && hasOnlyKeys(core, ['current_name', 'public_url', 'one_line_definition', 'repository_url', 'tech_stack', 'cover_media_reference_ids', 'publication_details']) &&
+    (core.publication_details === undefined || readPublicationDetails(core.publication_details, true) !== undefined) &&
     typeof core.current_name === 'string' && typeof core.public_url === 'string' && typeof core.one_line_definition === 'string' &&
     (core.repository_url === undefined || isNullableText(core.repository_url)) &&
     (core.tech_stack === undefined || isStringList(core.tech_stack, 0, 30)) &&

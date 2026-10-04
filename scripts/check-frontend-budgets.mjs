@@ -1,9 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { gzipSync } from 'node:zlib'
 
-// The 26-route visual unification measures ~20 KB gzip after consolidating
-// legacy rules. Keep a 21 KiB stylesheet ceiling; the JavaScript budget is unchanged.
-const limits = Object.freeze({ js: 251_435, css: 21 * 1024 })
+// Production baseline 4eca683 uses 21,504 bytes gzip-9. The complete publication
+// preview and metadata add 638 bytes; keep a 22 KiB ceiling with limited headroom.
+// The JavaScript budget is unchanged.
+const limits = Object.freeze({ js: 251_435, css: 22 * 1024 })
 const assetDir = new URL('../dist/assets/', import.meta.url)
 const files = await readdir(assetDir)
 

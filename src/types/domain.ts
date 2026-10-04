@@ -600,6 +600,7 @@ export interface InteractionSummary {
 
 /** Cross-category fields shared by every VibeCheck work. */
 export interface ProjectCore {
+  publicationDetails?: PublicationDetails
   id: ProjectId
   currentName: FieldFact<string>
   historicalNames: HistoricalName[]
@@ -738,7 +739,19 @@ export interface ComparisonSession {
   savedAt: string | null
 }
 
-export interface SubmissionProjectFields {
+export type SubmitterRelation = 'owner' | 'team_member' | 'third_party'
+export interface SubmissionAcknowledgement { name: string; url: string; note: string }
+export interface PublicationDetails {
+  submitterRelation?: SubmitterRelation
+  organizationName?: string
+  detailedDescription?: string
+  logoUrl?: string | null
+  galleryUrls?: string[]
+  videoUrl?: string | null
+  acknowledgements?: SubmissionAcknowledgement[]
+}
+
+export interface SubmissionProjectFields extends PublicationDetails {
   categoryId?: ProjectCategoryId
   categorySchemaVersion?: CategorySchemaVersion
   currentName: string
