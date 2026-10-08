@@ -20,7 +20,7 @@
 - [x] Task 2: 发布保存／预览／校验、紧凑身份行及真实主页（developer_public_ui）。
 - [x] Task 3: 认证申请、材料扫描、补充撤回及真实后台身份审核（developer_verification_ui）。
 - [x] Task 4: 我的作品、真实作品更新草稿／预览／审核／应用（developer_management_ui）。
-- [ ] Task 5: PostgreSQL 与浏览器完整链路、全量 CI、审查、推送发布及线上验证（主代理）。
+- [x] Task 5: PostgreSQL 与浏览器完整链路、全量 CI、审查、推送发布及线上验证（主代理）。
 
 公开 `developer` 对象为 `kind: individual | team | null`, `display_name`, `avatar_url`, `website_url`, `creator_id`, `verification_status: unverified | verified | disputed`。
 前端 Project.developer 对象对应 camelCase。未关联主体的 creator_id=null，未知主体整体为 null。
@@ -42,3 +42,6 @@ Node >=24.14.1 <25。复用 React、现有样式与客户端请求约定。JS gz
 本版作品更新支持版本说明、介绍和状态，均先审核再应用。地址更新尚缺客户端安全检查凭据流程，资产不在当前字段权限范围，暂不开放这两个入口；保留服务端既有 URL 安全校验和字段权限。
 
 本地浏览器验收使用独立 `developer_e2e` PostgreSQL 数据库和真实 API、审核及应用服务。仅登录会话、域名探测与材料扫描结果使用测试边界资料。运行：生产构建后设置 `PLAYWRIGHT_SKIP_WEBSERVER=1`，执行 `npx playwright test e2e/developer-identity.spec.ts --project=desktop-chromium`。数据库只允许 localhost:55438 或 CI localhost:5432，拒绝其他地址和生产数据库。
+
+
+上线验收：应用提交 7b92e4f 已在 Northflank Web/API 与 Worker 同时运行。quality 正式分支 run 37798783871 通过；生产 000048/000049 已通过既有管理员连接一次性事务执行并记录校验和，运行账号权限未扩大。Worker 启动日志 migrations_ok existing=49 与 worker_started；API readiness/database 正常，公开详情 developer 字段与未登录 me/projects 401 已核对，线上 JS/CSS 哈希与验收构建相同。
