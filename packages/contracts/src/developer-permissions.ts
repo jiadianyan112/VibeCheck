@@ -43,4 +43,3 @@ export const authorContentP0V1FieldPaths = Object.freeze([
   '/category_data/responsive_support',
   '/category_data/blog_support',
 ].sort())
-

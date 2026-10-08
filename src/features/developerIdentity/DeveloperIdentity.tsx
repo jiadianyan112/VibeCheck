@@ -74,4 +74,3 @@ export function DeveloperIdentity({ developer, claimHref, className = '' }: Deve
     <span className={`developer-identity__explanation${explanationOpen ? ' developer-identity__explanation--open' : ''}`} role="status">{verified ? '平台已完成当前作品开发主体认证。' : developer.verificationStatus === 'disputed' ? '当前作品的开发主体归属正在核对。' : '当前作品尚未完成开发主体认证。'}</span>
   </div>
 }
-
