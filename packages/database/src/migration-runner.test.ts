@@ -1,7 +1,34 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, it } from 'node:test'
-import { discoverMigrations } from './migration-runner.js'
+import type { Pool, PoolClient } from 'pg'
+import { discoverMigrations, runMigrations } from './migration-runner.js'
+
+interface QueryCall {
+  readonly text: string
+  readonly values?: readonly unknown[]
+}
+
+function createFakePool(ledger: string | null): { readonly pool: Pool; readonly calls: QueryCall[] } {
+  const calls: QueryCall[] = []
+  const client = {
+    query: async (text: string, values?: readonly unknown[]) => {
+      calls.push({ text, values })
+      if (text.includes("SELECT to_regclass('ops.schema_migrations') AS ledger")) {
+        return { rows: [{ ledger }], rowCount: 1 }
+      }
+      return { rows: [], rowCount: 0 }
+    },
+    release: () => undefined,
+  } as unknown as PoolClient
+
+  return {
+    pool: { connect: async () => client } as unknown as Pool,
+    calls,
+  }
+}
 
 describe('discoverMigrations', () => {
   it('returns ordered migrations with stable sha256 checksums', async () => {
@@ -63,6 +90,50 @@ describe('discoverMigrations', () => {
     for (const migration of migrations) {
       assert.match(migration.checksumSha256, /^[a-f0-9]{64}$/)
       assert.ok(migration.sql.length > 100)
+    }
+  })
+
+  it('does not attempt CREATE when the existing ledger table is empty', async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'vibecheck-migration-ledger-'))
+    try {
+      const { pool, calls } = createFakePool('ops.schema_migrations')
+
+      const result = await runMigrations(pool, directory)
+
+      assert.deepEqual(result, { applied: [], alreadyApplied: [] })
+      assert.deepEqual(
+        calls.map(({ text, values }) => ({ text, values })),
+        [
+          { text: 'SELECT pg_advisory_lock($1)', values: [864_203_071] },
+          { text: "SELECT to_regclass('ops.schema_migrations') AS ledger", values: undefined },
+          { text: 'SELECT pg_advisory_unlock($1)', values: [864_203_071] },
+        ],
+      )
+      assert.equal(calls.some(({ text }) => /CREATE\s+(SCHEMA|TABLE)/i.test(text)), false)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('initializes the schema and ledger when the ledger table is absent', async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'vibecheck-migration-ledger-'))
+    try {
+      const { pool, calls } = createFakePool(null)
+
+      const result = await runMigrations(pool, directory)
+
+      assert.deepEqual(result, { applied: [], alreadyApplied: [] })
+      const queryTexts = calls.map(({ text }) => text)
+      assert.deepEqual(queryTexts.slice(0, 3), [
+        'SELECT pg_advisory_lock($1)',
+        "SELECT to_regclass('ops.schema_migrations') AS ledger",
+        'CREATE SCHEMA IF NOT EXISTS ops',
+      ])
+      assert.match(queryTexts[3] ?? '', /CREATE TABLE IF NOT EXISTS ops\.schema_migrations/)
+      assert.match(queryTexts[3] ?? '', /migration_name varchar\(255\) PRIMARY KEY/)
+      assert.equal(queryTexts.at(-1), 'SELECT pg_advisory_unlock($1)')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
     }
   })
 

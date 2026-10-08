@@ -37,6 +37,11 @@ export async function discoverMigrations(directory: string): Promise<MigrationFi
 }
 
 async function ensureMigrationLedger(client: PoolClient): Promise<void> {
+  const existing = await client.query<{ ledger: string | null }>(
+    "SELECT to_regclass('ops.schema_migrations') AS ledger",
+  )
+  if (existing.rows[0]?.ledger != null) return
+
   await client.query('CREATE SCHEMA IF NOT EXISTS ops')
   await client.query(`
     CREATE TABLE IF NOT EXISTS ops.schema_migrations (
