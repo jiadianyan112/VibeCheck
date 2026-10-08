@@ -3,6 +3,7 @@ import { publicationWebUrl } from './publicationDetails'
 import type { ProjectCategoryId, SubmissionAcknowledgement, SubmitterRelation as DomainSubmitterRelation } from '../../types'
 
 export type SubmitterRelation = DomainSubmitterRelation | ''
+export type DeveloperKind = 'individual' | 'team'
 
 export type PublishAcknowledgement = SubmissionAcknowledgement
 
@@ -16,6 +17,11 @@ export interface PublishFields {
   technologies: string
   submitterRelation: SubmitterRelation
   organizationName: string
+  /** The current publication subject. Legacy relation fields stay readable for old drafts. */
+  developerKind: DeveloperKind | ''
+  developerName: string
+  developerAvatarUrl: string
+  developerWebsiteUrl: string
   detailedDescription: string
   logoUrl: string
   galleryUrls: string[]
@@ -48,7 +54,8 @@ export interface PublishSavedDraft {
 }
 export const emptyPublishFields: PublishFields = {
   name: '', url: '', summary: '', category: '', description: '', repository: '', technologies: '',
-  submitterRelation: '', organizationName: '', detailedDescription: '', logoUrl: '', galleryUrls: [], videoUrl: '', acknowledgements: [],
+  submitterRelation: '', organizationName: '', developerKind: '', developerName: '', developerAvatarUrl: '', developerWebsiteUrl: '',
+  detailedDescription: '', logoUrl: '', galleryUrls: [], videoUrl: '', acknowledgements: [],
 }
 
 /** Merge persisted drafts with the current shape so pre-feature IndexedDB records remain editable. */
@@ -65,6 +72,10 @@ export function mergePublishFields(value: Partial<PublishFields> | null | undefi
     technologies: typeof source.technologies === 'string' ? source.technologies : '',
     submitterRelation: source.submitterRelation === 'owner' || source.submitterRelation === 'team_member' || source.submitterRelation === 'third_party' ? source.submitterRelation : '',
     organizationName: typeof source.organizationName === 'string' ? source.organizationName : '',
+    developerKind: source.developerKind === 'individual' || source.developerKind === 'team' ? source.developerKind : '',
+    developerName: typeof source.developerName === 'string' ? source.developerName : '',
+    developerAvatarUrl: typeof source.developerAvatarUrl === 'string' ? source.developerAvatarUrl : '',
+    developerWebsiteUrl: typeof source.developerWebsiteUrl === 'string' ? source.developerWebsiteUrl : '',
     detailedDescription: typeof source.detailedDescription === 'string' ? source.detailedDescription : '',
     logoUrl: typeof source.logoUrl === 'string' ? source.logoUrl : '',
     galleryUrls: Array.isArray(source.galleryUrls) ? source.galleryUrls.filter((item): item is string => typeof item === 'string') : [],
@@ -81,6 +92,13 @@ export function mergePublishFields(value: Partial<PublishFields> | null | undefi
 
 export type PublishFieldErrors = Partial<Record<keyof PublishFields, string>>
 
+interface RemoteDeveloperPayload {
+  readonly kind?: unknown
+  readonly displayName?: unknown
+  readonly avatarUrl?: unknown
+  readonly websiteUrl?: unknown
+}
+
 function validHttpUrl(value: string): boolean {
   try { normalizeSubmissionUrl(value.trim()); return true } catch { return false }
 }
@@ -93,11 +111,15 @@ export function validatePublishFields(fields: PublishFields): PublishFieldErrors
   if (!fields.summary.trim()) errors.summary = '请填写一句话介绍'
   else if (fields.summary.length > 80) errors.summary = '一句话介绍不能超过 80 个字符'
   if (!fields.category) errors.category = '请选择作品分类'
-  if (!['owner', 'team_member', 'third_party'].includes(fields.submitterRelation)) errors.submitterRelation = '请选择你与作品的关系'
+  if (!['individual', 'team'].includes(fields.developerKind)) errors.developerKind = '请选择开发主体类型'
+  if (!fields.developerName.trim()) errors.developerName = '请填写开发者或团队名称'
+  else if (fields.developerName.trim().length > 80) errors.developerName = '开发者或团队名称不能超过 80 个字符'
   if (!fields.url.trim() || !validHttpUrl(fields.url)) errors.url = '请输入有效的公开链接，例如 example.com'
   if (fields.repository.trim() && !validHttpUrl(fields.repository)) errors.repository = '请输入有效的代码仓库链接'
   if (fields.description.length > 500) errors.description = '解决的问题不能超过 500 个字符'
   if (fields.organizationName.length > 120) errors.organizationName = '团队或组织名称不能超过 120 个字符'
+  if (fields.developerAvatarUrl.trim() && !publicationWebUrl(fields.developerAvatarUrl.trim())) errors.developerAvatarUrl = '请输入有效的头像或 Logo 链接'
+  if (fields.developerWebsiteUrl.trim() && !publicationWebUrl(fields.developerWebsiteUrl.trim())) errors.developerWebsiteUrl = '请输入有效的官网链接'
   if (fields.detailedDescription.length > 10000) errors.detailedDescription = '详细介绍不能超过 10000 个字符'
   if (fields.logoUrl.trim() && !publicationWebUrl(fields.logoUrl.trim())) errors.logoUrl = '请输入有效的 Logo 链接'
   if (fields.galleryUrls.length > 20) errors.galleryUrls = '详情图地址最多填写 20 条'
@@ -116,7 +138,7 @@ export function validatePublishFields(fields: PublishFields): PublishFieldErrors
 }
 
 function publicationDetailsFromFields(fields: PublishFields) {
-  return {
+  const legacy = {
     ...(fields.submitterRelation ? { submitterRelation: fields.submitterRelation } : {}),
     organizationName: fields.organizationName.trim(),
     detailedDescription: fields.detailedDescription.trim(),
@@ -124,6 +146,20 @@ function publicationDetailsFromFields(fields: PublishFields) {
     galleryUrls: fields.galleryUrls.map(value => value.trim()).filter(Boolean),
     videoUrl: fields.videoUrl.trim() || null,
     acknowledgements: fields.acknowledgements.map(item => ({ name: item.name.trim(), url: item.url.trim(), note: item.note.trim() })),
+  }
+  const hasDeveloper = Boolean(fields.developerKind && fields.developerName.trim())
+  if (!hasDeveloper) return legacy
+  return {
+    ...legacy,
+    // New submissions always identify the publishing account as owner. The old
+    // self-reported relation is kept only for legacy drafts and snapshots.
+    submitterRelation: 'owner' as const,
+    developer: {
+      kind: fields.developerKind as DeveloperKind,
+      displayName: fields.developerName.trim(),
+      ...(fields.developerAvatarUrl.trim() ? { avatarUrl: fields.developerAvatarUrl.trim() } : {}),
+      ...(fields.developerWebsiteUrl.trim() ? { websiteUrl: fields.developerWebsiteUrl.trim() } : {}),
+    },
   }
 }
 
@@ -149,14 +185,18 @@ export function publishSnapshot(fields: PublishFields, publicUrl: string, refere
 
 export function publishFieldsFromRemote(draft: RemoteSubmissionDraft): PublishFields {
   const core = draft.payload_snapshot.project_core as Record<string, unknown> | undefined
-  const publication = (core?.publication_details && typeof core.publication_details === 'object' ? core.publication_details : {}) as Partial<PublishFields>
+  const publication = (core?.publication_details && typeof core.publication_details === 'object' ? core.publication_details : {}) as Partial<PublishFields> & { developer?: RemoteDeveloperPayload }
   const serverFields = draft.fields as Partial<PublishFields>
   return mergePublishFields({
     name: draft.fields.currentName ?? '', url: draft.fields.publicUrl ?? '', summary: draft.fields.oneLineDefinition ?? '', category: draft.category_id,
     description: draft.fields.coreProblem ?? '', repository: draft.fields.repositoryUrl ?? '',
     technologies: Array.isArray(core?.tech_stack) ? core.tech_stack.join('、') : '',
-    submitterRelation: serverFields.submitterRelation ?? publication.submitterRelation ?? '',
+     submitterRelation: serverFields.submitterRelation ?? publication.submitterRelation ?? '',
     organizationName: serverFields.organizationName ?? publication.organizationName ?? '',
+     developerKind: serverFields.developerKind ?? (publication.developer?.kind === 'individual' || publication.developer?.kind === 'team' ? publication.developer.kind : ''),
+     developerName: serverFields.developerName ?? (typeof publication.developer?.displayName === 'string' ? publication.developer.displayName : ''),
+     developerAvatarUrl: serverFields.developerAvatarUrl ?? (typeof publication.developer?.avatarUrl === 'string' ? publication.developer.avatarUrl : ''),
+     developerWebsiteUrl: serverFields.developerWebsiteUrl ?? (typeof publication.developer?.websiteUrl === 'string' ? publication.developer.websiteUrl : ''),
     detailedDescription: serverFields.detailedDescription ?? publication.detailedDescription ?? '',
     logoUrl: serverFields.logoUrl ?? publication.logoUrl ?? '',
     galleryUrls: serverFields.galleryUrls ?? publication.galleryUrls ?? [],

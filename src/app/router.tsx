@@ -1,6 +1,5 @@
 import {
   Navigate,
-  createBrowserRouter,
   type RouteObject,
 } from 'react-router-dom'
 import { routeCatalog } from './routeCatalog'
@@ -48,5 +47,3 @@ export const appRoutes: RouteObject[] = [
   },
   ...(import.meta.env.DEV ? [{ path: '/__sandbox', element: <StyleSandboxPage /> }] : []),
 ]
-
-export const router = createBrowserRouter(appRoutes)

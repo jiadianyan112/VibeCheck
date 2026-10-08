@@ -31,6 +31,18 @@ it('prefills category and resume URL without forcing link checks for guests', as
   expect(screen.getByLabelText('作品分类 *')).toHaveValue('personal_site_portfolio')
 })
 
+it('offers only personal or team developer ownership fields', async () => {
+  render(page('/submit?category=personal_site_portfolio'))
+  await waitFor(() => expect(screen.getByLabelText('开发主体类型 *')).toBeInTheDocument())
+  expect(screen.getByRole('option', { name: '个人开发' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '团队开发' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: /第三方/ })).not.toBeInTheDocument()
+  expect(screen.getByLabelText('开发者或团队名称 *')).toBeInTheDocument()
+  expect(screen.getByLabelText('开发者头像或团队 Logo')).toBeInTheDocument()
+  expect(screen.getByLabelText('开发者或团队官网')).toBeInTheDocument()
+  expect(screen.queryByLabelText(/你与作品的关系/)).not.toBeInTheDocument()
+})
+
 it('does not request a legacy local draft identifier from the API', async () => {
   mocks.auth.mockReturnValue({ status: 'authenticated', session: { user_id: 'user-a' } })
   render(page('/submit?draft=local-draft-123'))
@@ -58,7 +70,7 @@ it('waits for a pending cover scan and submits on the first click', async () => 
   const referenceId = '33333333-3333-4333-8333-333333333333'
   const session = { user_id: '44444444-4444-4444-8444-444444444444' }
   const image = { id: 'image-1', file: new File(['image'], 'cover.png', { type: 'image/png' }) }
-  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const, submitterRelation: 'owner' as const }
+  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const, developerKind: 'individual' as const, developerName: '个人开发者' }
   const draft = { draft_id: draftId, category_id: 'ai_learning_quiz', check_id: 'check-1', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 1, status: 'editing' }
   mocks.auth.mockReturnValue({ status: 'authenticated', session })
   mocks.read.mockResolvedValue({ fields, images: [image], ownerId: session.user_id, remoteId: draftId })
@@ -93,7 +105,7 @@ it('waits for a pending cover scan and submits on the first click', async () => 
 it('uses a fresh URL check with the same remote draft before previewing and submitting', async () => {
   const draftId = '11111111-1111-4111-8111-111111111111'
   const session = { user_id: '44444444-4444-4444-8444-444444444444' }
-  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const, submitterRelation: 'owner' as const }
+  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'ai_learning_quiz' as const, developerKind: 'individual' as const, developerName: '个人开发者' }
   const oldDraft = { draft_id: draftId, category_id: fields.category, check_id: 'old-check', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 4, status: 'editing' }
   const patched = { ...oldDraft, version: 5 }
   mocks.auth.mockReturnValue({ status: 'authenticated', session })
@@ -126,7 +138,7 @@ it('uses the styled button for retrying a failed image', async () => {
 
 it('shows a complete preview before the real submit request and keeps saving independent', async () => {
   const session = { user_id: '44444444-4444-4444-8444-444444444444' }
-  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'personal_site_portfolio' as const, submitterRelation: 'owner' as const }
+  const fields = { ...emptyPublishFields, name: '作品', summary: '作品简介', url: 'https://example.com/', category: 'personal_site_portfolio' as const, developerKind: 'individual' as const, developerName: '个人开发者' }
   const draft = { draft_id: '11111111-1111-4111-8111-111111111111', category_id: fields.category, check_id: 'check-1', fields: { publicUrl: fields.url }, media_reference_ids: [], payload_snapshot: {}, version: 1, status: 'editing' }
   mocks.auth.mockReturnValue({ status: 'authenticated', session })
   mocks.read.mockResolvedValue({ fields, images: [], ownerId: session.user_id })
@@ -176,8 +188,8 @@ it('persists shared publication details in the real draft snapshot without submi
   await waitFor(() => expect(screen.getByLabelText('作品名称 *')).toBeInTheDocument())
   fireEvent.change(screen.getByLabelText('作品名称 *'), { target: { value: '作品' } })
   fireEvent.change(screen.getByLabelText('一句话介绍 *'), { target: { value: '作品简介' } })
-  fireEvent.change(screen.getByRole('combobox', { name: /你与作品的关系/ }), { target: { value: 'team_member' } })
-  fireEvent.change(screen.getByLabelText('团队或组织'), { target: { value: 'VibeCheck Studio' } })
+  fireEvent.change(screen.getByRole('combobox', { name: '开发主体类型 *' }), { target: { value: 'team' } })
+  fireEvent.change(screen.getByLabelText('开发者或团队名称 *'), { target: { value: 'VibeCheck Studio' } })
   fireEvent.change(screen.getByLabelText('作品详细介绍'), { target: { value: '完整介绍' } })
   fireEvent.change(screen.getByLabelText('详情图地址'), { target: { value: 'https://example.com/detail.png' } })
   fireEvent.change(screen.getByLabelText('演示视频地址'), { target: { value: 'https://www.bilibili.com/video/BVexample' } })
@@ -187,6 +199,6 @@ it('persists shared publication details in the real draft snapshot without submi
   fireEvent.click(screen.getByRole('button', { name: '存草稿' }))
 
   await waitFor(() => expect(mocks.patch).toHaveBeenCalled())
-  expect(mocks.patch).toHaveBeenCalledWith(expect.objectContaining({ snapshot: expect.objectContaining({ project_core: expect.objectContaining({ publication_details: expect.objectContaining({ submitterRelation: 'team_member', organizationName: 'VibeCheck Studio', detailedDescription: '完整介绍', galleryUrls: ['https://example.com/detail.png'], videoUrl: 'https://www.bilibili.com/video/BVexample', acknowledgements: [{ name: '设计伙伴', url: '', note: '提供视觉支持' }] }) }) }) }))
+  expect(mocks.patch).toHaveBeenCalledWith(expect.objectContaining({ snapshot: expect.objectContaining({ project_core: expect.objectContaining({ publication_details: expect.objectContaining({ submitterRelation: 'owner', developer: { kind: 'team', displayName: 'VibeCheck Studio' }, detailedDescription: '完整介绍', galleryUrls: ['https://example.com/detail.png'], videoUrl: 'https://www.bilibili.com/video/BVexample', acknowledgements: [{ name: '设计伙伴', url: '', note: '提供视觉支持' }] }) }) }) }))
   expect(mocks.submit).not.toHaveBeenCalled()
 })

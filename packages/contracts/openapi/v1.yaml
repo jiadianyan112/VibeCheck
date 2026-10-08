@@ -1918,6 +1918,33 @@ paths:
         '200': { description: Owner-only Link projection., content: { application/json: { schema: { $ref: '#/components/schemas/CreatorAccountLink' } } } }
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+  /api/v1/me/projects:
+    get:
+      tags: [Catalog]
+      operationId: OP-DEVELOPER-MY-PROJECTS
+      summary: List the signed-in account's published or claimed works and effective management access
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 2048 }
+        - name: project_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Account-isolated page; never cache or infer permissions from self-declared metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyDeveloperProjectsPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/me/creator-account-links:
     get:
       tags: [AuthorVerification]
@@ -4877,10 +4904,54 @@ components:
           maxLength: 500
         publication_details:
           $ref: '#/components/schemas/PublicationDetails'
+    DeclaredDeveloper:
+      type: object
+      additionalProperties: false
+      required: [kind, displayName]
+      properties:
+        kind: { type: string, enum: [individual, team] }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        avatarUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        websiteUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+    DeveloperProjection:
+      type: object
+      additionalProperties: false
+      required: [kind, display_name, avatar_url, website_url, creator_id, verification_status]
+      properties:
+        kind: { type: [string, 'null'], enum: [individual, team, null] }
+        display_name: { type: string, minLength: 1, maxLength: 80 }
+        avatar_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        website_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        creator_id: { type: [string, 'null'], format: uuid }
+        verification_status: { type: string, enum: [unverified, verified, disputed] }
+    MyDeveloperProjectsPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        next_cursor: { type: [string, 'null'], maxLength: 2048 }
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [project_id, current_name, developer, verification_id, verification_status, can_manage]
+            properties:
+              project_id: { type: string, format: uuid }
+              current_name: { type: string }
+              developer:
+                oneOf:
+                  - $ref: '#/components/schemas/DeveloperProjection'
+                  - type: 'null'
+              verification_id: { type: [string, 'null'], format: uuid }
+              verification_status: { type: [string, 'null'], enum: [draft, pending, changes_requested, verified, failed, withdrawn, null] }
+              can_manage: { type: boolean }
     PublicationDetails:
       type: object
       additionalProperties: false
       properties:
+        developer: { $ref: '#/components/schemas/DeclaredDeveloper' }
         submitterRelation:
           type: string
           enum: [owner, team_member, third_party]
@@ -5120,6 +5191,8 @@ components:
       additionalProperties: false
       required: [creator_id, display_name, avatar_url, verification_status]
       properties:
+        kind: { type: [string, 'null'], enum: [individual, team, null] }
+        website_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
         creator_id: { type: string, format: uuid }
         display_name: { type: string, minLength: 1, maxLength: 80 }
         avatar_url: { type: [string, 'null'], maxLength: 2048 }
@@ -5233,6 +5306,7 @@ components:
           required:
             - viewer_schema
             - visibility
+            - developer
             - project_core
             - category_data
             - first_seen_at
@@ -5246,6 +5320,10 @@ components:
           properties:
             viewer_schema: { const: public }
             visibility: { const: public }
+            developer:
+              oneOf:
+                - $ref: '#/components/schemas/DeveloperProjection'
+                - type: 'null'
             project_core: { $ref: '#/components/schemas/ProjectCoreSnapshot' }
             category_data:
               oneOf:
@@ -6490,6 +6568,9 @@ components:
       additionalProperties: false
       required: [display_name]
       properties:
+        kind: { type: string, enum: [individual, team] }
+        avatar_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
+        website_url: { type: [string, 'null'], format: uri, maxLength: 2048 }
         display_name: { type: string, minLength: 1, maxLength: 80 }
         bio: { type: string, maxLength: 1000 }
     VerificationRequestCreateRequest:

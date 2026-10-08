@@ -1,6 +1,5 @@
 import { ExternalLinkGuard } from '../../components/domain/ExternalLinkGuard'
 import type { PublicationDetails } from '../../types'
-import { submitterRelationLabels } from './publicationDetails'
 
 // Old local drafts can predate URL validation. Only render web links here.
 function webUrl(value: string | null | undefined) {
@@ -17,14 +16,20 @@ function MediaAddress({ label, url }: { label: string; url: string }) {
 }
 
 export function PublicationSummary({ fields, coverUrl, showEmpty = false }: { fields: PublicationDetails; coverUrl?: string | null; showEmpty?: boolean }) {
-  const hasDetails = fields.submitterRelation || fields.organizationName || fields.detailedDescription || fields.logoUrl || fields.galleryUrls?.length || fields.videoUrl || fields.acknowledgements?.length || coverUrl
+  const hasDetails = fields.developer?.displayName || fields.submitterRelation || fields.organizationName || fields.detailedDescription || fields.logoUrl || fields.galleryUrls?.length || fields.videoUrl || fields.acknowledgements?.length || coverUrl
   if (!hasDetails && !showEmpty) return null
+  const developer = fields.developer
   return <section className="publication-summary stack" aria-label="发布介绍与致谢">
-    <dl className="submission-summary-grid">
-      <div><dt>提交者关系（自述）</dt><dd>{fields.submitterRelation ? submitterRelationLabels[fields.submitterRelation] ?? '未说明' : '未说明'}</dd></div>
-      <div><dt>所属团队或开发者</dt><dd>{fields.organizationName?.trim() || '未填写'}</dd></div>
-    </dl>
-    <p className="page-description">提交者关系不代表已验证的作者身份。</p>
+    {developer ? <dl className="submission-summary-grid">
+      <div><dt>开发主体</dt><dd>{developer.kind === 'team' ? '开发团队' : '个人开发'}</dd></div>
+      <div><dt>开发者或团队</dt><dd>{developer.displayName}</dd></div>
+      {developer.websiteUrl ? <div><dt>官网</dt><dd><ExternalLinkGuard href={developer.websiteUrl}>访问官网</ExternalLinkGuard></dd></div> : null}
+    </dl> : <>
+      <dl className="submission-summary-grid">
+        <div><dt>所属团队或开发者</dt><dd>{fields.organizationName?.trim() || '未填写'}</dd></div>
+      </dl>
+      <p className="page-description">开发主体资料待补充。</p>
+    </>}
     {fields.detailedDescription ? <div><h3>详细介绍</h3><p className="publication-prose">{fields.detailedDescription}</p></div> : showEmpty ? <p>详细介绍未填写，可稍后补充。</p> : null}
     {fields.logoUrl || coverUrl || fields.galleryUrls?.length || fields.videoUrl ? <div><h3>产品图集与视频</h3><ul className="publication-media-list">
       {fields.logoUrl ? <MediaAddress label="查看 Logo" url={fields.logoUrl} /> : null}

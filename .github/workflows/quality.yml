@@ -58,7 +58,7 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
-          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 47) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
+          node --input-type=module -e "import pg from 'pg'; const p = new pg.Pool({connectionString:process.env.DATABASE_URL}); const r = await p.query(\"select count(*)::int as count from ops.schema_migrations\"); if(r.rows[0].count !== 49) throw new Error('MIGRATION_COUNT_INVALID'); await p.end();"
       - name: Verify password store queries against PostgreSQL
         run: npm run identity:password:verify
       - name: Verify synthetic catalog fixture and PostgreSQL projections
@@ -120,3 +120,12 @@ jobs:
         run: npm run submission:publication:fixture:verify
       - name: Verify recipient-isolated immutable in-app notifications against PostgreSQL
         run: npm run community:notification:fixture:verify
+      - name: Verify single developer, concurrent claims and revoked permissions against PostgreSQL
+        run: npm run workflow:developer-identity:fixture:verify
+      - name: Install browser for developer acceptance
+        run: npx playwright install --with-deps chromium
+      - name: Verify publication, developer approval and update application in the browser
+        run: npx playwright test e2e/developer-identity.spec.ts --project=desktop-chromium
+        env:
+          PLAYWRIGHT_SKIP_WEBSERVER: '1'
+          VIBECHECK_DEVELOPER_E2E_DATABASE_URL: postgresql://vibecheck:vibecheck_ci_only@127.0.0.1:5432/developer_e2e

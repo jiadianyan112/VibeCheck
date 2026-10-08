@@ -5,6 +5,8 @@ import { prototypeScenarios, prototypeUsers, scenarioExtractionDraftId } from '.
 import { clearAppStorage, createInitialAppState, useAppState } from '../state'
 import { projectId, submissionDraftId, type SubmissionDraft } from '../types'
 
+if (import.meta.env.DEV) void import('./ScenarioPanel.css')
+
 const scenarioGroups = ['发现', '可信状态', '比较', '发布', '身份与登录', '服务异常'] as const
 
 function extractionScenarioDraft(userId: NonNullable<ReturnType<typeof createInitialAppState>['session']['user']>['id']): SubmissionDraft {

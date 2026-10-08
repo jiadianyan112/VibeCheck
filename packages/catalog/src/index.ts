@@ -1,4 +1,5 @@
 export { CatalogError, catalogError } from './errors.js'
+export { DeveloperAccountService, type MyDeveloperProject, type MyDeveloperProjectsPage } from './developer-account.js'
 export { PostgresAssetResolutionStore } from './asset-resolution-store.js'
 export {
   AssetResolutionService,
@@ -69,6 +70,8 @@ export {
   type CategorySchemaVersion,
   type CreatorProjection,
   type CreatorSummary,
+  type DeclaredDeveloper,
+  type DeveloperProjection,
   type EvidenceSummary,
   type EventPage,
   type EventType,

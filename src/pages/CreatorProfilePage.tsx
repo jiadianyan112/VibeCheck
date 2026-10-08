@@ -1,125 +1,168 @@
 import { useProjectInteractions } from '../features/interactions/ProjectInteractionContext'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AssetCard, Button, EmptyState, ExternalLinkGuard, Tag, useToast } from '../components'
+import { Button, EmptyState, ErrorPanel, ExternalLinkGuard, LoadingState, Tag, useToast } from '../components'
 import { FeedProjectCard } from '../components/domain/FeedProjectCard'
-import { buildCreatorProfile, relationConfirmationLabels } from '../features'
-import { creators, lifecycleEvents, projectRelations, projects, reusableAssets } from '../mocks'
+import { creators, projects } from '../mocks'
 import { useAppState } from '../state'
-import type { Project } from '../types'
-import { lifecycleEventLabels } from '../utils'
+import { creatorApi, CreatorApiError, type CreatorProjectionDto } from '../services/creatorApi'
+import { projectService } from '../services/projectService'
+import { creatorId, projectId, type Creator, type CreatorContact, type Project } from '../types'
 
-const verificationLabels = {
-  verified: '身份已验证',
-  unverified: '身份未验证',
-  disputed: '身份存在争议',
-} as const
+const isProduction = import.meta.env.PROD
 
-function projectName(project: Project | undefined) {
-  return project?.currentName.state === 'known' ? project.currentName.value : '名称未知作品'
+function contactFromDto(contact: Readonly<Record<string, string>>): CreatorContact | null {
+  const rawType = contact.type ?? contact.contact_type
+  const type: CreatorContact['type'] = rawType === 'email' || rawType === 'github' || rawType === 'social' ? rawType : 'website'
+  const url = contact.url ?? contact.value ?? contact.contact_url
+  if (!url) return null
+  return { type, label: contact.label ?? (type === 'website' ? '公开链接' : type === 'email' ? '公开联系' : type === 'github' ? '代码主页' : '公开动态'), url }
+}
+
+function creatorFromDto(dto: CreatorProjectionDto): Creator {
+  const contacts = (Array.isArray(dto.contacts) ? dto.contacts : []).map(contactFromDto).filter((contact): contact is CreatorContact => Boolean(contact))
+  if (dto.website_url && !contacts.some((contact) => contact.url === dto.website_url)) contacts.unshift({ type: 'website', label: '官方网站', url: dto.website_url })
+  return {
+    id: creatorId(dto.creator_id),
+    displayName: dto.display_name,
+    kind: dto.kind ?? null,
+    avatarUrl: dto.avatar_url,
+    websiteUrl: dto.website_url ?? null,
+    bio: dto.bio,
+    contacts,
+    verificationStatus: dto.verification_status,
+    publishedProjectIds: dto.published_project_ids.map(projectId),
+    linkedProjectIds: [],
+  }
+}
+
+function kindLabel(kind: Creator['kind']) {
+  return kind === 'team' ? '开发团队' : kind === 'individual' ? '个人开发' : '开发者'
 }
 
 export function CreatorProfilePage() {
   const { id } = useParams()
   const { state } = useAppState()
   const { pushToast } = useToast()
-  const creator = creators.find((item) => item.id === id)
-  const allProjects = useMemo(() => {
+  const [remoteCreator, setRemoteCreator] = useState<Creator | null>(null)
+  const [remoteProjects, setRemoteProjects] = useState<Project[]>([])
+  const [remoteLoading, setRemoteLoading] = useState(isProduction)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
+  const [avatarFailed, setAvatarFailed] = useState(false)
+
+  const fallbackCreator = creators.find((item) => item.id === id)
+  const fallbackProjects = useMemo(() => {
     const baseIds = new Set(projects.map((project) => project.id))
     return [
       ...projects.map((project) => state.projectOverrides.find((item) => item.id === project.id) ?? project),
       ...state.projectOverrides.filter((project) => !baseIds.has(project.id)),
     ]
   }, [state.projectOverrides])
-  const interactions = useProjectInteractions(allProjects)
 
-  const allEvents = useMemo(() => [...lifecycleEvents, ...state.lifecycleEventAdditions], [state.lifecycleEventAdditions])
-  const allAssets = useMemo(() => [...reusableAssets, ...state.reusableAssetAdditions], [state.reusableAssetAdditions])
-  const profile = useMemo(
-    () => creator ? buildCreatorProfile(creator, allProjects, allEvents, allAssets, projectRelations) : null,
-    [allAssets, allEvents, allProjects, creator],
-  )
+  useEffect(() => {
+    if (!isProduction || !id) {
+      setRemoteLoading(false)
+      setRemoteCreator(null)
+      setRemoteProjects([])
+      setRemoteError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    setRemoteLoading(true)
+    setRemoteError(null)
+    void creatorApi.get(id, controller.signal).then(async (dto) => {
+      const creator = creatorFromDto(dto)
+      const results = await Promise.all(dto.published_project_ids.map((project) => projectService.getById(projectId(project), { signal: controller.signal })))
+      if (controller.signal.aborted) return
+      setRemoteCreator(creator)
+      setRemoteProjects(results.flatMap((result) => result.ok ? [result.data] : []))
+      setRemoteLoading(false)
+    }).catch((error: unknown) => {
+      if (controller.signal.aborted) return
+      setRemoteLoading(false)
+      setRemoteError(error instanceof CreatorApiError && error.status === 404 ? '未找到开发者主页' : '开发者资料暂时无法加载，请稍后重试。')
+    })
+    return () => controller.abort()
+  }, [id])
+
+  const creator = isProduction ? remoteCreator : fallbackCreator
+  const associatedProjects = useMemo(() => {
+    if (!creator) return []
+    const declaredIds = new Set([...creator.publishedProjectIds, ...creator.linkedProjectIds])
+    const source = isProduction ? remoteProjects : fallbackProjects
+    return source.filter((project) => declaredIds.has(project.id))
+  }, [creator, fallbackProjects, remoteProjects])
+  // A profile's verification state must not be reused as proof for every linked project.
+  const projectCardCreator = useMemo(() => creator ? { ...creator, verificationStatus: 'unverified' as const } : null, [creator])
+  const interactions = useProjectInteractions(associatedProjects)
   const sharePath = creator ? `/creator/${creator.id}` : '/projects'
-  const projectMap = useMemo(() => new Map(allProjects.map((project) => [project.id, project])), [allProjects])
+
+  useEffect(() => {
+    setAvatarFailed(false)
+  }, [creator?.avatarUrl, creator?.id])
 
   useEffect(() => {
     if (!creator) return
     const previous = document.title
-    document.title = `${creator.displayName} · VibeCheck 作者主页`
+    document.title = `${creator.displayName} · VibeCheck 开发者主页`
     return () => { document.title = previous }
   }, [creator])
 
   async function copySharePath() {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${sharePath}`)
-      pushToast('作者主页分享链接已复制。', 'success')
+      pushToast('开发者主页分享链接已复制。', 'success')
     } catch {
       pushToast('请从浏览器地址栏复制本页链接。')
     }
   }
 
-  if (!creator || !profile) {
+  if (remoteLoading) {
+    return <main className="page-container page-with-bottom-space highfi-scope community-page stack"><LoadingState label="开发者主页加载中" /></main>
+  }
+
+  if (remoteError) {
     return (
-      <main className="page-container">
-        <EmptyState title="未找到作者主页" description="作者编号无效，或该公开身份已经撤下。" action={<Link className="button button--primary" to="/projects">返回作品广场</Link>} />
+      <main className="page-container page-with-bottom-space highfi-scope community-page stack">
+        {remoteError === '未找到开发者主页' ? <EmptyState title={remoteError} description="开发者编号无效，或该公开身份已经撤下。" action={<Link className="button button--primary" to="/projects">返回作品广场</Link>} /> : <ErrorPanel message={remoteError} />}
       </main>
     )
   }
 
+  if (!creator) {
+    return <main className="page-container"><EmptyState title="未找到开发者主页" description="开发者编号无效，或该公开身份已经撤下。" action={<Link className="button button--primary" to="/projects">返回作品广场</Link>} /></main>
+  }
+
   return (
     <main className="page-container page-with-bottom-space highfi-scope community-page stack">
-      <nav aria-label="面包屑"><Link to="/projects">作品广场</Link> / 作者主页 / {creator.displayName}</nav>
+      <nav aria-label="面包屑"><Link to="/projects">作品广场</Link> / 开发者主页 / {creator.displayName}</nav>
       <header className="creator-profile-hero">
-        <div className="creator-profile-avatar" aria-hidden="true">{creator.displayName.slice(0, 1)}</div>
+        <div className="creator-profile-avatar" aria-label={`${creator.displayName}头像`}>
+          {creator.avatarUrl && !avatarFailed ? <img src={creator.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} onError={() => setAvatarFailed(true)} /> : <span aria-hidden="true">{creator.displayName.slice(0, 1)}</span>}
+        </div>
         <div className="stack stack--small">
-          <div className="cluster"><Tag tone={creator.verificationStatus === 'verified' ? 'default' : 'dashed'}>{verificationLabels[creator.verificationStatus]}</Tag></div>
+          <div className="cluster"><Tag>{kindLabel(creator.kind)}</Tag></div>
           <h1>{creator.displayName}</h1>
           <p>{creator.bio}</p>
           <div className="cluster" aria-label="公开联系方式">
             {creator.contacts.length ? creator.contacts.map((contact) => <ExternalLinkGuard key={`${contact.type}-${contact.url}`} href={contact.url}>{contact.label}</ExternalLinkGuard>) : <span className="unknown-value">未公开联系方式</span>}
           </div>
         </div>
-        <aside className="wire-panel stack stack--small" aria-label="作者主页分享信息">
-          <strong>分享作者主页</strong>
+        <aside className="wire-panel stack stack--small" aria-label="开发者主页分享信息">
+          <strong>分享开发者主页</strong>
           <Button onClick={copySharePath}>复制分享链接</Button>
         </aside>
       </header>
 
-      {creator.verificationStatus === 'disputed' ? <aside className="trust-notice trust-notice--disputed"><strong>作者身份争议处理中</strong><p>公开作品与历史事实继续展示，但不会扩展新的归属关系。</p></aside> : null}
+      {creator.verificationStatus === 'disputed' ? <aside className="trust-notice trust-notice--disputed"><strong>开发者身份争议处理中</strong><p>公开作品与历史事实继续展示，但不会扩展新的归属关系。</p></aside> : null}
 
       <section className="stack" aria-labelledby="creator-projects-heading">
-        <div className="section-heading"><h2 id="creator-projects-heading">作者作品</h2><p>这里展示已经确认由该作者创作或维护的作品。</p></div>
-        {profile.verifiedProjects.length ? <div className="creator-work-grid">{profile.verifiedProjects.map((project) => (
-          <FeedProjectCard key={project.id} project={project} liked={interactions.liked(project)} likeCount={interactions.likeCount(project)} likePending={interactions.busy(project)} creators={[creator]} />
-        ))}</div> : <EmptyState title="暂无已确认的作者作品" description="这个作者还没有完成作品关联。" action={<Link className="button button--secondary" to="/projects">浏览作品广场</Link>} />}
-        {profile.pendingProjects.length ? <aside className="wire-panel stack"><strong>归属待确认</strong>{profile.pendingProjects.map((project) => <p key={project.id}><Link to={`/project/${project.id}`}>{projectName(project)}</Link> · 人工审核中，暂不计入作者作品。</p>)}</aside> : null}
+        <div className="section-heading"><h2 id="creator-projects-heading">关联作品</h2><p>这里展示已关联到该开发者或团队的公开作品。</p></div>
+        {associatedProjects.length ? <div className="creator-work-grid">{associatedProjects.map((project) => (
+          <FeedProjectCard key={project.id} project={project} liked={interactions.liked(project)} likeCount={interactions.likeCount(project)} likePending={interactions.busy(project)} creators={projectCardCreator ? [projectCardCreator] : []} />
+        ))}</div> : <EmptyState title="暂无关联作品" description="这个开发者或团队还没有公开关联作品。" action={<Link className="button button--secondary" to="/projects">浏览作品广场</Link>} />}
       </section>
-
-      <section className="stack" aria-labelledby="creator-updates-heading">
-        <div className="section-heading"><h2 id="creator-updates-heading">最近更新</h2></div>
-        {profile.recentEvents.length ? <ol className="creator-update-list">{profile.recentEvents.slice(0, 6).map((event) => (
-          <li className="wire-panel stack stack--small" key={event.id}>
-            <div className="cluster cluster--between"><Tag>{lifecycleEventLabels[event.type]}</Tag><time dateTime={event.happenedAt}>{new Date(event.happenedAt).toLocaleDateString('zh-CN')}</time></div>
-            <strong>{event.summary}</strong>
-            <Link to={`/project/${event.projectId}#${event.id}`}>在作品详情中定位 →</Link>
-          </li>
-        ))}</ol> : <EmptyState title="暂无公开更新" description="这个作者最近还没有发布作品更新。" action={<Link className="button button--secondary" to="/activity">查看全站动态</Link>} />}
-      </section>
-
-      <section className="stack" aria-labelledby="creator-assets-heading">
-        <div className="section-heading"><h2 id="creator-assets-heading">公开复用资产</h2><p>查看作者公开的代码、模板、组件和其他资源。</p></div>
-        {profile.openAssets.length ? <div className="card-grid">{profile.openAssets.map((asset) => <AssetCard key={asset.id} asset={asset} projectName={projectName(projectMap.get(asset.projectId))} />)}</div> : <EmptyState title="暂无公开复用资产" description="这个作者目前还没有公开可获取的资源。" action={<Link className="button button--secondary" to="/projects?asset=available">浏览开放资产作品</Link>} />}
-      </section>
-
-      <section className="stack" aria-labelledby="creator-reuse-heading">
-        <div className="section-heading"><h2 id="creator-reuse-heading">被其他作品复用</h2><p>看看这些代码、模板或思路被用到了哪些作品中。</p></div>
-        {profile.reusedByRelations.length ? <div className="relationship-list">{profile.reusedByRelations.map((relation) => {
-          const usingProject = projectMap.get(relation.sourceProjectId)
-          const ownedProject = projectMap.get(relation.targetProjectId)
-          return <article className="relationship-card stack stack--small" key={relation.id}><div className="cluster"><Tag tone="strong">被复用</Tag><Tag tone={relation.confirmationStatus === 'platform_confirmed' || relation.confirmationStatus === 'both_parties_confirmed' ? 'default' : 'dashed'}>{relationConfirmationLabels[relation.confirmationStatus]}</Tag></div><strong>{projectName(usingProject)} → {projectName(ownedProject)}</strong><p>{relation.summary}</p><div className="cluster"><Link to={`/project/${relation.sourceProjectId}`}>查看复用方作品</Link><Link to={`/project/${relation.targetProjectId}`}>查看原作品</Link></div></article>
-        })}</div> : <EmptyState title="暂无公开的复用记录" description="目前还没有确认其他作品使用了这些内容。" action={<Link className="button button--secondary" to="/about#rules">查看收录规则</Link>} />}
-      </section>
-
     </main>
   )
 }

@@ -26,6 +26,7 @@ export interface StoredProject {
   readonly follower_count: string
   readonly visible_comment_count: string
   readonly creator_summaries: unknown
+  readonly developer_record?: unknown
   readonly latest_event_summary: unknown
   readonly evidence_summaries?: unknown
   readonly relations?: unknown
@@ -189,10 +190,31 @@ const projectProjectionSql = `
     COALESCE(counter.follower_count, 0)::text AS follower_count,
     COALESCE(counter.visible_comment_count, 0)::text AS visible_comment_count,
     COALESCE(author.creator_summaries, '[]'::jsonb) AS creator_summaries,
-    latest.event_summary AS latest_event_summary
+    latest.event_summary AS latest_event_summary,
+    developer.identity AS developer_record
   FROM catalog.projects project
   JOIN catalog.project_versions version ON version.version_id = project.current_version_id
   LEFT JOIN catalog.project_interaction_counters counter ON counter.project_id = project.project_id
+  LEFT JOIN LATERAL (
+    SELECT jsonb_build_object(
+      'kind', profile.profile_snapshot_json->>'kind',
+      'display_name', profile.profile_snapshot_json->>'display_name',
+      'avatar_url', profile.profile_snapshot_json->'avatar_url',
+      'website_url', profile.profile_snapshot_json->'website_url',
+      'creator_id', creator.creator_id,
+      'creator_status', creator.merge_status,
+      'relation_status', relation.status,
+      'link_status', link.status,
+      'link_role', link.link_role,
+      'verification_status', verification.status
+    ) AS identity
+    FROM catalog.author_relations relation
+    JOIN catalog.creators creator ON creator.creator_id=relation.creator_id
+    JOIN catalog.creator_profile_versions profile ON profile.creator_profile_version_id=creator.current_profile_version_id
+    LEFT JOIN catalog.creator_account_links link ON link.creator_account_link_id=relation.approved_via_creator_account_link_id
+    LEFT JOIN workflow.verification_requests verification ON verification.verification_id=relation.source_verification_id AND verification.project_id=project.project_id
+    WHERE relation.author_relation_id=project.primary_developer_relation_id AND relation.project_id=project.project_id
+  ) developer ON true
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(
       jsonb_build_object(

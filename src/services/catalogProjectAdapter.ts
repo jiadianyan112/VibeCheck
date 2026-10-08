@@ -270,6 +270,16 @@ function creatorIds(value: unknown): CreatorId[] {
     .map((id) => id as CreatorId)
 }
 
+function mapDeveloper(value: unknown): Project['developer'] {
+  const record = object(value)
+  const displayName = text(record?.display_name)
+  if (!record || !displayName) return null
+  const verificationStatus = enumValue(record.verification_status, ['unverified', 'verified', 'disputed'] as const)
+  return { kind: enumValue(record.kind, ['individual', 'team'] as const), displayName,
+    avatarUrl: text(record.avatar_url), websiteUrl: text(record.website_url), creatorId: text(record.creator_id),
+    verificationStatus: verificationStatus ?? 'unverified' }
+}
+
 function idArray(value: unknown): string[] {
   return strings(value)
 }
@@ -454,6 +464,7 @@ function toProject(input: unknown): Project {
   const recordSourceValue = firstDefined(valueAt(card, 'record_source'), valueAt(core, 'record_source'))
   const reviewStatusValue = valueAt(card, 'review_status')
   const projectCore = {
+    developer: mapDeveloper(valueAt(card, 'developer')),
     publicationDetails: readPublicationDetails(valueAt(core, 'publication_details')),
     id: projectId(key),
     currentName: name === null ? unknown<string>(card, key, '作品名称') : known(name, card, key, '作品名称'),

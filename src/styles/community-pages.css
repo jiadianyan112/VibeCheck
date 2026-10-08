@@ -27,7 +27,7 @@
   aspect-ratio: 1;
   font-size: 2rem;
   font-weight: 700; width: 72px; border: 0; border-radius: 50%; background: #e1eacb; }
-.ui-root :is(.creator-work-grid, .creator-update-list) { gap: 20px; }
+.ui-root .creator-work-grid { gap: 20px; }
 .ui-root .creator-work-grid {
   display: grid;
   gap: var(--space-4); grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
@@ -140,7 +140,7 @@
   .ui-root .creator-profile-hero > :last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 699px) {
-  .ui-root :is(.community-detail-hero, .about-split, .rule-columns, .creator-update-list, .profile-field-grid) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .ui-root :is(.community-detail-hero, .about-split, .rule-columns, .profile-field-grid) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .ui-root .creator-work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .ui-root .community-detail-hero__media { width: 100%; max-height: 240px; }
   .ui-root .community-detail-hero__media .media-placeholder { min-height: 160px; }

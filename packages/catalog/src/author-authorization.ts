@@ -59,8 +59,10 @@ export class PostgresAuthorAuthorizationResolver {
          relation.field_permissions_json,link.version AS link_version,
          relation.version AS author_relation_version
        FROM catalog.creator_account_links link
+       JOIN catalog.projects project ON project.project_id=$2
        JOIN catalog.creators creator
          ON creator.creator_id=link.creator_id AND creator.canonical_creator_id IS NULL
+        AND creator.merge_status='canonical'
        JOIN catalog.link_permission_profiles profile
          ON profile.profile_id=link.permission_profile_id
         AND profile.profile_version=link.permission_profile_version
@@ -70,6 +72,14 @@ export class PostgresAuthorAuthorizationResolver {
         AND relation.project_id=$2
         AND relation.status='active'
        WHERE link.user_id=$1 AND link.status='active'
+         AND (NOT project.developer_management_v1 OR (
+           project.primary_developer_relation_id=relation.author_relation_id
+           AND relation.approved_via_creator_account_link_id=link.creator_account_link_id
+           AND link.link_role='owner' AND relation.author_role='owner'
+           AND EXISTS(SELECT 1 FROM workflow.verification_requests verification
+             WHERE verification.verification_id=relation.source_verification_id
+               AND verification.project_id=project.project_id AND verification.status='verified')
+         ))
        ORDER BY link.creator_account_link_id,relation.author_relation_id`,
       [input.userId, input.projectId],
     )

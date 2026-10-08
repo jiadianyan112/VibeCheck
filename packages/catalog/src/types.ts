@@ -70,6 +70,22 @@ export interface FlowStep {
 
 export type SubmitterRelation = 'owner' | 'team_member' | 'third_party'
 
+export interface DeclaredDeveloper {
+  readonly kind: 'individual' | 'team'
+  readonly displayName: string
+  readonly avatarUrl?: string | null
+  readonly websiteUrl?: string | null
+}
+
+export interface DeveloperProjection {
+  readonly kind: 'individual' | 'team' | null
+  readonly display_name: string
+  readonly avatar_url: string | null
+  readonly website_url: string | null
+  readonly creator_id: string | null
+  readonly verification_status: 'unverified' | 'verified' | 'disputed'
+}
+
 export interface PublicationAcknowledgement {
   readonly name: string
   readonly url: string
@@ -77,6 +93,7 @@ export interface PublicationAcknowledgement {
 }
 
 export interface PublicationDetails {
+  readonly developer?: DeclaredDeveloper
   readonly submitterRelation?: SubmitterRelation
   readonly organizationName?: string
   readonly detailedDescription?: string
@@ -162,6 +179,8 @@ export interface InteractionSummary {
 }
 
 export interface CreatorSummary {
+  readonly kind?: 'individual' | 'team' | null
+  readonly website_url?: string | null
   readonly creator_id: string
   readonly display_name: string
   readonly avatar_url: string | null
@@ -224,6 +243,7 @@ export interface ProjectCardProjection {
 }
 
 export interface ProjectProjection extends ProjectCardProjection {
+  readonly developer: DeveloperProjection | null
   readonly viewer_schema: 'public'
   readonly visibility: 'public'
   readonly project_core: ProjectCoreSnapshot

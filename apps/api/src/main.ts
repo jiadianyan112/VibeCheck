@@ -16,6 +16,7 @@ import {
   ProjectUpdateService,
   validateLinkPermissionProfileDeployment,
   CreatorAuthorReadService,
+  DeveloperAccountService,
 } from '@vibecheck/catalog'
 import { ComparisonError, ComparisonService, PostgresComparisonStore } from '@vibecheck/comparison'
 import {
@@ -183,6 +184,8 @@ const projectUpdates = authorAuthorization
     })
   : undefined
 const creatorAuthorRead = catalogConfig.enabled ? new CreatorAuthorReadService(pool) : undefined
+const publicCatalog = catalogConfig.enabled ? new CatalogService({ store: new PostgresCatalogStore(pool), cursorSecret: catalogConfig.cursorSecret }) : undefined
+const developerProjects = publicCatalog && authorAuthorization ? new DeveloperAccountService({ pool, catalog: publicCatalog, authorization: authorAuthorization, cursorSecret: catalogConfig.cursorSecret }) : undefined
 if (workflowConfig.enabled && !identityConfig.enabled) {
   throw new Error('CONFIG_REVIEW_WORKFLOW_REQUIRES_IDENTITY')
 }
@@ -253,13 +256,11 @@ const server = createApiServer(config, {
   ...(evidence ? { evidence } : {}),
   ...(projectUpdates ? { projectUpdates } : {}),
   ...(creatorAuthorRead ? { creatorAuthorRead } : {}),
+  ...(developerProjects ? { developerProjects } : {}),
   staticDirectory: fileURLToPath(new URL('../../../dist', import.meta.url)),
   ...(catalogConfig.enabled
     ? {
-        catalog: new CatalogService({
-          store: new PostgresCatalogStore(pool),
-          cursorSecret: catalogConfig.cursorSecret,
-        }),
+        catalog: publicCatalog!,
         assetResolver: new AssetResolutionService({
           store: new PostgresAssetResolutionStore(pool),
           webResolver: submissionWebResolver,

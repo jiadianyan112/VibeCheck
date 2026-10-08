@@ -29,7 +29,7 @@ export const projectUpdateTypeLabels: Record<ProjectUpdateType, string> = {
 }
 
 export const projectUpdateSourceLabels: Record<ProjectUpdateSourceType, string> = {
-  author_statement: '作者声明',
+  author_statement: '开发者声明',
   public_page: '公开页面',
   repository: '代码仓库',
   release_notes: '发布说明',

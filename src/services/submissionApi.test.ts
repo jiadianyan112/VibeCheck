@@ -13,14 +13,24 @@ import { submissionDraftId, userId } from '../types'
 
 const checkId = '11111111-1111-4111-8111-111111111111'
 
+it.each([
+  { kind: 'team', displayName: '团队', verified: true },
+  { kind: 'individual', displayName: '开发者', websiteUrl: 'javascript:alert(1)' },
+  { kind: 'individual', displayName: '开发者', avatarUrl: 'https://user:secret@example.test/avatar.png' },
+  { kind: 'team', displayName: '' },
+])('rejects unsafe or authority-bearing declared developer metadata: %j', developer => {
+  expect(() => editableFieldsToPatch({ category_id: 'ai_learning_quiz', category_schema_version: 'learning.v1', project_core: { current_name: '作品', public_url: 'https://example.test/', one_line_definition: '作品介绍', publication_details: { developer } }, category_data: {} } as never)).toThrow()
+})
+
 it('allows publication metadata in a compact patch and maps a frozen remote snapshot', () => {
-  const publication_details = { submitterRelation: 'team_member', organizationName: '创作团队', detailedDescription: '公开介绍', galleryUrls: ['https://example.test/detail.png'], videoUrl: 'https://www.bilibili.com/video/BVexample', acknowledgements: [{ name: '工具', url: '', note: '提供组件' }] }
+  const publication_details = { submitterRelation: 'owner', developer: { kind: 'team', displayName: '创作团队', avatarUrl: 'https://example.test/logo.png', websiteUrl: 'https://example.test/' }, organizationName: '创作团队', detailedDescription: '公开介绍', galleryUrls: ['https://example.test/detail.png'], videoUrl: 'https://www.bilibili.com/video/BVexample', acknowledgements: [{ name: '工具', url: '', note: '提供组件' }] }
   const snapshot = { category_id: 'ai_learning_quiz', category_schema_version: 'learning.v1', project_core: { current_name: '作品', public_url: 'https://example.test/', one_line_definition: '作品介绍', publication_details }, category_data: {} } as const
   expect(editableFieldsToPatch(snapshot as never)).toEqual(snapshot)
   const remote: RemoteSubmissionDraft = { ...draftProjection, payload_snapshot: snapshot, fields: {}, originalExtraction: {} }
   const draft = remoteDraftToLocalDraft(remote, userId('review-test-user'))
-  expect(draft.fields.submitterRelation).toBe('team_member')
+  expect(draft.fields.submitterRelation).toBe('owner')
   expect(draft.fields.acknowledgements).toEqual(publication_details.acknowledgements)
+  expect(draft.fields.developer).toEqual(publication_details.developer)
 })
 const draftId = '22222222-2222-4222-8222-222222222222'
 const chainId = '33333333-3333-4333-8333-333333333333'

@@ -1,11 +1,17 @@
-import { RouterProvider } from 'react-router-dom'
+import { BrowserRouter, useRoutes } from 'react-router-dom'
 import { AppProviders } from './providers'
-import { router } from './router'
+import { appRoutes } from './router'
+
+function AppRoutes() {
+  return useRoutes(appRoutes)
+}
 
 export function App() {
   return (
     <AppProviders>
-      <RouterProvider router={router} />
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
     </AppProviders>
   )
 }

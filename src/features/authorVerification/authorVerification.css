@@ -1,0 +1,39 @@
+.author-verification-page .verification-kind-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.author-verification-page .verification-material-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.author-verification-page .verification-material-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.75rem;
+}
+
+.author-verification-page .verification-material-list span {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.author-verification-page .verification-material-list small {
+  color: var(--color-text-muted, #6f716b);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  .author-verification-page .verification-kind-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,41 @@ import { emptyPublishFields, mergePublishFields, publishSnapshot, validatePublis
 import { editableFieldsToPatch } from '../../services/submissionApi'
 
 describe('minimal publication payload', () => {
+  it('stores a developer identity and a fixed owner relation for new submissions', () => {
+    const snapshot = publishSnapshot({
+      ...emptyPublishFields,
+      category: 'personal_site_portfolio',
+      developerKind: 'team',
+      developerName: 'VibeCheck Studio',
+      developerAvatarUrl: 'https://example.com/logo.png',
+      developerWebsiteUrl: 'https://example.com/',
+    }, 'https://example.com/')
+
+    expect(snapshot.project_core.publication_details).toMatchObject({
+      submitterRelation: 'owner',
+      developer: {
+        kind: 'team',
+        displayName: 'VibeCheck Studio',
+        avatarUrl: 'https://example.com/logo.png',
+        websiteUrl: 'https://example.com/',
+      },
+    })
+  })
+
+  it('requires a developer kind and name while keeping legacy relation content out of the new UI payload', () => {
+    const missingKind = validatePublishFields({
+      ...emptyPublishFields,
+      name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz', developerName: '个人开发者',
+    })
+    expect(missingKind.developerKind).toBe('请选择开发主体类型')
+
+    const missingName = validatePublishFields({
+      ...emptyPublishFields,
+      name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz', developerKind: 'individual',
+    })
+    expect(missingName.developerName).toBe('请填写开发者或团队名称')
+  })
+
   it.each(['ai_learning_quiz', 'personal_site_portfolio'] as const)('accepts four facts without media or invented category details: %s', category => {
     const snapshot = publishSnapshot({ ...emptyPublishFields, name: 'My work', summary: 'A useful work', url: 'https://example.com/', category }, 'https://example.com/')
     expect(editableFieldsToPatch(snapshot)).toEqual(snapshot)
@@ -24,8 +59,10 @@ describe('minimal publication payload', () => {
     const snapshot = publishSnapshot({
       ...emptyPublishFields,
       category: 'personal_site_portfolio',
-      submitterRelation: 'team_member',
-      organizationName: 'VibeCheck Studio',
+      developerKind: 'team',
+      developerName: 'VibeCheck Studio',
+      developerAvatarUrl: 'https://example.com/logo.png',
+      developerWebsiteUrl: 'https://example.com/',
       detailedDescription: '这是面向公开展示的完整介绍。',
       logoUrl: 'https://example.com/logo.png',
       galleryUrls: ['https://example.com/detail-1.png'],
@@ -33,23 +70,25 @@ describe('minimal publication payload', () => {
       acknowledgements: [{ name: '设计伙伴', url: 'https://example.com/partner', note: '共同完成视觉方向。' }],
     }, 'https://example.com/')
     expect(snapshot.project_core.publication_details).toEqual({
-      submitterRelation: 'team_member',
-      organizationName: 'VibeCheck Studio',
+      submitterRelation: 'owner',
+      organizationName: '',
       detailedDescription: '这是面向公开展示的完整介绍。',
       logoUrl: 'https://example.com/logo.png',
       galleryUrls: ['https://example.com/detail-1.png'],
       videoUrl: 'https://www.bilibili.com/video/BV1xx',
       acknowledgements: [{ name: '设计伙伴', url: 'https://example.com/partner', note: '共同完成视觉方向。' }],
+      developer: { kind: 'team', displayName: 'VibeCheck Studio', avatarUrl: 'https://example.com/logo.png', websiteUrl: 'https://example.com/' },
     })
   })
 
-  it('requires a self-described relationship and validates optional publication links', () => {
-    const missingRelation = validatePublishFields({ ...emptyPublishFields, name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz' })
-    expect(missingRelation.submitterRelation).toBe('请选择你与作品的关系')
+  it('requires a developer identity and validates optional publication links', () => {
+    const missingDeveloper = validatePublishFields({ ...emptyPublishFields, name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz' })
+    expect(missingDeveloper.developerKind).toBe('请选择开发主体类型')
+    expect(missingDeveloper.developerName).toBe('请填写开发者或团队名称')
 
     const invalidLinks = validatePublishFields({
       ...emptyPublishFields,
-      name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz', submitterRelation: 'owner',
+      name: '作品', summary: '简介', url: 'https://example.com/', category: 'ai_learning_quiz', developerKind: 'individual', developerName: '个人开发者',
       logoUrl: 'not-a-url', galleryUrls: ['https://example.com/detail.png'], videoUrl: 'https://youtube.com/watch?v=1',
       acknowledgements: [{ name: '', url: 'bad', note: '' }],
     })

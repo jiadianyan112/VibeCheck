@@ -45,6 +45,21 @@ const portfolioP0 = {
 }
 
 describe('category schema validation', () => {
+  it('preserves a declared developer without promoting it to a verified identity', () => {
+    const developer = { kind: 'team', displayName: '微光工作室', avatarUrl: 'https://example.com/team.png', websiteUrl: 'https://example.com' }
+    const parsed = parseProjectSnapshot({ project_core: { ...core, publication_details: { submitterRelation: 'owner', developer } }, category_id: 'personal_site_portfolio', category_schema_version: 'portfolio.v1', category_data: portfolioP0 }, 'personal_site_portfolio', 'portfolio.v1')
+    assert.deepEqual(parsed.project_core.publication_details?.developer, developer)
+  })
+
+  it('rejects invalid developer types, empty names, excessive names and unsafe profile links', () => {
+    for (const developer of [
+      { kind: 'organization', displayName: 'Team' }, { kind: 'individual', displayName: ' ' },
+      { kind: 'team', displayName: 'a'.repeat(81) }, { kind: 'team', displayName: 'Team', websiteUrl: 'javascript:alert(1)' },
+      { kind: 'individual', displayName: 'Dev', avatarUrl: 'https://user:password@example.com/a.png' },
+      { kind: 'team', displayName: 'Team', verified: true },
+    ]) assert.throws(() => parseProjectSnapshot({ project_core: { ...core, publication_details: { developer } }, category_id: 'personal_site_portfolio', category_schema_version: 'portfolio.v1', category_data: portfolioP0 }, 'personal_site_portfolio', 'portfolio.v1'), CatalogError)
+  })
+
   it('accepts the frozen Portfolio P0 field set', () => {
     const parsed = parseProjectSnapshot({
       project_core: core,

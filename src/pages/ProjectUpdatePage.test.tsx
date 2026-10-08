@@ -58,7 +58,7 @@ describe('verified author project updates', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: '新作品状态' }), 'ended')
     await fillContext(user)
     await user.click(screen.getByRole('button', { name: '预览确认并提交更新' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('暂停或结束必须由作者明确勾选声明')
+    expect(screen.getByRole('alert')).toHaveTextContent('暂停或结束必须由开发者明确勾选声明')
     await user.click(screen.getByRole('checkbox', { name: /我明确声明该作品已经结束/ }))
     await user.click(screen.getByRole('button', { name: '预览确认并提交更新' }))
     await user.click(screen.getByRole('button', { name: '确认提交更新' }))

@@ -16,6 +16,7 @@ import type {
 } from './verification-request-types.js'
 
 interface VerificationRequestRow extends QueryResultRow {
+  readonly developer_identity_v1?: boolean
   readonly verification_id: string
   readonly project_id: string
   readonly applicant_user_id: string
@@ -146,12 +147,13 @@ export class PostgresVerificationRequestStore {
         await client.query('COMMIT')
         return replay.rows[0]
       }
-      const project = await client.query<{ review_status: string }>(
-        `SELECT review_status FROM catalog.projects WHERE project_id=$1`, [input.projectId],
+      const project = await client.query<{ review_status: string; developer_management_v1: boolean }>(
+        `SELECT review_status,developer_management_v1 FROM catalog.projects WHERE project_id=$1`, [input.projectId],
       )
       if (!project.rows[0] || project.rows[0].review_status === 'deleted') {
         throw workflowError('PROJECT_NOT_FOUND', 404)
       }
+      await assertDeveloperSelection(client, input.projectId, input.selection)
       const latest = await client.query<VerificationRequestRow>(
         `SELECT request.* FROM workflow.verification_requests request
          WHERE request.applicant_user_id=$1 AND request.project_id=$2
@@ -225,6 +227,11 @@ export class PostgresVerificationRequestStore {
         await client.query('COMMIT')
         return hydrate(receipt.rows[0].response_json as VerificationRequestRow)
       }
+      const owned = await client.query<VerificationRequestRow>(
+        `SELECT * FROM workflow.verification_requests WHERE verification_id=$1 AND applicant_user_id=$2`,
+        [input.verificationId, input.userId],
+      )
+      if (owned.rows[0]?.developer_identity_v1) await assertDeveloperSelection(client, owned.rows[0].project_id, input.selection)
       const updated = await client.query<VerificationRequestRow>(
         `UPDATE workflow.verification_requests SET
            creator_resolution_mode=$4,creator_account_link_id=$5,target_creator_id=$6,
@@ -331,6 +338,7 @@ export class PostgresVerificationRequestStore {
       if (!row.public_summary || row.public_summary.length<10) {
         throw workflowError('VERIFICATION_SUMMARY_REQUIRED',422)
       }
+      if (row.developer_identity_v1) await assertDeveloperSelection(client, row.project_id, input.selection)
       await this.assertMaterialSnapshot(client,row,input.materialIds)
       await this.assertEvidenceRefs(client,row.project_id,input.evidenceRefs)
       await this.assertSelectionStillCurrent(client,row,input.selection)
@@ -960,8 +968,8 @@ async function insertRequest(client: PoolClient, input: Readonly<{
     `INSERT INTO workflow.verification_requests (
        project_id,applicant_user_id,creator_resolution_mode,creator_account_link_id,
        target_creator_id,new_creator_profile_input_json,requested_link_role,status_history_json,
-       supersedes_verification_id,idempotency_key,request_hash,created_at,updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12,$12) RETURNING *`,
+       supersedes_verification_id,idempotency_key,request_hash,created_at,updated_at,developer_identity_v1
+     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12,$12,true) RETURNING *`,
     [input.projectId, input.userId, input.selection.mode, input.selection.creatorAccountLinkId,
       input.selection.targetCreatorId, input.selection.newCreatorProfileInput === null
         ? null
@@ -971,6 +979,30 @@ async function insertRequest(client: PoolClient, input: Readonly<{
       input.supersedesVerificationId, input.idempotencyKey, input.requestHash, input.now],
   )
   return result.rows[0]!
+}
+
+async function assertDeveloperSelection(client: PoolClient, projectId: string, selection: ResolutionSelection): Promise<void> {
+  if (selection.provisionalPolicy.default_link_role !== 'owner' || selection.requestedLinkRole === 'manager') throw workflowError('VERIFICATION_OWNER_REQUIRED', 422)
+  let kind: string | null = selection.newCreatorProfileInput?.kind ?? null
+  if (selection.mode !== 'create_new_creator') {
+    const identity = await client.query<{ kind: string | null }>(
+      `SELECT profile.profile_snapshot_json->>'kind' AS kind FROM catalog.creators creator
+       JOIN catalog.creator_profile_versions profile ON profile.creator_profile_version_id=creator.current_profile_version_id
+       WHERE creator.creator_id=COALESCE($1::uuid,(SELECT creator_id FROM catalog.creator_account_links WHERE creator_account_link_id=$2))`,
+      [selection.targetCreatorId, selection.creatorAccountLinkId],
+    )
+    kind = identity.rows[0]?.kind ?? null
+  }
+  if (kind !== 'individual' && kind !== 'team') throw workflowError('NEW_CREATOR_PROFILE_INVALID', 422)
+  const project = await client.query<{ declared_kind: string | null; claimed: boolean }>(
+    `SELECT version.snapshot_json->'project_core'->'publication_details'->'developer'->>'kind' AS declared_kind,
+       (project.primary_developer_relation_id IS NOT NULL OR EXISTS (
+         SELECT 1 FROM catalog.author_relations WHERE project_id=$1 AND author_role='owner' AND status IN ('active','suspended')
+       )) AS claimed FROM catalog.projects project LEFT JOIN catalog.project_versions version ON version.version_id=project.current_version_id
+     WHERE project.project_id=$1`, [projectId],
+  )
+  if (project.rows[0]?.claimed) throw workflowError('PROJECT_DEVELOPER_ALREADY_CLAIMED', 409)
+  if (project.rows[0]?.declared_kind && project.rows[0].declared_kind !== kind) throw workflowError('VERIFICATION_KIND_MISMATCH', 422)
 }
 
 function validateSupersedes(latest: VerificationRequestRow | null, supplied: string | null): void {

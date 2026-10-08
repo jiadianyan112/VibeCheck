@@ -45,7 +45,7 @@ it('reads published works from the database catalog and resolves their detail by
   expect(detail.ok).toBe(true)
   if (!detail.ok) return
   expect(detail.data.project.currentName).toMatchObject({ state: 'known', value: card.current_name })
-  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/projects/${publishedId}`), expect.any(Object))
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/api/v1/projects/${publishedId}`), expect.objectContaining({ cache: 'no-cache' }))
 })
 
 it('loads server timeline pages so update notifications can locate their event', async () => {

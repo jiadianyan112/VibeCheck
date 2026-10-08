@@ -10,6 +10,9 @@ export type VerificationRequestStatus =
   | 'draft' | 'pending' | 'changes_requested' | 'verified' | 'failed' | 'withdrawn'
 
 export interface NewCreatorProfileInput {
+  readonly kind?: 'individual' | 'team'
+  readonly avatar_url?: string | null
+  readonly website_url?: string | null
   readonly display_name: string
   readonly bio?: string
 }

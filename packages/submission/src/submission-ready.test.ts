@@ -21,7 +21,7 @@ const input = {
     category_id: 'personal_site_portfolio', category_schema_version: 'portfolio.v1',
     project_core: {
       current_name: 'My work', public_url: 'https://example.com', one_line_definition: 'A personal collection',
-      publication_details: { submitterRelation: 'owner' },
+      publication_details: { submitterRelation: 'owner', developer: { kind: 'individual', displayName: 'My developer' } },
     },
     category_data: {},
   },
@@ -36,6 +36,16 @@ const inputWithoutRelation = {
 }
 
 describe('compact submission snapshots', () => {
+  it('rejects new third-party and team-member submissions even with developer details', () => {
+    for (const submitterRelation of ['third_party', 'team_member']) assert.throws(
+      () => validateSubmissionReadySnapshot({ ...input, payloadSnapshot: { ...input.payloadSnapshot, project_core: { ...input.payloadSnapshot.project_core, publication_details: { submitterRelation, developer: { kind: 'team', displayName: 'My team' } } } } }),
+      (error: unknown) => error instanceof SubmissionError && error.code === 'SUBMISSION_OWNER_REQUIRED',
+    )
+  })
+  it('requires developer details for new submissions, while old published snapshots remain readable', () => {
+    assert.throws(() => validateSubmissionReadySnapshot({ ...input, payloadSnapshot: { ...input.payloadSnapshot, project_core: { ...input.payloadSnapshot.project_core, publication_details: { submitterRelation: 'owner' } } } }), (error: unknown) => error instanceof SubmissionError && error.code === 'SUBMISSION_DEVELOPER_REQUIRED')
+  })
+
   it('requires a valid submitter relation when a new snapshot is made ready', () => {
     assert.throws(
       () => validateSubmissionReadySnapshot(inputWithoutRelation),

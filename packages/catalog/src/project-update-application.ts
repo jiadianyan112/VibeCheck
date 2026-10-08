@@ -413,12 +413,21 @@ export class PostgresProjectUpdateApplier {
         AND profile.config_hash=link.permission_profile_config_hash
        JOIN catalog.creators creator ON creator.creator_id=link.creator_id
        JOIN catalog.author_relations relation ON relation.author_relation_id=$2
+       JOIN catalog.projects project ON project.project_id=$6
        WHERE link.creator_account_link_id=$1 AND link.user_id=$3 AND link.status='active'
          AND link.version=$4 AND relation.version=$5 AND relation.status='active'
          AND relation.project_id=$6 AND relation.creator_id=link.creator_id
          AND creator.merge_status='canonical' AND creator.canonical_creator_id IS NULL
          AND profile.profile_id=$7 AND profile.profile_version=$8 AND profile.config_hash=$9
          AND link.creator_id=$10
+         AND (NOT project.developer_management_v1 OR (
+           project.primary_developer_relation_id=relation.author_relation_id
+           AND relation.approved_via_creator_account_link_id=link.creator_account_link_id
+           AND link.link_role='owner' AND relation.author_role='owner'
+           AND EXISTS (SELECT 1 FROM workflow.verification_requests verification
+             WHERE verification.verification_id=relation.source_verification_id
+               AND verification.project_id=project.project_id AND verification.status='verified')
+         ))
        FOR SHARE OF link,creator,relation,profile`,
       [snapshot.creator_account_link_id, snapshot.author_relation_id, update.owner_user_id,
         snapshot.link_version, snapshot.author_relation_version, update.project_id,

@@ -15,6 +15,8 @@ import {
   type TableColumn,
 } from '../components'
 
+if (import.meta.env.DEV) void import('./StyleSandboxPage.css')
+
 interface StatusRow {
   project: string
   status: string

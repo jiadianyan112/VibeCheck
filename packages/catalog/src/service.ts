@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 import { catalogError } from './errors.js'
+import { resolveProjectDeveloper } from './developer.js'
 import type { CatalogStore, StoredAsset, StoredEvent, StoredProject } from './store.js'
 import type {
   AssetPage,
@@ -315,6 +316,7 @@ export class CatalogService {
       ...card,
       viewer_schema: 'public',
       visibility: 'public',
+      developer: resolveProjectDeveloper(stored.developer_record, snapshot.project_core.publication_details?.developer, stored.author_link_status),
       project_core: snapshot.project_core,
       category_data: snapshot.category_data,
       first_seen_at: stored.first_seen_at.toISOString(),
@@ -496,6 +498,8 @@ export class CatalogService {
     return Object.freeze({
       creator_id: stored.creator_id,
       display_name: profile.display_name.trim(),
+      kind: profile.kind === 'individual' || profile.kind === 'team' ? profile.kind : null,
+      website_url: typeof profile.website_url === 'string' ? profile.website_url : null,
       avatar_url: profile.avatar_url as string | null,
       verification_status: profile.verification_status as CreatorProjection['verification_status'],
       viewer_schema: 'public',

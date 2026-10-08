@@ -1435,6 +1435,38 @@ class RejectingIdentityService extends FakeIdentityService {
   }
 }
 
+test('my projects requires a session, binds account and pagination, and disables caching', async () => {
+  let captured: unknown
+  class SessionBoundIdentity extends FakeIdentityService {
+    override async getSession(token?: string | null) {
+      if (!token) throw new IdentityError('AUTHENTICATION_REQUIRED', 401, false)
+      return session
+    }
+  }
+  const identity = new SessionBoundIdentity()
+  const server = createApiServer(config, {
+    checkReadiness: async () => {}, identity, authCookieSecure: false,
+    developerProjects: { list: async input => { captured = input; return { items: [], next_cursor: null } } },
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  assert(address && typeof address === 'object')
+  const base = `http://127.0.0.1:${address.port}/api/v1/me/projects`
+  try {
+    const anonymous = await fetch(base)
+    assert.equal(anonymous.status, 401)
+    assert.equal(captured, undefined)
+    const headers = { cookie: 'vc_session=session-token-with-at-least-thirty-two-characters' }
+    const response = await fetch(`${base}?limit=10&cursor=next&project_id=11111111-1111-4111-8111-111111111111`, { headers })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(captured, { userId: session.userId, limit: 10, cursor: 'next', projectId: '11111111-1111-4111-8111-111111111111' })
+    assert.equal((await fetch(`${base}?limit=abc`, { headers })).status, 400)
+    assert.equal((await fetch(`${base}?user_id=another`, { headers })).status, 422)
+  } finally { await close(server) }
+})
+
 class RestrictedIdentityService extends FakeIdentityService {
   override async getSession(): Promise<SessionProjection> {
     return Object.freeze({ ...session, accountStatus: 'restricted' as const })
@@ -3810,6 +3842,7 @@ class FakeCatalogService implements ApiCatalogService {
       ...projectCard,
       viewer_schema: 'public',
       visibility: 'public',
+      developer: null,
       project_core: Object.freeze({
         current_name: 'Fixture Project',
         public_url: 'https://fixture.example.com',

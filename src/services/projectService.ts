@@ -35,7 +35,7 @@ const serverProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f
 
 async function catalogGet<T>(path: string, signal?: AbortSignal): Promise<ServiceResult<T>> {
   try {
-    const response = await fetch(`${apiBase}${path}`, { signal, headers: { accept: 'application/json' } })
+    const response = await fetch(`${apiBase}${path}`, { signal, cache: 'no-cache', headers: { accept: 'application/json' } })
     if (response.status === 404) return notFound('VC_PROJECT_NOT_FOUND', '未找到对应作品档案。')
     if (!response.ok) return { ok: false, error: { code: 'VC_CATALOG_UNAVAILABLE', kind: 'server', message: '作品目录暂时不可用，请稍后重试。', retryable: true } }
     return { ok: true, data: await response.json() as T }

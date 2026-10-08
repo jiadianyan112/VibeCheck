@@ -43,9 +43,11 @@ it('approves a database work item without requiring a reason and refreshes the q
 })
 
 it('shows the frozen publication details supplied by the review queue', async () => {
-  calls.listPending.mockResolvedValue([{ work_item_id: 'frozen-review', target_id: 'frozen-submission', work_item_status: 'queued', version: 1, domain_summary: { status: 'pending_review', current_name: '投稿作品', publication_details: { submitterRelation: 'third_party', detailedDescription: '冻结的详细介绍', acknowledgements: [{ name: '组件库', note: '帮助构建界面', url: '' }] } }, created_at: '2026-10-03T00:00:00.000Z' }])
+  calls.listPending.mockResolvedValue([{ work_item_id: 'frozen-review', target_id: 'frozen-submission', work_item_status: 'queued', version: 1, domain_summary: { status: 'pending_review', current_name: '投稿作品', publication_details: { submitterRelation: 'third_party', organizationName: '旧团队', detailedDescription: '冻结的详细介绍', acknowledgements: [{ name: '组件库', note: '帮助构建界面', url: '' }] } }, created_at: '2026-10-03T00:00:00.000Z' }])
   render(<ServerAdminReviewsPage />)
   expect(await screen.findByText('冻结的详细介绍')).toBeInTheDocument()
   expect(screen.getByText('帮助构建界面')).toBeInTheDocument()
-  expect(screen.getByText('第三方推荐者')).toBeInTheDocument()
+  expect(screen.getByText('旧团队')).toBeInTheDocument()
+  expect(screen.getByText('开发主体资料待补充。')).toBeInTheDocument()
+  expect(screen.queryByText('第三方推荐者')).not.toBeInTheDocument()
 })

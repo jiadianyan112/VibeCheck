@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
-    "start": "node dist/main.js"
+    "start": "node ../../packages/database/dist/migrate.js && node dist/main.js"
   },
   "dependencies": {
     "@vibecheck/analytics": "*",

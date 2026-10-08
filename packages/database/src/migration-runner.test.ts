@@ -56,6 +56,8 @@ describe('discoverMigrations', () => {
       '000045_structured_experiences.sql',
       '000046_community_rate_limit_defaults.sql',
       '000047_project_follow_history.sql',
+      '000048_developer_identity_v1.sql',
+      '000049_developer_verification_boundary.sql',
       ],
     )
     for (const migration of migrations) {

@@ -334,9 +334,9 @@ export class PostgresSubmissionPublisher {
            project_id,current_version_id,current_name,category_id,category_schema_version,
            canonical_public_url,canonical_url_hash,review_status,access_status,author_link_status,
            completeness_level,freshness_status,record_source,first_seen_at,last_verified_at,
-           aggregate_version,created_at,updated_at
+           aggregate_version,created_at,updated_at,developer_management_v1
          ) VALUES ($1,NULL,$2,$3,$4,$5,$6,'published_platform',$7,'unlinked',
-           'pending_verification','valid','user_submission',$8,$8,1,$8,$8)`,
+           'pending_verification','valid','user_submission',$8,$8,1,$8,$8,true)`,
         [projectId, snapshot.project_core.current_name, categoryId, schemaVersion,
           submission.canonical_url, submission.canonical_url_hash, snapshot.project_core.access_status,
           publishedAt],

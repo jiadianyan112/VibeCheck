@@ -1,5 +1,4 @@
 import { projectId, userId } from '../../types'
-import { verificationService } from '../../services'
 import { applyVerificationReview, authorManagementState, createVerificationRequest } from './verification'
 
 function draftRequest() {
@@ -33,16 +32,12 @@ describe('author verification lifecycle', () => {
     expect(disputed.statusHistory).toHaveLength(3)
   })
 
-  it('provides fixed pending, changes, success, failure and dispute review scenarios', async () => {
+  it('keeps the review status vocabulary available to the real workflow', () => {
     const request = draftRequest()
-    const scenarios = [
-      ['default', 'pending'],
-      ['review_changes_requested', 'changes_requested'],
-      ['review_approved', 'verified'],
-      ['review_rejected', 'failed'],
-      ['verification_disputed', 'disputed'],
-    ] as const
-    const results = await Promise.all(scenarios.map(([scenario]) => verificationService.submit(request, { scenario, delayMs: 0 })))
-    expect(results.map((result) => result.ok ? result.data.status : 'error')).toEqual(scenarios.map(([, status]) => status))
+    expect(applyVerificationReview(request, 'pending').status).toBe('pending')
+    expect(applyVerificationReview(request, 'changes_requested').status).toBe('changes_requested')
+    expect(applyVerificationReview(request, 'verified').status).toBe('verified')
+    expect(applyVerificationReview(request, 'failed').status).toBe('failed')
+    expect(applyVerificationReview(request, 'disputed').status).toBe('disputed')
   })
 })

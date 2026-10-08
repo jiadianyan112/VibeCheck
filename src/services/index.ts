@@ -5,6 +5,8 @@ export { intentService, parseIntent, type IntentParseResult } from './intentServ
 export { notificationService } from './notificationService'
 export { projectService, type ProjectBundle } from './projectService'
 export { projectUpdateService } from './projectUpdateService'
+export { developerApi, DeveloperApiError, type DeveloperKind, type DeveloperVerificationStatus, type ListMyProjectsOptions, type MyProjectDeveloper, type MyProjectItem, type MyProjectPage, type MyProjectVerificationStatus } from './developerApi'
+export { projectUpdateApi, ProjectUpdateApiError, type ProjectUpdateAuthorizationSnapshot, type ProjectUpdateBeforeAfter, type ProjectUpdateCapability, type ProjectUpdateDiff, type ProjectUpdatePreview, type ProjectUpdateProjection, type ProjectUpdateSession, type ProjectUpdateStatus, type ProjectUpdateSubmission, type ProjectUpdateType as RemoteProjectUpdateType, type ProjectUpdateWithdrawal } from './projectUpdateApi'
 export {
   clone,
   configureServiceRuntime,

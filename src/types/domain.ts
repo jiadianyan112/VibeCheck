@@ -645,6 +645,7 @@ export interface ProjectCore {
  * store their category facts only in categoryData and expose unknown legacy facts.
  */
 export interface Project extends ProjectCore {
+  developer?: ProjectDeveloper | null
   oneLineDefinition: FieldFact<string>
   targetUsers: FieldFact<TargetUser[]>
   coreProblem: FieldFact<string>
@@ -670,6 +671,8 @@ export interface CreatorContact {
 }
 
 export interface Creator {
+  kind?: 'individual' | 'team' | null
+  websiteUrl?: string | null
   id: CreatorId
   displayName: string
   avatarUrl: string | null
@@ -741,7 +744,22 @@ export interface ComparisonSession {
 
 export type SubmitterRelation = 'owner' | 'team_member' | 'third_party'
 export interface SubmissionAcknowledgement { name: string; url: string; note: string }
+export interface DeveloperIdentity {
+  kind: 'individual' | 'team'
+  displayName: string
+  avatarUrl?: string | null
+  websiteUrl?: string | null
+}
+export interface ProjectDeveloper {
+  kind: 'individual' | 'team' | null
+  displayName: string
+  avatarUrl: string | null
+  websiteUrl: string | null
+  creatorId: string | null
+  verificationStatus: 'unverified' | 'verified' | 'disputed'
+}
 export interface PublicationDetails {
+  developer?: DeveloperIdentity
   submitterRelation?: SubmitterRelation
   organizationName?: string
   detailedDescription?: string

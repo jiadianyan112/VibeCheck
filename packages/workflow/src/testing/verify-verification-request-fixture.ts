@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import pg from 'pg'
 
 import { PostgresVerificationRequestStore } from '../verification-request-store.js'
+import { workflowError } from '../errors.js'
 import { VerificationRequestService } from '../verification-request-service.js'
 import { PostgresWorkflowStore } from '../postgres-store.js'
 import { WorkflowService } from '../service.js'
@@ -27,6 +28,124 @@ const sessionToken = 'v'.repeat(43)
 const authSecret = 'verification-fixture-auth-secret-at-least-32'
 const tokenSecret = 'verification-fixture-token-secret-at-least-32'
 
+type VerificationRequestCreateInput = Parameters<PostgresVerificationRequestStore['create']>[0]
+type VerificationRequestRow = Awaited<ReturnType<PostgresVerificationRequestStore['create']>>
+
+/**
+ * This fixture also exercises the pre-developer-v1 request path. Its old
+ * manager/co-creator cases intentionally have no developer profile kind, so
+ * seed those rows with the migration default and keep patch/submit/approval
+ * behavior on the real production services.
+ */
+class HistoricalVerificationRequestStore extends PostgresVerificationRequestStore {
+  constructor(private readonly fixturePool: pg.Pool) {
+    super(fixturePool)
+  }
+
+  override async create(input: VerificationRequestCreateInput): Promise<VerificationRequestRow> {
+    const client = await this.fixturePool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        `${input.userId}:${input.projectId}`,
+      ])
+      const replay = await client.query<VerificationRequestRow>(
+        `SELECT * FROM workflow.verification_requests
+         WHERE applicant_user_id=$1 AND idempotency_key=$2`,
+        [input.userId, input.idempotencyKey],
+      )
+      if (replay.rows[0]) {
+        if (replay.rows[0].request_hash !== input.requestHash) {
+          throw workflowError('VERIFICATION_IDEMPOTENCY_KEY_REUSED', 409)
+        }
+        await client.query('COMMIT')
+        return replay.rows[0]
+      }
+      const project = await client.query<{ review_status: string }>(
+        `SELECT review_status FROM catalog.projects WHERE project_id=$1`, [input.projectId],
+      )
+      if (!project.rows[0] || project.rows[0].review_status === 'deleted') {
+        throw workflowError('PROJECT_NOT_FOUND', 404)
+      }
+      const latest = await client.query<VerificationRequestRow>(
+        `SELECT request.* FROM workflow.verification_requests request
+         WHERE request.applicant_user_id=$1 AND request.project_id=$2
+           AND NOT EXISTS (
+             SELECT 1 FROM workflow.verification_requests successor
+             WHERE successor.supersedes_verification_id=request.verification_id
+           )
+         ORDER BY created_at DESC,verification_id DESC LIMIT 1 FOR UPDATE`,
+        [input.userId, input.projectId],
+      )
+      if (input.supersedesVerificationId !== null) {
+        const supplied = await client.query<{ applicant_user_id: string; project_id: string }>(
+          `SELECT applicant_user_id,project_id FROM workflow.verification_requests
+           WHERE verification_id=$1`,
+          [input.supersedesVerificationId],
+        )
+        if (!supplied.rows[0]) throw workflowError('VERIFICATION_SUPERSEDES_INVALID', 409)
+        if (supplied.rows[0].applicant_user_id !== input.userId) {
+          throw workflowError('VERIFICATION_SUPERSEDES_FORBIDDEN', 403)
+        }
+        if (supplied.rows[0].project_id !== input.projectId) {
+          throw workflowError('VERIFICATION_SUPERSEDES_PROJECT_MISMATCH', 409)
+        }
+      }
+      validateHistoricalSupersedes(latest.rows[0] ?? null, input.supersedesVerificationId)
+      const result = await client.query<VerificationRequestRow>(
+        `INSERT INTO workflow.verification_requests (
+           project_id,applicant_user_id,creator_resolution_mode,creator_account_link_id,
+           target_creator_id,new_creator_profile_input_json,requested_link_role,status_history_json,
+           supersedes_verification_id,idempotency_key,request_hash,created_at,updated_at,developer_identity_v1
+         ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12,$12,false)
+         RETURNING *`,
+        [input.projectId, input.userId, input.selection.mode, input.selection.creatorAccountLinkId,
+          input.selection.targetCreatorId, input.selection.newCreatorProfileInput === null
+            ? null
+            : JSON.stringify(input.selection.newCreatorProfileInput),
+          input.selection.requestedLinkRole,
+          JSON.stringify([{ status: 'draft', at: input.now.toISOString() }]),
+          input.supersedesVerificationId, input.idempotencyKey, input.requestHash, input.now],
+      )
+      const row = result.rows[0]!
+      await client.query(
+        `INSERT INTO audit.audit_logs (
+           operation_id,actor_type,actor_id_hash,actor_roles_json,target_type,target_id,
+           after_hash,reason_code,request_id,result,created_at
+         ) VALUES (
+           'verification_draft_create','registered_user',digest($1::text,'sha256'),'[]'::jsonb,
+           'verification_request',$2,$3,'applicant_created',left($4,64),'success',$5
+         )`,
+        [input.userId, row.verification_id, input.requestHash, input.requestId, input.now],
+      )
+      await client.query('COMMIT')
+      return row
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+}
+
+function validateHistoricalSupersedes(
+  latest: Pick<VerificationRequestRow, 'status' | 'verification_id'> | null,
+  supplied: string | null,
+): void {
+  if (!latest) {
+    if (supplied !== null) throw workflowError('VERIFICATION_SUPERSEDES_INVALID', 409)
+    return
+  }
+  if (['draft', 'pending', 'changes_requested'].includes(latest.status)) {
+    throw workflowError('VERIFICATION_ACTIVE_REQUEST_EXISTS', 409)
+  }
+  if (latest.status === 'verified') throw workflowError('VERIFICATION_ALREADY_VERIFIED', 422)
+  if (!['failed', 'withdrawn'].includes(latest.status) || supplied !== latest.verification_id) {
+    throw workflowError('VERIFICATION_SUPERSEDES_STALE', 409)
+  }
+}
+
 try {
   await pool.query(
     `INSERT INTO iam.users (user_id,status,created_at,updated_at)
@@ -45,7 +164,7 @@ try {
   const thirdProjectId = project.rows[2]?.project_id
   if (!projectId) throw new Error('VERIFICATION_FIXTURE_PROJECT_REQUIRED')
   if (!secondProjectId || !thirdProjectId) throw new Error('VERIFICATION_FIXTURE_PROJECT_SET_REQUIRED')
-  const store = new PostgresVerificationRequestStore(pool)
+  const store = new HistoricalVerificationRequestStore(pool)
   const service = new VerificationRequestService(store, () => now)
   const createCommand = {
     userId: applicantId,

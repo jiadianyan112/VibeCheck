@@ -54,7 +54,7 @@ const payload = Object.freeze({
     }),
     tech_stack: Object.freeze(['TypeScript']), deployment_platform: 'Render',
     access_status: 'normal', maintenance_signal: 'page_updated', status_note: null,
-    publication_details: Object.freeze({ submitterRelation: 'owner' }),
+    publication_details: Object.freeze({ submitterRelation: 'owner', developer: { kind: 'individual', displayName: 'Fixture developer' } }),
   }),
   category_id: 'personal_site_portfolio', category_schema_version: 'portfolio.v1',
   category_data: Object.freeze({

@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient, QueryResultRow } from 'pg'
 
 import { workflowError } from './errors.js'
+import { parseDeveloperProfile } from './developer-profile.js'
+import { guardDeveloperApproval } from './developer-approval.js'
 import type { ReviewDecisionStore } from './review-decision-store.js'
 import type {
   ReviewDecisionProjection,
@@ -46,6 +48,7 @@ interface ProjectUpdateRow extends QueryResultRow {
 }
 
 interface VerificationRequestRow extends QueryResultRow {
+  readonly developer_identity_v1?: boolean
   readonly verification_id: string
   readonly project_id: string
   readonly applicant_user_id: string
@@ -665,13 +668,18 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       payload.expected_reused_link_version !== snapshot.reused_link_version) {
       throw workflowError('VERIFICATION_LINK_POLICY_CHANGED',409)
     }
-    const project = await client.query<{ aggregate_version: string; review_status: string } & QueryResultRow>(
-      'SELECT aggregate_version,review_status FROM catalog.projects WHERE project_id=$1 FOR UPDATE',
+    const project = await client.query<{ aggregate_version: string; review_status: string; developer_management_v1: boolean; declared_kind: string | null } & QueryResultRow>(
+      `SELECT project.aggregate_version,project.review_status,project.developer_management_v1,
+         version.snapshot_json->'project_core'->'publication_details'->'developer'->>'kind' AS declared_kind
+       FROM catalog.projects project LEFT JOIN catalog.project_versions version ON version.version_id=project.current_version_id
+       WHERE project.project_id=$1 FOR UPDATE OF project`,
       [request.project_id],
     )
     if (!project.rows[0] || project.rows[0].review_status === 'deleted') {
       throw workflowError('PROJECT_NOT_FOUND',404)
     }
+    const requestedProfile = request.new_creator_profile_input_json as { kind?: string } | null
+    const developerV1 = request.developer_identity_v1 || project.rows[0].developer_management_v1 || Boolean(requestedProfile?.kind)
     const firstRelation = await client.query<{ present: boolean } & QueryResultRow>(
       `SELECT EXISTS (SELECT 1 FROM catalog.author_relations
        WHERE project_id=$1 AND status IN ('active','suspended')) AS present`,[request.project_id],
@@ -703,7 +711,8 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
            published_by_admin_id,created_at
          ) VALUES ($1,$2,NULL,NULL,$3,$4::jsonb,NULL,NULL,$5)`,
         [profileVersionId,creatorId,request.verification_id,JSON.stringify({
-          display_name:input.display_name,bio:input.bio ?? '',avatar_url:null,
+          display_name:input.display_name,bio:input.bio ?? '',avatar_url:input.avatar_url ?? null,
+          kind:input.kind ?? null,website_url:input.website_url ?? null,
           contacts:[],external_links:[],verification_status:'verified',
         }),now],
       )
@@ -795,6 +804,13 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
       creator = updatedCreator.rows[0]!
     }
 
+    if (developerV1) {
+      const identity = await client.query<{ kind: string | null }>(
+        `SELECT profile.profile_snapshot_json->>'kind' AS kind FROM catalog.creators creator
+         JOIN catalog.creator_profile_versions profile ON profile.creator_profile_version_id=creator.current_profile_version_id WHERE creator.creator_id=$1`, [creator.creator_id],
+      )
+      await guardDeveloperApproval(client, { projectId: request.project_id, linkRole: link.link_role, authorRole: payload.author_role, declaredKind: project.rows[0].declared_kind, profileKind: identity.rows[0]?.kind ?? null })
+    }
     const ceiling = this.stringArray(profile.field_path_ceiling_json,'LINK_PERMISSION_PROFILE_INVALID')
     const capabilities = this.stringArray(profile.capabilities_json,'LINK_PERMISSION_PROFILE_INVALID')
     if (payload.field_permissions.some((field) => !ceiling.includes(field))) {
@@ -812,9 +828,11 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     )
     const updatedProject = await client.query<{ aggregate_version: string } & QueryResultRow>(
       `UPDATE catalog.projects SET review_status='published_author',author_link_status='linked',
+         primary_developer_relation_id=CASE WHEN $3::boolean THEN $4::uuid ELSE primary_developer_relation_id END,
+         developer_management_v1=developer_management_v1 OR $3::boolean,
          aggregate_version=aggregate_version+1,updated_at=$2
        WHERE project_id=$1 AND review_status<>'deleted' RETURNING aggregate_version`,
-      [request.project_id,now],
+      [request.project_id,now,developerV1,relationId],
     )
     if (!updatedProject.rows[0]) throw workflowError('PROJECT_NOT_FOUND',404)
     return Object.freeze({
@@ -870,18 +888,8 @@ export class PostgresReviewDecisionStore implements ReviewDecisionStore {
     return result.rows[0]
   }
 
-  private newCreatorProfile(value: unknown): Readonly<{display_name:string;bio?:string}> {
-    if (!value || typeof value!=='object' || Array.isArray(value)) {
-      throw workflowError('REVIEW_TARGET_STATE_INVALID',500,true)
-    }
-    const record = value as Record<string,unknown>
-    if (typeof record.display_name!=='string' || record.display_name.trim().length<1 ||
-      record.display_name.trim().length>80 ||
-      (record.bio!==undefined && (typeof record.bio!=='string' || record.bio.length>1000))) {
-      throw workflowError('REVIEW_TARGET_STATE_INVALID',500,true)
-    }
-    return Object.freeze({display_name:record.display_name.trim(),
-      ...(record.bio===undefined?{}:{bio:record.bio})})
+  private newCreatorProfile(value: unknown) {
+    return parseDeveloperProfile(value)
   }
 
   private verificationPolicySnapshot(value: unknown): VerificationPolicySnapshot {

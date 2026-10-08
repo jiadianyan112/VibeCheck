@@ -2,6 +2,7 @@ import { useProjectInteractions } from '../features/interactions/ProjectInteract
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { PublicationSummary } from '../features/submission/PublicationSummary'
+import { DeveloperIdentity } from '../features/developerIdentity'
 import { ExperienceSection } from '../components/ExperienceSection'
 import { useOptionalAuthSession } from '../features/auth'
 import { discussionApi, type DiscussionComment } from '../services/discussionApi'
@@ -9,25 +10,11 @@ import { AccessStatusBadge, AssetCard, Button, CompletenessLabel, DisputeNotice,
 import { authorManagementState, latestVerificationFor, mergeEvidenceRecords, publishedEventFromSubmission, publishedProjectFromSubmission, useAuthGate, useComparison, verificationStatusLabels } from '../features'
 import { submissionReturnPath } from '../features/submission'
 import { communityService, projectService, type ProjectBundle, type ServiceError } from '../services'
+import { developerApi, type MyProjectItem } from '../services/developerApi'
 import { creatorsForProject, prototypeUsers } from '../mocks'
 import { createPrototypeEvent, useAppState } from '../state'
 import type { CommentCategory, FieldFact, Project, ProjectComment, UserId } from '../types'
 import { accessStatusText, feedbackMethodLabels, inputTypeLabels, lifecycleEventLabels, scenarioLabels, targetUserLabels } from '../utils'
-
-const sourceLabels: Record<Project['recordSource'], string> = {
-  platform_editor: '平台编辑收录',
-  public_discovery: '公开页面发现',
-  author_submission: '作者主动发布',
-  user_submission: '社区用户提交',
-}
-
-const authorLinkLabels: Record<Project['authorLinkStatus'], string> = {
-  unlinked: '尚未关联作者',
-  pending: '作者关联审核中',
-  linked: '已关联验证作者',
-  failed: '作者关联未通过',
-  disputed: '作者归属存在争议',
-}
 
 function factText(fact: Project['currentName'], fallback: string) {
   return fact.state === 'known' ? fact.value : fallback
@@ -108,6 +95,7 @@ export function ProjectDetailPage() {
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [pendingCommentId, setPendingCommentId] = useState<string | null>(null)
   const [discussionError, setDiscussionError] = useState<string | null>(null)
+  const [myProject, setMyProject] = useState<MyProjectItem | null>(null)
   const trackedProjectId = useRef<Project['id'] | null>(null)
   const replayingCommentId = useRef<string | null>(null)
 
@@ -115,6 +103,26 @@ export function ProjectDetailPage() {
     if (hash === '#experiences') setCommentCategory('experience')
     if (hash === '#discussion') setCommentCategory('usage_feedback')
   }, [hash])
+
+  useEffect(() => {
+    if (!import.meta.env.PROD || !authSession) {
+      setMyProject(null)
+      return undefined
+    }
+    const controller = new AbortController()
+    let active = true
+    setMyProject(null)
+    const load = async () => {
+      try {
+        const page = await developerApi.listMyProjects({ projectId: resolvedId, limit: 1, signal: controller.signal })
+        if (active) setMyProject(page.items.find(item => item.project_id === resolvedId) ?? null)
+      } catch {
+        if (active) setMyProject(null)
+      }
+    }
+    void load()
+    return () => { active = false; controller.abort() }
+  }, [authSession, resolvedId])
 
   useEffect(() => {
     if (!bundle || !hash) return
@@ -214,7 +222,7 @@ export function ProjectDetailPage() {
   if (loading) return <main className="page-container highfi-scope community-page community-page--detail"><LoadingState label="作品档案加载中" /></main>
   if (error || !bundle) return <main className="page-container stack highfi-scope community-page community-page--detail"><ErrorPanel message={error?.message ?? '未找到作品'} /><Link to="/projects">返回作品广场</Link></main>
 
-  const { project, creators } = bundle
+  const { project } = bundle
   const name = factText(project.currentName, '名称未知的作品')
   const status = project.accessStatus.state === 'known' ? project.accessStatus.value : 'unknown'
   const selected = state.comparisonProjectIds.includes(project.id)
@@ -231,7 +239,7 @@ export function ProjectDetailPage() {
   const hasPublicHeroMedia = Boolean(heroMedia && (heroMedia.kind === 'image' || heroMedia.kind === 'video') && heroMedia.url)
   const ownVerification = latestVerificationFor(state.verificationRequests, project.id, state.session.user?.id)
   const management = authorManagementState(ownVerification)
-  const effectiveAuthorLinkStatus = management.linked ? 'linked' : management.highRiskEditingFrozen ? 'disputed' : ownVerification ? 'pending' : project.authorLinkStatus
+  const canManage = myProject?.project_id === project.id && myProject.can_manage
 
   function toggleFavorite() {
     requireLogin({ id: `favorite-${project.id}`, kind: 'favorite', projectId: project.id, sourcePath: `/project/${project.id}` }, () => interactions.toggleFavorite(project))
@@ -311,10 +319,10 @@ export function ProjectDetailPage() {
           <div className="cluster"><AccessStatusBadge status={status} /><FreshnessLabel status={project.freshnessStatus} lastVerifiedAt={project.lastVerifiedAt} /><CompletenessLabel level={project.completenessLevel} /></div>
           <div className="stack stack--small"><div className="cluster"><Tag tone="dashed">{project.categoryId === 'personal_site_portfolio' ? '个人主页与作品集' : 'AI 学习与题库'}</Tag>{project.categoryGroup ? <Tag>{project.categoryGroup}</Tag> : null}</div><h1>{name}</h1>{project.summary.state === 'known' ? <p className="project-hero__definition">{project.summary.value}</p> : <UnknownFact reason={project.summary.reason} />}</div>
 
-          <section className="project-source stack stack--small" aria-label="作者与来源">
-            <div className="cluster cluster--between"><div><strong>{authorLinkLabels[effectiveAuthorLinkStatus]}</strong><p>{sourceLabels[project.recordSource]}</p></div>{creators.length || management.linked ? <div className="cluster">{creators.map((creator) => <Link key={creator.id} to={`/creator/${creator.id}`}><Tag tone={creator.verificationStatus === 'verified' ? 'default' : 'dashed'}>{creator.displayName} · {creator.verificationStatus === 'verified' ? '已验证' : '未验证'}</Tag></Link>)}{management.linked && state.session.user ? <Tag>{state.session.user.displayName} · 已验证管理权限</Tag> : null}</div> : <span className="unknown-value">未发现已确认的公开作者</span>}</div>
-            <div className="cluster"><Link className="weak-link" to={`/project/${project.id}/verify-author`}>{ownVerification ? `查看身份验证：${verificationStatusLabels[ownVerification.status]}` : '我是作者，申请关联'}</Link>{management.canEdit ? <Link className="button" to={`/project/${project.id}/update`}>管理作品</Link> : null}</div>
-            {management.highRiskEditingFrozen ? <aside className="trust-notice trust-notice--disputed"><strong>归属争议处理中</strong><p>高风险编辑已冻结；公开档案和历史事实继续保留。</p></aside> : null}
+          <section className="project-source stack stack--small" aria-label="作品开发主体">
+            <DeveloperIdentity developer={project.developer ?? null} claimHref={`/project/${project.id}/verify-author`} />
+            <div className="cluster">{ownVerification ? <Link className="weak-link" to={`/project/${project.id}/verify-author`}>查看身份认证：{verificationStatusLabels[ownVerification.status]}</Link> : null}{canManage ? <Link className="button" to={`/project/${project.id}/update`}>管理作品</Link> : null}</div>
+            {management.highRiskEditingFrozen || project.authorLinkStatus === 'disputed' ? <aside className="trust-notice trust-notice--disputed"><strong>归属争议处理中</strong><p>高风险编辑已冻结；公开档案和历史事实继续保留。</p></aside> : null}
           </section>
 
           <div className="project-primary-actions" aria-label="作品核心操作">
@@ -332,13 +340,12 @@ export function ProjectDetailPage() {
       <section className="trust-variants stack" aria-labelledby="trust-variants-heading">
         <div className="section-heading cluster cluster--between"><div><h2 id="trust-variants-heading">作品信息与状态</h2></div><div className="cluster"><Link className="button button--quiet" to={`/submit?mode=supplement&project=${project.id}`}>补充作品信息</Link><details className="status-report-placeholder"><summary>状态说明</summary><p>这里仅说明当前状态，不会发起变更。需要补充或纠正信息时，请使用“补充作品信息”。</p></details></div></div>
         <div className="trust-notice-list">
-          {project.recordSource === 'platform_editor' && project.authorLinkStatus === 'unlinked' ? <aside className="trust-notice"><Tag tone="dashed">平台收录</Tag><strong>尚未关联验证作者</strong><p>当前信息来自公开页面和平台核验，不代表作者本人说明。</p></aside> : null}
           {status === 'unknown' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">当前状态未知</Tag><strong>没有足够证据确认当前可用性</strong><p>未知不是异常或失败；历史记录仍可查看。</p></aside> : null}
           {project.freshnessStatus === 'expired' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">信息已过期</Tag><strong>内容可能已经发生变化</strong><p>最近核验：{new Date(project.lastVerifiedAt).toLocaleDateString('zh-CN')}。请结合当前作品页面判断。</p></aside> : null}
           {status === 'partial_abnormal' || status === 'link_unavailable' ? <aside className="trust-notice trust-notice--caution"><Tag tone="strong">访问异常</Tag><strong>{status === 'partial_abnormal' ? '部分流程异常，其他事实仍保留' : '当前公开链接不可用'}</strong><p>异常描述不等同于作品失败或结束；请结合核验时间与历史事件判断。</p></aside> : null}
           {status === 'suspected_migration' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">疑似迁移</Tag><strong>新地址身份等待确认</strong><p>旧地址和待确认新地址已在当前状态区并列展示。</p></aside> : null}
-          {status === 'paused' ? <aside className="trust-notice"><Tag tone="strong">作者声明暂停</Tag><strong>暂停更新不等于失败</strong><p>现有演示和历史仍按各自证据展示。</p></aside> : null}
-          {status === 'ended' ? <aside className="trust-notice"><Tag tone="strong">作者声明结束</Tag><strong>作品已结束，不等于失败</strong><p>仍可查看历史与独立有效的复用资产。</p></aside> : null}
+          {status === 'paused' ? <aside className="trust-notice"><Tag tone="strong">开发者声明暂停</Tag><strong>暂停更新不等于失败</strong><p>现有演示和历史仍按各自证据展示。</p></aside> : null}
+          {status === 'ended' ? <aside className="trust-notice"><Tag tone="strong">开发者声明结束</Tag><strong>作品已结束，不等于失败</strong><p>仍可查看历史与独立有效的复用资产。</p></aside> : null}
           {trustVariant === 'first-anomaly' ? <aside className="trust-notice trust-notice--caution"><Tag tone="dashed">首次异常验证中</Tag><strong>维持原公开状态：{status}</strong><p>一次技术检查不能直接推导暂停、结束或失败；等待复检后再更新。</p></aside> : null}
           {trustVariant === 'disputed' ? <aside className="trust-notice trust-notice--disputed"><Tag tone="strong">争议并列来源</Tag><strong>核查完成前不选择性覆盖</strong><div className="dispute-source-grid"><article><span>平台核验记录</span><p>{bundle.evidences[0]?.sourceSummary ?? '平台当前没有可引用记录。'}</p><time dateTime={bundle.evidences[0]?.verifiedAt}>{bundle.evidences[0] ? new Date(bundle.evidences[0].verifiedAt).toLocaleString('zh-CN') : '更新时间未知'}</time></article><article><span>提交方补充说明</span><p>提交方称新入口仍属于同一作品，当前缺少足够公开材料完成确认。</p><time dateTime="2026-07-30T18:00:00+08:00">2026/7/30 18:00 更新</time></article></div></aside> : null}
         </div>

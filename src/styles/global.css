@@ -136,73 +136,12 @@ textarea {
   text-transform: uppercase;
 }
 
-.sandbox-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-6);
-  margin-top: var(--space-10);
-}
-
-.span-full {
-  grid-column: 1 / -1;
-}
-
 .wire-panel,
 .wire-card,
 .empty-state,
 .dialog-panel {
   border: 1px solid var(--color-line-strong);
   background: var(--color-surface-raised);
-}
-
-.prototype-debug {
-  position: fixed;
-  z-index: 15;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  width: min(22rem, calc(100vw - 2 * var(--space-4)));
-  border: 1px solid var(--color-line-strong);
-  background: var(--color-canvas);
-  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 12%);
-}
-
-.prototype-debug summary {
-  cursor: pointer;
-  padding: var(--space-3) var(--space-4);
-  font-weight: 700;
-}
-
-.prototype-debug__body {
-  max-height: min(70vh, 34rem);
-  overflow: auto;
-  border-top: 1px solid var(--color-line);
-  padding: var(--space-4);
-}
-
-.scenario-panel {
-  right: auto;
-  left: var(--space-4);
-  width: min(26rem, calc(100vw - 2 * var(--space-4)));
-}
-
-.scenario-panel__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-
-.scenario-panel__button {
-  min-height: 4.5rem;
-  align-items: flex-start;
-  justify-content: center;
-  flex-direction: column;
-  text-align: left;
-  white-space: normal;
-}
-
-.scenario-panel__button small {
-  color: var(--color-muted);
-  font-weight: 500;
 }
 
 .sr-only {
@@ -1099,7 +1038,7 @@ textarea {
 .choice-card span { display: grid; gap: var(--space-1); }
 .choice-card small { color: var(--color-muted); }
 .choice-card--fixed { max-width: 34rem; cursor: default; }
-.field-error { border: 1px solid var(--color-ink); background: var(--color-surface); padding: var(--space-2) var(--space-3); font-weight: 700; }
+.field-error { border: 1px solid var(--color-ink); background: var(--color-surface); padding: var(--space-2) var(--space-3); font-weight: 700; overflow-wrap: anywhere; }
 .decision-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin: 0; }
 .decision-summary div { border-bottom: 1px solid var(--color-line); padding-bottom: var(--space-3); }
 .decision-summary dt { color: var(--color-muted); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
@@ -1119,15 +1058,6 @@ textarea {
 .submit-login-callout {
   max-width: 48rem;
   margin-top: var(--space-8);
-}
-
-.creator-update-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
 .personal-item-list {
@@ -1576,16 +1506,8 @@ textarea {
   .filter-panel[open] > summary span:last-child::after { visibility: visible; content: '收起'; }
   .filter-panel__body { padding: var(--space-4); }
   .event-list a { grid-template-columns: 1fr; }
-  .decision-option-grid, .decision-asset-list, .decision-summary, .creator-update-list, .submission-entry-layout, .submission-choice-grid, .submission-preview-grid, .submission-summary-grid, .verification-layout, .verification-method-grid, .verification-next-grid, .project-update-layout, .update-diff-grid { grid-template-columns: minmax(0, 1fr); }
+  .decision-option-grid, .decision-asset-list, .decision-summary, .submission-entry-layout, .submission-choice-grid, .submission-preview-grid, .submission-summary-grid, .verification-layout, .verification-method-grid, .verification-next-grid, .project-update-layout, .update-diff-grid { grid-template-columns: minmax(0, 1fr); }
   .hero-search { grid-template-columns: 1fr; gap: var(--space-2); }
-  .sandbox-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .span-full {
-    grid-column: auto;
-  }
-
   .button {
     max-width: 100%;
   }
@@ -1621,7 +1543,7 @@ textarea {
     width: auto;
     flex-wrap: nowrap;
     gap: var(--space-1);
-    overflow: visible;
+    overflow: auto;
     border: 1px solid var(--color-line-strong);
     background: var(--color-canvas);
     padding: var(--space-2);

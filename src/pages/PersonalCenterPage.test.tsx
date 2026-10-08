@@ -223,7 +223,7 @@ describe('PersonalCenterPage', () => {
     renderMe()
     expect(await screen.findByRole('heading', { name: '我的作品' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 2 })[0]).toHaveTextContent('我的作品')
-    expect(screen.getByRole('link', { name: '查看我的作者主页' })).toHaveAttribute('href', '/creator/creator-zhou')
+    expect(screen.getByRole('link', { name: '查看我的开发者主页' })).toHaveAttribute('href', '/creator/creator-zhou')
     expect(screen.getAllByRole('link', { name: '更新作品' })).toHaveLength(2)
     expect(screen.getByRole('heading', { name: '作品更新待办' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '平台管理入口' })).not.toBeInTheDocument()

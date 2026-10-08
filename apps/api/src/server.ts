@@ -35,6 +35,7 @@ import {
   type WithdrawProjectUpdateCommand,
   type CreatorAccountLinkProjection,
   type AuthorRelationProjection,
+  type MyDeveloperProjectsPage,
 } from '@vibecheck/catalog'
 import type { ServiceConfig } from '@vibecheck/config'
 import {
@@ -462,6 +463,7 @@ export interface ApiEvidenceService {
 }
 
 export interface ApiServerDependencies {
+  readonly developerProjects?: { list(input: Readonly<{ userId: string; limit: number; cursor: string | null; projectId: string | null }>): Promise<MyDeveloperProjectsPage> }
   readonly checkReadiness: () => Promise<void>
   readonly analytics?: ApiAnalyticsService
   readonly catalog?: ApiCatalogService
@@ -2343,10 +2345,21 @@ async function handleCreatorAuthorReadRequest(
 ):Promise<number|null>{
   const linkMatch=path.match(/^\/api\/v1\/creator-account-links\/([^/]+)$/)
   const myLinks=path==='/api/v1/me/creator-account-links'
+  const myProjects=path==='/api/v1/me/projects'
   const relationMatch=path.match(/^\/api\/v1\/author-relations\/([^/]+)$/)
   const relationList=path==='/api/v1/author-relations'
-  if(!linkMatch&&!myLinks&&!relationMatch&&!relationList)return null
+  if(!linkMatch&&!myLinks&&!myProjects&&!relationMatch&&!relationList)return null
   if(method!=='GET')return null
+  if(myProjects){
+    exactWorkflowQueryKeys(url.searchParams,['limit','cursor','project_id'])
+    const session=await resolveAuthenticatedSession(request,dependencies)
+    if(!dependencies.developerProjects)throw new CatalogError('DEVELOPER_PROJECTS_UNAVAILABLE',503,true)
+    const rawLimit=url.searchParams.get('limit')
+    if(rawLimit!==null&&!/^\d+$/.test(rawLimit))throw new CatalogError('LIMIT_INVALID',400)
+    const projection=await dependencies.developerProjects.list({userId:session.userId,limit:rawLimit===null?20:Number(rawLimit),cursor:url.searchParams.get('cursor'),projectId:url.searchParams.get('project_id')})
+    response.setHeader('cache-control','no-store')
+    writeJson(response,200,projection,requestId);return 200
+  }
   if(!dependencies.creatorAuthorRead)throw new CatalogError('CREATOR_AUTHORIZATION_READ_UNAVAILABLE',503,true)
   if(linkMatch||myLinks){
     exactWorkflowQueryKeys(url.searchParams,[])

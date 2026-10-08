@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto'
 
 import { workflowError } from './errors.js'
+import { parseDeveloperProfile } from './developer-profile.js'
 import {
   PostgresVerificationRequestStore,
   type ResolutionSelection,
@@ -219,20 +220,7 @@ function resolutionMode(value: string): CreatorResolutionMode {
 
 function profileInput(value: unknown): NewCreatorProfileInput | null {
   if (value === null || value === undefined) return null
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw workflowError('NEW_CREATOR_PROFILE_INVALID', 422)
-  }
-  const input = value as Record<string, unknown>
-  const keys = Object.keys(input)
-  if (keys.some((key) => !['display_name','bio'].includes(key)) || typeof input.display_name !== 'string') {
-    throw workflowError('NEW_CREATOR_PROFILE_INVALID', 422)
-  }
-  const displayName = input.display_name.trim()
-  const bio = input.bio
-  if (displayName.length < 1 || displayName.length > 80 || (bio !== undefined && (typeof bio !== 'string' || bio.length > 1000))) {
-    throw workflowError('NEW_CREATOR_PROFILE_INVALID', 422)
-  }
-  return Object.freeze({ display_name: displayName, ...(bio === undefined ? {} : { bio: bio.trim() }) })
+  return parseDeveloperProfile(value)
 }
 
 function linkRole(value: string | null): RequestedLinkRole | null {

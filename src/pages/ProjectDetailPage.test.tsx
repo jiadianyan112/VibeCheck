@@ -25,8 +25,9 @@ describe('ProjectDetailPage hero', () => {
     expect(screen.getByLabelText('暂无公开图片')).toBeInTheDocument()
     expect(screen.getAllByText('正常可访问').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/核验于 2026年7月28日/).length).toBeGreaterThan(0)
-    expect(screen.getByText('已关联验证作者')).toBeInTheDocument()
-    expect(screen.getByText('林序 · 已验证')).toBeInTheDocument()
+    expect(screen.queryByText('已关联验证作者')).not.toBeInTheDocument()
+    expect(screen.queryByText('林序 · 已验证')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '认领作品' })).toHaveAttribute('href', '/project/project-quizforge/verify-author')
   })
 
   it('guards the external experience link before leaving the prototype', async () => {
@@ -39,9 +40,10 @@ describe('ProjectDetailPage hero', () => {
 
   it('keeps the unlinked author claim secondary to core actions', async () => {
     renderProject('project-pdfquizlab')
-    expect(await screen.findByText('尚未关联作者')).toBeInTheDocument()
-    expect(screen.getByText('平台编辑收录')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '我是作者，申请关联' })).toHaveClass('weak-link')
+    expect(await screen.findByRole('heading', { name: 'PDF 题库实验室' })).toBeInTheDocument()
+    expect(screen.queryByText('尚未关联作者')).not.toBeInTheDocument()
+    expect(screen.queryByText('平台编辑收录')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '认领作品' })).toHaveClass('weak-link')
     expect(screen.getByLabelText('作品核心操作')).toContainElement(screen.getByRole('button', { name: '收藏' }))
   })
 
@@ -237,7 +239,6 @@ describe('ProjectDetailPage trust variants', () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
 
   it.each([
-    ['project-pdfquizlab', '尚未关联验证作者'],
     ['project-papertopractice', '部分流程异常，其他事实仍保留'],
     ['project-dictaflow', '新地址身份等待确认'],
     ['project-mocksprint', '暂停更新不等于失败'],

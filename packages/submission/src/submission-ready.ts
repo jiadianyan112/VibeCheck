@@ -82,6 +82,12 @@ export function validateSubmissionReadySnapshot(input: Readonly<{
   if (!projectSnapshot.project_core.publication_details?.submitterRelation) {
     throw submissionError('SUBMISSION_RELATION_REQUIRED', 422)
   }
+  if (projectSnapshot.project_core.publication_details.submitterRelation !== 'owner') {
+    throw submissionError('SUBMISSION_OWNER_REQUIRED', 422)
+  }
+  if (!projectSnapshot.project_core.publication_details.developer) {
+    throw submissionError('SUBMISSION_DEVELOPER_REQUIRED', 422)
+  }
   if (input.mediaReferenceIds.length > 20) {
     throw submissionError('SUBMISSION_MEDIA_REQUIRED', 422)
   }

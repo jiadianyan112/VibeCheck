@@ -2,6 +2,7 @@ import { catalogError } from './errors.js'
 import type {
   CategoryId,
   CategorySchemaVersion,
+  DeclaredDeveloper,
   KnowledgeState,
   LearningSchemaV1,
   PortfolioSchemaV1,
@@ -70,9 +71,10 @@ function publicationDetails(value: unknown): PublicationDetails {
   const record = object(value, 'CATALOG_SNAPSHOT_INVALID')
   exact(record, [
     'submitterRelation', 'organizationName', 'detailedDescription', 'logoUrl',
-    'galleryUrls', 'videoUrl', 'acknowledgements',
+    'galleryUrls', 'videoUrl', 'acknowledgements', 'developer',
   ], 'CATALOG_SNAPSHOT_INVALID')
   const result: {
+    developer?: DeclaredDeveloper
     submitterRelation?: SubmitterRelation
     organizationName?: string
     detailedDescription?: string
@@ -81,6 +83,16 @@ function publicationDetails(value: unknown): PublicationDetails {
     videoUrl?: string | null
     acknowledgements?: readonly PublicationAcknowledgement[]
   } = {}
+  if (record.developer !== undefined) {
+    const developer = object(record.developer, 'CATALOG_SNAPSHOT_INVALID')
+    exact(developer, ['kind', 'displayName', 'avatarUrl', 'websiteUrl'], 'CATALOG_SNAPSHOT_INVALID')
+    result.developer = Object.freeze({
+      kind: oneOf(developer.kind, ['individual', 'team'], 'CATALOG_SNAPSHOT_INVALID'),
+      displayName: text(developer.displayName, 1, 80, 'CATALOG_SNAPSHOT_INVALID'),
+      ...(developer.avatarUrl === undefined ? {} : { avatarUrl: developer.avatarUrl === null ? null : safeWebUrl(developer.avatarUrl, 2_048, 'CATALOG_SNAPSHOT_INVALID') }),
+      ...(developer.websiteUrl === undefined ? {} : { websiteUrl: developer.websiteUrl === null ? null : safeWebUrl(developer.websiteUrl, 2_048, 'CATALOG_SNAPSHOT_INVALID') }),
+    })
+  }
   if (record.submitterRelation !== undefined) {
     result.submitterRelation = oneOf(record.submitterRelation, ['owner', 'team_member', 'third_party'], 'CATALOG_SNAPSHOT_INVALID')
   }

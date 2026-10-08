@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "fixture:developer-identity:verify": "tsx src/testing/verify-developer-identity-v1.ts",
     "build": "tsc -p tsconfig.json",
     "fixture:verify": "tsx src/testing/verify-workflow-fixture.ts",
     "fixture:admin-security:verify": "tsx src/testing/verify-admin-operation-security-fixture.ts",
